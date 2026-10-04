@@ -27,7 +27,8 @@ const checks = [
     "Oracle grouping implementation protects Map lookups",
     grouping.includes("const existing = groups.get(key);") &&
       grouping.includes("if (existing) {") &&
-      grouping.includes("groups.set(key, { year, month, sequence, date: row.date, rows: [row] });"),
+      (grouping.includes("groups.set(key, { year, month, sequence, date: row.date, rows: [row] });") ||
+        grouping.includes("groups.set(key, { year, month, sequence, date: entryDate, rows: [row] });")),
   ],
   ["created accounts are exposed to the import report", ledger.includes("newlyCreatedAccounts")],
   [

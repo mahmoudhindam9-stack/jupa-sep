@@ -1,5 +1,8 @@
 import { useState, useEffect } from "react";
-import { githubUpdateService, GitHubUpdateInfo } from "@/shared/services/githubUpdateService";
+import {
+  githubUpdateService,
+  GitHubUpdateInfo,
+} from "@/shared/services/githubUpdateService";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -63,7 +66,9 @@ export function GitHubUpdateBanner() {
           </span>
           <span>
             يوجد تحديث جديد متاح من النظام على GitHub:{" "}
-            <span className="underline font-black text-amber-200">v{updateInfo.latestVersion}</span>{" "}
+            <span className="underline font-black text-amber-200">
+              v{updateInfo.latestVersion}
+            </span>{" "}
             (الإصدار الحالي: v{updateInfo.currentVersion})
           </span>
           {updateInfo.releaseName && (
@@ -127,9 +132,7 @@ export function GitHubUpdateBanner() {
             </div>
 
             <div className="p-3 bg-muted/30 rounded-xl border space-y-1 max-h-48 overflow-y-auto">
-              <div className="font-bold text-xs text-muted-foreground">
-                ملاحظات الإصدار والتغييرات:
-              </div>
+              <div className="font-bold text-xs text-muted-foreground">ملاحظات الإصدار والتغييرات:</div>
               <p className="text-xs whitespace-pre-wrap leading-relaxed text-foreground">
                 {updateInfo.releaseNotes || "تمت إضافة تحسينات وإصلاحات جديدة للأداء والتزامن."}
               </p>
@@ -149,12 +152,7 @@ export function GitHubUpdateBanner() {
           </div>
 
           <DialogFooter className="flex flex-row justify-end gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowModal(false)}
-              className="text-xs"
-            >
+            <Button variant="outline" size="sm" onClick={() => setShowModal(false)} className="text-xs">
               إغلاق
             </Button>
             <Button

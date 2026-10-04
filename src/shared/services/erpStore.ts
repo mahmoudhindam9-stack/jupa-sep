@@ -6107,6 +6107,9 @@ export class ERPStore {
       "UPDATE",
     );
   }
+  getEmployees(): Employee[] {
+    return this.state.employees || [];
+  }
   addEmployee(emp) {
     const newEmp = {
       ...emp,

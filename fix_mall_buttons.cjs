@@ -1,5 +1,5 @@
-const fs = require("fs");
-let content = fs.readFileSync("src/routes/admin/mall.tsx", "utf8");
+const fs = require('fs');
+let content = fs.readFileSync('src/routes/admin/mall.tsx', 'utf8');
 
 const oldButton = `<Button
                     variant="destructive"
@@ -23,5 +23,5 @@ const newButton = `<Button
 
 content = content.replace(oldButton, newButton);
 
-fs.writeFileSync("src/routes/admin/mall.tsx", content);
+fs.writeFileSync('src/routes/admin/mall.tsx', content);
 console.log("Success fixed mall button");

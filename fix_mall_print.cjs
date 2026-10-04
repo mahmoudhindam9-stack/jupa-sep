@@ -1,5 +1,5 @@
-const fs = require("fs");
-let content = fs.readFileSync("src/routes/admin/mall.tsx", "utf8");
+const fs = require('fs');
+let content = fs.readFileSync('src/routes/admin/mall.tsx', 'utf8');
 
 // Fix Excel export
 const oldCsvCode = `let csvContent = "data:text/csv;charset=utf-8,\\uFEFF";`;
@@ -89,5 +89,5 @@ const newPrintCode = `                      <Button
 
 content = content.replace(oldPrintCode, newPrintCode);
 
-fs.writeFileSync("src/routes/admin/mall.tsx", content);
+fs.writeFileSync('src/routes/admin/mall.tsx', content);
 console.log("Success mall");

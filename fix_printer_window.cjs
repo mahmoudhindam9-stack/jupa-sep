@@ -1,5 +1,5 @@
-const fs = require("fs");
-let content = fs.readFileSync("src/shared/services/printerService.ts", "utf8");
+const fs = require('fs');
+let content = fs.readFileSync('src/shared/services/printerService.ts', 'utf8');
 
 // I will make sure the printer popup forces an 80mm window in a nice way, or fallback nicely.
 // Earlier I created a hidden thermal iframe popup.
@@ -42,10 +42,7 @@ const newIframeLogic = `    const printWindow = window.open("", "_blank", "width
     }
   }`;
 
-content = content.replace(
-  /    const printWindow = window\.open\("", "_blank", "width=400,height=600"\);[\s\S]*\}\n  \}/g,
-  newIframeLogic,
-);
+content = content.replace(/    const printWindow = window\.open\("", "_blank", "width=400,height=600"\);[\s\S]*\}\n  \}/g, newIframeLogic);
 
-fs.writeFileSync("src/shared/services/printerService.ts", content);
+fs.writeFileSync('src/shared/services/printerService.ts', content);
 console.log("Success thermal printer pop-up adjusted");

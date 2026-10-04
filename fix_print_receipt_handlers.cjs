@@ -1,5 +1,5 @@
-const fs = require("fs");
-let content = fs.readFileSync("src/components/mall/ParkTicketsPOS.tsx", "utf8");
+const fs = require('fs');
+let content = fs.readFileSync('src/components/mall/ParkTicketsPOS.tsx', 'utf8');
 
 const replacement1 = `    if (printerService.isPrinterConnected()) {
       toast.success("تم إرسال إيصال التذكرة مباشرة إلى الطابعة الحرارية المتصلة 🖨️");
@@ -21,5 +21,5 @@ const newReplacement1 = `    if (printerService.isPrinterConnected()) {
 
 content = content.replace(replacement1, newReplacement1);
 
-fs.writeFileSync("src/components/mall/ParkTicketsPOS.tsx", content);
+fs.writeFileSync('src/components/mall/ParkTicketsPOS.tsx', content);
 console.log("Success fixed handlePrintReceipt in POS");

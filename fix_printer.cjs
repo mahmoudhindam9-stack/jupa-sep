@@ -1,5 +1,5 @@
-const fs = require("fs");
-let content = fs.readFileSync("src/shared/services/printerService.ts", "utf8");
+const fs = require('fs');
+let content = fs.readFileSync('src/shared/services/printerService.ts', 'utf8');
 
 // Replace the call to printRawHtml with an actual thermal iframe popup specifically built for 80mm
 const newPrintCode = `
@@ -42,5 +42,5 @@ const newPrintCode = `
 
 content = content.replace(/    printRawHtml\(html\);\n  \}/, newPrintCode);
 
-fs.writeFileSync("src/shared/services/printerService.ts", content);
+fs.writeFileSync('src/shared/services/printerService.ts', content);
 console.log("Success thermal specialized print window");

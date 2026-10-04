@@ -116,10 +116,15 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
       if (l.user_email) set.add(l.user_email.trim());
     });
     // Add ERP employees as well
-    const employees = erpStore.getEmployees();
-    employees.forEach((e) => {
-      if (e.name) set.add(e.name.trim());
-    });
+    const employees =
+      typeof erpStore.getEmployees === "function"
+        ? erpStore.getEmployees()
+        : ((erpStore as any).getState?.()?.employees || (erpStore as any).state?.employees || []);
+    if (Array.isArray(employees)) {
+      employees.forEach((e: any) => {
+        if (e?.name) set.add(String(e.name).trim());
+      });
+    }
     return Array.from(set).filter(Boolean).sort();
   }, [logs]);
 

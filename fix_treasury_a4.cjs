@@ -1,5 +1,5 @@
-const fs = require("fs");
-let content = fs.readFileSync("src/components/mall/ParkCashierTreasuryModal.tsx", "utf8");
+const fs = require('fs');
+let content = fs.readFileSync('src/components/mall/ParkCashierTreasuryModal.tsx', 'utf8');
 
 const oldHtmlStart = `        <style>
           @page { size: 80mm auto; margin: 0; }
@@ -32,10 +32,10 @@ const newHtmlStart = `        <style>
           .summary { display: flex; justify-content: space-between; margin-bottom: 20px; font-weight: bold; font-size: 14px; }
         </style>`;
 
-if (content.includes(oldHtmlStart.trim())) {
-  content = content.replace(oldHtmlStart.trim(), newHtmlStart.trim());
-  fs.writeFileSync("src/components/mall/ParkCashierTreasuryModal.tsx", content);
-  console.log("Success treasury reverted to A4");
+if(content.includes(oldHtmlStart.trim())) {
+    content = content.replace(oldHtmlStart.trim(), newHtmlStart.trim());
+    fs.writeFileSync('src/components/mall/ParkCashierTreasuryModal.tsx', content);
+    console.log("Success treasury reverted to A4");
 } else {
-  console.log("Not found treasury style!");
+    console.log("Not found treasury style!");
 }

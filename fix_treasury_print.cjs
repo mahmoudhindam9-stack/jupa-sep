@@ -1,5 +1,5 @@
-const fs = require("fs");
-let content = fs.readFileSync("src/components/mall/ParkCashierTreasuryModal.tsx", "utf8");
+const fs = require('fs');
+let content = fs.readFileSync('src/components/mall/ParkCashierTreasuryModal.tsx', 'utf8');
 
 const oldHtml = `
       <!DOCTYPE html>
@@ -48,10 +48,10 @@ const newHtml = `
       <body>
 `;
 
-if (content.includes(oldHtml.trim())) {
-  content = content.replace(oldHtml.trim(), newHtml.trim());
-  fs.writeFileSync("src/components/mall/ParkCashierTreasuryModal.tsx", content);
-  console.log("Success treasury");
+if(content.includes(oldHtml.trim())) {
+    content = content.replace(oldHtml.trim(), newHtml.trim());
+    fs.writeFileSync('src/components/mall/ParkCashierTreasuryModal.tsx', content);
+    console.log("Success treasury");
 } else {
-  console.log("Not found treasury!");
+    console.log("Not found treasury!");
 }

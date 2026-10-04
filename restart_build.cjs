@@ -1,7 +1,7 @@
-const { execSync } = require("child_process");
+const { execSync } = require('child_process');
 try {
-  execSync("npm run build", { stdio: "inherit" });
-  console.log("Build OK");
+  execSync('npm run build', { stdio: 'inherit' });
+  console.log('Build OK');
 } catch (e) {
-  console.error("Build failed");
+  console.error('Build failed');
 }
