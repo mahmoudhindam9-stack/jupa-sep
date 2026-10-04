@@ -61,7 +61,12 @@ import {
   Key,
   EyeOff,
   Eye,
+  AlertCircle,
+  Rocket,
+  Tag,
+  Globe,
 } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import {
@@ -135,6 +140,20 @@ function SystemUpdatePage() {
     error?: string;
   } | null>(null);
 
+  // GitHub Release State
+  const [releaseTagName, setReleaseTagName] = useState(`v${CURRENT_VERSION}`);
+  const [releaseTitle, setReleaseTitle] = useState(`Restocash ERP v${CURRENT_VERSION}`);
+  const [releaseNotes, setReleaseNotes] = useState(
+    `## 🚀 ما الجديد في الإصدار ${CURRENT_VERSION}:\n- إضافة واجهة تدقيق ومراجعة الورديات (Supabase Shift Audit Logs Viewer) وتتبع فتح وإغلاق الورديات.\n- معالجة وإلغاء فلترة الورديات السابقة وإصلاح مشاكل الورديات المخفية.\n- تحسين مسار الكاشير ونقاط البيع وإفراغ السلة تلقائياً بعد إتمام الدفع بنجاح.\n- إضافة واسترجاع بيانات الموظفين (erpStore.getEmployees) وتحديث واجهات النظام.\n- جاهزية كاملة للنشر التلقائي على Vercel والمزامنة مع GitHub.`,
+  );
+  const [isCreatingRelease, setIsCreatingRelease] = useState(false);
+  const [releaseResult, setReleaseResult] = useState<{
+    success?: boolean;
+    message?: string;
+    releaseUrl?: string;
+    error?: string;
+  } | null>(null);
+
   const handlePushToGitHub = async () => {
     if (!githubToken.trim()) {
       toast({
@@ -192,6 +211,73 @@ function SystemUpdatePage() {
       });
     } finally {
       setIsPushing(false);
+    }
+  };
+
+  const handleCreateGitHubRelease = async () => {
+    if (!githubToken.trim()) {
+      toast({
+        title: "رمز GitHub Token مطلوب",
+        description: "يرجى إدخال GitHub Personal Access Token (PAT) للمصادقة وتخويل إنشاء الإصدار.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      localStorage.setItem("restocash_github_pat_token", githubToken.trim());
+    } catch {}
+
+    setIsCreatingRelease(true);
+    setReleaseResult(null);
+    toast({
+      title: "جاري إنشاء ونشر الإصدار على GitHub...",
+      description: `يتم تجهيز الإصدار ${releaseTagName} ونشره على مستودع ${updateSettings.repo}...`,
+    });
+
+    try {
+      const res = await fetch("/api/github/release", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token: githubToken.trim(),
+          repo: updateSettings.repo,
+          tagName: releaseTagName.trim(),
+          releaseName: releaseTitle.trim(),
+          releaseNotes: releaseNotes.trim(),
+          targetCommitish: "main",
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setReleaseResult({
+          success: true,
+          message: data.message,
+          releaseUrl: data.release?.html_url,
+        });
+        toast({
+          title: "🎉 تم إنشاء الإصدار على GitHub بنجاح!",
+          description: `الإصدار ${releaseTagName} متاح الآن رسميًا على GitHub.`,
+        });
+        githubUpdateService.checkForUpdates(true).catch(() => {});
+      } else {
+        setReleaseResult({ error: data.error || "فشل إنشاء الإصدار" });
+        toast({
+          title: "فشل إنشاء الإصدار",
+          description: data.error || "حدث خطأ أثناء الاتصال بمستودع GitHub",
+          variant: "destructive",
+        });
+      }
+    } catch (err: any) {
+      setReleaseResult({ error: err.message || "تعذر إرسال طلب إنشاء الإصدار" });
+      toast({
+        title: "خطأ في الاتصال",
+        description: err.message || "تعذر الاتصال بالخادم",
+        variant: "destructive",
+      });
+    } finally {
+      setIsCreatingRelease(false);
     }
   };
 
@@ -1104,6 +1190,270 @@ git push origin main`}
                         خطأ <code className="text-amber-200">Authentication failed</code> عند
                         استخدام الطرفية، فإن GitHub يتطلب استخدام Token ككلمة مرور وليس كلمة مرور
                         الحساب العادية.
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Create New Official GitHub Release */}
+                  <div className="border border-purple-200 dark:border-purple-900/50 bg-gradient-to-br from-purple-50/50 via-indigo-50/20 to-purple-50/30 dark:from-purple-950/20 dark:via-indigo-950/10 dark:to-purple-950/20 rounded-2xl p-4 sm:p-5 space-y-4">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-purple-200/60 dark:border-purple-900/40 pb-3">
+                      <div className="flex items-center gap-2">
+                        <Rocket className="text-purple-600 dark:text-purple-400" size={20} />
+                        <div>
+                          <h4 className="font-black text-sm sm:text-base text-foreground">
+                            إنشاء ونشر إصدار رسمي جديد (New GitHub Release)
+                          </h4>
+                          <p className="text-xs text-muted-foreground">
+                            نشر علامة الإصدار (Tag) والملاحظات الرسمية في مستودع GitHub ليتمكن الجميع من معرفة التحديثات
+                          </p>
+                        </div>
+                      </div>
+                      <Badge
+                        variant="outline"
+                        className="font-mono text-xs border-purple-300 text-purple-700 bg-purple-50 dark:bg-purple-950/40 shrink-0"
+                      >
+                        <Tag size={12} className="ml-1 inline" />
+                        Tag: {releaseTagName}
+                      </Badge>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                              <Tag size={13} className="text-purple-600" />
+                              رقم الإصدار (Tag Name):
+                            </label>
+                            <Input
+                              value={releaseTagName}
+                              onChange={(e) => setReleaseTagName(e.target.value)}
+                              placeholder="v1.3.0"
+                              className="font-mono text-xs h-10 rounded-xl"
+                              dir="ltr"
+                            />
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-foreground block">
+                              عنوان الإصدار (Release Title):
+                            </label>
+                            <Input
+                              value={releaseTitle}
+                              onChange={(e) => setReleaseTitle(e.target.value)}
+                              placeholder={`Restocash ERP v${CURRENT_VERSION}`}
+                              className="text-xs h-10 rounded-xl"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-foreground flex items-center justify-between">
+                            <span>ملاحظات الإصدار وسجل التغييرات (Release Notes):</span>
+                            <span className="text-[10px] text-muted-foreground font-normal">يدعم تنسيق Markdown</span>
+                          </label>
+                          <Textarea
+                            value={releaseNotes}
+                            onChange={(e) => setReleaseNotes(e.target.value)}
+                            rows={5}
+                            placeholder="اكتب التغييرات والمميزات المضمنة في هذا الإصدار..."
+                            className="text-xs rounded-xl font-mono leading-relaxed"
+                          />
+                        </div>
+
+                        <Button
+                          onClick={handleCreateGitHubRelease}
+                          disabled={isCreatingRelease || !githubToken.trim()}
+                          className="w-full gap-2 font-black shadow-md bg-purple-600 hover:bg-purple-700 text-white text-xs sm:text-sm h-11 rounded-xl touch-manipulation"
+                        >
+                          <Rocket size={17} className={isCreatingRelease ? "animate-bounce" : ""} />
+                          {isCreatingRelease
+                            ? "جاري رفع ونشر الإصدار على GitHub..."
+                            : `نشر الإصدار ${releaseTagName} على GitHub الآن`}
+                        </Button>
+
+                        {releaseResult?.success && (
+                          <div className="p-3 bg-purple-100 dark:bg-purple-900/40 text-purple-900 dark:text-purple-200 rounded-xl text-xs font-bold space-y-2">
+                            <div className="flex items-center gap-2">
+                              <CheckCircle2 size={16} className="text-purple-600 shrink-0" />
+                              <span>{releaseResult.message}</span>
+                            </div>
+                            {releaseResult.releaseUrl && (
+                              <a
+                                href={releaseResult.releaseUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1.5 bg-purple-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-purple-700 transition-colors shadow-sm"
+                              >
+                                <ExternalLink size={13} />
+                                عرض صفحة الإصدار على GitHub
+                              </a>
+                            )}
+                          </div>
+                        )}
+
+                        {releaseResult?.error && (
+                          <div className="p-3 bg-rose-100 dark:bg-rose-900/40 text-rose-800 dark:text-rose-200 rounded-xl text-xs font-bold flex items-center gap-2">
+                            <AlertCircle size={16} className="text-rose-600 shrink-0" />
+                            <span>{releaseResult.error}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="bg-slate-950 text-slate-200 p-4 rounded-xl font-mono text-xs space-y-3 border border-slate-800 flex flex-col justify-between">
+                        <div className="space-y-2">
+                          <div className="text-[11px] text-purple-400 font-bold flex items-center justify-between">
+                            <span className="flex items-center gap-1.5">
+                              <Terminal size={14} />
+                              أوامر إنشاء الإصدار عبر الطرفية (Git CLI / GitHub CLI):
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const cmds = `git tag -a ${releaseTagName} -m "${releaseTitle}"\ngit push origin ${releaseTagName}\n# أو باستخدام GitHub CLI:\ngh release create ${releaseTagName} --title "${releaseTitle}" --notes "${releaseNotes.replace(/\n/g, " ")}"`;
+                                navigator.clipboard.writeText(cmds);
+                                toast({
+                                  title: "تم نسخ الأوامر",
+                                  description: "تم نسخ أوامر إنشاء الإصدار إلى الحافظة",
+                                });
+                              }}
+                              className="text-[10px] text-slate-400 hover:text-white underline font-normal"
+                            >
+                              نسخ الكل
+                            </button>
+                          </div>
+                          <pre
+                            className="text-[11px] text-slate-300 whitespace-pre-wrap leading-relaxed select-all"
+                            dir="ltr"
+                          >
+                            {`git tag -a ${releaseTagName} -m "${releaseTitle}"
+git push origin ${releaseTagName}
+
+# أو عبر GitHub CLI:
+gh release create ${releaseTagName} --title "${releaseTitle}" --generate-notes`}
+                          </pre>
+                        </div>
+
+                        <div className="text-[10px] text-slate-400 border-t border-slate-800 pt-2 leading-relaxed">
+                          💡 <strong className="text-purple-300">نصيحة:</strong> يتم ربط الإصدار تلقائياً بآخر التحديثات على الفرع <code className="text-purple-200 font-mono">main</code> ويظهر في صفحة Releases الرسمية لمستودعك.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Deploy on Vercel */}
+                  <div className="border border-sky-200 dark:border-sky-900/50 bg-gradient-to-br from-sky-50/60 via-blue-50/20 to-sky-50/30 dark:from-sky-950/20 dark:via-blue-950/10 dark:to-sky-950/20 rounded-2xl p-4 sm:p-5 space-y-4">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-sky-200/60 dark:border-sky-900/40 pb-3">
+                      <div className="flex items-center gap-2">
+                        <Globe className="text-sky-600 dark:text-sky-400" size={20} />
+                        <div>
+                          <h4 className="font-black text-sm sm:text-base text-foreground">
+                            النشر والتشغيل على منصة Vercel (Vercel Deployment)
+                          </h4>
+                          <p className="text-xs text-muted-foreground">
+                            نظام نشر سحابي فوري مرتبط بمستودع GitHub مع دعم التحديث التلقائي (Continuous Deployment)
+                          </p>
+                        </div>
+                      </div>
+                      <Badge
+                        variant="outline"
+                        className="font-mono text-xs border-sky-300 text-sky-700 bg-sky-50 dark:bg-sky-950/40 shrink-0"
+                      >
+                        Vercel Ready: vercel.json ✓
+                      </Badge>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-3">
+                        <div className="p-3.5 bg-white dark:bg-slate-900/80 rounded-xl border border-sky-100 dark:border-sky-900/40 space-y-2 text-xs">
+                          <div className="font-bold text-foreground flex items-center gap-1.5">
+                            <CheckCircle2 size={15} className="text-sky-600" />
+                            حالة تكوين ملف النشر vercel.json:
+                          </div>
+                          <ul className="space-y-1 text-muted-foreground list-disc list-inside text-[11px] leading-relaxed">
+                            <li><strong>Framework:</strong> Vite SPA</li>
+                            <li><strong>Build Command:</strong> <code className="bg-muted px-1.5 py-0.5 rounded text-foreground font-mono">npm run build</code></li>
+                            <li><strong>Output Directory:</strong> <code className="bg-muted px-1.5 py-0.5 rounded text-foreground font-mono">dist</code></li>
+                            <li><strong>Routing:</strong> إعادة توجيه لكافة المسارات إلى <code className="bg-muted px-1.5 py-0.5 rounded text-foreground font-mono">/index.html</code></li>
+                          </ul>
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-foreground block">
+                            طرق النشر المتاحة:
+                          </label>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <a
+                              href={`https://vercel.com/new/clone?repository-url=${encodeURIComponent(
+                                `https://github.com/${updateSettings.repo}`,
+                              )}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center justify-center gap-2 font-black shadow-md bg-black hover:bg-neutral-800 text-white text-xs h-10 px-3 rounded-xl transition-all"
+                            >
+                              <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 116 100">
+                                <path fillRule="evenodd" clipRule="evenodd" d="M57.5 0L115 100H0L57.5 0z" />
+                              </svg>
+                              ربط ونشر في Vercel (1-Click)
+                            </a>
+
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                const envVars = `VITE_SUPABASE_URL=https://myqtvbfibvgxkqwxvuru.supabase.co\nVITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im15cXR2YmZpYnZneGtxd3h2dXJ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ4MjY0NjgsImV4cCI6MjEwMDQwMjQ2OH0.LDFW826N2GRzG9WnLHgYxoeOcTkDOeLjTiFK6aQ-BSE\nVITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_srgqLn2ZvysGKh47yCQ0Kg_IW02yjDf`;
+                                navigator.clipboard.writeText(envVars);
+                                toast({
+                                  title: "تم نسخ متغيرات البيئة",
+                                  description: "تم نسخ متغيرات Vercel Environment Variables إلى الحافظة",
+                                });
+                              }}
+                              className="text-xs h-10 rounded-xl gap-1.5 border-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950 font-bold"
+                            >
+                              <Copy size={13} />
+                              نسخ متغيرات البيئة (.env) لـ Vercel
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="bg-slate-950 text-slate-200 p-4 rounded-xl font-mono text-xs space-y-3 border border-slate-800 flex flex-col justify-between">
+                        <div className="space-y-2">
+                          <div className="text-[11px] text-sky-400 font-bold flex items-center justify-between">
+                            <span className="flex items-center gap-1.5">
+                              <Terminal size={14} />
+                              أوامر النشر المباشر عبر Vercel CLI:
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const cmds = `npm install -g vercel\nvercel login\nvercel --prod`;
+                                navigator.clipboard.writeText(cmds);
+                                toast({
+                                  title: "تم نسخ أوامر Vercel CLI",
+                                  description: "تم نسخ الأوامر إلى الحافظة",
+                                });
+                              }}
+                              className="text-[10px] text-slate-400 hover:text-white underline font-normal"
+                            >
+                              نسخ الكل
+                            </button>
+                          </div>
+                          <pre
+                            className="text-[11px] text-slate-300 whitespace-pre-wrap leading-relaxed select-all"
+                            dir="ltr"
+                          >
+                            {`# تثبيت أداة Vercel عالمياً
+npm install -g vercel
+
+# تسجيل الدخول والنشر للإنتاج
+vercel login
+vercel --prod`}
+                          </pre>
+                        </div>
+
+                        <div className="text-[10px] text-slate-400 border-t border-slate-800 pt-2 leading-relaxed">
+                          ⚡ <strong className="text-sky-300">النشر التلقائي:</strong> بمجرد ربط المستودع في Vercel، أي عملية <code className="text-sky-200 font-mono">git push</code> أو إنشاء Release على الفرع <code className="text-sky-200 font-mono">main</code> ستقوم Vercel ببنائها ونشرها فورياً تلقائياً!
+                        </div>
                       </div>
                     </div>
                   </div>

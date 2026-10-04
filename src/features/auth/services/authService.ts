@@ -3,11 +3,29 @@ import { createClient } from "@supabase/supabase-js";
 import { Profile } from "@/shared/types";
 
 const getSecondaryClient = () => {
-  const url = import.meta.env.VITE_SUPABASE_URL || "https://myqtvbfibvgxkqwxvuru.supabase.co";
-  const key =
-    import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-    import.meta.env.VITE_SUPABASE_ANON_KEY ||
-    "sb_publishable_srgqLn2ZvysGKh47yCQ0Kg_IW02yjDf";
+  const DEFAULT_SUPABASE_URL = "https://myqtvbfibvgxkqwxvuru.supabase.co";
+  const rawUrl =
+    (typeof import.meta !== "undefined" && import.meta.env
+      ? import.meta.env.VITE_SUPABASE_URL
+      : undefined) ||
+    (typeof process !== "undefined" && process.env ? process.env.VITE_SUPABASE_URL : undefined);
+
+  const url =
+    rawUrl &&
+    typeof rawUrl === "string" &&
+    (rawUrl.startsWith("http://") || rawUrl.startsWith("https://"))
+      ? rawUrl.trim()
+      : DEFAULT_SUPABASE_URL;
+
+  let key =
+    (typeof import.meta !== "undefined" && import.meta.env
+      ? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY
+      : undefined) || "sb_publishable_srgqLn2ZvysGKh47yCQ0Kg_IW02yjDf";
+
+  if (!key || key.startsWith("http://") || key.startsWith("https://")) {
+    key = "sb_publishable_srgqLn2ZvysGKh47yCQ0Kg_IW02yjDf";
+  }
+
   return createClient(url, key, {
     auth: {
       persistSession: false,

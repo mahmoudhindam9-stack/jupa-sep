@@ -3,9 +3,9 @@
  * Provides single source of truth for app version and GitHub repo metadata
  */
 
-export const CURRENT_VERSION = "1.2.0";
-export const APP_RELEASE_NAME = "Restocash ERP v1.2.0";
-export const BUILD_DATE = "2026-09-29";
+export const CURRENT_VERSION = "1.3.0";
+export const APP_RELEASE_NAME = "Restocash ERP v1.3.0";
+export const BUILD_DATE = "2026-10-04";
 export const DEFAULT_GITHUB_REPO = "mahmoudhindam9-stack/jupa-sep";
 export const DEFAULT_GITHUB_REPO_URL = "https://github.com/mahmoudhindam9-stack/jupa-sep.git";
 

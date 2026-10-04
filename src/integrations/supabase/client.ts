@@ -10,6 +10,20 @@ function isValidSupabaseKey(key: string): boolean {
   return key.startsWith("eyJ") || isNewSupabaseApiKey(key);
 }
 
+function isValidHttpUrl(url: string | undefined | null): boolean {
+  if (!url || typeof url !== "string") return false;
+  const trimmed = url.trim();
+  if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
+    return false;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function createSupabaseFetch(supabaseKey: string): typeof fetch {
   return async (input, init) => {
     if (!isValidSupabaseKey(supabaseKey)) {
@@ -75,18 +89,20 @@ function createSupabaseFetch(supabaseKey: string): typeof fetch {
 }
 
 function createSupabaseClient() {
-  const SUPABASE_URL =
-    (typeof import.meta !== "undefined" && import.meta.env
-      ? import.meta.env.VITE_SUPABASE_URL
-      : undefined) ||
-    (typeof process !== "undefined" && process.env
-      ? process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL
-      : undefined) ||
-    "https://myqtvbfibvgxkqwxvuru.supabase.co";
-
+  const DEFAULT_SUPABASE_URL = "https://myqtvbfibvgxkqwxvuru.supabase.co";
   const MYQTV_PROJECT_REF = "myqtvbfibvgxkqwxvuru";
   const MYQTV_ANON_KEY =
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im15cXR2YmZpYnZneGtxd3h2dXJ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ4MjY0NjgsImV4cCI6MjEwMDQwMjQ2OH0.LDFW826N2GRzG9WnLHgYxoeOcTkDOeLjTiFK6aQ-BSE";
+
+  const rawUrlCandidates = [
+    typeof import.meta !== "undefined" && import.meta.env
+      ? import.meta.env.VITE_SUPABASE_URL
+      : undefined,
+    typeof process !== "undefined" && process.env ? process.env.VITE_SUPABASE_URL : undefined,
+    typeof process !== "undefined" && process.env ? process.env.SUPABASE_URL : undefined,
+  ];
+
+  let SUPABASE_URL = rawUrlCandidates.find(isValidHttpUrl) || DEFAULT_SUPABASE_URL;
 
   let SUPABASE_PUBLISHABLE_KEY =
     (typeof import.meta !== "undefined" && import.meta.env
@@ -98,6 +114,15 @@ function createSupabaseClient() {
         process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
         process.env.SUPABASE_PUBLISHABLE_KEY
       : undefined);
+
+  // If the key was mistakenly provided as a URL or is missing/invalid, fallback to default key
+  if (
+    !SUPABASE_PUBLISHABLE_KEY ||
+    SUPABASE_PUBLISHABLE_KEY.startsWith("http://") ||
+    SUPABASE_PUBLISHABLE_KEY.startsWith("https://")
+  ) {
+    SUPABASE_PUBLISHABLE_KEY = MYQTV_ANON_KEY;
+  }
 
   // If connected to myqtvbfibvgxkqwxvuru, ensure the key belongs to this project ref (prevent stale env tokens from other projects)
   if (

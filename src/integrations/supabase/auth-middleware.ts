@@ -8,6 +8,20 @@ function isNewSupabaseApiKey(value: string): boolean {
   return value.startsWith("sb_publishable_") || value.startsWith("sb_secret_");
 }
 
+function isValidHttpUrl(url: string | undefined | null): boolean {
+  if (!url || typeof url !== "string") return false;
+  const trimmed = url.trim();
+  if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
+    return false;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function createSupabaseFetch(supabaseKey: string): typeof fetch {
   return (input, init) => {
     const headers = new Headers(
@@ -33,15 +47,23 @@ function createSupabaseFetch(supabaseKey: string): typeof fetch {
 
 export const requireSupabaseAuth = createMiddleware({ type: "function" }).server(
   async ({ next }) => {
-    const SUPABASE_URL =
-      process.env.SUPABASE_URL ||
-      process.env.VITE_SUPABASE_URL ||
-      "https://myqtvbfibvgxkqwxvuru.supabase.co";
-    const SUPABASE_PUBLISHABLE_KEY =
+    const DEFAULT_SUPABASE_URL = "https://myqtvbfibvgxkqwxvuru.supabase.co";
+    const rawUrlCandidates = [process.env.SUPABASE_URL, process.env.VITE_SUPABASE_URL];
+    const SUPABASE_URL = rawUrlCandidates.find(isValidHttpUrl) || DEFAULT_SUPABASE_URL;
+
+    let SUPABASE_PUBLISHABLE_KEY =
       process.env.SUPABASE_PUBLISHABLE_KEY ||
       process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
       process.env.VITE_SUPABASE_ANON_KEY ||
       "sb_publishable_srgqLn2ZvysGKh47yCQ0Kg_IW02yjDf";
+
+    if (
+      !SUPABASE_PUBLISHABLE_KEY ||
+      SUPABASE_PUBLISHABLE_KEY.startsWith("http://") ||
+      SUPABASE_PUBLISHABLE_KEY.startsWith("https://")
+    ) {
+      SUPABASE_PUBLISHABLE_KEY = "sb_publishable_srgqLn2ZvysGKh47yCQ0Kg_IW02yjDf";
+    }
 
     const request = getRequest();
 

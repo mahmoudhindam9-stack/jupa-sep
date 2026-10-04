@@ -8,6 +8,22 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Sanitize malformed environment variables (e.g. if an API key was mistakenly assigned to SUPABASE_URL)
+if (
+  process.env.VITE_SUPABASE_URL &&
+  !process.env.VITE_SUPABASE_URL.startsWith("http://") &&
+  !process.env.VITE_SUPABASE_URL.startsWith("https://")
+) {
+  process.env.VITE_SUPABASE_URL = "https://myqtvbfibvgxkqwxvuru.supabase.co";
+}
+if (
+  process.env.SUPABASE_URL &&
+  !process.env.SUPABASE_URL.startsWith("http://") &&
+  !process.env.SUPABASE_URL.startsWith("https://")
+) {
+  process.env.SUPABASE_URL = "https://myqtvbfibvgxkqwxvuru.supabase.co";
+}
+
 export default defineConfig({
   plugins: [
     tanstackStart({
