@@ -16,7 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { erpStore, type Account } from "@/shared/services/erpStore";
 import { inventoryService } from "@/features/inventory/services/inventoryService";
-import { AuditOperationsModal } from "@/components/admin/AuditOperationsModal";
+import { AuditOperationsModal, AuditOperationsView } from "@/components/admin/AuditOperationsModal";
 import { ShiftAuditLogViewerModal } from "@/components/admin/ShiftAuditLogViewerModal";
 import { ShiftAuditLogViewer } from "@/components/admin/ShiftAuditLogViewer";
 import { TreasuryReportModal } from "@/components/admin/TreasuryReportModal";
@@ -100,13 +100,13 @@ function AdminDashboard() {
   const searchParams = new URLSearchParams(location.search);
   const tabParam = searchParams.get("tab") || "dashboard";
 
-  const [activeTab, setActiveTab] = useState(tabParam === "audit_logs" ? "dashboard" : tabParam);
+  const [activeTab, setActiveTab] = useState(tabParam || "dashboard");
   const [isAuditOperationsOpen, setIsAuditOperationsOpen] = useState(false);
   const [isShiftAuditModalOpen, setIsShiftAuditModalOpen] = useState(false);
 
   useEffect(() => {
     if (tabParam) {
-      setActiveTab(tabParam === "audit_logs" ? "dashboard" : tabParam);
+      setActiveTab(tabParam);
     }
   }, [tabParam]);
 
@@ -824,24 +824,10 @@ function AdminDashboard() {
             <Database size={16} className="ml-1.5 inline text-teal-600" />
             تدقيق الورديات (Supabase)
           </TabsTrigger>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setIsAuditOperationsOpen(true)}
-            className="rounded-lg font-bold py-2 px-4 h-auto gap-1.5"
-          >
-            <History size={16} />
+          <TabsTrigger value="audit_logs" className="rounded-lg font-bold py-2 px-4 text-indigo-700 dark:text-indigo-400">
+            <History size={16} className="ml-1.5 inline text-indigo-600" />
             سجل العمليات
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setIsShiftAuditModalOpen(true)}
-            className="rounded-lg font-bold py-2 px-4 h-auto gap-1.5 text-teal-600 border-teal-500/40 hover:bg-teal-500/10 cursor-pointer"
-          >
-            <Database size={16} />
-            تدقيق الورديات (Supabase)
-          </Button>
+          </TabsTrigger>
         </TabsList>
 
         {/* TAB 1: EXECUTIVE DASHBOARD */}
@@ -2079,6 +2065,11 @@ function AdminDashboard() {
         {/* TAB 5: SHIFT AUDIT LOGS (Supabase) */}
         <TabsContent value="shift_audit" className="space-y-6 mt-4">
           <ShiftAuditLogViewer />
+        </TabsContent>
+
+        {/* TAB 6: AUDIT OPERATIONS LOG (سجل العمليات والرقابة العامة) */}
+        <TabsContent value="audit_logs" className="space-y-6 mt-4">
+          <AuditOperationsView logs={erpState.auditLogs || []} />
         </TabsContent>
       </Tabs>
 
