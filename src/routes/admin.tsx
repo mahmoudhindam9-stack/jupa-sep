@@ -451,7 +451,7 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
           {(() => {
             const searchParams = new URLSearchParams(location.search);
             let required: string[] | undefined;
-            if (pathname === "/admin" && searchParams.has("tab")) {
+            if ((pathname === "/admin" || pathname === "/admin/") && searchParams.has("tab")) {
               required = nav.find((item) => item.search && item.search.tab === searchParams.get("tab"))?.permissionKeys
                 || ["__no_access_to_unmapped_page__"];
             } else if (pathname === "/admin" || pathname === "/admin/" || pathname === "/admin/index") {
