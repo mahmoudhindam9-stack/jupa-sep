@@ -2349,18 +2349,23 @@ export class ERPStore {
         if (e.key === "restocash_erp_state" && e.newValue) {
           try {
             const newState = JSON.parse(e.newValue);
-            const cleanedUsers = ensureCurrentManagedUsers(newState.users);
+            const originalUsers = Array.isArray(newState.users) ? newState.users : [];
+            const cleanedUsers = ensureCurrentManagedUsers(originalUsers);
             const normalizedCurrentUser = String(newState.currentUser || "").trim().toLowerCase();
             const cleanedCurrentUser = cleanedUsers.some(
               (user: any) => String(user.username || "").trim().toLowerCase() === normalizedCurrentUser,
             ) ? newState.currentUser : "";
+            const accountsChanged =
+              cleanedUsers.length !== originalUsers.length ||
+              cleanedCurrentUser !== (newState.currentUser || "");
             this.state = {
               ...newState,
               users: cleanedUsers,
               currentUser: cleanedCurrentUser,
               legacy_users_purged_2026_10_10: true,
             };
-            this.notify();
+            if (accountsChanged) this.saveState();
+            else this.notify();
           } catch (err) {
             console.error("Failed to parse ERP state from storage event:", err);
           }
@@ -2472,6 +2477,8 @@ export class ERPStore {
                   park_sales_hard_zero_reset_v4_2026_09_03: true,
                 };
                 this.recalculateAccountBalances();
+                this.saveState();
+                this.saveToIDB(this.state);
                 this.notify();
               }
             }
