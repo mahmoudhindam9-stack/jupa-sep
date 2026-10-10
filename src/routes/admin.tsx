@@ -141,7 +141,7 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
       if (!localRecord || typeof localRecord.password !== "string" || !localRecord.password) return null;
       const role = localRecord.role || "cashier";
       const permissions =
-        localRecord.permissions ||
+        (localRecord.permissions && Object.keys(localRecord.permissions).length > 0 ? localRecord.permissions : null) ||
         state.userPermissions?.[localRecord.username] ||
         state.userPermissions?.[role] ||
         {};
@@ -452,7 +452,8 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
             const searchParams = new URLSearchParams(location.search);
             let required: string[] | undefined;
             if (pathname === "/admin" && searchParams.has("tab")) {
-              required = nav.find((item) => item.search && item.search.tab === searchParams.get("tab"))?.permissionKeys;
+              required = nav.find((item) => item.search && item.search.tab === searchParams.get("tab"))?.permissionKeys
+                || ["__no_access_to_unmapped_page__"];
             } else if (pathname === "/admin" || pathname === "/admin/" || pathname === "/admin/index") {
               required = nav[0].permissionKeys;
             } else if (pathname.startsWith("/admin/accounts") || pathname.startsWith("/admin/ledger")) {
