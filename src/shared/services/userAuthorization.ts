@@ -39,7 +39,7 @@ export async function currentUserHasPermission(keys: string[]): Promise<boolean>
 
   const state: any = erpStore.getState();
   const permissions =
-    user.permissions ||
+    (user.permissions && Object.keys(user.permissions).length > 0 ? user.permissions : null) ||
     state.userPermissions?.[user.username] ||
     state.userPermissions?.[user.role] ||
     {};
