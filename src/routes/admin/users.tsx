@@ -1054,6 +1054,8 @@ function UsersPage() {
         "pos",
         "pos_access",
         "pos_apply_discounts",
+        "treasury_view",
+        "treasury_open_close",
         "delivery",
         "delivery_view",
         "delivery_update_status",
