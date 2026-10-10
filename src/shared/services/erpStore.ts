@@ -250,6 +250,7 @@ export interface SystemUser {
   phone: string;
   role: string;
   password?: string;
+  permissions?: UserPermission;
   created_at: string;
 }
 
@@ -2146,35 +2147,22 @@ const DEFAULT_SUPPLIERS: Supplier[] = ORACLE_MIGRATION_ACCOUNTS.filter(
   deleted: false,
 }));
 
-const DEFAULT_USERS: SystemUser[] = [
-  {
-    id: "u-admin",
-    full_name: "مدير النظام (Super Admin)",
-    username: "admin",
-    password: "123456",
-    phone: "01000000000",
-    role: "admin",
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "u-manager",
-    full_name: "مشرف الفرع",
-    username: "manager",
-    password: "123456",
-    phone: "01000000001",
-    role: "manager",
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "u-cashier",
-    full_name: "كاشير الصالة",
-    username: "cashier",
-    password: "123456",
-    phone: "01000000002",
-    role: "cashier",
-    created_at: new Date().toISOString(),
-  },
-];
+const LEGACY_DEFAULT_USER_IDS = new Set(["u-admin", "u-manager", "u-cashier"]);
+
+/**
+ * User Management is the only account source. Remove bundled demo accounts, but
+ * retain every record created by the current Users page for reconciliation.
+ */
+function ensureCurrentManagedUsers(users: unknown): SystemUser[] {
+  if (!Array.isArray(users)) return [];
+  return users.filter(
+    (user: any) =>
+      user &&
+      !LEGACY_DEFAULT_USER_IDS.has(String(user.id || "")) &&
+      typeof user.username === "string" &&
+      user.username.trim().length > 0,
+  ) as SystemUser[];
+}
 
 const DEFAULT_PERMISSIONS: Record<string, UserPermission> = {
   admin: {
@@ -2290,6 +2278,17 @@ export class ERPStore {
   listeners = [];
   constructor() {
     this.state = this.loadState();
+    this.state.users = ensureCurrentManagedUsers(this.state.users);
+    const activeLocalUsername = String(this.state.currentUser || "").trim().toLowerCase();
+    if (activeLocalUsername && !this.state.users.some(
+      (user: any) => String(user.username || "").trim().toLowerCase() === activeLocalUsername,
+    )) {
+      this.state.currentUser = "";
+    }
+    this.state.legacy_users_purged_2026_10_10 = true;
+    if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
+      try { localStorage.setItem("erp_store_state", JSON.stringify(this.state)); } catch { /* IndexedDB will persist the cleaned state. */ }
+    }
     if (!this.state.park_sales_hard_zero_reset_v4_2026_09_03) {
       this.state.parkShifts = [];
       this.state.parkActiveShift = null;
@@ -2350,7 +2349,17 @@ export class ERPStore {
         if (e.key === "restocash_erp_state" && e.newValue) {
           try {
             const newState = JSON.parse(e.newValue);
-            this.state = newState;
+            const cleanedUsers = ensureCurrentManagedUsers(newState.users);
+            const normalizedCurrentUser = String(newState.currentUser || "").trim().toLowerCase();
+            const cleanedCurrentUser = cleanedUsers.some(
+              (user: any) => String(user.username || "").trim().toLowerCase() === normalizedCurrentUser,
+            ) ? newState.currentUser : "";
+            this.state = {
+              ...newState,
+              users: cleanedUsers,
+              currentUser: cleanedCurrentUser,
+              legacy_users_purged_2026_10_10: true,
+            };
             this.notify();
           } catch (err) {
             console.error("Failed to parse ERP state from storage event:", err);
@@ -2417,6 +2426,23 @@ export class ERPStore {
                 this.saveToIDB(idbState);
               }
 
+              const originalIdbUsers = Array.isArray(idbState.users) ? idbState.users : [];
+              const cleanedIdbUsers = ensureCurrentManagedUsers(originalIdbUsers);
+              const idbCurrentName = String(idbState.currentUser || "").trim().toLowerCase();
+              const cleanedIdbCurrentUser = cleanedIdbUsers.some(
+                (user: any) => String(user.username || "").trim().toLowerCase() === idbCurrentName,
+              ) ? idbState.currentUser : "";
+              const idbUserStateChanged =
+                cleanedIdbUsers.length !== originalIdbUsers.length ||
+                cleanedIdbCurrentUser !== (idbState.currentUser || "") ||
+                idbState.legacy_users_purged_2026_10_10 !== true;
+              if (idbUserStateChanged) {
+                idbState.users = cleanedIdbUsers;
+                idbState.currentUser = cleanedIdbCurrentUser;
+                idbState.legacy_users_purged_2026_10_10 = true;
+                this.saveToIDB(idbState);
+              }
+
               const idbEntriesCount = idbState.journalEntries?.length || 0;
               const currentEntriesCount = this.state.journalEntries?.length || 0;
               const idbUpdated = idbState._updatedAt || 0;
@@ -2429,6 +2455,11 @@ export class ERPStore {
                 this.state = {
                   ...this.getDefaultState(),
                   ...idbState,
+                  users: ensureCurrentManagedUsers(idbState.users),
+                  currentUser: ensureCurrentManagedUsers(idbState.users).some(
+                    (user: any) => String(user.username || "").trim().toLowerCase() === String(idbState.currentUser || "").trim().toLowerCase(),
+                  ) ? idbState.currentUser : "",
+                  legacy_users_purged_2026_10_10: true,
                   parkShifts: idbState.park_sales_hard_zero_reset_v4_2026_09_03
                     ? cleanedIdbShifts
                     : [],
@@ -2691,8 +2722,8 @@ export class ERPStore {
           })),
           reconciliations: loadedReconciliations,
           userPermissions: parsed.userPermissions || DEFAULT_PERMISSIONS,
-          currentUser: parsed.currentUser || "admin",
-          users: parsed.users || DEFAULT_USERS,
+          currentUser: parsed.currentUser || "",
+          users: ensureCurrentManagedUsers(parsed.users),
           fiscalYearStatus: parsed.fiscalYearStatus || "open",
           inventorySettings: parsed.inventorySettings || {
             allowNegativeStock: true,
@@ -2845,8 +2876,8 @@ export class ERPStore {
       inventoryDocuments: [],
       reconciliations: [],
       userPermissions: DEFAULT_PERMISSIONS,
-      currentUser: "admin",
-      users: DEFAULT_USERS,
+      currentUser: "",
+      users: [],
       fiscalYearStatus: "open",
       inventorySettings: {
         allowNegativeStock: true,
@@ -2982,7 +3013,11 @@ export class ERPStore {
   }
   deleteUser(id) {
     if (!this.state.users) return;
-    this.state.users = this.state.users.filter((u) => u.id !== id);
+    const target = this.state.users.find((user) => user.id === id);
+    this.state.users = this.state.users.filter((user) => user.id !== id);
+    const username = String(target?.username || "").trim().toLowerCase();
+    const reservedRoleNames = new Set(["admin", "super_admin", "manager", "cashier", "captain", "kitchen"]);
+    if (username && !reservedRoleNames.has(username)) delete this.state.userPermissions?.[username];
     this.saveState();
   }
   setCurrentUser(email) {
