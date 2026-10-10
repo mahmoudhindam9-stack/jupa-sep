@@ -981,10 +981,9 @@ function UsersPage() {
 
   const togglePermission = (key: keyof UserPermission) => {
     if (!editedPermissions) return;
-    setEditedPermissions({
-      ...editedPermissions,
-      [key]: !editedPermissions[key],
-    });
+    const updated: any = { ...editedPermissions, [key]: !editedPermissions[key] };
+    if (key !== "super_admin_full_access") updated.super_admin_full_access = false;
+    setEditedPermissions(updated);
   };
 
   const toggleCategoryPerms = (category: PermissionCategory, forceValue?: boolean) => {
@@ -995,6 +994,7 @@ function UsersPage() {
     category.permissions.forEach((p) => {
       updated[p.key] = targetValue;
     });
+    updated.super_admin_full_access = false;
     setEditedPermissions(updated);
   };
 
