@@ -511,10 +511,92 @@ const PERMISSION_CATEGORIES: PermissionCategory[] = [
   },
 ];
 
+function isHostedDeployment(): boolean {
+  if (typeof window === "undefined") return false;
+  const host = window.location.hostname.toLowerCase();
+  return !["localhost", "127.0.0.1", "::1", "[::1]"].includes(host) && !host.endsWith(".localhost");
+}
+
+function profileToSystemUser(profile: any): SystemUser {
+  return {
+    id: profile.id,
+    full_name: profile.full_name || profile.username || "",
+    username: profile.username || String(profile.email || "").split("@")[0],
+    phone: profile.phone || "",
+    role: profile.role || "cashier",
+    permissions: (profile.permissions || {}) as UserPermission,
+    created_at: profile.created_at || new Date().toISOString(),
+  };
+}
+
+function localLoginUsers(): SystemUser[] {
+  return erpStore.getUsers().filter(
+    (user) => typeof user.password === "string" && user.password.length > 0,
+  );
+}
+
+function isActiveUserRecord(user: SystemUser | null | undefined): boolean {
+  if (!user) return false;
+  const activeValue =
+    (typeof window !== "undefined" && (localStorage.getItem("restocash_auth_user") || sessionStorage.getItem("restocash_auth_user"))) || "";
+  const active = activeValue.trim().toLowerCase();
+  const storedUsername = String(user.username || "").trim().toLowerCase();
+  if (!active || !storedUsername) return false;
+  return active === storedUsername || active.split("@")[0] === storedUsername.split("@")[0];
+}
+
+function hasDetailedAcl(value: Record<string, any> | null | undefined): boolean {
+  if (!value) return false;
+  return Object.keys(value).some((key) =>
+    key.includes("_view") ||
+    key.endsWith("_access") ||
+    key.startsWith("system_") ||
+    key.startsWith("maintenance_") ||
+    key.startsWith("mall_") ||
+    key === "super_admin_full_access",
+  );
+}
+
+function samePermissionMap(left: Record<string, any> | null | undefined, right: Record<string, any> | null | undefined): boolean {
+  const a = left || {};
+  const b = right || {};
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  return [...keys].every((key) => a[key] === b[key]);
+}
+
+function defaultPermissionsForRole(role: string): UserPermission {
+  const permissions: Record<string, boolean> = {};
+  PERMISSION_CATEGORIES.forEach((category) => {
+    category.permissions.forEach((permission) => { permissions[permission.key] = false; });
+  });
+  if (role === "admin" || role === "super_admin") {
+    PERMISSION_CATEGORIES.forEach((category) => {
+      category.permissions.forEach((permission) => { permissions[permission.key] = true; });
+    });
+    return permissions as UserPermission;
+  }
+  if (role === "manager") {
+    const allowedCategories = ["orders_sales", "inventory_section", "purchasing_section", "accounting_section", "approvals_section", "reports_section", "hr_section"];
+    PERMISSION_CATEGORIES.forEach((category) => {
+      if (allowedCategories.includes(category.id)) {
+        category.permissions.forEach((permission) => { permissions[permission.key] = true; });
+      }
+    });
+    return permissions as UserPermission;
+  }
+  const roleKeys: Record<string, string[]> = {
+    cashier: ["orders", "orders_view", "orders_create_custom", "orders_manage_carts", "orders_generate_qr", "pos", "pos_access", "pos_apply_discounts", "delivery", "delivery_view", "delivery_update_status"],
+    captain: ["captain", "captain_access", "captain_create_order", "captain_transfer_tables", "captain_modify_items", "orders", "orders_view"],
+    kitchen: ["kitchen", "kitchen_view", "kitchen_change_status", "kitchen_modify_order"],
+  };
+  (roleKeys[role] || roleKeys.cashier).forEach((key) => { permissions[key] = true; });
+  return permissions as UserPermission;
+}
+
 function UsersPage() {
   const { toast } = useToast();
   const [erpState, setErpState] = useState(erpStore.getState());
-  const [localUsers, setLocalUsers] = useState(erpStore.getUsers());
+  const [localUsers, setLocalUsers] = useState(isHostedDeployment() ? [] : localLoginUsers());
 
   // Delete User State
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
@@ -582,67 +664,253 @@ function UsersPage() {
   };
 
   useEffect(() => {
-    const unsub = erpStore.subscribe(() => {
-      setLocalUsers(erpStore.getUsers());
+    let mounted = true;
+    const hosted = isHostedDeployment();
+    const unsubscribe = erpStore.subscribe(() => {
+      if (!mounted) return;
       setErpState(erpStore.getState());
+      if (!hosted) setLocalUsers(localLoginUsers());
     });
-    return unsub;
+
+    const loadHostedUsers = async () => {
+      const profiles = await authService.getUsers() as any[];
+      if (!mounted) return;
+
+      // Reconcile accounts previously created by the Users page that only existed
+      // in local ERP state, and preserve their manually assigned role/ACL in profiles.
+      const state: any = erpStore.getState();
+      const legacyUsers: SystemUser[] = (state.users || []).filter((user: any) =>
+        user &&
+        /^u-\d+$/.test(String(user.id || "")) &&
+        user.username &&
+        !["u-admin", "u-manager", "u-cashier"].includes(String(user.id)),
+      );
+      const legacyByUsername = new Map(
+        legacyUsers.map((user) => [String(user.username).trim().toLowerCase(), user]),
+      );
+      const matchedIds = new Set<string>();
+      const reconciledProfiles: any[] = [];
+
+      for (const profile of profiles) {
+        const username = String(profile.username || "").trim().toLowerCase();
+        const legacy = legacyByUsername.get(username);
+        if (!legacy) {
+          reconciledProfiles.push(profile);
+          continue;
+        }
+        matchedIds.add(legacy.id);
+        const cachedPermissions = legacy.permissions || state.userPermissions?.[legacy.username] || {};
+        const desiredPermissions = cachedPermissions.super_admin_full_access === true
+          ? defaultPermissionsForRole("super_admin")
+          : hasDetailedAcl(cachedPermissions)
+            ? cachedPermissions
+            : defaultPermissionsForRole(legacy.role || profile.role || "cashier");
+        const desired = {
+          id: profile.id,
+          username: profile.username,
+          full_name: legacy.full_name || profile.full_name || profile.username,
+          phone: legacy.phone || profile.phone || "",
+          role: legacy.role || profile.role || "cashier",
+          permissions: desiredPermissions,
+        };
+        const changed =
+          desired.full_name !== profile.full_name ||
+          desired.phone !== (profile.phone || "") ||
+          desired.role !== profile.role ||
+          !samePermissionMap(desired.permissions, profile.permissions);
+        if (changed) {
+          try {
+            reconciledProfiles.push(await authService.upsertProfile({ ...desired, updated_at: new Date().toISOString() }));
+          } catch (error) {
+            console.error("Could not migrate an existing Users-page account to profiles.", error);
+            reconciledProfiles.push(profile);
+            continue;
+          }
+        } else {
+          reconciledProfiles.push(profile);
+        }
+        erpStore.deleteUser(legacy.id);
+      }
+      // A leftover local copy without a matching Auth profile cannot log in online.
+      for (const legacy of legacyUsers) {
+        if (!matchedIds.has(legacy.id)) erpStore.deleteUser(legacy.id);
+      }
+      if (mounted) setLocalUsers(reconciledProfiles.map(profileToSystemUser));
+    };
+
+    if (hosted) {
+      loadHostedUsers().catch((error) => {
+        console.error("Failed to load the hosted Users page directory.", error);
+        if (mounted) toast({
+          title: "تعذر تحميل المستخدمين من قاعدة البيانات",
+          description: "تأكد من صلاحية إدارة المستخدمين وأن ترحيل صلاحيات صفحة المستخدمين تم تطبيقه.",
+          variant: "destructive",
+        });
+      });
+    } else {
+      setLocalUsers(localLoginUsers());
+    }
+
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
   }, []);
 
   const upsert = async () => {
-    const emailToUse = form.username.includes("@")
-      ? form.username
-      : `${form.username}@restocash.local`;
+    const username = form.username.trim();
+    const normalizedUsername = username.toLowerCase();
+    const emailToUse = username.includes("@") ? normalizedUsername : `${normalizedUsername}@restocash.local`;
 
-    if (editing) {
-      // In a real app we'd also update Supabase if email/password changed,
-      // but for this MVP we just update the local metadata.
-      erpStore.upsertUser({
-        ...editing,
-        full_name: form.full_name,
-        username: form.username,
-        phone: form.phone,
-        role: form.role,
-        ...(form.password ? { password: form.password } : {}),
-      });
-      setEditing(null);
-    } else {
-      try {
-        await authService.signUpNewUser(emailToUse, form.password || "12345678", {
-          full_name: form.full_name,
-          phone: form.phone,
+    try {
+      if (isHostedDeployment()) {
+        const profiles = await authService.getUsers() as any[];
+        if (editing) {
+          if (form.password.trim()) {
+            toast({
+              title: "تغيير كلمة مرور الإنترنت غير متاح من شاشة التعديل",
+              description: "اترك حقل كلمة المرور فارغًا وعدّل الاسم والدور والصلاحيات فقط.",
+              variant: "destructive",
+            });
+            return;
+          }
+          const currentProfile = profiles.find((profile) => profile.id === editing.id)
+            || profiles.find((profile) => String(profile.username || "").toLowerCase() === editing.username.toLowerCase());
+          if (!currentProfile) throw new Error("الحساب غير موجود في قائمة المستخدمين المشتركة.");
+          const permissions = editing.permissions
+            || erpState.userPermissions[editing.username]
+            || defaultPermissionsForRole(form.role);
+          const saved = await authService.upsertProfile({
+            id: currentProfile.id,
+            username: currentProfile.username,
+            full_name: form.full_name.trim(),
+            phone: form.phone.trim(),
+            role: form.role,
+            permissions,
+            updated_at: new Date().toISOString(),
+          });
+          erpStore.upsertUser(profileToSystemUser(saved));
+          setLocalUsers((await authService.getUsers()).map(profileToSystemUser));
+          setEditing(null);
+          setForm({ full_name: "", username: "", phone: "", password: "", role: "cashier" });
+          setIsConfirmUpsertOpen(false);
+          toast({ title: "تم تحديث المستخدم في القائمة المشتركة" });
+          return;
+        }
+
+        if (profiles.some((profile) => String(profile.username || "").trim().toLowerCase() === normalizedUsername)) {
+          throw new Error("اسم المستخدم موجود بالفعل. اختر اسم دخول مختلفًا.");
+        }
+        if (!form.password || form.password.length < 8) {
+          throw new Error("كلمة مرور حساب الإنترنت يجب أن تكون 8 أحرف على الأقل.");
+        }
+        const created = await authService.signUpNewUser(emailToUse, form.password, {
+          username: normalizedUsername,
+          full_name: form.full_name.trim(),
+          phone: form.phone.trim(),
           role: form.role,
         });
-      } catch (err: any) {
-        toast({
-          title: "خطأ في إنشاء المستخدم",
-          description: err.message || "حدث خطأ غير معروف",
-          variant: "destructive",
+        if (!created?.user?.id) throw new Error("لم يرجع Supabase معرّف الحساب؛ راجع إعدادات التسجيل وتأكيد البريد الإلكتروني.");
+        const permissions = defaultPermissionsForRole(form.role);
+        const profile = await authService.upsertProfile({
+          id: created.user.id,
+          username: normalizedUsername,
+          full_name: form.full_name.trim(),
+          phone: form.phone.trim(),
+          role: form.role,
+          permissions,
         });
+        erpStore.upsertUser(profileToSystemUser(profile));
+        setLocalUsers((await authService.getUsers()).map(profileToSystemUser));
+        setForm({ full_name: "", username: "", phone: "", password: "", role: "cashier" });
         setIsConfirmUpsertOpen(false);
+        toast({ title: "تم إنشاء الحساب وحفظ صلاحياته في صفحة المستخدمين" });
         return;
       }
 
-      erpStore.upsertUser({
+      if (editing) {
+        const updated: SystemUser = {
+          ...editing,
+          full_name: form.full_name.trim(),
+          username,
+          phone: form.phone.trim(),
+          role: form.role,
+          permissions: editing.permissions || erpState.userPermissions[editing.username] || defaultPermissionsForRole(form.role),
+          ...(form.password ? { password: form.password } : {}),
+        };
+        erpStore.upsertUser(updated);
+        if (form.password) erpStore.updateUserPermission(username, updated.permissions || {});
+        setLocalUsers(localLoginUsers());
+        setEditing(null);
+        setForm({ full_name: "", username: "", phone: "", password: "", role: "cashier" });
+        setIsConfirmUpsertOpen(false);
+        toast({ title: "تم تحديث المستخدم المحلي" });
+        return;
+      }
+
+      if (!form.password) throw new Error("أدخل كلمة مرور للحساب الجديد.");
+      const duplicate = localLoginUsers().some((user) => String(user.username).trim().toLowerCase() === normalizedUsername);
+      if (duplicate) throw new Error("اسم المستخدم موجود بالفعل.");
+      const permissions = defaultPermissionsForRole(form.role);
+      const localUser: SystemUser = {
         id: `u-${Date.now()}`,
-        full_name: form.full_name,
-        username: form.username,
-        phone: form.phone,
+        full_name: form.full_name.trim(),
+        username,
+        phone: form.phone.trim(),
         role: form.role,
         password: form.password,
+        permissions,
         created_at: new Date().toISOString(),
+      };
+      erpStore.upsertUser(localUser);
+      erpStore.updateUserPermission(username, permissions);
+      setLocalUsers(localLoginUsers());
+      setForm({ full_name: "", username: "", phone: "", password: "", role: "cashier" });
+      setIsConfirmUpsertOpen(false);
+      toast({ title: "تم إنشاء المستخدم المحلي وصلاحياته" });
+    } catch (error: any) {
+      toast({
+        title: editing ? "تعذر تحديث المستخدم" : "تعذر إنشاء المستخدم",
+        description: error?.message || "حدث خطأ أثناء حفظ حساب المستخدم وصلاحياته.",
+        variant: "destructive",
       });
     }
-    setForm({ full_name: "", username: "", phone: "", password: "", role: "cashier" });
-    setIsConfirmUpsertOpen(false);
   };
 
-  const deleteUser = () => {
-    if (userToDelete) {
-      erpStore.deleteUser(userToDelete);
+  const deleteUser = async () => {
+    if (!userToDelete) return;
+    const target = localUsers.find((user) => user.id === userToDelete);
+    if (isActiveUserRecord(target)) {
+      toast({
+        title: "لا يمكن حذف الحساب المستخدم حاليًا",
+        description: "سجّل الدخول بحساب آخر لديه صلاحية إدارة المستخدمين أولًا.",
+        variant: "destructive",
+      });
+      setUserToDelete(null);
+      setIsConfirmDeleteOpen(false);
+      return;
     }
-    setUserToDelete(null);
-    setIsConfirmDeleteOpen(false);
+    try {
+      if (isHostedDeployment()) {
+        await authService.deleteUser(userToDelete);
+        erpStore.deleteUser(userToDelete);
+        setLocalUsers((await authService.getUsers()).map(profileToSystemUser));
+        toast({ title: "تم حذف حساب الدخول وصلاحياته نهائيًا" });
+      } else {
+        erpStore.deleteUser(userToDelete);
+        setLocalUsers(localLoginUsers());
+        toast({ title: "تم حذف المستخدم المحلي" });
+      }
+    } catch (error: any) {
+      toast({
+        title: "تعذر حذف المستخدم",
+        description: error?.message || "راجع صلاحية إدارة المستخدمين ثم حاول مرة أخرى.",
+        variant: "destructive",
+      });
+    } finally {
+      setUserToDelete(null);
+      setIsConfirmDeleteOpen(false);
+    }
   };
 
   const startEdit = (p: SystemUser) => {
@@ -661,18 +929,54 @@ function UsersPage() {
 
   const openPermissionsForUser = (user: SystemUser) => {
     setPermissionsUser(user);
-    const currentPerms = erpState.userPermissions[user.username] || {};
-    setEditedPermissions({ ...currentPerms });
+    const statePermissions = erpState.userPermissions[user.username];
+    const profilePermissions = user.permissions && Object.keys(user.permissions).length > 0 ? user.permissions : null;
+    const currentPermissions = profilePermissions || statePermissions || defaultPermissionsForRole(user.role);
+    setEditedPermissions({
+      ...((currentPermissions as any).super_admin_full_access === true
+        ? defaultPermissionsForRole("super_admin")
+        : currentPermissions),
+    });
   };
 
-  const handleSavePermissions = () => {
-    if (permissionsUser && editedPermissions) {
-      erpStore.updateUserPermission(permissionsUser.username, editedPermissions);
+  const handleSavePermissions = async () => {
+    if (!permissionsUser || !editedPermissions) return;
+    try {
+      if (isHostedDeployment()) {
+        const saved = await authService.upsertProfile({
+          id: permissionsUser.id,
+          username: permissionsUser.username,
+          full_name: permissionsUser.full_name,
+          phone: permissionsUser.phone,
+          role: permissionsUser.role,
+          permissions: editedPermissions,
+          updated_at: new Date().toISOString(),
+        });
+        erpStore.updateUserPermission(permissionsUser.username, editedPermissions);
+        erpStore.upsertUser(profileToSystemUser(saved));
+        setLocalUsers((await authService.getUsers()).map(profileToSystemUser));
+      } else {
+        erpStore.updateUserPermission(permissionsUser.username, editedPermissions);
+        erpStore.upsertUser({ ...permissionsUser, permissions: editedPermissions });
+        setLocalUsers(localLoginUsers());
+      }
       setErpState(erpStore.getState());
+      setIsConfirmSavePermsOpen(false);
+      setPermissionsUser(null);
+      setEditedPermissions(null);
+      toast({
+        title: "تم حفظ الصلاحيات",
+        description: isHostedDeployment()
+          ? "تم حفظ الصلاحيات في قاعدة البيانات المشتركة وستُطبّق عند تسجيل الدخول."
+          : "تم حفظ الصلاحيات على هذا الجهاز.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "تعذر حفظ الصلاحيات",
+        description: error?.message || "لم يتم حفظ تغييرات الصلاحيات؛ تحقق من صلاحيتك.",
+        variant: "destructive",
+      });
     }
-    setIsConfirmSavePermsOpen(false);
-    setPermissionsUser(null);
-    setEditedPermissions(null);
   };
 
   const togglePermission = (key: keyof UserPermission) => {
@@ -819,6 +1123,7 @@ function UsersPage() {
             <Input
               className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1"
               placeholder="مثال: admin"
+              disabled={!!editing && isHostedDeployment()}
               value={form.username}
               onChange={(e) => setForm((s) => ({ ...s, username: e.target.value }))}
             />
@@ -838,6 +1143,7 @@ function UsersPage() {
               type="password"
               className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1"
               placeholder={editing ? "اتركه فارغاً لعدم التغيير" : "الرقم السري"}
+              disabled={!!editing && isHostedDeployment()}
               value={form.password}
               onChange={(e) => setForm((s) => ({ ...s, password: e.target.value }))}
             />
@@ -934,7 +1240,7 @@ function UsersPage() {
                         setUserToDelete(u.id);
                         setIsConfirmDeleteOpen(true);
                       }}
-                      disabled={u.username === "admin"}
+                      disabled={isActiveUserRecord(u)}
                     >
                       <Trash2 size={14} />
                     </Button>
