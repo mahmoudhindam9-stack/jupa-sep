@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { currentUserHasPermission, signOutCurrentUser } from "@/shared/services/userAuthorization";
 import { RestocashLogo } from "@/components/RestocashLogo";
 import {
   getReceiptDesignSettings,
@@ -67,7 +68,7 @@ export const Route = createFileRoute("/pos")({
       },
     ],
   }),
-  component: Index,
+  component: PosAccessGate,
 });
 
 type Category = { id: string; name_ar: string; sort_order: number };
@@ -114,13 +115,53 @@ const additionsList = [
   { id: "water", label_ar: "مياه معدنية", label_en: "Mineral Water", price: 10 },
 ];
 
+function PosAccessGate() {
+  const navigate = useNavigate();
+  const [accessState, setAccessState] = useState<"checking" | "allowed" | "denied">("checking");
+  useEffect(() => {
+    let active = true;
+    currentUserHasPermission(["pos", "pos_access"])
+      .then((allowed) => { if (active) setAccessState(allowed ? "allowed" : "denied"); })
+      .catch((error) => {
+        console.error("POS route authorization failed.", error);
+        if (active) setAccessState("denied");
+      });
+    return () => { active = false; };
+  }, []);
+
+  if (accessState === "allowed") return <Index />;
+  if (accessState === "checking") {
+    return <div className="min-h-screen flex items-center justify-center text-sm font-bold text-muted-foreground">جاري التحقق من صلاحيات حسابك…</div>;
+  }
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background p-6" dir="rtl">
+      <div role="alert" className="max-w-md rounded-2xl border border-border bg-card p-8 text-center shadow-sm space-y-4">
+        <h1 className="text-xl font-black text-foreground">ليس لديك صلاحية نقطة البيع</h1>
+        <p className="text-sm text-muted-foreground">يجب تفعيل صلاحية نقطة البيع من صفحة المستخدمين قبل فتح هذه الشاشة.</p>
+        <div className="flex flex-wrap justify-center gap-2">
+          <button className="rounded-lg bg-primary px-4 py-2 text-primary-foreground" onClick={() => navigate({ to: "/admin" })}>العودة إلى لوحة الإدارة</button>
+          <button className="rounded-lg border px-4 py-2" onClick={async () => { await signOutCurrentUser(); navigate({ to: "/login" }); }}>تسجيل الخروج</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Index() {
   const navigate = useNavigate();
-  const [user, setUser] = useState<{ email?: string } | null>({ email: "admin@restaurant.com" });
+  const [user, setUser] = useState<{ email?: string } | null>(null);
 
   useEffect(() => {
-    // Authentication check disabled - bypassing login
-  }, [navigate]);
+    let mounted = true;
+    const storedUser =
+      localStorage.getItem("restocash_auth_user") ||
+      sessionStorage.getItem("restocash_auth_user");
+    if (storedUser) setUser({ email: storedUser });
+    supabase.auth.getSession().then(({ data }) => {
+      if (mounted && data.session?.user?.email) setUser({ email: data.session.user.email });
+    }).catch((error) => console.error("Could not load active POS identity.", error));
+    return () => { mounted = false; };
+  }, []);
 
   const {
     lang,

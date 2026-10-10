@@ -103,8 +103,11 @@ export const authService = {
 
   async deleteUser(id: string): Promise<void> {
     if (!id?.trim()) throw new Error("User id is required.");
-    const { error } = await supabase.from("profiles").delete().eq("id", id);
+    const { data, error } = await (supabase as any).rpc("delete_managed_user", {
+      target_user_id: id,
+    });
     if (error) throw error;
+    if (data !== true) throw new Error("Account deletion was not confirmed by Supabase.");
   },
 
   async signUpNewUser(email: string, password: string, profileData: any) {

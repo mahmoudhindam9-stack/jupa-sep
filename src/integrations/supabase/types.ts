@@ -197,25 +197,31 @@ export type Database = {
           created_at: string;
           full_name: string | null;
           id: string;
+          permissions: Json;
           phone: string | null;
           role: string;
           updated_at: string;
+          username: string | null;
         };
         Insert: {
           created_at?: string;
           full_name?: string | null;
           id: string;
+          permissions?: Json;
           phone?: string | null;
           role?: string;
           updated_at?: string;
+          username?: string | null;
         };
         Update: {
           created_at?: string;
           full_name?: string | null;
           id?: string;
+          permissions?: Json;
           phone?: string | null;
           role?: string;
           updated_at?: string;
+          username?: string | null;
         };
         Relationships: [];
       };
@@ -311,7 +317,10 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never;
+      delete_managed_user: {
+        Args: { target_user_id: string };
+        Returns: boolean;
+      };
     };
     Enums: {
       [_ in never]: never;
