@@ -93,7 +93,7 @@ function defaultPermissionsForRole(role: string): Record<string, boolean> {
       "accounting","accounting_view","journal_approval","expense_approval","revenue_approval","cost_centers",
       "reports","reports_view_sales","reports_view_financials","hr","hr_view_attendance",
     ],
-    cashier: ["orders","orders_view","orders_create_custom","orders_manage_carts","orders_generate_qr","pos","pos_access","pos_apply_discounts","delivery","delivery_view","delivery_update_status"],
+    cashier: ["orders","orders_view","orders_create_custom","orders_manage_carts","orders_generate_qr","pos","pos_access","pos_apply_discounts","treasury_view","treasury_open_close","delivery","delivery_view","delivery_update_status"],
     captain: ["captain","captain_access","captain_create_order","captain_transfer_tables","captain_modify_items","orders","orders_view"],
     kitchen: ["kitchen","kitchen_view","kitchen_change_status","kitchen_modify_order"],
   };
