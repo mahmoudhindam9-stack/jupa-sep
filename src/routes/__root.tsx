@@ -91,6 +91,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         content: "نظام Restocash المتكامل لإدارة المطاعم، نقاط البيع، المخزون، الحسابات والخزائن.",
       },
       { name: "author", content: "Restocash ERP" },
+      { name: "theme-color", content: "#07182a" },
       { property: "og:title", content: "Restocash — نظام إدارة المطاعم والمحاسبة ERP" },
       {
         property: "og:description",
