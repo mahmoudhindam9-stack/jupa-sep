@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { currentUserHasPermission, signOutCurrentUser } from "@/shared/services/userAuthorization";
 import { CaptainSelfOrderPanel } from "@/components/CaptainSelfOrderPanel";
 import { useSettings } from "@/hooks/use-settings";
 import { useToast } from "@/hooks/use-toast";
@@ -36,8 +37,40 @@ import { useSyncExternalStore } from "react";
 
 export const Route = createFileRoute("/captain")({
   head: () => ({ meta: [{ title: "Captain Order" }] }),
-  component: CaptainPage,
+  component: CaptainAccessGate,
 });
+
+function CaptainAccessGate() {
+  const navigate = useNavigate();
+  const [accessState, setAccessState] = useState<"checking" | "allowed" | "denied">("checking");
+  useEffect(() => {
+    let active = true;
+    currentUserHasPermission(["captain", "captain_access"])
+      .then((allowed) => { if (active) setAccessState(allowed ? "allowed" : "denied"); })
+      .catch((error) => {
+        console.error("Captain route authorization failed.", error);
+        if (active) setAccessState("denied");
+      });
+    return () => { active = false; };
+  }, []);
+
+  if (accessState === "allowed") return <CaptainPage />;
+  if (accessState === "checking") {
+    return <div className="min-h-screen flex items-center justify-center text-sm font-bold text-muted-foreground">جاري التحقق من صلاحيات حسابك…</div>;
+  }
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background p-6" dir="rtl">
+      <div role="alert" className="max-w-md rounded-2xl border border-border bg-card p-8 text-center shadow-sm space-y-4">
+        <h1 className="text-xl font-black text-foreground">ليس لديك صلاحية شاشة الكابتن</h1>
+        <p className="text-sm text-muted-foreground">يجب تفعيل صلاحية الكابتن من صفحة المستخدمين قبل فتح هذه الشاشة.</p>
+        <div className="flex flex-wrap justify-center gap-2">
+          <Button onClick={() => navigate({ to: "/admin" })}>العودة إلى لوحة الإدارة</Button>
+          <Button variant="outline" onClick={async () => { await signOutCurrentUser(); navigate({ to: "/login" }); }}>تسجيل الخروج</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 type Table = {
   id: string;
