@@ -133,6 +133,75 @@ CREATE POLICY "profiles_delete_manager"
   ON public.profiles FOR DELETE TO authenticated
   USING (id <> auth.uid() AND public.current_user_can_manage_profiles());
 
+-- Prevent a delegated user manager from escalating their own account or another account.
+-- Only a profile already holding super_admin_full_access can grant permissions beyond itself.
+CREATE OR REPLACE FUNCTION public.enforce_profile_permission_delegation()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $
+DECLARE
+  actor_permissions jsonb;
+  target_key text;
+  target_value jsonb;
+BEGIN
+  -- Administrative migrations and service-role maintenance are trusted operators.
+  IF auth.uid() IS NULL THEN
+    IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+    RETURN NEW;
+  END IF;
+
+  SELECT COALESCE(p.permissions, '{}'::jsonb)
+    INTO actor_permissions
+  FROM public.profiles p
+  WHERE p.id = auth.uid();
+
+  IF COALESCE(actor_permissions ->> 'super_admin_full_access', 'false') = 'true' THEN
+    IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+    RETURN NEW;
+  END IF;
+
+  IF TG_OP = 'DELETE' THEN
+    IF COALESCE(OLD.permissions ->> 'super_admin_full_access', 'false') = 'true'
+       OR OLD.role IN ('admin', 'super_admin') THEN
+      RAISE EXCEPTION 'Only a super administrator can delete a super administrator account';
+    END IF;
+    RETURN OLD;
+  END IF;
+
+  IF TG_OP = 'UPDATE'
+     AND NEW.role IS NOT DISTINCT FROM OLD.role
+     AND COALESCE(NEW.permissions, '{}'::jsonb) IS NOT DISTINCT FROM COALESCE(OLD.permissions, '{}'::jsonb) THEN
+    RETURN NEW;
+  END IF;
+
+  IF NEW.role IN ('admin', 'super_admin')
+     OR COALESCE(NEW.permissions ->> 'super_admin_full_access', 'false') = 'true' THEN
+    RAISE EXCEPTION 'Only a super administrator can grant administrator access';
+  END IF;
+
+  FOR target_key, target_value IN
+    SELECT key, value FROM jsonb_each(COALESCE(NEW.permissions, '{}'::jsonb))
+  LOOP
+    IF target_value = 'true'::jsonb
+       AND COALESCE(actor_permissions ->> target_key, 'false') <> 'true' THEN
+      RAISE EXCEPTION 'Cannot grant permission % that the current user does not hold', target_key;
+    END IF;
+  END LOOP;
+
+  RETURN NEW;
+END;
+$;
+
+DROP TRIGGER IF EXISTS enforce_profile_permission_delegation ON public.profiles;
+CREATE TRIGGER enforce_profile_permission_delegation
+  BEFORE INSERT OR UPDATE OR DELETE ON public.profiles
+  FOR EACH ROW EXECUTE FUNCTION public.enforce_profile_permission_delegation();
+
+REVOKE ALL ON FUNCTION public.enforce_profile_permission_delegation() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.enforce_profile_permission_delegation() TO authenticated;
+
 -- Deleting a managed user from the Users page removes both Auth identity and profile.
 CREATE OR REPLACE FUNCTION public.delete_managed_user(target_user_id uuid)
 RETURNS boolean
