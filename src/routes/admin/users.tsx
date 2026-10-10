@@ -564,6 +564,45 @@ function samePermissionMap(left: Record<string, any> | null | undefined, right: 
   return [...keys].every((key) => a[key] === b[key]);
 }
 
+function currentActorPermissions(state: any): Record<string, boolean> {
+  const username = String(state?.currentUser || "").trim().toLowerCase();
+  const record = (state?.users || []).find((user: any) =>
+    String(user.username || "").trim().toLowerCase() === username,
+  );
+  const userPermissions = record?.permissions;
+  if (userPermissions && Object.keys(userPermissions).length > 0) return userPermissions;
+  return state?.userPermissions?.[username] || {};
+}
+
+function canGrantElevatedPermissions(state: any): boolean {
+  return currentActorPermissions(state).super_admin_full_access === true;
+}
+
+function limitPermissionsToActor(
+  proposed: Record<string, any>,
+  actorPermissions: Record<string, any>,
+): Record<string, boolean> {
+  if (actorPermissions.super_admin_full_access === true) return proposed as Record<string, boolean>;
+  return Object.fromEntries(
+    Object.entries(proposed).map(([key, value]) => [key, value === true && actorPermissions[key] === true]),
+  );
+}
+
+function assertNoPrivilegeEscalation(
+  proposed: Record<string, any>,
+  role: string,
+  actorPermissions: Record<string, any>,
+): void {
+  if (actorPermissions.super_admin_full_access === true) return;
+  if (role === "admin" || role === "super_admin" || proposed.super_admin_full_access === true) {
+    throw new Error("لا يمكن منح صلاحيات مدير أعلى من صلاحيات حسابك الحالي.");
+  }
+  const escalated = Object.entries(proposed).find(([key, value]) => value === true && actorPermissions[key] !== true);
+  if (escalated) {
+    throw new Error("لا يمكنك منح صلاحية لا تملكها أنت. اطلب من المدير الأعلى تعديل الصلاحيات.");
+  }
+}
+
 function defaultPermissionsForRole(role: string): UserPermission {
   const permissions: Record<string, boolean> = {};
   PERMISSION_CATEGORIES.forEach((category) => {
@@ -762,6 +801,16 @@ function UsersPage() {
     const normalizedUsername = username.toLowerCase();
     const emailToUse = username.includes("@") ? normalizedUsername : `${normalizedUsername}@restocash.local`;
 
+    const actorPermissions = currentActorPermissions(erpState);
+    if (!canGrantElevatedPermissions(erpState) && (form.role === "admin" || form.role === "super_admin")) {
+      toast({
+        title: "لا يمكن منح دور مدير",
+        description: "لا يمكن إلا للمدير الأعلى إنشاء حساب مدير أو منحه صلاحيات كاملة.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       if (isHostedDeployment()) {
         const profiles = await authService.getUsers() as any[];
@@ -780,6 +829,7 @@ function UsersPage() {
           const permissions = editing.permissions
             || erpState.userPermissions[editing.username]
             || defaultPermissionsForRole(form.role);
+          assertNoPrivilegeEscalation(permissions as any, form.role, actorPermissions);
           const saved = await authService.upsertProfile({
             id: currentProfile.id,
             username: currentProfile.username,
@@ -811,7 +861,7 @@ function UsersPage() {
           role: form.role,
         });
         if (!created?.user?.id) throw new Error("لم يرجع Supabase معرّف الحساب؛ راجع إعدادات التسجيل وتأكيد البريد الإلكتروني.");
-        const permissions = defaultPermissionsForRole(form.role);
+        const permissions = limitPermissionsToActor(defaultPermissionsForRole(form.role), actorPermissions);
         const profile = await authService.upsertProfile({
           id: created.user.id,
           username: normalizedUsername,
@@ -851,7 +901,7 @@ function UsersPage() {
       if (!form.password) throw new Error("أدخل كلمة مرور للحساب الجديد.");
       const duplicate = localLoginUsers().some((user) => String(user.username).trim().toLowerCase() === normalizedUsername);
       if (duplicate) throw new Error("اسم المستخدم موجود بالفعل.");
-      const permissions = defaultPermissionsForRole(form.role);
+      const permissions = limitPermissionsToActor(defaultPermissionsForRole(form.role), actorPermissions);
       const localUser: SystemUser = {
         id: `u-${Date.now()}`,
         full_name: form.full_name.trim(),
@@ -942,6 +992,7 @@ function UsersPage() {
   const handleSavePermissions = async () => {
     if (!permissionsUser || !editedPermissions) return;
     try {
+      assertNoPrivilegeEscalation(editedPermissions as any, permissionsUser.role, currentActorPermissions(erpStore.getState()));
       if (isHostedDeployment()) {
         const saved = await authService.upsertProfile({
           id: permissionsUser.id,
