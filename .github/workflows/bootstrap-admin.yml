@@ -1,0 +1,52 @@
+name: Bootstrap admin account
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create or reset the admin login
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ADMIN_BOOTSTRAP_PASSWORD: ${{ secrets.ADMIN_BOOTSTRAP_PASSWORD }}
+        run: |
+          node <<'NODE'
+          const base = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+          const password = process.env.ADMIN_BOOTSTRAP_PASSWORD;
+          if (!base.startsWith('https://') || !key || !password || password.length < 8) throw new Error('Configure the three required GitHub Actions secrets.');
+          const headers = { apikey: key, Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' };
+          async function call(path, method = 'GET', body, extra = {}) {
+            const r = await fetch(base + path, { method, headers: { ...headers, ...extra }, body: body === undefined ? undefined : JSON.stringify(body) });
+            const t = await r.text();
+            if (!r.ok) throw new Error(method + ' ' + path + ' failed (' + r.status + '): ' + t.slice(0, 300));
+            return t ? JSON.parse(t) : null;
+          }
+          const email = 'admin@juba.com';
+          let admin;
+          for (let page = 1; page <= 100; page++) {
+            const result = await call('/auth/v1/admin/users?page=' + page + '&per_page=100');
+            const users = result.users || [];
+            admin = users.find(u => (u.email || '').toLowerCase() === email);
+            if (admin || users.length < 100) break;
+          }
+          if (admin) {
+            const result = await call('/auth/v1/admin/users/' + admin.id, 'PUT', { password, email_confirm: true, user_metadata: { username: 'admin', full_name: 'Administrator' } });
+            admin = result.user || result;
+          } else {
+            const result = await call('/auth/v1/admin/users', 'POST', { email, password, email_confirm: true, user_metadata: { username: 'admin', full_name: 'Administrator' } });
+            admin = result.user || result;
+          }
+          if (!admin || !admin.id) throw new Error('Admin identity creation failed.');
+          await call('/rest/v1/profiles?on_conflict=id', 'POST', {
+            id: admin.id, username: 'admin', full_name: 'Administrator', phone: '', role: 'admin',
+            permissions: { super_admin_full_access: true, users_roles: true, system_manage_users: true, system_backup_update: true }
+          }, { Prefer: 'resolution=merge-duplicates,return=minimal' });
+          console.log('Admin identity and profile created/updated.');
+          NODE
