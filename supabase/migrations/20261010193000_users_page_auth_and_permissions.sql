@@ -140,7 +140,7 @@ RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
-AS $
+AS $$
 DECLARE
   actor_permissions jsonb;
   target_key text;
@@ -192,7 +192,7 @@ BEGIN
 
   RETURN NEW;
 END;
-$;
+$$;
 
 DROP TRIGGER IF EXISTS enforce_profile_permission_delegation ON public.profiles;
 CREATE TRIGGER enforce_profile_permission_delegation
