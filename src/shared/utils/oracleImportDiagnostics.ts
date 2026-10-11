@@ -176,8 +176,9 @@ export function parseOracleNumber(value: unknown): number | null {
   if (!s) return null;
   const negative = /^\(.*\)$/.test(s);
   s = s.replace(/^\(|\)$/g, "");
-  s = s.replace(/[\s\u00A0$€£¥₤]/g, "").replace(/^[A-Z]{3}\s*/i, "");
+  s = s.replace(/[\s\u00A0$€£¥₤]/g, "").replace(/^[A-Z]{3}\s*(?=[-+]?\d)/i, "");
   s = s.replace(/٬/g, ",").replace(/٫/g, ".");
+  if (!s || !/\d/.test(s)) return null;
 
   if (s.includes(",") && s.includes(".")) {
     s =

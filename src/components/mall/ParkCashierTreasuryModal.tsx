@@ -40,7 +40,6 @@ export function ParkCashierTreasuryModal({ isOpen, onClose, onOpenCloseShift }: 
       .reduce((sum, tx) => sum + tx.total_paid_in_currency, 0);
   }, [shiftTransactions]);
 
-  
   const handlePrintReport = () => {
     const html = `
       <!DOCTYPE html>
@@ -62,7 +61,7 @@ export function ParkCashierTreasuryModal({ isOpen, onClose, onOpenCloseShift }: 
       <body>
         <div class="header">
           <h2>تقرير خزينة الكاشير - وردية #${activeShift?.shift_number}</h2>
-          <p>تاريخ الطباعة: ${new Date().toLocaleString('ar-EG')}</p>
+          <p>تاريخ الطباعة: ${new Date().toLocaleString("ar-EG")}</p>
         </div>
         <div class="summary">
           <div>إجمالي الخزينة (USD): ${formatTicketPrice(totalUsd)}</div>
@@ -79,7 +78,9 @@ export function ParkCashierTreasuryModal({ isOpen, onClose, onOpenCloseShift }: 
             </tr>
           </thead>
           <tbody>
-            ${shiftTransactions.map(tx => `
+            ${shiftTransactions
+              .map(
+                (tx) => `
               <tr>
                 <td>${tx.tx_number}</td>
                 <td>${tx.transaction_time}</td>
@@ -87,7 +88,9 @@ export function ParkCashierTreasuryModal({ isOpen, onClose, onOpenCloseShift }: 
                 <td>${tx.currency === "USD" ? `${tx.total_paid_in_currency}` : `${tx.total_paid_in_currency.toLocaleString()} SSP`}</td>
                 <td>${tx.status === "refunded" ? "مرتجع" : "مكتملة"}</td>
               </tr>
-            `).join('')}
+            `,
+              )
+              .join("")}
           </tbody>
         </table>
       </body>

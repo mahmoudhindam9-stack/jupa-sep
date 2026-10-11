@@ -600,6 +600,10 @@ export const menuService = {
       }
     }
 
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("menu_updated"));
+    }
+
     return finalItem;
   },
 
@@ -620,6 +624,10 @@ export const menuService = {
     if (!localDeleted.includes(id)) {
       localDeleted.push(id);
       setLocal(LOCAL_DELETED_ITEMS_KEY, localDeleted);
+    }
+
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("menu_updated"));
     }
 
     try {

@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { ORACLE_MIGRATION_ACCOUNTS as oracleAccounts } from "@/shared/data/oracleAccounts";
 import { OracleAccountsViewer } from "@/components/admin/OracleAccountsViewer";
+import { VouchersLedgerSection } from "@/components/admin/VouchersLedgerSection";
 import { createFileRoute, Link, useLocation } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useEffect, useMemo, useRef } from "react";
@@ -820,11 +821,17 @@ function AdminDashboard() {
             <FileBarChart size={16} className="ml-1.5 inline" />
             شجرة ودليل الحسابات
           </TabsTrigger>
-          <TabsTrigger value="shift_audit" className="rounded-lg font-bold py-2 px-4 text-teal-700 dark:text-teal-400">
+          <TabsTrigger
+            value="shift_audit"
+            className="rounded-lg font-bold py-2 px-4 text-teal-700 dark:text-teal-400"
+          >
             <Database size={16} className="ml-1.5 inline text-teal-600" />
             تدقيق الورديات (Supabase)
           </TabsTrigger>
-          <TabsTrigger value="audit_logs" className="rounded-lg font-bold py-2 px-4 text-indigo-700 dark:text-indigo-400">
+          <TabsTrigger
+            value="audit_logs"
+            className="rounded-lg font-bold py-2 px-4 text-indigo-700 dark:text-indigo-400"
+          >
             <History size={16} className="ml-1.5 inline text-indigo-600" />
             سجل العمليات
           </TabsTrigger>
@@ -1871,190 +1878,33 @@ function AdminDashboard() {
 
         {/* TAB 3: VOUCHERS ENTRY */}
         <TabsContent value="vouchers_entry" className="space-y-4 mt-4">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Voucher input form */}
-            <div className="lg:col-span-1 bg-card border border-border p-5 rounded-2xl space-y-4">
-              <h3 className="font-black text-base text-primary">تسجيل سند مالي جديد</h3>
-              <form onSubmit={handleVoucherSubmit} className="space-y-4">
-                <div>
-                  <Label className="text-xs font-bold">نوع السند</Label>
-                  <select
-                    className="w-full mt-1.5 h-9 rounded-md border border-input bg-background px-3 text-sm text-right"
-                    value={voucherForm.type}
-                    onChange={(e) =>
-                      setVoucherForm((s) => ({
-                        ...s,
-                        type: e.target.value as "receipt" | "payment",
-                      }))
-                    }
-                  >
-                    <option value="payment">سند صرف مصروفات (-)</option>
-                    <option value="receipt">سند قبض إيرادات (+)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <Label className="text-xs font-bold">التصنيف والتبويب المالي</Label>
-                  <select
-                    className="w-full mt-1.5 h-9 rounded-md border border-input bg-background px-3 text-sm text-right"
-                    value={voucherForm.category}
-                    onChange={(e) => setVoucherForm((s) => ({ ...s, category: e.target.value }))}
-                  >
-                    {voucherForm.type === "payment" ? (
-                      <>
-                        <option value="رواتب الموظفين">رواتب وأجور الموظفين</option>
-                        <option value="إيجار الفروع">إيجار العقارات والفروع</option>
-                        <option value="الكهرباء والمياه">فاتورة كهرباء ومياه وطاقة</option>
-                        <option value="شراء مستلزمات هدر">مستلزمات هدر وتغليف</option>
-                        <option value="الدعاية والتسويق">دعاية، إعلانات وتسويق</option>
-                      </>
-                    ) : (
-                      <>
-                        <option value="إيراد تشغيل حفلات">إيرادات تشغيل بوفيهات خارجية</option>
-                        <option value="رأسمال إضافي">حقوق ملكية ورأسمال مضاف</option>
-                        <option value="بيع مخلفات المطبخ">إيرادات تدوير ومبيعات فرعية</option>
-                      </>
-                    )}
-                  </select>
-                </div>
-
-                <div>
-                  <Label className="text-xs font-bold">مركز التكلفة المسؤول (Cost Center)</Label>
-                  <select
-                    className="w-full mt-1.5 h-9 rounded-md border border-input bg-background px-3 text-sm text-right"
-                    value={voucherForm.cost_center}
-                    onChange={(e) => setVoucherForm((s) => ({ ...s, cost_center: e.target.value }))}
-                  >
-                    {erpState.costCenters.map((cc, index) => (
-                      <option key={index} value={cc}>
-                        {cc}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <Label className="text-xs font-bold">المبلغ المالي المعتمد (ج.م)</Label>
-                  <Input
-                    type="number"
-                    className="mt-1.5"
-                    value={voucherForm.amount}
-                    onChange={(e) => setVoucherForm((s) => ({ ...s, amount: e.target.value }))}
-                    placeholder="مثال: 1200"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <Label className="text-xs font-bold">خزينة الصرف/القبض</Label>
-                  <select
-                    className="w-full mt-1.5 h-9 rounded-md border border-input bg-background px-3 text-sm text-right"
-                    value={voucherForm.treasury_id}
-                    onChange={(e) => setVoucherForm((s) => ({ ...s, treasury_id: e.target.value }))}
-                    required
-                  >
-                    <option value="">اختر الخزينة</option>
-                    {erpState.treasuries
-                      .filter((t) => t.branch_id === currentBranch.id && t.is_open && !t.deleted)
-                      .map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.account_code ? `[رقم الحساب: ${t.account_code}] ` : ""}
-                          {t.name_ar} (رصيد: {t.balance.toLocaleString()}{" "}
-                          {getTreasuryDisplayCurrency(t)})
-                        </option>
-                      ))}
-                  </select>
-                </div>
-
-                <div>
-                  <Label className="text-xs font-bold">ملاحظات المستند (البيان)</Label>
-                  <Input
-                    className="mt-1.5"
-                    value={voucherForm.description}
-                    onChange={(e) => setVoucherForm((s) => ({ ...s, description: e.target.value }))}
-                    placeholder="تفاصيل الفاتورة واسم المستلم"
-                    required
-                  />
-                </div>
-
-                {/* Simulated file attachments */}
-                <div>
-                  <Label className="text-xs font-bold">
-                    إرفاق المستند/الفاتورة الورقية (سكانر)
-                  </Label>
-                  <Input
-                    type="file"
-                    className="mt-1.5 text-xs text-slate-500 cursor-pointer"
-                    onChange={() => alert("تم قيد وضغط الصورة المرفقة وتخزينها في خوادم ERP!")}
-                  />
-                </div>
-
-                <Button type="submit" className="w-full font-bold">
-                  حفظ وترحيل السند المالي 💾
-                </Button>
-              </form>
-            </div>
-
-            {/* Vouchers lists */}
-            <div className="lg:col-span-2 bg-card border border-border p-5 rounded-2xl space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="font-bold text-base text-foreground">
-                  سجل السندات والمصروفات الدورية المعتمدة
-                </h3>
-                <Badge className="bg-emerald-100 text-emerald-800">نشط</Badge>
+          <div className="rounded-2xl border border-emerald-500/30 bg-emerald-50/60 dark:bg-emerald-950/20 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-emerald-600 text-white shadow-md">
+                <BookOpen size={20} />
               </div>
-
-              <div className="rounded-xl border border-border overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted text-muted-foreground">
-                    <tr className="border-b border-border">
-                      <th className="text-right p-3 font-bold">الرقم المرجعي</th>
-                      <th className="text-right p-3 font-bold">النوع</th>
-                      <th className="text-right p-3 font-bold">التصنيف</th>
-                      <th className="text-right p-3 font-bold">المبلغ</th>
-                      <th className="text-right p-3 font-bold">مركز التكلفة</th>
-                      <th className="text-right p-3 font-bold">التفاصيل والوصف</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border text-xs">
-                    {erpState.vouchers.filter((v) => v.branch_id === currentBranch.id && !v.deleted)
-                      .length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="text-center py-10 text-muted-foreground">
-                          لا توجد سندات مصروفات أو إيرادات مقيدة لهذا الفرع اليوم
-                        </td>
-                      </tr>
-                    ) : (
-                      erpState.vouchers
-                        .filter((v) => v.branch_id === currentBranch.id && !v.deleted)
-                        .map((v) => (
-                          <tr key={v.id} className="hover:bg-muted/30">
-                            <td className="p-3 font-mono text-[10px] font-bold text-primary">
-                              {v.id.substring(4, 9).toUpperCase()}
-                            </td>
-                            <td className="p-3">
-                              <span
-                                className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${v.type === "receipt" ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}
-                              >
-                                {v.type === "receipt" ? "قبض" : "صرف"}
-                              </span>
-                            </td>
-                            <td className="p-3 font-bold text-slate-800">{v.category}</td>
-                            <td className="p-3 font-black">
-                              {Number(v?.amount ?? 0).toFixed(2)} {v.currency}
-                            </td>
-                            <td className="p-3 text-slate-600 font-black">
-                              {v.cost_center || "الإدارة (Administration)"}
-                            </td>
-                            <td className="p-3 text-slate-500 font-semibold">{v.description}</td>
-                          </tr>
-                        ))
-                    )}
-                  </tbody>
-                </table>
+              <div>
+                <h4 className="font-black text-sm text-foreground">
+                  تم دمج وتوسيع تسجيل سندات الإيراد والمصروف ضمن حساب الأستاذ العام
+                </h4>
+                <p className="text-xs text-muted-foreground font-medium">
+                  يمكنك تسجيل وترحيل السندات المباشرة هنا، أو الانتقال لقسم السندات في دفتر الأستاذ
+                  العام والدفاتر المحاسبية.
+                </p>
               </div>
             </div>
+            <Link to="/admin/ledger">
+              <Button
+                size="sm"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl gap-1.5 shadow-md"
+              >
+                <BookOpen size={14} />
+                فتح في حساب الأستاذ العام
+              </Button>
+            </Link>
           </div>
+
+          <VouchersLedgerSection />
         </TabsContent>
 
         {/* TAB 4: CHART OF ACCOUNTS (دليل الحسابات المحاسبي المحترف) */}

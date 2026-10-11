@@ -142,14 +142,18 @@ export default {
           if (!fs.existsSync(".git")) {
             try {
               execSync("git init -b main", { stdio: "pipe" });
-            } catch (e) {}
+            } catch {
+              // Ignore init error
+            }
           }
 
           // Ensure git user is set
           try {
             execSync('git config user.name "mahmoudhindam9-stack"', { stdio: "pipe" });
             execSync('git config user.email "mahmoudhindam9@gmail.com"', { stdio: "pipe" });
-          } catch (e) {}
+          } catch {
+            // Ignore config error
+          }
 
           // Add any pending changes and commit
           try {
@@ -237,19 +241,25 @@ export default {
           if (!fs.existsSync(".git")) {
             try {
               execSync("git init -b main", { stdio: "pipe" });
-            } catch (e) {}
+            } catch {
+              // Ignore init error
+            }
           }
           try {
             execSync('git config user.name "mahmoudhindam9-stack"', { stdio: "pipe" });
             execSync('git config user.email "mahmoudhindam9@gmail.com"', { stdio: "pipe" });
-          } catch (e) {}
+          } catch {
+            // Ignore config error
+          }
 
           // Commit any uncommitted changes first
           try {
             execSync("git add -A", { stdio: "pipe" });
             const cleanMsg = releaseName.replace(/"/g, '\\"');
             execSync(`git commit -m "Release ${tagName}: ${cleanMsg}"`, { stdio: "pipe" });
-          } catch (e) {}
+          } catch {
+            // Nothing to commit
+          }
 
           // Push to GitHub main branch first
           const sanitizedToken = encodeURIComponent(token);

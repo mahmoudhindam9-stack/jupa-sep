@@ -19,6 +19,8 @@ export interface TreasuryContainer {
   balance?: number;
 }
 
+export type Treasury = TreasuryAccount;
+
 export interface TreasuryAccount {
   id: string;
   account_code?: string;
@@ -165,6 +167,19 @@ export interface Voucher {
   cost_center?: string;
   attachment?: string;
   deleted?: boolean;
+  exchange_rate?: number;
+  base_amount?: number;
+  journal_entry_id?: string;
+  journal_reference?: string;
+  account_code?: string;
+  custom_category?: string;
+  custom_cost_center?: string;
+  reverted?: boolean;
+  reverted_at?: string;
+  reverted_reason?: string;
+  deleted_at?: string;
+  deleted_by?: string;
+  deleted_reason?: string;
 }
 
 export interface Account {
@@ -192,6 +207,18 @@ export interface Account {
     | string;
   currency?: string;
   sync_status?: "pending" | "synced";
+}
+
+/**
+ * Helper to determine if an account is Level 4 (operational/subsidiary account).
+ * In accounting, transactions (journal entries and vouchers) are strictly performed
+ * on level 4 accounts only.
+ */
+export function isLevel4Account(account?: { level?: number; code: string } | null): boolean {
+  if (!account) return false;
+  if (Number(account.level) === 4) return true;
+  if (!account.level && account.code && account.code.length >= 6) return true;
+  return false;
 }
 
 export interface JournalLine {
@@ -2147,21 +2174,110 @@ const DEFAULT_SUPPLIERS: Supplier[] = ORACLE_MIGRATION_ACCOUNTS.filter(
   deleted: false,
 }));
 
-const LEGACY_DEFAULT_USER_IDS = new Set(["u-admin", "u-manager", "u-cashier"]);
+const LEGACY_DEFAULT_USER_IDS = new Set(["u-manager", "u-cashier"]);
+
+export const ROOT_DEFAULT_ADMIN: SystemUser = {
+  id: "u-admin",
+  full_name: "المدير العام (System Admin)",
+  username: "admin",
+  phone: "01000000000",
+  role: "admin",
+  password: "admin",
+  permissions: {
+    super_admin_full_access: true,
+    orders: true,
+    pos: true,
+    captain: true,
+    kitchen: true,
+    delivery: true,
+    inventory: true,
+    hr: true,
+    purchasing: true,
+    production: true,
+    treasury: true,
+    accounting: true,
+    journal_approval: true,
+    expense_approval: true,
+    revenue_approval: true,
+    reports: true,
+    cost_centers: true,
+    branch_mgmt: true,
+    audit_logs: true,
+    users_roles: true,
+    system_manage_users: true,
+    system_backup_update: true,
+  },
+  created_at: "2026-01-01T00:00:00.000Z",
+};
+
+export const OWNER_DEFAULT_ADMIN: SystemUser = {
+  id: "u-owner-mahmoud",
+  full_name: "المدير العام (mahmoudhindam9)",
+  username: "mahmoudhindam9@gmail.com",
+  phone: "01000000000",
+  role: "admin",
+  password: "admin",
+  permissions: {
+    super_admin_full_access: true,
+    orders: true,
+    pos: true,
+    captain: true,
+    kitchen: true,
+    delivery: true,
+    inventory: true,
+    hr: true,
+    purchasing: true,
+    production: true,
+    treasury: true,
+    accounting: true,
+    journal_approval: true,
+    expense_approval: true,
+    revenue_approval: true,
+    reports: true,
+    cost_centers: true,
+    branch_mgmt: true,
+    audit_logs: true,
+    users_roles: true,
+    system_manage_users: true,
+    system_backup_update: true,
+  },
+  created_at: "2026-01-01T00:00:00.000Z",
+};
 
 /**
- * User Management is the only account source. Remove bundled demo accounts, but
- * retain every record created by the current Users page for reconciliation.
+ * User Management account source. Ensure admin account is always present.
  */
 function ensureCurrentManagedUsers(users: unknown): SystemUser[] {
-  if (!Array.isArray(users)) return [];
-  return users.filter(
-    (user: any) =>
-      user &&
-      !LEGACY_DEFAULT_USER_IDS.has(String(user.id || "")) &&
-      typeof user.username === "string" &&
-      user.username.trim().length > 0,
-  ) as SystemUser[];
+  const list = Array.isArray(users)
+    ? (users.filter(
+        (user: any) =>
+          user &&
+          !LEGACY_DEFAULT_USER_IDS.has(String(user.id || "")) &&
+          typeof user.username === "string" &&
+          user.username.trim().length > 0,
+      ) as SystemUser[])
+    : [];
+
+  const hasAdmin = list.some(
+    (u) =>
+      String(u.username || "")
+        .trim()
+        .toLowerCase() === "admin",
+  );
+  if (!hasAdmin) {
+    list.unshift(ROOT_DEFAULT_ADMIN);
+  }
+
+  const hasOwner = list.some(
+    (u) =>
+      String(u.username || "")
+        .trim()
+        .toLowerCase() === "mahmoudhindam9@gmail.com",
+  );
+  if (!hasOwner) {
+    list.push(OWNER_DEFAULT_ADMIN);
+  }
+  return list;
 }
 
 const DEFAULT_PERMISSIONS: Record<string, UserPermission> = {
@@ -2279,15 +2395,27 @@ export class ERPStore {
   constructor() {
     this.state = this.loadState();
     this.state.users = ensureCurrentManagedUsers(this.state.users);
-    const activeLocalUsername = String(this.state.currentUser || "").trim().toLowerCase();
-    if (activeLocalUsername && !this.state.users.some(
-      (user: any) => String(user.username || "").trim().toLowerCase() === activeLocalUsername,
-    )) {
+    const activeLocalUsername = String(this.state.currentUser || "")
+      .trim()
+      .toLowerCase();
+    if (
+      activeLocalUsername &&
+      !this.state.users.some(
+        (user: any) =>
+          String(user.username || "")
+            .trim()
+            .toLowerCase() === activeLocalUsername,
+      )
+    ) {
       this.state.currentUser = "";
     }
     this.state.legacy_users_purged_2026_10_10 = true;
     if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
-      try { localStorage.setItem("erp_store_state", JSON.stringify(this.state)); } catch { /* IndexedDB will persist the cleaned state. */ }
+      try {
+        localStorage.setItem("erp_store_state", JSON.stringify(this.state));
+      } catch {
+        /* IndexedDB will persist the cleaned state. */
+      }
     }
     if (!this.state.park_sales_hard_zero_reset_v4_2026_09_03) {
       this.state.parkShifts = [];
@@ -2334,7 +2462,9 @@ export class ERPStore {
 
       // Ensure active session pointer is valid and open
       if (this.state.parkActiveShift) {
-        const activeExists = this.state.parkShifts.some((s) => s.id === this.state.parkActiveShift?.id);
+        const activeExists = this.state.parkShifts.some(
+          (s) => s.id === this.state.parkActiveShift?.id,
+        );
         if (!activeExists || this.state.parkActiveShift.status !== "open") {
           this.state.parkActiveShift = null;
         }
@@ -2351,10 +2481,17 @@ export class ERPStore {
             const newState = JSON.parse(e.newValue);
             const originalUsers = Array.isArray(newState.users) ? newState.users : [];
             const cleanedUsers = ensureCurrentManagedUsers(originalUsers);
-            const normalizedCurrentUser = String(newState.currentUser || "").trim().toLowerCase();
+            const normalizedCurrentUser = String(newState.currentUser || "")
+              .trim()
+              .toLowerCase();
             const cleanedCurrentUser = cleanedUsers.some(
-              (user: any) => String(user.username || "").trim().toLowerCase() === normalizedCurrentUser,
-            ) ? newState.currentUser : "";
+              (user: any) =>
+                String(user.username || "")
+                  .trim()
+                  .toLowerCase() === normalizedCurrentUser,
+            )
+              ? newState.currentUser
+              : "";
             const accountsChanged =
               cleanedUsers.length !== originalUsers.length ||
               cleanedCurrentUser !== (newState.currentUser || "");
@@ -2433,10 +2570,17 @@ export class ERPStore {
 
               const originalIdbUsers = Array.isArray(idbState.users) ? idbState.users : [];
               const cleanedIdbUsers = ensureCurrentManagedUsers(originalIdbUsers);
-              const idbCurrentName = String(idbState.currentUser || "").trim().toLowerCase();
+              const idbCurrentName = String(idbState.currentUser || "")
+                .trim()
+                .toLowerCase();
               const cleanedIdbCurrentUser = cleanedIdbUsers.some(
-                (user: any) => String(user.username || "").trim().toLowerCase() === idbCurrentName,
-              ) ? idbState.currentUser : "";
+                (user: any) =>
+                  String(user.username || "")
+                    .trim()
+                    .toLowerCase() === idbCurrentName,
+              )
+                ? idbState.currentUser
+                : "";
               const idbUserStateChanged =
                 cleanedIdbUsers.length !== originalIdbUsers.length ||
                 cleanedIdbCurrentUser !== (idbState.currentUser || "") ||
@@ -2462,8 +2606,16 @@ export class ERPStore {
                   ...idbState,
                   users: ensureCurrentManagedUsers(idbState.users),
                   currentUser: ensureCurrentManagedUsers(idbState.users).some(
-                    (user: any) => String(user.username || "").trim().toLowerCase() === String(idbState.currentUser || "").trim().toLowerCase(),
-                  ) ? idbState.currentUser : "",
+                    (user: any) =>
+                      String(user.username || "")
+                        .trim()
+                        .toLowerCase() ===
+                      String(idbState.currentUser || "")
+                        .trim()
+                        .toLowerCase(),
+                  )
+                    ? idbState.currentUser
+                    : "",
                   legacy_users_purged_2026_10_10: true,
                   parkShifts: idbState.park_sales_hard_zero_reset_v4_2026_09_03
                     ? cleanedIdbShifts
@@ -2884,7 +3036,7 @@ export class ERPStore {
       reconciliations: [],
       userPermissions: DEFAULT_PERMISSIONS,
       currentUser: "",
-      users: [],
+      users: [ROOT_DEFAULT_ADMIN],
       fiscalYearStatus: "open",
       inventorySettings: {
         allowNegativeStock: true,
@@ -3022,8 +3174,17 @@ export class ERPStore {
     if (!this.state.users) return;
     const target = this.state.users.find((user) => user.id === id);
     this.state.users = this.state.users.filter((user) => user.id !== id);
-    const username = String(target?.username || "").trim().toLowerCase();
-    const reservedRoleNames = new Set(["admin", "super_admin", "manager", "cashier", "captain", "kitchen"]);
+    const username = String(target?.username || "")
+      .trim()
+      .toLowerCase();
+    const reservedRoleNames = new Set([
+      "admin",
+      "super_admin",
+      "manager",
+      "cashier",
+      "captain",
+      "kitchen",
+    ]);
     if (username && !reservedRoleNames.has(username)) delete this.state.userPermissions?.[username];
     this.saveState();
   }
@@ -4667,6 +4828,10 @@ export class ERPStore {
     return acc ? acc.name_ar : accountCode;
   }
 
+  getLevel4Accounts(): Account[] {
+    return (this.state.accounts || []).filter(isLevel4Account);
+  }
+
   updateJournalEntryAttachments(entryId: string, attachments: any[]) {
     const entry = (this.state.journalEntries || []).find(
       (e) => e.id === entryId || e.reference === entryId,
@@ -5368,8 +5533,22 @@ export class ERPStore {
       currency,
     );
   }
-  postExpenseJournal(voucherId, amount, accountCode, costCenter, branchId, currency = "EGP") {
-    const rate = this.getExchangeRate(currency);
+  postExpenseJournal(
+    voucherId,
+    amount,
+    accountCode,
+    costCenter,
+    branchId,
+    currency = "USD",
+    exchangeRate?: number,
+    treasuryAccountCode?: string,
+  ) {
+    const rate =
+      exchangeRate && Number(exchangeRate) > 0
+        ? Number(exchangeRate)
+        : this.getExchangeRate(currency);
+    const resolvedTreasuryAcc =
+      treasuryAccountCode || (branchId === "branch-2" ? "13010100" : "13010130");
     const lines = [
       {
         account_code: accountCode,
@@ -5380,25 +5559,39 @@ export class ERPStore {
         rate: rate,
       },
       {
-        account_code: branchId === "branch-2" ? "101001" : "101000",
+        account_code: resolvedTreasuryAcc,
         debit: 0,
         credit: amount,
         currency: currency,
         rate: rate,
       },
     ];
-    this.addJournalEntry(
+    return this.addJournalEntry(
       `سند صرف مصروفات - رقم #${voucherId.substring(4, 9)}`,
       lines,
       `EXP-${voucherId.substring(4, 9).toUpperCase()}`,
       currency,
     );
   }
-  postRevenueJournal(voucherId, amount, accountCode, costCenter, branchId, currency = "EGP") {
-    const rate = this.getExchangeRate(currency);
+  postRevenueJournal(
+    voucherId,
+    amount,
+    accountCode,
+    costCenter,
+    branchId,
+    currency = "USD",
+    exchangeRate?: number,
+    treasuryAccountCode?: string,
+  ) {
+    const rate =
+      exchangeRate && Number(exchangeRate) > 0
+        ? Number(exchangeRate)
+        : this.getExchangeRate(currency);
+    const resolvedTreasuryAcc =
+      treasuryAccountCode || (branchId === "branch-2" ? "13010100" : "13010130");
     const lines = [
       {
-        account_code: branchId === "branch-2" ? "101001" : "101000",
+        account_code: resolvedTreasuryAcc,
         debit: amount,
         credit: 0,
         currency: currency,
@@ -5413,8 +5606,8 @@ export class ERPStore {
         rate: rate,
       },
     ];
-    this.addJournalEntry(
-      `سند قبض إيرادات متنوعة - رقم #${voucherId.substring(4, 9)}`,
+    return this.addJournalEntry(
+      `سند قبض إيرادات - رقم #${voucherId.substring(4, 9)}`,
       lines,
       `REV-${voucherId.substring(4, 9).toUpperCase()}`,
       currency,
@@ -5770,88 +5963,230 @@ export class ERPStore {
     return true;
   }
   createVoucher(
-    type,
-    category,
-    amount,
-    treasuryId,
-    description,
+    type: "receipt" | "payment" | "transfer",
+    category: string,
+    amount: number,
+    treasuryId: string,
+    description: string,
     costCenter = "الإدارة (Administration)",
-    attachment,
+    attachment?: string,
+    currency?: string,
+    exchangeRate?: number,
+    accountCodeOverride?: string,
   ) {
     const treasury = this.state.treasuries.find((t) => t.id === treasuryId);
-    const voucher = {
+    const chosenCurrency = (currency || treasury?.currency || "USD").toUpperCase();
+    const rate =
+      exchangeRate && Number(exchangeRate) > 0
+        ? Number(exchangeRate)
+        : this.getExchangeRate(chosenCurrency);
+    const baseAmount = chosenCurrency === "USD" ? amount : amount / rate;
+
+    const voucher: Voucher = {
       id: "vch-" + Date.now(),
       branch_id: this.state.currentBranchId,
       type,
       category,
       amount,
-      currency: treasury?.currency || "EGP",
+      currency: chosenCurrency,
+      exchange_rate: rate,
+      base_amount: baseAmount,
       payment_method: treasury?.type || "cash",
       treasury_id: treasuryId,
       description,
       status: "approved",
-      created_at: /* @__PURE__ */ new Date().toISOString(),
+      created_at: new Date().toISOString(),
       cost_center: costCenter,
       attachment,
       deleted: false,
     };
-    this.state.vouchers.unshift(voucher);
-    this.saveState();
+
+    let generatedJournalEntry: any = null;
+
     if (treasury) {
       const txType = type === "receipt" ? "deposit" : "withdrawal";
       this.addTreasuryTransaction(
         treasuryId,
         txType,
         amount,
-        treasury.currency,
+        chosenCurrency,
         `${type === "receipt" ? "سند قبض" : "سند صرف"} (${category}) - ${description}`,
         voucher.id,
       );
-      const accountCode =
+
+      const defaultAccountCode =
         {
-          "رواتب الموظفين": "502000",
-          "إيجار الفروع": "503000",
-          "الكهرباء والمياه والطاقة": "504000",
-          "التسويق والإعلانات": "505000",
-          "الهدر والمفقودات": "506000",
-        }[category] || "600000";
-      if (type === "payment")
-        this.postExpenseJournal(
-          voucher.id,
-          amount,
-          accountCode,
-          costCenter,
-          this.state.currentBranchId,
-        );
-      else
-        this.postRevenueJournal(
-          voucher.id,
-          amount,
-          "401000",
-          costCenter,
-          this.state.currentBranchId,
-        );
+          "رواتب الموظفين": "31010110",
+          "رواتب وأجور الموظفين": "31010110",
+          "إيجار الفروع": "31010140",
+          "إيجار العقارات والفروع": "31010140",
+          "الكهرباء والمياه": "31010145",
+          "الكهرباء والمياه والطاقة": "31010145",
+          "كهرباء ومياه وطاقة": "31010145",
+          "التسويق والإعلانات": "31020310",
+          "الدعاية والتسويق": "31020310",
+          "دعاية، إعلانات وتسويق": "31020310",
+          "الهدر والمفقودات": "31010160",
+          "شراء مستلزمات هدر": "31010160",
+          "صيانة وتشغيل": "31010170",
+          "صيانة وتشغيل ومعدات": "31010170",
+          "مصروفات نثرية وإدارية": "31010160",
+          "ضيافة ونظافة": "31010160",
+          "شراء خامات ومواد": "31010100",
+          "إيراد تشغيل حفلات": "43020300",
+          "إيرادات تشغيل بوفيهات وحفلات خارجية": "43020300",
+          "إيرادات تشغيل بوفيهات خارجية": "43020300",
+          "رأسمال إضافي": "41020100",
+          "حقوق ملكية ورأسمال مضاف": "41020100",
+          "بيع مخلفات المطبخ": "43020200",
+          "مبيعات فرعية وتدوير مخلفات": "43020200",
+          "إيرادات تدوير ومبيعات فرعية": "43020200",
+          "تسوية عهد وأمانات": "41010110",
+          "إيرادات استثمارية وتمويلية": "41010100",
+        }[category] || (type === "payment" ? "31010110" : "41020100");
+
+      const finalAccountCode = accountCodeOverride || defaultAccountCode;
+      voucher.account_code = finalAccountCode;
+
+      const treasuryAccCode =
+        treasury.account_code ||
+        (treasury.type === "bank"
+          ? "13040100"
+          : chosenCurrency === "USD"
+            ? "13010100"
+            : "13010130");
+
+      try {
+        if (type === "payment") {
+          generatedJournalEntry = this.postExpenseJournal(
+            voucher.id,
+            amount,
+            finalAccountCode,
+            costCenter,
+            this.state.currentBranchId,
+            chosenCurrency,
+            rate,
+            treasuryAccCode,
+          );
+        } else {
+          generatedJournalEntry = this.postRevenueJournal(
+            voucher.id,
+            amount,
+            finalAccountCode,
+            costCenter,
+            this.state.currentBranchId,
+            chosenCurrency,
+            rate,
+            treasuryAccCode,
+          );
+        }
+
+        if (generatedJournalEntry) {
+          voucher.journal_entry_id = generatedJournalEntry.id;
+          voucher.journal_reference = generatedJournalEntry.reference;
+        }
+      } catch (err) {
+        console.error("Journal entry posting notice for voucher:", err);
+      }
     }
+
+    this.state.vouchers.unshift(voucher);
+    this.saveState();
+
     this.logAction(
       "ADMIN",
       "إنشاء سند مالي",
-      `تم تسجيل ${type === "receipt" ? "سند قبض" : "سند صرف"} فئة ${category} بمبلغ ${amount} ج.م بمركز تكلفة ${costCenter}`,
+      `تم تسجيل وترحيل ${type === "receipt" ? "سند قبض" : "سند صرف"} فئة (${category}) بمبلغ ${amount} ${chosenCurrency} (مركز: ${costCenter}) - قيد رقم #${voucher.journal_reference || voucher.id}`,
       "CREATE",
     );
-    return voucher;
+
+    this.notify();
+    return { ...voucher, journal_entry: generatedJournalEntry };
   }
-  deleteVoucher(id) {
+
+  revertVoucher(voucherId: string, reason: string) {
+    const voucher = this.state.vouchers.find((v) => v.id === voucherId);
+    if (!voucher || voucher.deleted || voucher.reverted) {
+      throw new Error("السند غير موجود أو تم إرجاعه مسبقاً.");
+    }
+    voucher.reverted = true;
+    voucher.reverted_at = new Date().toISOString();
+    voucher.reverted_reason = reason;
+    voucher.status = "rejected";
+
+    // Reverse treasury movement
+    if (voucher.treasury_id) {
+      const reverseTxType = voucher.type === "receipt" ? "withdrawal" : "deposit";
+      this.addTreasuryTransaction(
+        voucher.treasury_id,
+        reverseTxType,
+        voucher.amount,
+        voucher.currency,
+        `عكس سند مالي #${voucher.id.substring(4, 9)}: ${reason}`,
+        voucher.id,
+      );
+    }
+
+    // Reverse journal entry if present
+    const originalEntry = this.state.journalEntries.find(
+      (je) =>
+        je.id === voucher.journal_entry_id ||
+        je.reference === voucher.journal_reference ||
+        (voucher.journal_reference && je.reference?.endsWith(voucher.journal_reference)) ||
+        je.reference?.endsWith(voucher.id.substring(4, 9).toUpperCase()),
+    );
+
+    let reversalEntry: any = null;
+    if (originalEntry && Array.isArray(originalEntry.lines)) {
+      const reversalLines = originalEntry.lines.map((line: any) => ({
+        account_code: line.account_code,
+        debit: line.credit || 0,
+        credit: line.debit || 0,
+        cost_center: line.cost_center,
+        currency: line.currency || voucher.currency,
+        rate: line.rate || voucher.exchange_rate || 1,
+      }));
+      try {
+        reversalEntry = this.addJournalEntry(
+          `قيد عكسي تسوية لإلغاء سند #${voucher.id.substring(4, 9)} - ${reason}`,
+          reversalLines,
+          `REV-${voucher.journal_reference || voucher.id.substring(4, 9).toUpperCase()}`,
+          voucher.currency,
+        );
+      } catch (err) {
+        console.warn("Reversal journal entry notice:", err);
+      }
+    }
+
+    this.logAction(
+      "ADMIN",
+      "عكس وإرجاع سند مالي",
+      `تم إرجاع السند #${voucher.id} (المبلغ: ${voucher.amount} ${voucher.currency}) وعكس القيد المحاسبي وحركة الخزينة. السبب: ${reason}`,
+      "REVERT",
+    );
+    this.saveState();
+    this.notify();
+    return { voucher, reversalEntry };
+  }
+
+  deleteVoucher(id: string, reason?: string) {
     const vch = this.state.vouchers.find((v) => v.id === id);
     if (vch) {
       vch.deleted = true;
+      vch.deleted_at = new Date().toISOString();
+      vch.deleted_by = this.state.currentUser || "admin";
+      vch.deleted_reason = reason || "حذف يدوي بواسطة المسؤول المالي";
       this.saveState();
       this.logAction(
         "ADMIN",
-        "حذف سند مالي (حذف مؤقت)",
-        `تم حذف السند المالي #${id} مؤقتاً`,
+        "حذف سند مالي",
+        `تم حذف السند المالي #${vch.id} (المبلغ: ${vch.amount} ${vch.currency} - النوع: ${vch.type === "receipt" ? "قبض" : "صرف"}). السبب: ${vch.deleted_reason}`,
         "DELETE",
       );
+      this.notify();
+      return true;
     }
+    return false;
   }
   addExpiryBatch(inventoryId, batchNo, qty, expiryDate, warehouseId, storageCondition) {
     this.state.inventoryExpiry.push({
@@ -8533,8 +8868,14 @@ export class ERPStore {
   /**
    * Diagnostic and recovery tool: allows recovering or updating any shift state
    */
-  recoverShiftState(shiftId: string, targetStatus: "open" | "closed", makeActive?: boolean): boolean {
-    const isPark = shiftId.startsWith("shift-park-") || (this.state.parkShifts || []).some((s) => s.id === shiftId);
+  recoverShiftState(
+    shiftId: string,
+    targetStatus: "open" | "closed",
+    makeActive?: boolean,
+  ): boolean {
+    const isPark =
+      shiftId.startsWith("shift-park-") ||
+      (this.state.parkShifts || []).some((s) => s.id === shiftId);
     if (isPark) {
       const shift = (this.state.parkShifts || []).find((s) => s.id === shiftId);
       if (!shift) throw new Error("وردية التذاكر غير موجودة!");

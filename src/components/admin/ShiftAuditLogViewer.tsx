@@ -57,7 +57,9 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
   const [selectedType, setSelectedType] = useState<ShiftType | "ALL">(initialShiftType);
   const [selectedAction, setSelectedAction] = useState<string>(initialAction);
   const [selectedUser, setSelectedUser] = useState<string>("ALL");
-  const [datePreset, setDatePreset] = useState<"all" | "today" | "last7" | "thisMonth" | "custom">("all");
+  const [datePreset, setDatePreset] = useState<"all" | "today" | "last7" | "thisMonth" | "custom">(
+    "all",
+  );
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
@@ -119,7 +121,7 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
     const employees =
       typeof erpStore.getEmployees === "function"
         ? erpStore.getEmployees()
-        : ((erpStore as any).getState?.()?.employees || (erpStore as any).state?.employees || []);
+        : (erpStore as any).getState?.()?.employees || (erpStore as any).state?.employees || [];
     if (Array.isArray(employees)) {
       employees.forEach((e: any) => {
         if (e?.name) set.add(String(e.name).trim());
@@ -134,7 +136,11 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
     const opens = logs.filter((l) => l.action === "OPEN" || l.action === "AUTO_CREATE").length;
     const closes = logs.filter((l) => l.action === "CLOSE").length;
     const updates = logs.filter(
-      (l) => l.action === "UPDATE" || l.action === "RECOVER_STATE" || l.action === "RESUME" || l.action === "ACTIVATE",
+      (l) =>
+        l.action === "UPDATE" ||
+        l.action === "RECOVER_STATE" ||
+        l.action === "RESUME" ||
+        l.action === "ACTIVATE",
     ).length;
     const deletes = logs.filter((l) => l.action === "DELETE").length;
     return { total, opens, closes, updates, deletes };
@@ -142,7 +148,8 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
 
   // Export handlers
   const handleExportJSON = () => {
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(logs, null, 2));
+    const dataStr =
+      "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(logs, null, 2));
     const a = document.createElement("a");
     a.href = dataStr;
     a.download = `supabase-shift-audit-logs-${new Date().toISOString().split("T")[0]}.json`;
@@ -200,25 +207,61 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
   const getActionBadge = (action: string) => {
     switch (action) {
       case "OPEN":
-        return <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold">افتتاح OPEN</Badge>;
+        return (
+          <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold">
+            افتتاح OPEN
+          </Badge>
+        );
       case "CLOSE":
-        return <Badge className="bg-blue-600 hover:bg-blue-700 text-white font-bold">إغلاق CLOSE</Badge>;
+        return (
+          <Badge className="bg-blue-600 hover:bg-blue-700 text-white font-bold">إغلاق CLOSE</Badge>
+        );
       case "RESUME":
-        return <Badge className="bg-teal-600 hover:bg-teal-700 text-white font-bold">استئناف RESUME</Badge>;
+        return (
+          <Badge className="bg-teal-600 hover:bg-teal-700 text-white font-bold">
+            استئناف RESUME
+          </Badge>
+        );
       case "ACTIVATE":
-        return <Badge className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold">تفعيل ACTIVATE</Badge>;
+        return (
+          <Badge className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold">
+            تفعيل ACTIVATE
+          </Badge>
+        );
       case "AUTO_CREATE":
-        return <Badge className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold">إنشاء تلقائي AUTO</Badge>;
+        return (
+          <Badge className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold">
+            إنشاء تلقائي AUTO
+          </Badge>
+        );
       case "UPDATE":
-        return <Badge className="bg-amber-600 hover:bg-amber-700 text-white font-bold">تعديل UPDATE</Badge>;
+        return (
+          <Badge className="bg-amber-600 hover:bg-amber-700 text-white font-bold">
+            تعديل UPDATE
+          </Badge>
+        );
       case "DELETE":
-        return <Badge className="bg-rose-600 hover:bg-rose-700 text-white font-bold">حذف DELETE</Badge>;
+        return (
+          <Badge className="bg-rose-600 hover:bg-rose-700 text-white font-bold">حذف DELETE</Badge>
+        );
       case "RECOVER_STATE":
-        return <Badge className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-bold">إصلاح حالة RECOVER</Badge>;
+        return (
+          <Badge className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-bold">
+            إصلاح حالة RECOVER
+          </Badge>
+        );
       case "FILTER_ANOMALY":
-        return <Badge className="bg-purple-600 hover:bg-purple-700 text-white font-bold">شذوذ تصفية ANOMALY</Badge>;
+        return (
+          <Badge className="bg-purple-600 hover:bg-purple-700 text-white font-bold">
+            شذوذ تصفية ANOMALY
+          </Badge>
+        );
       default:
-        return <Badge variant="outline" className="font-bold">{action}</Badge>;
+        return (
+          <Badge variant="outline" className="font-bold">
+            {action}
+          </Badge>
+        );
     }
   };
 
@@ -242,16 +285,23 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-xl font-black text-foreground">سجل تدقيق الورديات (Supabase Audit Log)</h2>
+                <h2 className="text-xl font-black text-foreground">
+                  سجل تدقيق الورديات (Supabase Audit Log)
+                </h2>
                 <Badge
                   variant="outline"
                   className="bg-teal-500/10 text-teal-600 border-teal-500/30 text-xs font-bold"
                 >
-                  {source === "supabase" ? "Supabase Live" : source === "hybrid" ? "Supabase + Local" : "مخزن محلي"}
+                  {source === "supabase"
+                    ? "Supabase Live"
+                    : source === "hybrid"
+                      ? "Supabase + Local"
+                      : "مخزن محلي"}
                 </Badge>
               </div>
               <p className="text-xs text-muted-foreground mt-0.5">
-                تتبع تفصيلي لجميع عمليات الورديات وحالات فتح وإغلاق وتعديل الورديات مع فلترة متقدمة حسب التاريخ والمستخدم ونوع الإجراء
+                تتبع تفصيلي لجميع عمليات الورديات وحالات فتح وإغلاق وتعديل الورديات مع فلترة متقدمة
+                حسب التاريخ والمستخدم ونوع الإجراء
               </p>
             </div>
           </div>
@@ -289,7 +339,9 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
               <button
                 onClick={() => setViewMode("table")}
                 className={`p-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                  viewMode === "table" ? "bg-background text-foreground shadow-xs" : "text-muted-foreground"
+                  viewMode === "table"
+                    ? "bg-background text-foreground shadow-xs"
+                    : "text-muted-foreground"
                 }`}
                 title="عرض جدولي"
               >
@@ -298,7 +350,9 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
               <button
                 onClick={() => setViewMode("timeline")}
                 className={`p-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                  viewMode === "timeline" ? "bg-background text-foreground shadow-xs" : "text-muted-foreground"
+                  viewMode === "timeline"
+                    ? "bg-background text-foreground shadow-xs"
+                    : "text-muted-foreground"
                 }`}
                 title="عرض المخطط الزمني"
               >
@@ -343,8 +397,12 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
             <span>تعديل واستئناف وإصلاح</span>
             <SlidersHorizontal size={15} className="text-amber-600" />
           </div>
-          <div className="text-2xl font-black text-amber-600">{metrics.updates + metrics.deletes}</div>
-          <p className="text-[10px] text-muted-foreground mt-0.5">{metrics.deletes} حذف | {metrics.updates} تعديل وإصلاح</p>
+          <div className="text-2xl font-black text-amber-600">
+            {metrics.updates + metrics.deletes}
+          </div>
+          <p className="text-[10px] text-muted-foreground mt-0.5">
+            {metrics.deletes} حذف | {metrics.updates} تعديل وإصلاح
+          </p>
         </div>
       </div>
 
@@ -447,7 +505,9 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
                   setEndDate("");
                 }}
                 className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer shrink-0 ${
-                  datePreset === "all" ? "bg-teal-600 text-white" : "bg-muted hover:bg-muted/80 text-foreground"
+                  datePreset === "all"
+                    ? "bg-teal-600 text-white"
+                    : "bg-muted hover:bg-muted/80 text-foreground"
                 }`}
               >
                 الكل
@@ -456,7 +516,9 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
                 type="button"
                 onClick={() => setDatePreset("today")}
                 className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer shrink-0 ${
-                  datePreset === "today" ? "bg-teal-600 text-white" : "bg-muted hover:bg-muted/80 text-foreground"
+                  datePreset === "today"
+                    ? "bg-teal-600 text-white"
+                    : "bg-muted hover:bg-muted/80 text-foreground"
                 }`}
               >
                 اليوم
@@ -465,7 +527,9 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
                 type="button"
                 onClick={() => setDatePreset("last7")}
                 className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer shrink-0 ${
-                  datePreset === "last7" ? "bg-teal-600 text-white" : "bg-muted hover:bg-muted/80 text-foreground"
+                  datePreset === "last7"
+                    ? "bg-teal-600 text-white"
+                    : "bg-muted hover:bg-muted/80 text-foreground"
                 }`}
               >
                 آخر 7 أيام
@@ -474,7 +538,9 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
                 type="button"
                 onClick={() => setDatePreset("thisMonth")}
                 className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer shrink-0 ${
-                  datePreset === "thisMonth" ? "bg-teal-600 text-white" : "bg-muted hover:bg-muted/80 text-foreground"
+                  datePreset === "thisMonth"
+                    ? "bg-teal-600 text-white"
+                    : "bg-muted hover:bg-muted/80 text-foreground"
                 }`}
               >
                 هذا الشهر
@@ -483,7 +549,9 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
                 type="button"
                 onClick={() => setDatePreset("custom")}
                 className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer shrink-0 ${
-                  datePreset === "custom" ? "bg-teal-600 text-white" : "bg-muted hover:bg-muted/80 text-foreground"
+                  datePreset === "custom"
+                    ? "bg-teal-600 text-white"
+                    : "bg-muted hover:bg-muted/80 text-foreground"
                 }`}
               >
                 مخصص
@@ -522,7 +590,9 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
       {logs.length === 0 ? (
         <div className="bg-card border border-dashed rounded-3xl p-12 text-center">
           <History size={40} className="mx-auto text-muted-foreground/50 mb-3" />
-          <h3 className="font-black text-base text-foreground">لا توجد حركات ورديات مطابقة للفلتر المحدد</h3>
+          <h3 className="font-black text-base text-foreground">
+            لا توجد حركات ورديات مطابقة للفلتر المحدد
+          </h3>
           <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto">
             تأكد من اختيار نطاق تاريخ صحيح أو إلغاء فلاتر المستخدمين لعرض المزيد من البيانات المسجلة
           </p>
@@ -568,7 +638,10 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
                     <React.Fragment key={log.id}>
                       <tr className="hover:bg-muted/20 transition">
                         {/* Timestamp */}
-                        <td className="p-3.5 whitespace-nowrap font-mono text-[11px] text-muted-foreground" dir="ltr">
+                        <td
+                          className="p-3.5 whitespace-nowrap font-mono text-[11px] text-muted-foreground"
+                          dir="ltr"
+                        >
                           {formattedDate}
                         </td>
 
@@ -606,9 +679,13 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
                               <User size={12} />
                             </div>
                             <div>
-                              <div className="font-bold text-foreground">{log.cashier_name || log.performed_by || "—"}</div>
+                              <div className="font-bold text-foreground">
+                                {log.cashier_name || log.performed_by || "—"}
+                              </div>
                               {log.performed_by && log.performed_by !== log.cashier_name && (
-                                <div className="text-[10px] text-muted-foreground">بواسطة: {log.performed_by}</div>
+                                <div className="text-[10px] text-muted-foreground">
+                                  بواسطة: {log.performed_by}
+                                </div>
                               )}
                             </div>
                           </div>
@@ -616,9 +693,13 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
 
                         {/* Status Change */}
                         <td className="p-3.5 whitespace-nowrap">
-                          {(log.status_before || log.status_after) ? (
+                          {log.status_before || log.status_after ? (
                             <div className="inline-flex items-center gap-1 font-mono text-[10px] bg-muted/60 px-2 py-1 rounded-lg border border-border/70">
-                              <span className={log.status_before === "open" ? "text-emerald-600 font-bold" : ""}>
+                              <span
+                                className={
+                                  log.status_before === "open" ? "text-emerald-600 font-bold" : ""
+                                }
+                              >
                                 {log.status_before || "—"}
                               </span>
                               <span>←</span>
@@ -627,8 +708,8 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
                                   log.status_after === "open"
                                     ? "text-emerald-600 font-bold"
                                     : log.status_after === "closed"
-                                    ? "text-blue-600 font-bold"
-                                    : "text-rose-600 font-bold"
+                                      ? "text-blue-600 font-bold"
+                                      : "text-rose-600 font-bold"
                                 }
                               >
                                 {log.status_after || "—"}
@@ -640,7 +721,10 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
                         </td>
 
                         {/* Details */}
-                        <td className="p-3.5 text-xs text-foreground max-w-xs truncate" title={log.details || ""}>
+                        <td
+                          className="p-3.5 text-xs text-foreground max-w-xs truncate"
+                          title={log.details || ""}
+                        >
                           {log.details || "—"}
                         </td>
 
@@ -653,7 +737,11 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
                             className="h-7 text-xs font-bold text-teal-600 hover:text-teal-700 hover:bg-teal-50"
                           >
                             {isExpanded ? "إغلاق" : "JSON"}
-                            {isExpanded ? <ChevronUp size={13} className="mr-1" /> : <ChevronDown size={13} className="mr-1" />}
+                            {isExpanded ? (
+                              <ChevronUp size={13} className="mr-1" />
+                            ) : (
+                              <ChevronDown size={13} className="mr-1" />
+                            )}
                           </Button>
                         </td>
                       </tr>
@@ -662,12 +750,18 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
                       {isExpanded && (
                         <tr className="bg-muted/30">
                           <td colSpan={7} className="p-4 border-t border-border">
-                            <div className="bg-background border border-border rounded-2xl p-4 font-mono text-xs text-left" dir="ltr">
+                            <div
+                              className="bg-background border border-border rounded-2xl p-4 font-mono text-xs text-left"
+                              dir="ltr"
+                            >
                               <div className="flex items-center justify-between pb-2 mb-2 border-b border-border/60 text-muted-foreground text-[11px]">
                                 <span>Record ID: {log.id}</span>
                                 <span>Shift ID: {log.shift_id}</span>
                                 <span>
-                                  Storage: {log.synced_to_supabase ? "Supabase Cloud Database" : "Local Verified Storage"}
+                                  Storage:{" "}
+                                  {log.synced_to_supabase
+                                    ? "Supabase Cloud Database"
+                                    : "Local Verified Storage"}
                                 </span>
                               </div>
                               <pre className="overflow-x-auto text-[11px] max-h-56 text-emerald-800 dark:text-emerald-400">
@@ -740,8 +834,12 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
 
                 <div className="pt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                   <div>
-                    <span className="text-muted-foreground font-semibold">الكاشير / المستخدم: </span>
-                    <span className="font-bold text-foreground">{log.cashier_name || log.performed_by || "—"}</span>
+                    <span className="text-muted-foreground font-semibold">
+                      الكاشير / المستخدم:{" "}
+                    </span>
+                    <span className="font-bold text-foreground">
+                      {log.cashier_name || log.performed_by || "—"}
+                    </span>
                   </div>
 
                   <div>
@@ -758,7 +856,10 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
                 </div>
 
                 {isExpanded && (
-                  <div className="mt-4 pt-3 border-t border-border bg-muted/40 p-4 rounded-2xl font-mono text-xs text-left" dir="ltr">
+                  <div
+                    className="mt-4 pt-3 border-t border-border bg-muted/40 p-4 rounded-2xl font-mono text-xs text-left"
+                    dir="ltr"
+                  >
                     <pre className="overflow-x-auto text-[11px] max-h-56 text-emerald-800 dark:text-emerald-400">
                       {JSON.stringify(log, null, 2)}
                     </pre>

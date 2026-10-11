@@ -226,7 +226,10 @@ export function ParkShiftLauncherModal({
                   <Database size={13} />
                   سجل التدقيق
                 </Button>
-                <Badge variant="outline" className="bg-teal-50 text-teal-700 border-teal-300 text-xs">
+                <Badge
+                  variant="outline"
+                  className="bg-teal-50 text-teal-700 border-teal-300 text-xs"
+                >
                   Restocash Park POS
                 </Badge>
               </div>

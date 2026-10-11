@@ -48,17 +48,18 @@ export const Route = createFileRoute("/admin/receipts")({
 });
 
 function ReceiptDesignerPage() {
-  const [settings, setSettings] = useState<ReceiptDesignSettings>(getReceiptDesignSettings);
+  const [settings, setSettings] = useState<ReceiptDesignSettings>(DEFAULT_RECEIPT_SETTINGS);
   const [previewDocType, setPreviewDocType] = useState<
     "sales" | "collection" | "payment" | "invoice" | "return" | "mall_contract" | "mall_termination"
   >("sales");
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [activeTab, setActiveTab] = useState("sales");
-  const [isPrinterConnected, setIsPrinterConnected] = useState(() =>
-    printerService.isPrinterConnected(),
-  );
+  const [isPrinterConnected, setIsPrinterConnected] = useState(false);
 
   useEffect(() => {
+    setSettings(getReceiptDesignSettings());
+    setIsPrinterConnected(printerService.isPrinterConnected());
+
     const handleUpdate = (e: any) => {
       if (e?.detail) setSettings(e.detail);
     };

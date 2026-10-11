@@ -46,26 +46,47 @@ function CaptainAccessGate() {
   useEffect(() => {
     let active = true;
     currentUserHasPermission(["captain", "captain_access"])
-      .then((allowed) => { if (active) setAccessState(allowed ? "allowed" : "denied"); })
+      .then((allowed) => {
+        if (active) setAccessState(allowed ? "allowed" : "denied");
+      })
       .catch((error) => {
         console.error("Captain route authorization failed.", error);
         if (active) setAccessState("denied");
       });
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, []);
 
   if (accessState === "allowed") return <CaptainPage />;
   if (accessState === "checking") {
-    return <div className="min-h-screen flex items-center justify-center text-sm font-bold text-muted-foreground">جاري التحقق من صلاحيات حسابك…</div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center text-sm font-bold text-muted-foreground">
+        جاري التحقق من صلاحيات حسابك…
+      </div>
+    );
   }
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-6" dir="rtl">
-      <div role="alert" className="max-w-md rounded-2xl border border-border bg-card p-8 text-center shadow-sm space-y-4">
+      <div
+        role="alert"
+        className="max-w-md rounded-2xl border border-border bg-card p-8 text-center shadow-sm space-y-4"
+      >
         <h1 className="text-xl font-black text-foreground">ليس لديك صلاحية شاشة الكابتن</h1>
-        <p className="text-sm text-muted-foreground">يجب تفعيل صلاحية الكابتن من صفحة المستخدمين قبل فتح هذه الشاشة.</p>
+        <p className="text-sm text-muted-foreground">
+          يجب تفعيل صلاحية الكابتن من صفحة المستخدمين قبل فتح هذه الشاشة.
+        </p>
         <div className="flex flex-wrap justify-center gap-2">
           <Button onClick={() => navigate({ to: "/admin" })}>العودة إلى لوحة الإدارة</Button>
-          <Button variant="outline" onClick={async () => { await signOutCurrentUser(); navigate({ to: "/login" }); }}>تسجيل الخروج</Button>
+          <Button
+            variant="outline"
+            onClick={async () => {
+              await signOutCurrentUser();
+              navigate({ to: "/login" });
+            }}
+          >
+            تسجيل الخروج
+          </Button>
         </div>
       </div>
     </div>
@@ -122,11 +143,17 @@ function CaptainPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const tableOrders = useSyncExternalStore(
+  const [isMounted, setIsMounted] = useState(false);
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  const rawTableOrders = useSyncExternalStore(
     tableOrdersStore.subscribe.bind(tableOrdersStore),
     () => tableOrdersStore.getAllOrders(),
     () => EMPTY_ORDERS,
   );
+  const tableOrders = isMounted ? rawTableOrders : EMPTY_ORDERS;
 
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -137,15 +164,23 @@ function CaptainPage() {
   const [qrTableId, setQrTableId] = useState("");
   const [qrWelcomeMessage, setQrWelcomeMessage] = useState("أهلاً بك! يمكنك الطلب الآن.");
   const [qrCurrency, setQrCurrency] = useState("EGP");
-  const [customBaseUrl, setCustomBaseUrl] = useState<string>(() => {
+  const [customBaseUrl, setCustomBaseUrl] = useState<string>("https://cart-bliss-02.lovable.app");
+
+  useEffect(() => {
     if (typeof window !== "undefined") {
       const orig = window.location.origin || "";
-      if (orig && orig !== "null" && !orig.includes("localhost") && !orig.includes("127.0.0.1") && !orig.includes("::1") && !orig.includes("run.app")) {
-        return orig;
+      if (
+        orig &&
+        orig !== "null" &&
+        !orig.includes("localhost") &&
+        !orig.includes("127.0.0.1") &&
+        !orig.includes("::1") &&
+        !orig.includes("run.app")
+      ) {
+        setCustomBaseUrl(orig);
       }
     }
-    return "https://cart-bliss-02.lovable.app";
-  });
+  }, []);
   const [editingTable, setEditingTable] = useState<Table | null>(null);
   const [form, setForm] = useState({ number: "", name: "", capacity: "" });
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -778,7 +813,9 @@ function CaptainPage() {
                           : "text-left block text-xs font-bold text-slate-700"
                       }
                     >
-                      {lang === "ar" ? "رابط النظام (النطاق العام للعملاء)" : "System Base URL (Public Domain)"}
+                      {lang === "ar"
+                        ? "رابط النظام (النطاق العام للعملاء)"
+                        : "System Base URL (Public Domain)"}
                     </Label>
                     <Input
                       value={customBaseUrl}

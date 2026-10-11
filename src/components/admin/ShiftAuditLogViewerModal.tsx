@@ -63,8 +63,9 @@ export const ShiftAuditLogViewerModal: React.FC<ShiftAuditLogViewerModalProps> =
   const [selectedInspectorShiftId, setSelectedInspectorShiftId] = useState<string>(
     initialShiftId || "",
   );
-  const [visibilityAnalysis, setVisibilityAnalysis] =
-    useState<ShiftVisibilityAnalysis | null>(null);
+  const [visibilityAnalysis, setVisibilityAnalysis] = useState<ShiftVisibilityAnalysis | null>(
+    null,
+  );
 
   const fetchLogs = async () => {
     setLoading(true);
@@ -116,21 +117,11 @@ export const ShiftAuditLogViewerModal: React.FC<ShiftAuditLogViewerModalProps> =
       return;
     }
 
-    const isPark =
-      found.id.startsWith("shift-park-") || found.auto_shift_number?.startsWith("PSH");
-    const active = isPark
-      ? erpStore.getActiveParkShift()
-      : erpStore.getActiveRestaurantShift();
-    const txs = isPark
-      ? erpStore.getParkTicketTransactions()
-      : [];
+    const isPark = found.id.startsWith("shift-park-") || found.auto_shift_number?.startsWith("PSH");
+    const active = isPark ? erpStore.getActiveParkShift() : erpStore.getActiveRestaurantShift();
+    const txs = isPark ? erpStore.getParkTicketTransactions() : [];
 
-    const analysis = shiftAuditService.analyzeShiftVisibility(
-      found,
-      allShifts,
-      active,
-      txs,
-    );
+    const analysis = shiftAuditService.analyzeShiftVisibility(found, allShifts, active, txs);
     setVisibilityAnalysis(analysis);
   }, [selectedInspectorShiftId, allShifts]);
 
@@ -165,31 +156,70 @@ export const ShiftAuditLogViewerModal: React.FC<ShiftAuditLogViewerModalProps> =
   const getActionBadge = (action: string) => {
     switch (action) {
       case "OPEN":
-        return <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold">افتتاح OPEN</Badge>;
+        return (
+          <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold">
+            افتتاح OPEN
+          </Badge>
+        );
       case "CLOSE":
-        return <Badge className="bg-blue-600 hover:bg-blue-700 text-white font-bold">إغلاق CLOSE</Badge>;
+        return (
+          <Badge className="bg-blue-600 hover:bg-blue-700 text-white font-bold">إغلاق CLOSE</Badge>
+        );
       case "RESUME":
-        return <Badge className="bg-teal-600 hover:bg-teal-700 text-white font-bold">استئناف RESUME</Badge>;
+        return (
+          <Badge className="bg-teal-600 hover:bg-teal-700 text-white font-bold">
+            استئناف RESUME
+          </Badge>
+        );
       case "ACTIVATE":
-        return <Badge className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold">تفعيل ACTIVATE</Badge>;
+        return (
+          <Badge className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold">
+            تفعيل ACTIVATE
+          </Badge>
+        );
       case "AUTO_CREATE":
-        return <Badge className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold">إنشاء تلقائي AUTO</Badge>;
+        return (
+          <Badge className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold">
+            إنشاء تلقائي AUTO
+          </Badge>
+        );
       case "UPDATE":
-        return <Badge className="bg-amber-600 hover:bg-amber-700 text-white font-bold">تعديل UPDATE</Badge>;
+        return (
+          <Badge className="bg-amber-600 hover:bg-amber-700 text-white font-bold">
+            تعديل UPDATE
+          </Badge>
+        );
       case "DELETE":
-        return <Badge className="bg-rose-600 hover:bg-rose-700 text-white font-bold">حذف DELETE</Badge>;
+        return (
+          <Badge className="bg-rose-600 hover:bg-rose-700 text-white font-bold">حذف DELETE</Badge>
+        );
       case "FILTER_ANOMALY":
-        return <Badge className="bg-purple-600 hover:bg-purple-700 text-white font-bold">تنظيف شذوذ ANOMALY</Badge>;
+        return (
+          <Badge className="bg-purple-600 hover:bg-purple-700 text-white font-bold">
+            تنظيف شذوذ ANOMALY
+          </Badge>
+        );
       case "RECOVER_STATE":
-        return <Badge className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-bold">إصلاح حالة RECOVER</Badge>;
+        return (
+          <Badge className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-bold">
+            إصلاح حالة RECOVER
+          </Badge>
+        );
       default:
-        return <Badge variant="outline" className="font-bold">{action}</Badge>;
+        return (
+          <Badge variant="outline" className="font-bold">
+            {action}
+          </Badge>
+        );
     }
   };
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-5xl max-h-[92vh] flex flex-col p-0 overflow-hidden bg-background text-foreground border-border" dir="rtl">
+      <DialogContent
+        className="max-w-5xl max-h-[92vh] flex flex-col p-0 overflow-hidden bg-background text-foreground border-border"
+        dir="rtl"
+      >
         {/* Header */}
         <DialogHeader className="p-5 border-b border-border bg-muted/20 flex flex-row items-center justify-between gap-4">
           <div>
@@ -200,12 +230,20 @@ export const ShiftAuditLogViewerModal: React.FC<ShiftAuditLogViewerModalProps> =
               <div>
                 <DialogTitle className="text-lg font-black flex items-center gap-2">
                   سجل تدقيق الورديات في Supabase (Shift Audit Log)
-                  <Badge variant="outline" className="text-xs bg-teal-500/10 text-teal-600 border-teal-500/30">
-                    {source === "supabase" ? "Supabase Cloud" : source === "hybrid" ? "Supabase + Local" : "مخزن محلي"}
+                  <Badge
+                    variant="outline"
+                    className="text-xs bg-teal-500/10 text-teal-600 border-teal-500/30"
+                  >
+                    {source === "supabase"
+                      ? "Supabase Cloud"
+                      : source === "hybrid"
+                        ? "Supabase + Local"
+                        : "مخزن محلي"}
                   </Badge>
                 </DialogTitle>
                 <DialogDescription className="text-xs text-muted-foreground mt-0.5">
-                  تتبع جميع حركات فتح وإغلاق واستئناف الورديات، وتشخيص أسباب اختفاء أو ظهور الورديات بشكل خاطئ
+                  تتبع جميع حركات فتح وإغلاق واستئناف الورديات، وتشخيص أسباب اختفاء أو ظهور الورديات
+                  بشكل خاطئ
                 </DialogDescription>
               </div>
             </div>
@@ -263,10 +301,7 @@ export const ShiftAuditLogViewerModal: React.FC<ShiftAuditLogViewerModalProps> =
         {/* TAB 1: LOGS EXPLORER WITH ADVANCED FILTERS */}
         {activeTab === "logs" && (
           <div className="flex-1 overflow-y-auto p-5">
-            <ShiftAuditLogViewer
-              initialShiftType={initialShiftType}
-              showHeaderTitle={false}
-            />
+            <ShiftAuditLogViewer initialShiftType={initialShiftType} showHeaderTitle={false} />
           </div>
         )}
 
@@ -287,7 +322,8 @@ export const ShiftAuditLogViewerModal: React.FC<ShiftAuditLogViewerModalProps> =
                   <option value="">-- اختر وردية من القائمة --</option>
                   {allShifts.map((s) => (
                     <option key={s.id} value={s.id}>
-                      {s.shift_number} ({s.status === "open" ? "مفتوحة" : "مغلقة"}) - كاشير: {s.cashier_name}
+                      {s.shift_number} ({s.status === "open" ? "مفتوحة" : "مغلقة"}) - كاشير:{" "}
+                      {s.cashier_name}
                     </option>
                   ))}
                 </select>
@@ -324,38 +360,60 @@ export const ShiftAuditLogViewerModal: React.FC<ShiftAuditLogViewerModalProps> =
                 {/* Stats Summary Grid */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div className="bg-card border border-border p-3.5 rounded-2xl">
-                    <span className="text-[11px] text-muted-foreground font-bold">الحالة المسجلة</span>
+                    <span className="text-[11px] text-muted-foreground font-bold">
+                      الحالة المسجلة
+                    </span>
                     <div className="flex items-center gap-1.5 mt-1">
-                      <span className={`w-2.5 h-2.5 rounded-full ${visibilityAnalysis.status === "open" ? "bg-emerald-500" : "bg-muted-foreground"}`} />
-                      <span className="font-black text-sm">{visibilityAnalysis.status === "open" ? "مفتوحة (Open)" : "مغلقة (Closed)"}</span>
+                      <span
+                        className={`w-2.5 h-2.5 rounded-full ${visibilityAnalysis.status === "open" ? "bg-emerald-500" : "bg-muted-foreground"}`}
+                      />
+                      <span className="font-black text-sm">
+                        {visibilityAnalysis.status === "open" ? "مفتوحة (Open)" : "مغلقة (Closed)"}
+                      </span>
                     </div>
                   </div>
 
                   <div className="bg-card border border-border p-3.5 rounded-2xl">
-                    <span className="text-[11px] text-muted-foreground font-bold">حالة الجلسة النشطة</span>
+                    <span className="text-[11px] text-muted-foreground font-bold">
+                      حالة الجلسة النشطة
+                    </span>
                     <div className="font-black text-sm mt-1 text-teal-600">
-                      {visibilityAnalysis.isActiveSession ? "وردية نشطة حالياً ✓" : "غير نشطة في الجلسة"}
+                      {visibilityAnalysis.isActiveSession
+                        ? "وردية نشطة حالياً ✓"
+                        : "غير نشطة في الجلسة"}
                     </div>
                   </div>
 
                   <div className="bg-card border border-border p-3.5 rounded-2xl">
-                    <span className="text-[11px] text-muted-foreground font-bold">الظهور في الورديات المفتوحة</span>
+                    <span className="text-[11px] text-muted-foreground font-bold">
+                      الظهور في الورديات المفتوحة
+                    </span>
                     <div className="font-black text-sm mt-1">
                       {visibilityAnalysis.isVisibleInOpenView ? (
-                        <span className="text-emerald-600 flex items-center gap-1"><CheckCircle2 size={15} /> ظاهرة</span>
+                        <span className="text-emerald-600 flex items-center gap-1">
+                          <CheckCircle2 size={15} /> ظاهرة
+                        </span>
                       ) : (
-                        <span className="text-muted-foreground flex items-center gap-1"><AlertCircle size={15} /> غير معروضة</span>
+                        <span className="text-muted-foreground flex items-center gap-1">
+                          <AlertCircle size={15} /> غير معروضة
+                        </span>
                       )}
                     </div>
                   </div>
 
                   <div className="bg-card border border-border p-3.5 rounded-2xl">
-                    <span className="text-[11px] text-muted-foreground font-bold">الظهور في الورديات المغلقة</span>
+                    <span className="text-[11px] text-muted-foreground font-bold">
+                      الظهور في الورديات المغلقة
+                    </span>
                     <div className="font-black text-sm mt-1">
                       {visibilityAnalysis.isVisibleInClosedView ? (
-                        <span className="text-blue-600 flex items-center gap-1"><CheckCircle2 size={15} /> معروضة بالتقارير</span>
+                        <span className="text-blue-600 flex items-center gap-1">
+                          <CheckCircle2 size={15} /> معروضة بالتقارير
+                        </span>
                       ) : (
-                        <span className="text-muted-foreground flex items-center gap-1"><AlertCircle size={15} /> غير معروضة</span>
+                        <span className="text-muted-foreground flex items-center gap-1">
+                          <AlertCircle size={15} /> غير معروضة
+                        </span>
                       )}
                     </div>
                   </div>
@@ -375,10 +433,10 @@ export const ShiftAuditLogViewerModal: React.FC<ShiftAuditLogViewerModalProps> =
                           d.level === "error"
                             ? "bg-rose-500/10 border-rose-500/30 text-rose-700 dark:text-rose-400"
                             : d.level === "warning"
-                            ? "bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-400"
-                            : d.level === "success"
-                            ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-400"
-                            : "bg-muted/40 border-border text-foreground"
+                              ? "bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-400"
+                              : d.level === "success"
+                                ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-400"
+                                : "bg-muted/40 border-border text-foreground"
                         }`}
                       >
                         <div className="mt-0.5 font-bold font-mono">[{d.code}]</div>
@@ -403,27 +461,37 @@ export const ShiftAuditLogViewerModal: React.FC<ShiftAuditLogViewerModalProps> =
 
                 {/* Transactions Summary */}
                 <div className="bg-card border border-border rounded-2xl p-4">
-                  <h4 className="font-black text-sm mb-2">إحصائيات المبيعات المرتبطة بهذه الوردية:</h4>
+                  <h4 className="font-black text-sm mb-2">
+                    إحصائيات المبيعات المرتبطة بهذه الوردية:
+                  </h4>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
                     <div className="p-3 bg-muted/30 rounded-xl">
                       <span className="text-muted-foreground">عدد العمليات:</span>{" "}
-                      <span className="font-bold font-mono">{visibilityAnalysis.transactionsCount} عملية</span>
+                      <span className="font-bold font-mono">
+                        {visibilityAnalysis.transactionsCount} عملية
+                      </span>
                     </div>
                     {visibilityAnalysis.shiftType === "park" ? (
                       <>
                         <div className="p-3 bg-muted/30 rounded-xl">
                           <span className="text-muted-foreground">إجمالي USD:</span>{" "}
-                          <span className="font-bold font-mono text-emerald-600">${visibilityAnalysis.grossSalesUsd}</span>
+                          <span className="font-bold font-mono text-emerald-600">
+                            ${visibilityAnalysis.grossSalesUsd}
+                          </span>
                         </div>
                         <div className="p-3 bg-muted/30 rounded-xl">
                           <span className="text-muted-foreground">إجمالي SSP:</span>{" "}
-                          <span className="font-bold font-mono text-teal-600">{visibilityAnalysis.grossSalesSsp?.toLocaleString()} SSP</span>
+                          <span className="font-bold font-mono text-teal-600">
+                            {visibilityAnalysis.grossSalesSsp?.toLocaleString()} SSP
+                          </span>
                         </div>
                       </>
                     ) : (
                       <div className="p-3 bg-muted/30 rounded-xl">
                         <span className="text-muted-foreground">إجمالي المبيعات:</span>{" "}
-                        <span className="font-bold font-mono text-emerald-600">{visibilityAnalysis.totalSalesRest}</span>
+                        <span className="font-bold font-mono text-emerald-600">
+                          {visibilityAnalysis.totalSalesRest}
+                        </span>
                       </div>
                     )}
                   </div>
@@ -432,7 +500,9 @@ export const ShiftAuditLogViewerModal: React.FC<ShiftAuditLogViewerModalProps> =
             ) : (
               <div className="text-center py-12 border border-dashed rounded-3xl p-8 bg-muted/10">
                 <HelpCircle size={36} className="mx-auto text-muted-foreground mb-2 opacity-50" />
-                <p className="font-bold text-sm">يرجى اختيار وردية من القائمة للبدء في تشخيص حالتها</p>
+                <p className="font-bold text-sm">
+                  يرجى اختيار وردية من القائمة للبدء في تشخيص حالتها
+                </p>
               </div>
             )}
           </div>

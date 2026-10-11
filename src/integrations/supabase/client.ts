@@ -102,7 +102,7 @@ function createSupabaseClient() {
     typeof process !== "undefined" && process.env ? process.env.SUPABASE_URL : undefined,
   ];
 
-  let SUPABASE_URL = rawUrlCandidates.find(isValidHttpUrl) || DEFAULT_SUPABASE_URL;
+  const SUPABASE_URL = rawUrlCandidates.find(isValidHttpUrl) || DEFAULT_SUPABASE_URL;
 
   let SUPABASE_PUBLISHABLE_KEY =
     (typeof import.meta !== "undefined" && import.meta.env

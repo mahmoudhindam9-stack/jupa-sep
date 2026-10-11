@@ -15,11 +15,19 @@ function hasAnyRequestedPermission(permissions: Record<string, any>, keys: strin
 
 export async function currentUserHasPermission(keys: string[]): Promise<boolean> {
   if (isHostedDeployment()) {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.user?.id) return false;
-    const profile: any = await authService.getProfile(session.user.id);
-    if (!profile?.id || !profile?.username) return false;
-    return hasAnyRequestedPermission(profile.permissions || {}, keys);
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (session?.user?.id) {
+        const profile: any = await authService.getProfile(session.user.id);
+        if (profile?.id && profile?.username) {
+          return hasAnyRequestedPermission(profile.permissions || {}, keys);
+        }
+      }
+    } catch {
+      // Fallback to local user
+    }
   }
 
   const activeStored =
@@ -31,7 +39,9 @@ export async function currentUserHasPermission(keys: string[]): Promise<boolean>
   const base = active.split("@")[0];
   const users = erpStore.getUsers() as any[];
   const user = users.find((candidate) => {
-    const username = String(candidate.username || "").trim().toLowerCase();
+    const username = String(candidate.username || "")
+      .trim()
+      .toLowerCase();
     if (!username || !candidate.password) return false;
     return username.includes("@") ? username === active : username === base;
   });

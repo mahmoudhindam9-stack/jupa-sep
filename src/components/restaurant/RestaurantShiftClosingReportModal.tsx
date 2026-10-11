@@ -44,7 +44,9 @@ interface RestaurantShiftClosingReportModalProps {
   isOpen: boolean;
   onClose: () => void;
   onShiftClosed?: () => void; // Triggered to navigate back to Restaurant management page
+  onReportCompleted?: () => void; // Alias for onShiftClosed
   shiftToClose?: RestaurantShift | null; // If passed, close this specific shift, otherwise active shift
+  shift?: RestaurantShift | null; // Alias for shiftToClose
   viewOnlyShift?: RestaurantShift | null; // If passed, view report of an already closed shift
   orders?: any[]; // Orders passed from POS or fetched
 }
@@ -53,7 +55,9 @@ export function RestaurantShiftClosingReportModal({
   isOpen,
   onClose,
   onShiftClosed,
+  onReportCompleted,
   shiftToClose,
+  shift,
   viewOnlyShift,
   orders = [],
 }: RestaurantShiftClosingReportModalProps) {
@@ -65,6 +69,7 @@ export function RestaurantShiftClosingReportModal({
 
   const activeShift =
     shiftToClose ||
+    shift ||
     erpStore.getActiveRestaurantShift() ||
     erpStore.getOrCreateActiveRestaurantShift();
   const currentShift = viewOnlyShift || closedResult || activeShift;
@@ -205,10 +210,10 @@ export function RestaurantShiftClosingReportModal({
         `تم إغلاق الوردية (${closed.shift_number}) بنجاح وترحيل القيود والحركات المحاسبية!`,
       );
 
-      // Trigger redirect to restaurant admin page
-      if (onShiftClosed) {
+      const notifyCompleted = onShiftClosed || onReportCompleted;
+      if (notifyCompleted) {
         setTimeout(() => {
-          onShiftClosed();
+          notifyCompleted();
         }, 1200);
       }
     } catch (err: any) {

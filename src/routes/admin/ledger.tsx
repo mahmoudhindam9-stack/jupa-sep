@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
 import {
   erpStore,
+  isLevel4Account,
   type Account,
   type JournalEntry,
   type JournalLine,
@@ -24,6 +25,7 @@ const getLineBaseValue = (
   return erpStore.getLineBaseValue(amount, rate, currency);
 };
 import { AccountSearchSelect } from "@/components/AccountSearchSelect";
+import { VouchersLedgerSection } from "@/components/admin/VouchersLedgerSection";
 import {
   printAccountingDocument,
   printJournalEntryDocument,
@@ -331,7 +333,15 @@ function LedgerPage() {
   };
 
   // UI state
-  const [selectedTab, setSelectedTab] = useState("journal");
+  const [selectedTab, setSelectedTab] = useState(() => {
+    if (typeof window !== "undefined") {
+      const tabParam = new URLSearchParams(window.location.search).get("tab");
+      if (tabParam && ["ledger", "journal", "vouchers", "trial", "statements"].includes(tabParam)) {
+        return tabParam;
+      }
+    }
+    return "journal";
+  });
 
   const [isImportingOracle, setIsImportingOracle] = useState(false);
   const [isSavingToDb, setIsSavingToDb] = useState(false);
@@ -715,6 +725,9 @@ function LedgerPage() {
   const [closedYearAlertMessage, setClosedYearAlertMessage] = useState("");
 
   const accounts = erpState?.accounts || [];
+  const level4Accounts = useMemo(() => {
+    return (accounts || []).filter(isLevel4Account);
+  }, [accounts]);
   const journalEntries = erpState?.journalEntries || [];
 
   // Selected account details
@@ -1216,6 +1229,19 @@ function LedgerPage() {
       return;
     }
 
+    const invalidLevel4Line = newEntryLines.find((l) => {
+      const acc = accounts.find((a) => a.code === l.account_code);
+      return !acc || !isLevel4Account(acc);
+    });
+    if (invalidLevel4Line) {
+      toast({
+        title: "حساب غير مصرح به للقيود",
+        description: `الحساب (${invalidLevel4Line.account_code}) ليس من الدرجة الرابعة. العمليات والقيود المحاسبية مسموحة حصراً على حسابات الدرجة الرابعة التشغيلية والفرعية.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (newEntryTotals.debits <= 0) {
       toast({
         title: "خطأ في المبالغ",
@@ -1396,6 +1422,19 @@ function LedgerPage() {
       toast({
         title: "خطأ في الحسابات",
         description: "يرجى تحديد حساب محاسبي صالح لجميع الأسطر",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const invalidEditLevel4Line = editEntryLines.find((l) => {
+      const acc = accounts.find((a) => a.code === l.account_code);
+      return !acc || !isLevel4Account(acc);
+    });
+    if (invalidEditLevel4Line) {
+      toast({
+        title: "حساب غير مصرح به للقيود",
+        description: `الحساب (${invalidEditLevel4Line.account_code}) ليس من الدرجة الرابعة. العمليات والقيود المحاسبية مسموحة حصراً على حسابات الدرجة الرابعة التشغيلية والفرعية.`,
         variant: "destructive",
       });
       return;
@@ -1723,7 +1762,9 @@ function LedgerPage() {
                             <AccountSearchSelect
                               value={line.account_code}
                               onChange={(code, acc) => handleAccountSelectForLine(index, code, acc)}
-                              accounts={accounts}
+                              accounts={level4Accounts}
+                              level4Only={true}
+                              placeholder="اختر حساب تشغيلي من الدرجة الرابعة..."
                             />
                           </div>
 
@@ -2083,12 +2124,18 @@ function LedgerPage() {
       </div>
 
       <Tabs value={selectedTab} onValueChange={setSelectedTab} className="space-y-4">
-        <TabsList className="bg-muted/80 p-1 rounded-xl w-full sm:w-auto grid grid-cols-2 sm:grid-cols-4 gap-1 h-auto">
+        <TabsList className="bg-muted/80 p-1 rounded-xl w-full sm:w-auto grid grid-cols-2 sm:grid-cols-5 gap-1 h-auto">
           <TabsTrigger value="ledger" className="rounded-lg py-2 text-xs md:text-sm font-medium">
             كشف حساب الأستاذ
           </TabsTrigger>
           <TabsTrigger value="journal" className="rounded-lg py-2 text-xs md:text-sm font-medium">
             دفتر اليومية العامة
+          </TabsTrigger>
+          <TabsTrigger
+            value="vouchers"
+            className="rounded-lg py-2 text-xs md:text-sm font-bold text-emerald-700 dark:text-emerald-400"
+          >
+            سندات الإيراد والمصروف
           </TabsTrigger>
           <TabsTrigger value="trial" className="rounded-lg py-2 text-xs md:text-sm font-medium">
             ميزان المراجعة
@@ -2100,6 +2147,16 @@ function LedgerPage() {
             القوائم المالية
           </TabsTrigger>
         </TabsList>
+
+        {/* Tab 0: Vouchers Entry & Management (سندات الإيراد والمصروف المرحّلة) */}
+        <TabsContent value="vouchers" className="space-y-6">
+          <VouchersLedgerSection
+            onNavigateToJournal={(ref) => {
+              if (ref) setJournalSearch(ref);
+              setSelectedTab("journal");
+            }}
+          />
+        </TabsContent>
 
         {/* Tab 1: General Ledger Account Details */}
         <TabsContent value="ledger" className="space-y-6">
@@ -4376,7 +4433,9 @@ function LedgerPage() {
                             }
                             setEditEntryLines(lines);
                           }}
-                          accounts={accounts}
+                          accounts={level4Accounts}
+                          level4Only={true}
+                          placeholder="اختر حساب تشغيلي من الدرجة الرابعة..."
                         />
                       </div>
 

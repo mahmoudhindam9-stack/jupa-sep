@@ -186,7 +186,15 @@ export function AuditOperationsView({ logs = [] }: { logs?: AuditLog[] }) {
   };
 
   const handleExportCSV = () => {
-    const headers = ["التاريخ", "المستخدم", "الإجراء", "التفاصيل", "المستوى", "نوع المورد", "معرف المورد"];
+    const headers = [
+      "التاريخ",
+      "المستخدم",
+      "الإجراء",
+      "التفاصيل",
+      "المستوى",
+      "نوع المورد",
+      "معرف المورد",
+    ];
     const rows = filtered.map((log) => [
       `"${formatDate(log.created_at)}"`,
       `"${(log.user_email || "غير محدد").replace(/"/g, '""')}"`,
@@ -218,13 +226,17 @@ export function AuditOperationsView({ logs = [] }: { logs?: AuditLog[] }) {
             سجل العمليات والرقابة العامة
           </h2>
           <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-            متابعة شاملة لجميع الحركات والعمليات المنفذة في النظام مع البحث المتقدم والتصفية والتصدير.
+            متابعة شاملة لجميع الحركات والعمليات المنفذة في النظام مع البحث المتقدم والتصفية
+            والتصدير.
           </p>
         </div>
 
         {/* Action controls moved to the header's empty space */}
         <div className="flex flex-wrap items-center gap-2 shrink-0">
-          <Badge variant="outline" className="px-3 py-1.5 font-bold text-xs gap-1 border-primary/30 text-primary bg-primary/5">
+          <Badge
+            variant="outline"
+            className="px-3 py-1.5 font-bold text-xs gap-1 border-primary/30 text-primary bg-primary/5"
+          >
             <FileText size={13} /> {filtered.length} عملية مسجلة
           </Badge>
           <select

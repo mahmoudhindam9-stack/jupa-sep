@@ -20,7 +20,7 @@ export function createAppSync(queryClient: QueryClient) {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === "object") {
         const memoryEntriesCount = erpStore.state?.journalEntries?.length || 0;
-        const memoryUpdated = erpStore.state?._updatedAt || 0;
+        const memoryUpdated = (erpStore.state as any)?._updatedAt || 0;
 
         const parsedEntriesCount = parsed.journalEntries?.length || 0;
         const parsedUpdated = parsed._updatedAt || 0;

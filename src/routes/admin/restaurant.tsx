@@ -41,12 +41,29 @@ function getSyncCounts(): RestaurantCounts {
 
   if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
     try {
-      const localMenu = localStorage.getItem("local_custom_menu_items");
-      if (localMenu) {
-        const parsed = JSON.parse(localMenu);
-        menu = Object.keys(parsed).length;
+      const localMenuRaw = localStorage.getItem("local_custom_menu_items");
+      const localDeletedItemsRaw = localStorage.getItem("local_deleted_menu_items");
+      const localDeletedItems = new Set<string>(
+        localDeletedItemsRaw ? JSON.parse(localDeletedItemsRaw) : [],
+      );
+
+      if (localMenuRaw) {
+        const parsed = JSON.parse(localMenuRaw);
+        if (parsed && typeof parsed === "object") {
+          const items = Array.isArray(parsed) ? parsed : Object.values(parsed);
+          const activeItems = items.filter(
+            (item: any) => item?.id && !localDeletedItems.has(item.id),
+          );
+          if (activeItems.length > 0) {
+            menu = activeItems.length;
+          } else if (localDeletedItems.size > 0) {
+            menu = 0;
+          }
+        }
       }
-    } catch {}
+    } catch (err) {
+      console.warn("Local menu parse notice:", err);
+    }
 
     try {
       const localInv = localStorage.getItem("ydb_inventory_items_v2");
@@ -56,7 +73,9 @@ function getSyncCounts(): RestaurantCounts {
           inventory = parsed.length;
         }
       }
-    } catch {}
+    } catch (err) {
+      console.warn("Local inventory parse notice:", err);
+    }
 
     try {
       const localOrders = localStorage.getItem("restocash_table_orders_v1");
@@ -66,7 +85,9 @@ function getSyncCounts(): RestaurantCounts {
           orders = parsed.length;
         }
       }
-    } catch {}
+    } catch (err) {
+      console.warn("Local orders parse notice:", err);
+    }
   }
 
   return { menu, inventory, orders };
@@ -74,57 +95,86 @@ function getSyncCounts(): RestaurantCounts {
 
 function RestaurantHubPage() {
   const navigate = useNavigate();
-  const [counts, setCounts] = useState<RestaurantCounts>(getSyncCounts);
+  const [counts, setCounts] = useState<RestaurantCounts>({ menu: 8, inventory: 6, orders: 0 });
   const [isLauncherOpen, setIsLauncherOpen] = useState(false);
   const [closingShift, setClosingShift] = useState<RestaurantShift | null>(null);
 
   useEffect(() => {
     let active = true;
+    setCounts(getSyncCounts());
 
     async function fetchLiveCounts() {
-      try {
-        // Fetch Menu Items count
-        const menuItems = await menuService.getMenuItems();
-        
-        // Fetch Inventory Items count
-        const inventoryItems = await inventoryService.getInventory();
+      if (!active) return;
 
-        // Fetch Orders Count from Supabase
-        const { count: dbOrdersCount } = await supabase
-          .from("orders")
-          .select("id", { count: "exact", head: true });
+      const [menuRes, invRes, ordersRes] = await Promise.allSettled([
+        menuService.getMenuItems(),
+        inventoryService.getInventory(),
+        (async () => {
+          try {
+            const timeoutPromise = new Promise((_, reject) =>
+              setTimeout(() => reject(new Error("orders timeout")), 1500),
+            );
+            const queryPromise = supabase
+              .from("orders")
+              .select("id", { count: "exact", head: true });
+            const { count } = (await Promise.race([queryPromise, timeoutPromise])) as any;
+            return count ?? 0;
+          } catch {
+            return 0;
+          }
+        })(),
+      ]);
 
-        // Fetch Local Orders Count
-        const localOrdersCount = tableOrdersStore.getAllOrders().length;
+      const sync = getSyncCounts();
 
-        const totalOrders = (dbOrdersCount ?? 0) + localOrdersCount;
+      const menuCount =
+        menuRes.status === "fulfilled" && Array.isArray(menuRes.value)
+          ? menuRes.value.length
+          : sync.menu;
 
-        if (active) {
-          setCounts({
-            menu: menuItems.length,
-            inventory: inventoryItems.length,
-            orders: totalOrders,
-          });
-        }
-      } catch (err) {
-        console.error("Error fetching live restaurant counts:", err);
+      const invCount =
+        invRes.status === "fulfilled" && Array.isArray(invRes.value)
+          ? invRes.value.length
+          : sync.inventory;
+
+      const dbOrders = ordersRes.status === "fulfilled" ? ordersRes.value : 0;
+      const localOrders = tableOrdersStore.getAllOrders().length;
+      const totalOrders = Math.max(dbOrders + localOrders, sync.orders);
+
+      if (active) {
+        setCounts({
+          menu: menuCount,
+          inventory: invCount,
+          orders: totalOrders,
+        });
       }
     }
 
     fetchLiveCounts();
 
-    // Subscribe to local order updates to live-update counts
-    const unsubscribeTableOrders = tableOrdersStore.subscribe(() => {
+    const handleUpdate = () => {
       fetchLiveCounts();
+    };
+
+    window.addEventListener("menu_updated", handleUpdate);
+    window.addEventListener("inventory_updated", handleUpdate);
+    window.addEventListener("storage", handleUpdate);
+    window.addEventListener("focus", handleUpdate);
+
+    const unsubscribeTableOrders = tableOrdersStore.subscribe(() => {
+      handleUpdate();
     });
 
-    // Subscribe to ERP store changes to keep sync
     const unsubscribeErp = erpStore.subscribe(() => {
-      fetchLiveCounts();
+      handleUpdate();
     });
 
     return () => {
       active = false;
+      window.removeEventListener("menu_updated", handleUpdate);
+      window.removeEventListener("inventory_updated", handleUpdate);
+      window.removeEventListener("storage", handleUpdate);
+      window.removeEventListener("focus", handleUpdate);
       unsubscribeTableOrders();
       unsubscribeErp();
     };

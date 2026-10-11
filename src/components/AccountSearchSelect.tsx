@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Search, X, Check, Landmark, ChevronDown } from "lucide-react";
-import { Account } from "@/shared/services/erpStore";
+import { Account, isLevel4Account } from "@/shared/services/erpStore";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,7 @@ interface AccountSearchSelectProps {
   placeholder?: string;
   className?: string;
   disabled?: boolean;
+  level4Only?: boolean;
 }
 
 export function AccountSearchSelect({
@@ -37,14 +38,22 @@ export function AccountSearchSelect({
   placeholder = "اختر الحساب المحاسبي...",
   className = "",
   disabled = false,
+  level4Only = false,
 }: AccountSearchSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
+  // Base accounts filter: restrict to Level 4 accounts if level4Only is true
+  const baseAccounts = React.useMemo(() => {
+    if (!level4Only) return accounts;
+    return accounts.filter((a) => isLevel4Account(a));
+  }, [accounts, level4Only]);
+
   // Find currently selected account
   const selectedAccount = accounts.find((a) => a.code === value);
+  const isSelectedLevel4 = selectedAccount ? isLevel4Account(selectedAccount) : false;
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -66,14 +75,15 @@ export function AccountSearchSelect({
     }
   }, [isOpen]);
 
-  // Filter accounts by code or name
-  const filteredAccounts = accounts.filter((acc) => {
+  // Filter accounts by code, name, type, or level query
+  const filteredAccounts = baseAccounts.filter((acc) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase().trim();
     const matchCode = acc.code.toLowerCase().includes(q);
     const matchName = acc.name_ar.toLowerCase().includes(q);
     const matchType = (ACCOUNT_TYPE_LABELS[acc.type] || "").toLowerCase().includes(q);
-    return matchCode || matchName || matchType;
+    const matchLevel = (q === "4" || q.includes("رابع")) && isLevel4Account(acc);
+    return matchCode || matchName || matchType || matchLevel;
   });
 
   const handleSelect = (acc: Account) => {
@@ -100,7 +110,7 @@ export function AccountSearchSelect({
         } ${isOpen ? "border-primary ring-2 ring-primary/20" : "border-input"}`}
       >
         {selectedAccount ? (
-          <div className="flex items-center gap-2 overflow-hidden text-right flex-1 min-w-0">
+          <div className="flex items-center gap-2 overflow-hidden text-right flex-1 min-w-0 flex-wrap sm:flex-nowrap">
             <Badge variant="outline" className="font-mono font-bold shrink-0 text-[11px] bg-muted">
               {selectedAccount.code}
             </Badge>
@@ -114,6 +124,14 @@ export function AccountSearchSelect({
             >
               {ACCOUNT_TYPE_LABELS[selectedAccount.type]}
             </Badge>
+            {isSelectedLevel4 && (
+              <Badge
+                variant="outline"
+                className="shrink-0 text-[10px] px-1.5 py-0 bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 border-blue-200 dark:border-blue-800"
+              >
+                درجة 4 (تشغيلي)
+              </Badge>
+            )}
           </div>
         ) : (
           <span className="text-muted-foreground">{placeholder}</span>
@@ -137,14 +155,31 @@ export function AccountSearchSelect({
 
       {/* Floating Dropdown */}
       {isOpen && (
-        <div className="absolute z-50 right-0 left-0 mt-1.5 bg-popover text-popover-foreground border border-border rounded-xl shadow-xl overflow-hidden max-h-80 flex flex-col animate-in fade-in-50 zoom-in-95">
+        <div className="absolute z-50 right-0 left-0 mt-1.5 bg-popover text-popover-foreground border border-border rounded-xl shadow-xl overflow-hidden max-h-84 flex flex-col animate-in fade-in-50 zoom-in-95">
+          {/* Level 4 Banner if restricted */}
+          {level4Only && (
+            <div className="bg-primary/10 border-b border-primary/20 px-3 py-1.5 flex items-center justify-between text-[11px] text-primary font-bold">
+              <span className="flex items-center gap-1.5">
+                <Landmark className="h-3.5 w-3.5" />
+                <span>حسابات الدرجة الرابعة فقط (المسموح بالتعامل والقيود عليها)</span>
+              </span>
+              <Badge variant="outline" className="text-[10px] bg-background border-primary/30">
+                حساب فرعي / تشغيلي
+              </Badge>
+            </div>
+          )}
+
           {/* Search Box */}
           <div className="p-2 border-b bg-muted/40 relative flex items-center gap-2">
             <Search className="h-4 w-4 text-muted-foreground shrink-0 absolute right-4" />
             <Input
               ref={searchInputRef}
               type="text"
-              placeholder="ابحث بالاسم أو برقم الحساب (مثال: 150101)..."
+              placeholder={
+                level4Only
+                  ? "ابحث في حسابات الدرجة الرابعة برقم أو اسم الحساب (مثال: 31010110 أجور)..."
+                  : "ابحث بالاسم أو برقم الحساب (مثال: 150101)..."
+              }
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pr-9 pl-8 h-9 text-xs bg-background border-input font-medium"
@@ -161,15 +196,18 @@ export function AccountSearchSelect({
           </div>
 
           {/* Account List */}
-          <div className="overflow-y-auto p-1 divide-y divide-border/40">
+          <div className="overflow-y-auto p-1 divide-y divide-border/40 max-h-60">
             {filteredAccounts.length === 0 ? (
               <div className="p-6 text-center text-xs text-muted-foreground">
-                لا يوجد حساب مطابق للبحث "{searchQuery}"
+                {level4Only
+                  ? `لا يوجد حساب من الدرجة الرابعة مطابق للبحث "${searchQuery}"`
+                  : `لا يوجد حساب مطابق للبحث "${searchQuery}"`}
               </div>
             ) : (
               filteredAccounts.map((acc) => {
                 const isSelected = acc.code === value;
                 const currency = acc.name_ar.includes("دولار") ? "USD" : acc.currency || "EGP";
+                const isAccLevel4 = isLevel4Account(acc);
                 return (
                   <div
                     key={acc.code}
@@ -185,8 +223,18 @@ export function AccountSearchSelect({
                         {acc.code}
                       </Badge>
                       <div className="flex flex-col min-w-0">
-                        <span className="font-semibold text-sm truncate">{acc.name_ar}</span>
-                        <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                        <div className="flex items-center gap-2 truncate">
+                          <span className="font-semibold text-sm truncate">{acc.name_ar}</span>
+                          {isAccLevel4 && (
+                            <Badge
+                              variant="secondary"
+                              className="text-[9px] px-1 py-0 shrink-0 bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border-0"
+                            >
+                              درجة 4
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 text-[10px] text-muted-foreground mt-0.5">
                           <span className={`px-1 rounded ${ACCOUNT_TYPE_COLORS[acc.type]}`}>
                             {ACCOUNT_TYPE_LABELS[acc.type]}
                           </span>
@@ -208,8 +256,12 @@ export function AccountSearchSelect({
 
           {/* Footer stats */}
           <div className="p-2 border-t bg-muted/20 text-[10px] text-muted-foreground flex justify-between items-center px-3">
-            <span>عدد الحسابات المتاحة: {filteredAccounts.length}</span>
-            <span>استخدم البحث الذكي بالرقم أو الاسم</span>
+            <span>
+              {level4Only
+                ? `حسابات الدرجة الرابعة المتاحة: ${filteredAccounts.length}`
+                : `عدد الحسابات المتاحة: ${filteredAccounts.length}`}
+            </span>
+            <span>البحث الذكي بالرقم أو الاسم</span>
           </div>
         </div>
       )}

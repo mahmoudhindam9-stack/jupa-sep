@@ -28,16 +28,21 @@ function MenuPage() {
   const { toast } = useToast();
 
   const selectedCurrency = currency || "EGP";
-  const currencySymbol = selectedCurrency === "EGP" || selectedCurrency === "ج.م" ? "ج.م" : selectedCurrency;
+  const currencySymbol =
+    selectedCurrency === "EGP" || selectedCurrency === "ج.م" ? "ج.م" : selectedCurrency;
 
   const [cart, setCart] = useState<any[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
-  const [trackingToken, setTrackingToken] = useState<string>(() => {
+  const [trackingToken, setTrackingToken] = useState<string>("");
+
+  useEffect(() => {
     if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
-      return localStorage.getItem("last_customer_tracking_token") || "";
+      const savedToken = localStorage.getItem("last_customer_tracking_token");
+      if (savedToken) {
+        setTrackingToken(savedToken);
+      }
     }
-    return "";
-  });
+  }, []);
 
   const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
   const [customNotes, setCustomNotes] = useState("");
@@ -186,7 +191,10 @@ function MenuPage() {
         supabase.removeChannel(channel);
 
         if (typeof localStorage !== "undefined") {
-          localStorage.setItem("last_customer_tracking_token", orderPayload.customer_tracking_token);
+          localStorage.setItem(
+            "last_customer_tracking_token",
+            orderPayload.customer_tracking_token,
+          );
         }
         setTrackingToken(orderPayload.customer_tracking_token);
         setCart([]);
@@ -311,11 +319,11 @@ function MenuPage() {
       </main>
 
       {customizingItem && (
-        <div 
+        <div
           className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[60] flex items-end justify-center"
           onClick={() => setCustomizingItem(null)}
         >
-          <div 
+          <div
             className="bg-white w-full max-w-md rounded-t-3xl p-6 space-y-4 max-h-[85vh] overflow-y-auto animate-in slide-in-from-bottom"
             onClick={(e) => e.stopPropagation()}
           >
@@ -408,11 +416,11 @@ function MenuPage() {
 
       {/* Cart Modal / Drawer */}
       {isCartOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-end justify-center"
           onClick={() => setIsCartOpen(false)}
         >
-          <div 
+          <div
             className="bg-white w-full max-w-md rounded-t-3xl p-6 space-y-4 max-h-[85vh] overflow-y-auto animate-in slide-in-from-bottom"
             onClick={(e) => e.stopPropagation()}
           >
@@ -470,7 +478,8 @@ function MenuPage() {
               <div className="flex justify-between items-center text-base font-black">
                 <span>الإجمالي الكلي:</span>
                 <span className="text-emerald-600">
-                  {totalAmount.toLocaleString("en-US", { minimumFractionDigits: 2 })} {currencySymbol}
+                  {totalAmount.toLocaleString("en-US", { minimumFractionDigits: 2 })}{" "}
+                  {currencySymbol}
                 </span>
               </div>
               <button

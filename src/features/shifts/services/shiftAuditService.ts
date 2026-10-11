@@ -334,7 +334,8 @@ class ShiftAuditService {
   ): ShiftVisibilityAnalysis {
     const shiftId = shift.id || "";
     const shiftNumber = shift.shift_number || shift.auto_shift_number || shiftId;
-    const isPark = shiftId.startsWith("shift-park-") || !!shift.auto_shift_number?.startsWith("PSH");
+    const isPark =
+      shiftId.startsWith("shift-park-") || !!shift.auto_shift_number?.startsWith("PSH");
     const shiftType: ShiftType = isPark ? "park" : "restaurant";
 
     const status: "open" | "closed" | "unknown" =

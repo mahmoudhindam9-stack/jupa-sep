@@ -24,9 +24,12 @@ function SetupPage() {
       <div className="max-w-md space-y-4 rounded-2xl border border-border bg-card p-8 text-center shadow-sm">
         <h1 className="text-xl font-black text-foreground">تم إيقاف إعداد المستخدمين القديم</h1>
         <p className="text-sm text-muted-foreground">
-          إنشاء الحسابات وإدارة الصلاحيات متاحان من صفحة المستخدمين فقط. سجّل الدخول بحساب موجود للمتابعة.
+          إنشاء الحسابات وإدارة الصلاحيات متاحان من صفحة المستخدمين فقط. سجّل الدخول بحساب موجود
+          للمتابعة.
         </p>
-        <Button className="w-full" onClick={() => navigate({ to: "/login" })}>الانتقال إلى تسجيل الدخول</Button>
+        <Button className="w-full" onClick={() => navigate({ to: "/login" })}>
+          الانتقال إلى تسجيل الدخول
+        </Button>
       </div>
     </div>
   );

@@ -121,13 +121,16 @@ function SystemUpdatePage() {
   const [repoInput, setRepoInput] = useState(updateSettings.repo);
 
   // GitHub Push State
-  const [githubToken, setGithubToken] = useState<string>(() => {
+  const [githubToken, setGithubToken] = useState<string>("");
+
+  useEffect(() => {
     try {
-      return localStorage.getItem("restocash_github_pat_token") || "";
+      const token = localStorage.getItem("restocash_github_pat_token");
+      if (token) setGithubToken(token);
     } catch {
-      return "";
+      // Ignore storage error
     }
-  });
+  }, []);
   const [showToken, setShowToken] = useState(false);
   const [pushCommitMsg, setPushCommitMsg] = useState(
     "Update Restocash: System sync & improvements",
@@ -166,7 +169,9 @@ function SystemUpdatePage() {
 
     try {
       localStorage.setItem("restocash_github_pat_token", githubToken.trim());
-    } catch {}
+    } catch {
+      // Ignore storage error
+    }
 
     setIsPushing(true);
     setPushResult(null);
@@ -226,7 +231,9 @@ function SystemUpdatePage() {
 
     try {
       localStorage.setItem("restocash_github_pat_token", githubToken.trim());
-    } catch {}
+    } catch {
+      // Ignore storage error
+    }
 
     setIsCreatingRelease(true);
     setReleaseResult(null);
@@ -1204,7 +1211,8 @@ git push origin main`}
                             إنشاء ونشر إصدار رسمي جديد (New GitHub Release)
                           </h4>
                           <p className="text-xs text-muted-foreground">
-                            نشر علامة الإصدار (Tag) والملاحظات الرسمية في مستودع GitHub ليتمكن الجميع من معرفة التحديثات
+                            نشر علامة الإصدار (Tag) والملاحظات الرسمية في مستودع GitHub ليتمكن
+                            الجميع من معرفة التحديثات
                           </p>
                         </div>
                       </div>
@@ -1250,7 +1258,9 @@ git push origin main`}
                         <div className="space-y-1.5">
                           <label className="text-xs font-bold text-foreground flex items-center justify-between">
                             <span>ملاحظات الإصدار وسجل التغييرات (Release Notes):</span>
-                            <span className="text-[10px] text-muted-foreground font-normal">يدعم تنسيق Markdown</span>
+                            <span className="text-[10px] text-muted-foreground font-normal">
+                              يدعم تنسيق Markdown
+                            </span>
                           </label>
                           <Textarea
                             value={releaseNotes}
@@ -1335,7 +1345,10 @@ gh release create ${releaseTagName} --title "${releaseTitle}" --generate-notes`}
                         </div>
 
                         <div className="text-[10px] text-slate-400 border-t border-slate-800 pt-2 leading-relaxed">
-                          💡 <strong className="text-purple-300">نصيحة:</strong> يتم ربط الإصدار تلقائياً بآخر التحديثات على الفرع <code className="text-purple-200 font-mono">main</code> ويظهر في صفحة Releases الرسمية لمستودعك.
+                          💡 <strong className="text-purple-300">نصيحة:</strong> يتم ربط الإصدار
+                          تلقائياً بآخر التحديثات على الفرع{" "}
+                          <code className="text-purple-200 font-mono">main</code> ويظهر في صفحة
+                          Releases الرسمية لمستودعك.
                         </div>
                       </div>
                     </div>
@@ -1351,7 +1364,8 @@ gh release create ${releaseTagName} --title "${releaseTitle}" --generate-notes`}
                             النشر والتشغيل على منصة Vercel (Vercel Deployment)
                           </h4>
                           <p className="text-xs text-muted-foreground">
-                            نظام نشر سحابي فوري مرتبط بمستودع GitHub مع دعم التحديث التلقائي (Continuous Deployment)
+                            نظام نشر سحابي فوري مرتبط بمستودع GitHub مع دعم التحديث التلقائي
+                            (Continuous Deployment)
                           </p>
                         </div>
                       </div>
@@ -1371,10 +1385,27 @@ gh release create ${releaseTagName} --title "${releaseTitle}" --generate-notes`}
                             حالة تكوين ملف النشر vercel.json:
                           </div>
                           <ul className="space-y-1 text-muted-foreground list-disc list-inside text-[11px] leading-relaxed">
-                            <li><strong>Framework:</strong> Vite SPA</li>
-                            <li><strong>Build Command:</strong> <code className="bg-muted px-1.5 py-0.5 rounded text-foreground font-mono">npm run build</code></li>
-                            <li><strong>Output Directory:</strong> <code className="bg-muted px-1.5 py-0.5 rounded text-foreground font-mono">dist</code></li>
-                            <li><strong>Routing:</strong> إعادة توجيه لكافة المسارات إلى <code className="bg-muted px-1.5 py-0.5 rounded text-foreground font-mono">/index.html</code></li>
+                            <li>
+                              <strong>Framework:</strong> Vite SPA
+                            </li>
+                            <li>
+                              <strong>Build Command:</strong>{" "}
+                              <code className="bg-muted px-1.5 py-0.5 rounded text-foreground font-mono">
+                                npm run build
+                              </code>
+                            </li>
+                            <li>
+                              <strong>Output Directory:</strong>{" "}
+                              <code className="bg-muted px-1.5 py-0.5 rounded text-foreground font-mono">
+                                dist
+                              </code>
+                            </li>
+                            <li>
+                              <strong>Routing:</strong> إعادة توجيه لكافة المسارات إلى{" "}
+                              <code className="bg-muted px-1.5 py-0.5 rounded text-foreground font-mono">
+                                /index.html
+                              </code>
+                            </li>
                           </ul>
                         </div>
 
@@ -1392,7 +1423,11 @@ gh release create ${releaseTagName} --title "${releaseTitle}" --generate-notes`}
                               className="inline-flex items-center justify-center gap-2 font-black shadow-md bg-black hover:bg-neutral-800 text-white text-xs h-10 px-3 rounded-xl transition-all"
                             >
                               <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 116 100">
-                                <path fillRule="evenodd" clipRule="evenodd" d="M57.5 0L115 100H0L57.5 0z" />
+                                <path
+                                  fillRule="evenodd"
+                                  clipRule="evenodd"
+                                  d="M57.5 0L115 100H0L57.5 0z"
+                                />
                               </svg>
                               ربط ونشر في Vercel (1-Click)
                             </a>
@@ -1404,7 +1439,8 @@ gh release create ${releaseTagName} --title "${releaseTitle}" --generate-notes`}
                                 navigator.clipboard.writeText(envVars);
                                 toast({
                                   title: "تم نسخ متغيرات البيئة",
-                                  description: "تم نسخ متغيرات Vercel Environment Variables إلى الحافظة",
+                                  description:
+                                    "تم نسخ متغيرات Vercel Environment Variables إلى الحافظة",
                                 });
                               }}
                               className="text-xs h-10 rounded-xl gap-1.5 border-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950 font-bold"
@@ -1452,7 +1488,11 @@ vercel --prod`}
                         </div>
 
                         <div className="text-[10px] text-slate-400 border-t border-slate-800 pt-2 leading-relaxed">
-                          ⚡ <strong className="text-sky-300">النشر التلقائي:</strong> بمجرد ربط المستودع في Vercel، أي عملية <code className="text-sky-200 font-mono">git push</code> أو إنشاء Release على الفرع <code className="text-sky-200 font-mono">main</code> ستقوم Vercel ببنائها ونشرها فورياً تلقائياً!
+                          ⚡ <strong className="text-sky-300">النشر التلقائي:</strong> بمجرد ربط
+                          المستودع في Vercel، أي عملية{" "}
+                          <code className="text-sky-200 font-mono">git push</code> أو إنشاء Release
+                          على الفرع <code className="text-sky-200 font-mono">main</code> ستقوم
+                          Vercel ببنائها ونشرها فورياً تلقائياً!
                         </div>
                       </div>
                     </div>

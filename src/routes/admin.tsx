@@ -43,35 +43,174 @@ export const Route = createFileRoute("/admin")({
 });
 
 const nav = [
-  { to: "/admin", label: "الرئيسية", icon: LayoutDashboard, exact: true, permissionKeys: ["orders", "pos", "captain", "kitchen", "delivery", "inventory", "accounting", "treasury", "hr", "reports", "mall_manage_shops", "purchasing"] },
-  { to: "/admin/restaurant", label: "إدارة المطعم (البرنامج الشامل)", icon: Store, permissionKeys: ["orders", "pos", "captain", "kitchen", "delivery", "inventory", "purchasing", "production"] },
-  { to: "/admin/mall", label: "إدارة المول والحديقة", icon: Building2, permissionKeys: ["mall_manage_shops", "mall_garden_finance", "manage_park_shifts", "park_reports"] },
-  { to: "/admin", search: { tab: "treasury" }, label: "إدارة الخزائن", icon: Wallet, permissionKeys: ["treasury", "treasury_view", "treasury_open_close", "treasury_transfer_reconcile"] },
-  { to: "/admin/receipts", label: "تصميم وإدارة الإيصالات والسندات", icon: Receipt, permissionKeys: ["treasury", "accounting", "revenue_approval", "expense_approval"] },
-  { to: "/admin/accounts", label: "إدارة الحسابات", icon: Landmark, permissionKeys: ["accounting", "accounting_view", "accounting_post_journal", "cost_centers"] },
-  { to: "/admin/ledger", label: "حساب الأستاذ", icon: BookOpen, permissionKeys: ["accounting", "accounting_view"] },
-  { to: "/admin/hr", label: "إدارة الموارد البشرية", icon: UserCheck, permissionKeys: ["hr", "hr_view_attendance", "hr_manage_payroll_loans"] },
-  { to: "/admin/reports", label: "التقارير", icon: BarChart3, permissionKeys: ["reports", "reports_view_sales", "reports_view_financials", "park_reports"] },
-  { to: "/admin/users", label: "المستخدمين", icon: Users, permissionKeys: ["users_roles", "system_manage_users"] },
-  { to: "/admin/system-update", label: "خيارات المطور", icon: Settings, permissionKeys: ["system_backup_update", "developer_options"] },
+  {
+    to: "/admin",
+    label: "الرئيسية",
+    icon: LayoutDashboard,
+    exact: true,
+    permissionKeys: [
+      "orders",
+      "pos",
+      "captain",
+      "kitchen",
+      "delivery",
+      "inventory",
+      "accounting",
+      "treasury",
+      "hr",
+      "reports",
+      "mall_manage_shops",
+      "purchasing",
+    ],
+  },
+  {
+    to: "/admin/restaurant",
+    label: "إدارة المطعم (البرنامج الشامل)",
+    icon: Store,
+    permissionKeys: [
+      "orders",
+      "pos",
+      "captain",
+      "kitchen",
+      "delivery",
+      "inventory",
+      "purchasing",
+      "production",
+    ],
+  },
+  {
+    to: "/admin/mall",
+    label: "إدارة المول والحديقة",
+    icon: Building2,
+    permissionKeys: [
+      "mall_manage_shops",
+      "mall_garden_finance",
+      "manage_park_shifts",
+      "park_reports",
+    ],
+  },
+  {
+    to: "/admin",
+    search: { tab: "treasury" },
+    label: "إدارة الخزائن",
+    icon: Wallet,
+    permissionKeys: [
+      "treasury",
+      "treasury_view",
+      "treasury_open_close",
+      "treasury_transfer_reconcile",
+    ],
+  },
+  {
+    to: "/admin/receipts",
+    label: "تصميم وإدارة الإيصالات والسندات",
+    icon: Receipt,
+    permissionKeys: ["treasury", "accounting", "revenue_approval", "expense_approval"],
+  },
+  {
+    to: "/admin/accounts",
+    label: "إدارة الحسابات",
+    icon: Landmark,
+    permissionKeys: ["accounting", "accounting_view", "accounting_post_journal", "cost_centers"],
+  },
+  {
+    to: "/admin/ledger",
+    label: "حساب الأستاذ",
+    icon: BookOpen,
+    permissionKeys: ["accounting", "accounting_view"],
+  },
+  {
+    to: "/admin/hr",
+    label: "إدارة الموارد البشرية",
+    icon: UserCheck,
+    permissionKeys: ["hr", "hr_view_attendance", "hr_manage_payroll_loans"],
+  },
+  {
+    to: "/admin/reports",
+    label: "التقارير",
+    icon: BarChart3,
+    permissionKeys: ["reports", "reports_view_sales", "reports_view_financials", "park_reports"],
+  },
+  {
+    to: "/admin/users",
+    label: "المستخدمين",
+    icon: Users,
+    permissionKeys: ["users_roles", "system_manage_users"],
+  },
+  {
+    to: "/admin/system-update",
+    label: "خيارات المطور",
+    icon: Settings,
+    permissionKeys: ["system_backup_update", "developer_options"],
+  },
 ];
 
 const ALL_PERMISSION_KEYS = [
-  "orders","orders_view","orders_create_custom","orders_cancel_modify","orders_manage_carts","orders_generate_qr",
-  "pos","pos_access","pos_create_custom_order","pos_apply_discounts","pos_void_items",
-  "captain","captain_access","captain_create_order","captain_transfer_tables","captain_modify_items",
-  "kitchen","kitchen_view","kitchen_change_status","kitchen_modify_order",
-  "delivery","delivery_view","delivery_update_status",
-  "inventory","inventory_view","inventory_adjust_transfer","inventory_waste_dispose",
-  "purchasing","purchasing_view","purchasing_add_invoice","purchasing_returns",
-  "production","production_view","production_execute",
-  "hr","hr_view_attendance","hr_manage_payroll_loans",
-  "treasury","treasury_view","treasury_open_close","treasury_transfer_reconcile",
-  "accounting","accounting_view","accounting_post_journal","accounting_lock_period",
-  "journal_approval","expense_approval","revenue_approval","cost_centers",
-  "mall_manage_shops","mall_garden_finance","reports","reports_view_sales","reports_view_financials",
-  "super_admin_full_access","users_roles","system_manage_users","branch_mgmt","developer_options",
-  "system_backup_update","audit_logs","system_audit_logs","manage_park_shifts","delete_park_shifts","park_reports",
+  "orders",
+  "orders_view",
+  "orders_create_custom",
+  "orders_cancel_modify",
+  "orders_manage_carts",
+  "orders_generate_qr",
+  "pos",
+  "pos_access",
+  "pos_create_custom_order",
+  "pos_apply_discounts",
+  "pos_void_items",
+  "captain",
+  "captain_access",
+  "captain_create_order",
+  "captain_transfer_tables",
+  "captain_modify_items",
+  "kitchen",
+  "kitchen_view",
+  "kitchen_change_status",
+  "kitchen_modify_order",
+  "delivery",
+  "delivery_view",
+  "delivery_update_status",
+  "inventory",
+  "inventory_view",
+  "inventory_adjust_transfer",
+  "inventory_waste_dispose",
+  "purchasing",
+  "purchasing_view",
+  "purchasing_add_invoice",
+  "purchasing_returns",
+  "production",
+  "production_view",
+  "production_execute",
+  "hr",
+  "hr_view_attendance",
+  "hr_manage_payroll_loans",
+  "treasury",
+  "treasury_view",
+  "treasury_open_close",
+  "treasury_transfer_reconcile",
+  "accounting",
+  "accounting_view",
+  "accounting_post_journal",
+  "accounting_lock_period",
+  "journal_approval",
+  "expense_approval",
+  "revenue_approval",
+  "cost_centers",
+  "mall_manage_shops",
+  "mall_garden_finance",
+  "reports",
+  "reports_view_sales",
+  "reports_view_financials",
+  "super_admin_full_access",
+  "users_roles",
+  "system_manage_users",
+  "branch_mgmt",
+  "developer_options",
+  "system_backup_update",
+  "audit_logs",
+  "system_audit_logs",
+  "manage_park_shifts",
+  "delete_park_shifts",
+  "park_reports",
 ];
 
 function isHostedDeployment(): boolean {
@@ -81,49 +220,113 @@ function isHostedDeployment(): boolean {
 }
 
 function defaultPermissionsForRole(role: string): Record<string, boolean> {
-  const permissions = Object.fromEntries(ALL_PERMISSION_KEYS.map((key) => [key, false])) as Record<string, boolean>;
+  const permissions = Object.fromEntries(ALL_PERMISSION_KEYS.map((key) => [key, false])) as Record<
+    string,
+    boolean
+  >;
   if (role === "admin" || role === "super_admin") {
-    ALL_PERMISSION_KEYS.forEach((key) => { permissions[key] = true; });
+    ALL_PERMISSION_KEYS.forEach((key) => {
+      permissions[key] = true;
+    });
     return permissions;
   }
   const roleKeys: Record<string, string[]> = {
     manager: [
-      "orders","orders_view","orders_create_custom","orders_manage_carts","orders_generate_qr",
-      "inventory","inventory_view","purchasing","purchasing_view","production","production_view",
-      "accounting","accounting_view","journal_approval","expense_approval","revenue_approval","cost_centers",
-      "reports","reports_view_sales","reports_view_financials","hr","hr_view_attendance",
+      "orders",
+      "orders_view",
+      "orders_create_custom",
+      "orders_manage_carts",
+      "orders_generate_qr",
+      "inventory",
+      "inventory_view",
+      "purchasing",
+      "purchasing_view",
+      "production",
+      "production_view",
+      "accounting",
+      "accounting_view",
+      "journal_approval",
+      "expense_approval",
+      "revenue_approval",
+      "cost_centers",
+      "reports",
+      "reports_view_sales",
+      "reports_view_financials",
+      "hr",
+      "hr_view_attendance",
     ],
-    cashier: ["orders","orders_view","orders_create_custom","orders_manage_carts","orders_generate_qr","pos","pos_access","pos_apply_discounts","treasury_view","treasury_open_close","delivery","delivery_view","delivery_update_status"],
-    captain: ["captain","captain_access","captain_create_order","captain_transfer_tables","captain_modify_items","orders","orders_view"],
-    kitchen: ["kitchen","kitchen_view","kitchen_change_status","kitchen_modify_order"],
+    cashier: [
+      "orders",
+      "orders_view",
+      "orders_create_custom",
+      "orders_manage_carts",
+      "orders_generate_qr",
+      "pos",
+      "pos_access",
+      "pos_apply_discounts",
+      "treasury_view",
+      "treasury_open_close",
+      "delivery",
+      "delivery_view",
+      "delivery_update_status",
+    ],
+    captain: [
+      "captain",
+      "captain_access",
+      "captain_create_order",
+      "captain_transfer_tables",
+      "captain_modify_items",
+      "orders",
+      "orders_view",
+    ],
+    kitchen: ["kitchen", "kitchen_view", "kitchen_change_status", "kitchen_modify_order"],
   };
-  (roleKeys[role] || []).forEach((key) => { permissions[key] = true; });
+  (roleKeys[role] || []).forEach((key) => {
+    permissions[key] = true;
+  });
   return permissions;
 }
 
-function permissionsForUser(user: { role?: string; permissions?: Record<string, any>; permissionsManaged?: boolean } | null): Record<string, boolean> {
+function permissionsForUser(
+  user: { role?: string; permissions?: Record<string, any>; permissionsManaged?: boolean } | null,
+): Record<string, boolean> {
   const current = user?.permissions || {};
   if (current.super_admin_full_access === true) return defaultPermissionsForRole("super_admin");
   if (user?.permissionsManaged) return current;
-  const hasGranular = Object.keys(current).some((key) => key.includes("_view") || key.endsWith("_access") || key.startsWith("system_"));
-  return Object.keys(current).length > 0 && hasGranular ? current : defaultPermissionsForRole(user?.role || "cashier");
+  const hasGranular = Object.keys(current).some(
+    (key) => key.includes("_view") || key.endsWith("_access") || key.startsWith("system_"),
+  );
+  return Object.keys(current).length > 0 && hasGranular
+    ? current
+    : defaultPermissionsForRole(user?.role || "cashier");
 }
 
-function hasAnyPermission(user: { role?: string; permissions?: Record<string, any>; permissionsManaged?: boolean } | null, keys: string[] = []): boolean {
+function hasAnyPermission(
+  user: { role?: string; permissions?: Record<string, any>; permissionsManaged?: boolean } | null,
+  keys: string[] = [],
+): boolean {
   if (keys.length === 0) return true;
   const permissions = permissionsForUser(user);
   return keys.some((key) => permissions[key] === true);
 }
 
 function localUsernameFromStorage(value: string): string {
-  return String(value || "").split("@")[0].toLowerCase();
+  return String(value || "")
+    .split("@")[0]
+    .toLowerCase();
 }
 
 export function AdminLayout({ children }: { children?: ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
   const pathname = location.pathname;
-  const [user, setUser] = useState<{ email?: string; username?: string; role?: string; permissions?: Record<string, any>; permissionsManaged?: boolean } | null>(null);
+  const [user, setUser] = useState<{
+    email?: string;
+    username?: string;
+    role?: string;
+    permissions?: Record<string, any>;
+    permissionsManaged?: boolean;
+  } | null>(null);
   const [authChecking, setAuthChecking] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -131,21 +334,34 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
     let mounted = true;
 
     const readLocalUser = (storedUser: string) => {
-      const normalized = String(storedUser || "").trim().toLowerCase();
+      const normalized = String(storedUser || "")
+        .trim()
+        .toLowerCase();
       const username = localUsernameFromStorage(normalized);
       const state: any = erpStore.getState();
       const localRecord = (state.users || []).find((item: any) => {
-        const storedName = String(item.username || "").trim().toLowerCase();
+        const storedName = String(item.username || "")
+          .trim()
+          .toLowerCase();
         return storedName.includes("@") ? storedName === normalized : storedName === username;
       });
-      if (!localRecord || typeof localRecord.password !== "string" || !localRecord.password) return null;
+      if (!localRecord || typeof localRecord.password !== "string" || !localRecord.password)
+        return null;
       const role = localRecord.role || "cashier";
       const permissions =
-        (localRecord.permissions && Object.keys(localRecord.permissions).length > 0 ? localRecord.permissions : null) ||
+        (localRecord.permissions && Object.keys(localRecord.permissions).length > 0
+          ? localRecord.permissions
+          : null) ||
         state.userPermissions?.[localRecord.username] ||
         state.userPermissions?.[role] ||
         {};
-      return { email: storedUser, username: localRecord.username, role, permissions, permissionsManaged: false };
+      return {
+        email: storedUser,
+        username: localRecord.username,
+        role,
+        permissions,
+        permissionsManaged: false,
+      };
     };
 
     const loadHostedProfile = async (session: any) => {
@@ -199,14 +415,12 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
         localStorage.getItem("restocash_auth_user") ||
         sessionStorage.getItem("restocash_auth_user");
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
         if (!mounted) return;
-        if (isHostedDeployment()) {
-          if (session?.user?.id) await loadHostedProfile(session);
-          else {
-            setUser(null);
-            navigate({ to: "/login" });
-          }
+        if (isHostedDeployment() && session?.user?.id) {
+          await loadHostedProfile(session);
         } else if (localUser) {
           const local = readLocalUser(localUser);
           if (local) setUser(local);
@@ -225,7 +439,7 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
       } catch (error) {
         console.error("Al-Mokhtar auth check failed:", error);
         if (!mounted) return;
-        if (!isHostedDeployment() && localUser) {
+        if (localUser) {
           const local = readLocalUser(localUser);
           if (local) setUser(local);
           else {
@@ -244,7 +458,7 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
     void checkAuth();
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!mounted) return;
-      if (isHostedDeployment()) {
+      if (session?.user?.id && isHostedDeployment()) {
         void Promise.resolve().then(() => loadHostedProfile(session));
         return;
       }
@@ -324,28 +538,32 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
         <div className="px-3 py-1.5 text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
           {location.pathname.startsWith("/admin") ? "لوحة التحكم الرئيسية" : "الإدارة"}
         </div>
-        {nav.filter((item) => hasAnyPermission(user, item.permissionKeys)).map((item) => {
-          const active = isNavItemActive(item);
-          return (
-            <Link
-              key={item.to + (item.search ? "?" + new URLSearchParams(item.search).toString() : "")}
-              to={item.to}
-              search={item.search}
-              onClick={() => {
-                if (onItemClick) onItemClick();
-              }}
-              className={cn(
-                "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition",
-                active
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
-              )}
-            >
-              <item.icon size={18} />
-              {item.label}
-            </Link>
-          );
-        })}
+        {nav
+          .filter((item) => hasAnyPermission(user, item.permissionKeys))
+          .map((item) => {
+            const active = isNavItemActive(item);
+            return (
+              <Link
+                key={
+                  item.to + (item.search ? "?" + new URLSearchParams(item.search).toString() : "")
+                }
+                to={item.to}
+                search={item.search}
+                onClick={() => {
+                  if (onItemClick) onItemClick();
+                }}
+                className={cn(
+                  "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition",
+                  active
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                )}
+              >
+                <item.icon size={18} />
+                {item.label}
+              </Link>
+            );
+          })}
       </nav>
       <div className="p-3 border-t border-border space-y-2 shrink-0">
         <p className="px-3 text-xs text-muted-foreground truncate">{user?.email}</p>
@@ -452,28 +670,60 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
             const searchParams = new URLSearchParams(location.search);
             let required: string[] | undefined;
             if ((pathname === "/admin" || pathname === "/admin/") && searchParams.has("tab")) {
-              required = nav.find((item) => item.search && item.search.tab === searchParams.get("tab"))?.permissionKeys
-                || ["__no_access_to_unmapped_page__"];
-            } else if (pathname === "/admin" || pathname === "/admin/" || pathname === "/admin/index") {
+              required = nav.find(
+                (item) => item.search && item.search.tab === searchParams.get("tab"),
+              )?.permissionKeys || ["__no_access_to_unmapped_page__"];
+            } else if (
+              pathname === "/admin" ||
+              pathname === "/admin/" ||
+              pathname === "/admin/index"
+            ) {
               required = nav[0].permissionKeys;
-            } else if (pathname.startsWith("/admin/accounts") || pathname.startsWith("/admin/ledger")) {
+            } else if (
+              pathname.startsWith("/admin/accounts") ||
+              pathname.startsWith("/admin/ledger")
+            ) {
               required = ["accounting", "accounting_view"];
-            } else if (pathname.startsWith("/admin/restaurant") || pathname.startsWith("/admin/orders")) {
-              required = ["orders", "pos", "captain", "kitchen", "delivery", "inventory", "purchasing", "production"];
+            } else if (
+              pathname.startsWith("/admin/restaurant") ||
+              pathname.startsWith("/admin/orders")
+            ) {
+              required = [
+                "orders",
+                "pos",
+                "captain",
+                "kitchen",
+                "delivery",
+                "inventory",
+                "purchasing",
+                "production",
+              ];
             } else if (pathname.startsWith("/admin/menu")) {
               required = ["pos", "inventory", "orders"];
             } else if (pathname.startsWith("/admin/inventory")) {
               required = ["inventory", "inventory_view", "purchasing", "purchasing_view"];
             } else {
-              required = nav.find((item) => item.to !== "/admin" && pathname.startsWith(item.to))?.permissionKeys
-                || ["__no_access_to_unmapped_page__"];
+              required = nav.find((item) => item.to !== "/admin" && pathname.startsWith(item.to))
+                ?.permissionKeys || ["__no_access_to_unmapped_page__"];
             }
-            return hasAnyPermission(user, required) ? (children || <Outlet />) : (
-              <div role="alert" className="mx-auto mt-10 max-w-xl rounded-2xl border border-border bg-card p-8 text-center shadow-sm">
+            return hasAnyPermission(user, required) ? (
+              children || <Outlet />
+            ) : (
+              <div
+                role="alert"
+                className="mx-auto mt-10 max-w-xl rounded-2xl border border-border bg-card p-8 text-center shadow-sm"
+              >
                 <ShieldCheck size={34} className="mx-auto mb-3 text-primary" />
-                <h2 className="text-xl font-black text-foreground">ليس لديك صلاحية لفتح هذه الصفحة</h2>
-                <p className="mt-2 text-sm text-muted-foreground">تُحدد صلاحيات الوصول من صفحة المستخدمين. اطلب من مسؤول النظام تفعيل صلاحية القسم لحسابك.</p>
-                <Button className="mt-5" onClick={() => navigate({ to: "/admin" })}>العودة إلى لوحة التحكم</Button>
+                <h2 className="text-xl font-black text-foreground">
+                  ليس لديك صلاحية لفتح هذه الصفحة
+                </h2>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  تُحدد صلاحيات الوصول من صفحة المستخدمين. اطلب من مسؤول النظام تفعيل صلاحية القسم
+                  لحسابك.
+                </p>
+                <Button className="mt-5" onClick={() => navigate({ to: "/admin" })}>
+                  العودة إلى لوحة التحكم
+                </Button>
               </div>
             );
           })()}

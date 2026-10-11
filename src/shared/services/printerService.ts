@@ -355,7 +355,6 @@ class ThermalPrinterService {
       </html>
     `;
 
-
     const printWindow = window.open("", "_blank", "width=320,height=600,left=100,top=100");
     if (printWindow) {
       printWindow.document.write(html);
@@ -393,7 +392,6 @@ class ThermalPrinterService {
       }
     }
   }
-
 
   /**
    * Generate ESC/POS commands and send to serial port writer
@@ -485,7 +483,7 @@ class ThermalPrinterService {
           encoder,
         );
       }
-      if (data.tax > 0) {
+      if (typeof data.tax === "number" && data.tax > 0) {
         const taxRateLabel = data.taxRate ? ` (${data.taxRate}%)` : "";
         this.appendUtf8Bytes(
           bytes,
