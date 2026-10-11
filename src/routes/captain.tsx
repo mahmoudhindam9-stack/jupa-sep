@@ -115,6 +115,8 @@ function saveLocalTables(tables: Table[]) {
   }
 }
 
+const EMPTY_ORDERS: any[] = [];
+
 function CaptainPage() {
   const { lang, currency } = useSettings();
   const { toast } = useToast();
@@ -123,7 +125,7 @@ function CaptainPage() {
   const tableOrders = useSyncExternalStore(
     tableOrdersStore.subscribe.bind(tableOrdersStore),
     () => tableOrdersStore.getAllOrders(),
-    () => [],
+    () => EMPTY_ORDERS,
   );
 
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
@@ -134,6 +136,16 @@ function CaptainPage() {
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
   const [qrTableId, setQrTableId] = useState("");
   const [qrWelcomeMessage, setQrWelcomeMessage] = useState("أهلاً بك! يمكنك الطلب الآن.");
+  const [qrCurrency, setQrCurrency] = useState("EGP");
+  const [customBaseUrl, setCustomBaseUrl] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      const orig = window.location.origin || "";
+      if (orig && orig !== "null" && !orig.includes("localhost") && !orig.includes("127.0.0.1") && !orig.includes("::1") && !orig.includes("run.app")) {
+        return orig;
+      }
+    }
+    return "https://cart-bliss-02.lovable.app";
+  });
   const [editingTable, setEditingTable] = useState<Table | null>(null);
   const [form, setForm] = useState({ number: "", name: "", capacity: "" });
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -753,12 +765,34 @@ function CaptainPage() {
           {(() => {
             const selectedT = tablesList.find((t) => t.id === qrTableId);
             const displayedTableNumber = selectedT ? selectedT.number : "";
-            const origin = typeof window !== "undefined" ? window.location.origin : "";
-            const qrUrl = `${origin}/menu${qrTableId ? `?tableId=${qrTableId}&table=${displayedTableNumber}` : ""}`;
+            const qrUrl = `${customBaseUrl || "https://cart-bliss-02.lovable.app"}/menu${qrTableId ? `?tableId=${qrTableId}&table=${displayedTableNumber}` : ""}${qrCurrency !== "EGP" ? `${qrTableId ? "&" : "?"}currency=${qrCurrency}` : ""}`;
 
             return (
               <>
                 <div className="space-y-3 py-1 print:hidden">
+                  <div className="space-y-1.5">
+                    <Label
+                      className={
+                        lang === "ar"
+                          ? "text-right block text-xs font-bold text-slate-700"
+                          : "text-left block text-xs font-bold text-slate-700"
+                      }
+                    >
+                      {lang === "ar" ? "رابط النظام (النطاق العام للعملاء)" : "System Base URL (Public Domain)"}
+                    </Label>
+                    <Input
+                      value={customBaseUrl}
+                      onChange={(e) => setCustomBaseUrl(e.target.value)}
+                      placeholder="https://..."
+                      className={`h-10 text-xs font-mono ${lang === "ar" ? "text-right" : "text-left"}`}
+                    />
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      {lang === "ar"
+                        ? "⚠️ تلميح: عند الفتح محلياً، يرجى إدخال الرابط المشترك (Shared URL) لكي يفتح الباركود على هواتف العملاء."
+                        : "⚠️ Hint: When running locally, enter the Shared URL so the barcode opens on clients' phones."}
+                    </p>
+                  </div>
+
                   <div className="space-y-1.5">
                     <Label
                       className={
@@ -786,6 +820,30 @@ function CaptainPage() {
                       ))}
                     </select>
                   </div>
+
+                  <div className="space-y-1.5">
+                    <Label
+                      className={
+                        lang === "ar"
+                          ? "text-right block text-xs font-bold text-slate-700"
+                          : "text-left block text-xs font-bold text-slate-700"
+                      }
+                    >
+                      {lang === "ar" ? "العملة المفضلة في المنيو" : "Preferred Currency in Menu"}
+                    </Label>
+                    <select
+                      value={qrCurrency}
+                      onChange={(e) => setQrCurrency(e.target.value)}
+                      className={`w-full h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 ${lang === "ar" ? "text-right" : "text-left"}`}
+                    >
+                      <option value="EGP">جنيه مصري (EGP)</option>
+                      <option value="USD">دولار أمريكي (USD)</option>
+                      <option value="EUR">يورو (EUR)</option>
+                      <option value="SAR">ريال سعودي (SAR)</option>
+                      <option value="AED">درهم إماراتي (AED)</option>
+                    </select>
+                  </div>
+
                   <div className="space-y-1.5">
                     <Label
                       className={

@@ -18,6 +18,10 @@ import { Button } from "@/components/ui/button";
 import { erpStore, RestaurantShift } from "@/shared/services/erpStore";
 import { RestaurantShiftLauncherModal } from "@/components/restaurant/RestaurantShiftLauncherModal";
 import { RestaurantShiftClosingReportModal } from "@/components/restaurant/RestaurantShiftClosingReportModal";
+import { menuService } from "@/features/menu/services/menuService";
+import { inventoryService } from "@/features/inventory/services/inventoryService";
+import { tableOrdersStore } from "@/shared/services/tableOrdersStore";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/admin/restaurant")({
   head: () => ({ meta: [{ title: "إدارة المطعم - النظام الشامل" }] }),
@@ -30,31 +34,100 @@ type RestaurantCounts = {
   orders: number;
 };
 
-function getCounts(): RestaurantCounts {
-  const state = erpStore.getState() as typeof erpStore.state & {
-    menu?: unknown[];
-    inventoryItems?: unknown[];
-    orders?: unknown[];
-  };
+function getSyncCounts(): RestaurantCounts {
+  let menu = 8;
+  let inventory = 6;
+  let orders = 0;
 
-  return {
-    menu: state.menu?.length ?? 0,
-    inventory: state.inventoryItems?.length ?? 0,
-    orders: state.orders?.length ?? 0,
-  };
+  if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
+    try {
+      const localMenu = localStorage.getItem("local_custom_menu_items");
+      if (localMenu) {
+        const parsed = JSON.parse(localMenu);
+        menu = Object.keys(parsed).length;
+      }
+    } catch {}
+
+    try {
+      const localInv = localStorage.getItem("ydb_inventory_items_v2");
+      if (localInv) {
+        const parsed = JSON.parse(localInv);
+        if (Array.isArray(parsed)) {
+          inventory = parsed.length;
+        }
+      }
+    } catch {}
+
+    try {
+      const localOrders = localStorage.getItem("restocash_table_orders_v1");
+      if (localOrders) {
+        const parsed = JSON.parse(localOrders);
+        if (Array.isArray(parsed)) {
+          orders = parsed.length;
+        }
+      }
+    } catch {}
+  }
+
+  return { menu, inventory, orders };
 }
 
 function RestaurantHubPage() {
   const navigate = useNavigate();
-  const [counts, setCounts] = useState<RestaurantCounts>(getCounts);
+  const [counts, setCounts] = useState<RestaurantCounts>(getSyncCounts);
   const [isLauncherOpen, setIsLauncherOpen] = useState(false);
   const [closingShift, setClosingShift] = useState<RestaurantShift | null>(null);
 
   useEffect(() => {
-    const unsubscribe = erpStore.subscribe(() => {
-      setCounts(getCounts());
+    let active = true;
+
+    async function fetchLiveCounts() {
+      try {
+        // Fetch Menu Items count
+        const menuItems = await menuService.getMenuItems();
+        
+        // Fetch Inventory Items count
+        const inventoryItems = await inventoryService.getInventory();
+
+        // Fetch Orders Count from Supabase
+        const { count: dbOrdersCount } = await supabase
+          .from("orders")
+          .select("id", { count: "exact", head: true });
+
+        // Fetch Local Orders Count
+        const localOrdersCount = tableOrdersStore.getAllOrders().length;
+
+        const totalOrders = (dbOrdersCount ?? 0) + localOrdersCount;
+
+        if (active) {
+          setCounts({
+            menu: menuItems.length,
+            inventory: inventoryItems.length,
+            orders: totalOrders,
+          });
+        }
+      } catch (err) {
+        console.error("Error fetching live restaurant counts:", err);
+      }
+    }
+
+    fetchLiveCounts();
+
+    // Subscribe to local order updates to live-update counts
+    const unsubscribeTableOrders = tableOrdersStore.subscribe(() => {
+      fetchLiveCounts();
     });
-    return unsubscribe;
+
+    // Subscribe to ERP store changes to keep sync
+    const unsubscribeErp = erpStore.subscribe(() => {
+      fetchLiveCounts();
+    });
+
+    return () => {
+      active = false;
+      unsubscribeTableOrders();
+      unsubscribeErp();
+    };
   }, []);
 
   const modules = [

@@ -2,7 +2,7 @@
 import { useState, useMemo } from "react";
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { UtensilsCrossed, ShoppingCart, Plus, Minus, Trash2 } from "lucide-react";
+import { UtensilsCrossed, ShoppingCart, Plus, Minus, Trash2, Clock } from "lucide-react";
 import { menuService } from "@/features/menu/services/menuService";
 import { tableOrdersStore } from "@/shared/services/tableOrdersStore";
 import { MenuItem } from "@/shared/types";
@@ -17,18 +17,27 @@ export const Route = createFileRoute("/menu")({
       table: search.table as string | undefined,
       tableId: search.tableId as string | undefined,
       table_id: search.table_id as string | undefined,
+      currency: search.currency as string | undefined,
     };
   },
 });
 
 function MenuPage() {
-  const { table, table_id, tableId } = Route.useSearch();
+  const { table, table_id, tableId, currency } = Route.useSearch();
   const navigate = useNavigate();
   const { toast } = useToast();
 
+  const selectedCurrency = currency || "EGP";
+  const currencySymbol = selectedCurrency === "EGP" || selectedCurrency === "ج.م" ? "ج.م" : selectedCurrency;
+
   const [cart, setCart] = useState<any[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
-  const [trackingToken, setTrackingToken] = useState("");
+  const [trackingToken, setTrackingToken] = useState<string>(() => {
+    if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
+      return localStorage.getItem("last_customer_tracking_token") || "";
+    }
+    return "";
+  });
 
   const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
   const [customNotes, setCustomNotes] = useState("");
@@ -176,6 +185,9 @@ function MenuPage() {
 
         supabase.removeChannel(channel);
 
+        if (typeof localStorage !== "undefined") {
+          localStorage.setItem("last_customer_tracking_token", orderPayload.customer_tracking_token);
+        }
         setTrackingToken(orderPayload.customer_tracking_token);
         setCart([]);
         setIsCartOpen(false);
@@ -204,30 +216,54 @@ function MenuPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 font-cairo">
+    <div className="min-h-screen bg-slate-50 antialiased pb-24">
       {/* Header */}
-      <header className="bg-white shadow-sm sticky top-0 z-40">
+      <header className="bg-white shadow-xs sticky top-0 z-40 border-b border-slate-100">
         <div className="max-w-md mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <UtensilsCrossed className="text-emerald-600" />
             <h1 className="font-black text-lg text-slate-800">قائمة الطعام</h1>
           </div>
           {table && (
-            <div className="bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-sm font-bold">
+            <div className="bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-xs font-bold">
               طاولة {table}
             </div>
           )}
         </div>
       </header>
 
+      {/* Sticky Category Tabs Bar for fast, mobile-friendly navigation */}
+      <div className="sticky top-16 z-30 bg-white/95 backdrop-blur-md border-b border-slate-100 py-3 shadow-xs overflow-x-auto scrollbar-none">
+        <div className="flex px-4 gap-2 min-w-max">
+          {categories.map((cat) => {
+            const hasItems = availableItems.some((i) => i.category_id === cat.id);
+            if (!hasItems) return null;
+            return (
+              <button
+                key={cat.id}
+                onClick={() => {
+                  const el = document.getElementById(`cat-sec-${cat.id}`);
+                  if (el) {
+                    el.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }
+                }}
+                className="px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs transition whitespace-nowrap cursor-pointer focus:ring-2 focus:ring-emerald-500"
+              >
+                {cat.name_ar}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Menu Categories */}
-      <main className="max-w-md mx-auto pb-24">
+      <main className="max-w-md mx-auto">
         {categories.map((category) => {
           const catItems = availableItems.filter((i) => i.category_id === category.id);
           if (catItems.length === 0) return null;
 
           return (
-            <div key={category.id} className="pt-6">
+            <div key={category.id} className="pt-6 scroll-mt-32" id={`cat-sec-${category.id}`}>
               <h2 className="px-4 text-lg font-black text-slate-800 mb-4">{category.name_ar}</h2>
               <div className="space-y-4 px-4">
                 {catItems.map((item) => (
@@ -247,8 +283,8 @@ function MenuPage() {
                           <UtensilsCrossed className="text-amber-200" size={32} />
                         </div>
                       )}
-                      <div className="absolute top-3 left-3 bg-slate-900/80 backdrop-blur-md text-white px-3 py-1 rounded-full text-xs font-black shadow-md">
-                        {item.price} ج.م
+                      <div className="absolute top-3 left-3 bg-slate-950/90 backdrop-blur-md text-white px-2.5 py-1.5 rounded-lg text-xs font-black shadow-md border border-white/20">
+                        {item.price} {currencySymbol}
                       </div>
                       {item.badge && (
                         <div className="absolute top-0 right-0 bg-slate-900/90 backdrop-blur-md text-white text-xs font-black px-3.5 py-1.5 rounded-bl-2xl shadow-md z-10">
@@ -275,8 +311,14 @@ function MenuPage() {
       </main>
 
       {customizingItem && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[60] flex items-end justify-center">
-          <div className="bg-white w-full max-w-md rounded-t-3xl p-6 space-y-4 max-h-[85vh] overflow-y-auto animate-in slide-in-from-bottom">
+        <div 
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[60] flex items-end justify-center"
+          onClick={() => setCustomizingItem(null)}
+        >
+          <div 
+            className="bg-white w-full max-w-md rounded-t-3xl p-6 space-y-4 max-h-[85vh] overflow-y-auto animate-in slide-in-from-bottom"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between border-b pb-4">
               <h2 className="font-black text-lg text-slate-900">{customizingItem.name_ar}</h2>
               <button
@@ -356,7 +398,7 @@ function MenuPage() {
             </div>
             <div className="flex items-center gap-2">
               <span className="font-black text-emerald-400">
-                {totalAmount.toLocaleString("en-US", { minimumFractionDigits: 2 })} ج.م
+                {totalAmount.toLocaleString("en-US", { minimumFractionDigits: 2 })} {currencySymbol}
               </span>
               <ShoppingCart size={20} />
             </div>
@@ -366,8 +408,14 @@ function MenuPage() {
 
       {/* Cart Modal / Drawer */}
       {isCartOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-end justify-center">
-          <div className="bg-white w-full max-w-md rounded-t-3xl p-6 space-y-4 max-h-[85vh] overflow-y-auto animate-in slide-in-from-bottom">
+        <div 
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-end justify-center"
+          onClick={() => setIsCartOpen(false)}
+        >
+          <div 
+            className="bg-white w-full max-w-md rounded-t-3xl p-6 space-y-4 max-h-[85vh] overflow-y-auto animate-in slide-in-from-bottom"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between border-b pb-4">
               <h2 className="font-black text-lg text-slate-900">سلة الطلبات</h2>
               <button
@@ -379,9 +427,9 @@ function MenuPage() {
             </div>
 
             <div className="space-y-3 divide-y">
-              {cart.map((c) => (
+              {cart.map((c, idx) => (
                 <div
-                  key={c.item.id}
+                  key={c.item.id + "_" + idx}
                   className="pt-3 first:pt-0 flex items-center justify-between gap-3"
                 >
                   <div>
@@ -390,25 +438,25 @@ function MenuPage() {
                       {(c.item.price * c.quantity).toLocaleString("en-US", {
                         minimumFractionDigits: 2,
                       })}{" "}
-                      ج.م
+                      {currencySymbol}
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => updateQuantity(c.item.id, -1)}
+                      onClick={() => updateQuantity(idx, -1)}
                       className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700 hover:bg-slate-200"
                     >
                       <Minus size={14} />
                     </button>
                     <span className="font-bold text-sm w-6 text-center">{c.quantity}</span>
                     <button
-                      onClick={() => updateQuantity(c.item.id, 1)}
+                      onClick={() => updateQuantity(idx, 1)}
                       className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700 hover:bg-slate-200"
                     >
                       <Plus size={14} />
                     </button>
                     <button
-                      onClick={() => removeFromCart(c.item.id)}
+                      onClick={() => removeFromCart(idx)}
                       className="w-8 h-8 rounded-xl bg-rose-50 flex items-center justify-center text-rose-600 hover:bg-rose-100 ms-1"
                     >
                       <Trash2 size={14} />
@@ -422,7 +470,7 @@ function MenuPage() {
               <div className="flex justify-between items-center text-base font-black">
                 <span>الإجمالي الكلي:</span>
                 <span className="text-emerald-600">
-                  {totalAmount.toLocaleString("en-US", { minimumFractionDigits: 2 })} ج.م
+                  {totalAmount.toLocaleString("en-US", { minimumFractionDigits: 2 })} {currencySymbol}
                 </span>
               </div>
               <button
@@ -435,6 +483,24 @@ function MenuPage() {
           </div>
         </div>
       )}
+      {/* Floating Order Tracking Button (if active tracking token exists) */}
+      {trackingToken && (
+        <div className="fixed bottom-24 left-4 z-50">
+          <button
+            onClick={() => {
+              const savedToken = localStorage.getItem("last_customer_tracking_token") || "";
+              if (savedToken) {
+                setTrackingToken(savedToken);
+              }
+            }}
+            className="h-12 w-12 rounded-full bg-indigo-600 text-white shadow-xl flex items-center justify-center hover:bg-indigo-700 transition animate-pulse border border-white/20"
+            title="تتبع الطلب الحالي"
+          >
+            <Clock size={20} />
+          </button>
+        </div>
+      )}
+
       {trackingToken ? (
         <CustomerOrderTracker token={trackingToken} onClose={() => setTrackingToken("")} />
       ) : null}
