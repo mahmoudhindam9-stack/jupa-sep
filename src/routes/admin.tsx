@@ -45,6 +45,7 @@ import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { CURRENT_VERSION } from "@/shared/config/version";
 import { GitHubUpdateBanner } from "@/components/admin/GitHubUpdateBanner";
+import { isAiStudioPreview } from "@/shared/services/previewAccess";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({ meta: [{ title: "لوحة الإدارة" }] }),
@@ -402,6 +403,21 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
     };
 
     const checkAuth = async () => {
+      if (isAiStudioPreview()) {
+        localStorage.setItem("restocash_auth_user", "admin@restocash.local");
+        localStorage.setItem("restocash_user_role", "admin");
+        erpStore.setCurrentUser("admin");
+        setUser({
+          email: "admin@restocash.local",
+          username: "admin",
+          role: "admin",
+          permissions: defaultPermissionsForRole("super_admin"),
+          permissionsManaged: true,
+        });
+        setAuthChecking(false);
+        return;
+      }
+
       const localUser =
         localStorage.getItem("restocash_auth_user") ||
         sessionStorage.getItem("restocash_auth_user");
@@ -442,6 +458,8 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
 
     void checkAuth();
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      // Do not let an empty Supabase session redirect the AI Studio preview back to login.
+      if (isAiStudioPreview()) return;
       if (!mounted) return;
       if (session?.user?.id && isHostedDeployment()) {
         void Promise.resolve().then(() => loadHostedProfile(session));
