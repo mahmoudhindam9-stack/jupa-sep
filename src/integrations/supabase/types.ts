@@ -195,6 +195,7 @@ export type Database = {
       profiles: {
         Row: {
           created_at: string;
+          email: string | null;
           full_name: string | null;
           id: string;
           permissions: Json;
