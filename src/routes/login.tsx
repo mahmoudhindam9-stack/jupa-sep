@@ -89,6 +89,7 @@ function LoginPage() {
   const [hasLocalAccounts, setHasLocalAccounts] = useState(true);
   const [isBootstrapChecked, setIsBootstrapChecked] = useState(false);
   const [bootstrapAvailable, setBootstrapAvailable] = useState(false);
+  const [bootstrapCheckFailed, setBootstrapCheckFailed] = useState(false);
   const [bootstrapFullName, setBootstrapFullName] = useState("");
   const [bootstrapUsername, setBootstrapUsername] = useState("");
   const [bootstrapEmail, setBootstrapEmail] = useState("");
@@ -115,8 +116,9 @@ function LoginPage() {
       })
       .catch((cause) => {
         console.error("Could not check the initial Supabase user directory.", cause);
+        setBootstrapCheckFailed(true);
         setError(
-          "تعذر فحص حسابات Supabase. طبّق ترحيل تهيئة المدير الأول في مجلد supabase/migrations ثم أعد تحميل التطبيق.",
+          "تعذر التحقق من حالة حسابات Supabase. غالبًا لم يُطبّق ترحيل تهيئة المدير الأول على قاعدة البيانات؛ لن نفتح التسجيل من دون تحقق آمن من أن قاعدة الحسابات فارغة.",
         );
       })
       .finally(() => setIsBootstrapChecked(true));
@@ -484,6 +486,43 @@ function LoginPage() {
       setLoading(false);
     }
   };
+
+  if (isMounted && isHostedDeployment() && isBootstrapChecked && bootstrapCheckFailed) {
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center bg-background p-4"
+        dir={lang === "ar" ? "rtl" : "ltr"}
+      >
+        <div className="w-full max-w-lg space-y-5 bg-card border border-destructive/30 p-7 rounded-2xl shadow-sm">
+          <div className="flex justify-center">
+            <RestocashLogo size={48} />
+          </div>
+          <h1 className="text-xl font-black text-foreground text-center">إعداد Supabase غير مكتمل</h1>
+          <p role="alert" className="text-sm text-destructive bg-destructive/10 p-3 rounded-lg border border-destructive/20">
+            {error || "تعذر التحقق من حسابات الدخول."}
+          </p>
+          <p className="text-sm text-muted-foreground">
+            لن نعرض نموذج إنشاء المدير قبل تأكيد حالة قاعدة البيانات من الخادم؛ هذا يمنع منح صلاحيات مدير بطريقة غير آمنة.
+          </p>
+          <a
+            className="block w-full text-center rounded-lg border border-border p-3 font-bold text-primary hover:bg-muted"
+            href="https://github.com/mahmoudhindam9-stack/jupa-sep/blob/main/supabase/migrations/20261012120000_reset_users_and_bootstrap_first_admin.sql"
+            target="_blank"
+            rel="noreferrer"
+          >
+            فتح ترحيل إعداد المدير الأول
+          </a>
+          <Button
+            type="button"
+            className="w-full"
+            onClick={() => window.location.reload()}
+          >
+            إعادة الفحص بعد تطبيق الترحيل
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   if (isMounted && isHostedDeployment() && !isBootstrapChecked) {
     return (
