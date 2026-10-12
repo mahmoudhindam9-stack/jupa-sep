@@ -940,17 +940,16 @@ export function UsersPage() {
         );
         const remoteIds = new Set(remoteProfiles.map((profile) => String(profile.id)));
 
-        // Reconcile stale cached cloud profiles only after Supabase returns a non-empty directory.
-        // Keep local drafts and all users with queued changes until their writes are confirmed.
-        if (remoteIds.size > 0) {
-          for (const cached of erpStore.getUsers()) {
-            if (
-              isSupabaseProfileId(cached.id) &&
-              !remoteIds.has(String(cached.id)) &&
-              !hasPendingUserChange(String(cached.id), String(cached.username || ""))
-            ) {
-              erpStore.deleteUser(cached.id);
-            }
+        // Supabase is authoritative after a successful directory read, including an empty
+        // directory. This prevents stale local copies from reappearing after the reset.
+        // Unconfirmed local drafts remain visible only while they still have queued writes.
+        for (const cached of erpStore.getUsers()) {
+          if (
+            isSupabaseProfileId(cached.id) &&
+            !remoteIds.has(String(cached.id)) &&
+            !hasPendingUserChange(String(cached.id), String(cached.username || ""))
+          ) {
+            erpStore.deleteUser(cached.id);
           }
         }
 
