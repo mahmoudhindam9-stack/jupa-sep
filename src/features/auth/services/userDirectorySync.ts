@@ -540,18 +540,32 @@ export function hasPendingUserCreate(userId: string): boolean {
   );
 }
 
+export function needsPasswordForPendingUserCreate(userId: string): boolean {
+  const pendingCreate = readQueue().find(
+    (operation): operation is QueuedCreate =>
+      operation.kind === "create" && operation.localUserId === userId,
+  );
+  // A lost session secret is needed only until Supabase Auth returns the new user's ID.
+  return !pendingCreate?.cloudUserId;
+}
+
 export function startUserSync(): () => void {
   if (!canUseBrowserStorage()) return () => {};
   const sync = () => {
     if (isOnline()) void syncPendingUserChanges();
     else announceChange();
   };
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === QUEUE_KEY) announceChange();
+  };
+  window.addEventListener("storage", onStorage);
   window.addEventListener("online", sync);
   window.addEventListener("focus", sync);
   document.addEventListener("visibilitychange", sync);
   sync();
 
   return () => {
+    window.removeEventListener("storage", onStorage);
     window.removeEventListener("online", sync);
     window.removeEventListener("focus", sync);
     document.removeEventListener("visibilitychange", sync);
