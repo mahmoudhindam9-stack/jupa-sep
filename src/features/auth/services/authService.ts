@@ -49,6 +49,17 @@ const assertCredentials = (email: string, password: string) => {
 };
 
 export const authService = {
+  async isInitialAdminSetupAvailable(): Promise<boolean> {
+    const { data, error } = await (supabase as any).rpc("is_initial_admin_setup_available");
+    if (error) {
+      throw new Error(
+        "تعذر التحقق من إعداد المدير الأول. تأكد من تطبيق آخر ترحيل Supabase ثم أعد المحاولة.",
+        { cause: error },
+      );
+    }
+    return data === true;
+  },
+
   async signIn(email: string, password: string) {
     const normalizedEmail = assertCredentials(email, password);
     const { data, error } = await supabase.auth.signInWithPassword({
