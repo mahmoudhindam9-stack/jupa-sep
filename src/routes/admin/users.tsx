@@ -26,7 +26,6 @@ import { authService } from "@/features/auth/services/authService";
 import {
   getPendingUserSyncCount,
   hasPendingUserChange,
-  hasPendingUserCreate,
   queueUserChange,
   startUserSync,
   syncPendingUserChanges,
@@ -551,6 +550,16 @@ function directoryUsers(): SystemUser[] {
   return isHostedDeployment() ? users : users.filter((user) => !!user.password);
 }
 
+function isLocalUserDraft(user: SystemUser | null | undefined): boolean {
+  return String(user?.id || "").startsWith("u-");
+}
+
+function isSupabaseProfileId(value: unknown): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    String(value || ""),
+  );
+}
+
 function emailForUsername(username: string): string {
   const normalized = username.trim().toLowerCase();
   return normalized.includes("@") ? normalized : `${normalized}@restocash.com`;
@@ -920,12 +929,27 @@ export function UsersPage() {
         const profiles = (await authService.getUsers()) as any[];
         if (!mounted) return;
 
-        for (const profile of profiles || []) {
-          if (
-            profile?.id &&
-            profile?.username &&
-            !hasPendingUserChange(String(profile.id), String(profile.username))
-          ) {
+        const remoteProfiles = (profiles || []).filter(
+          (profile) => profile?.id && profile?.username,
+        );
+        const remoteIds = new Set(remoteProfiles.map((profile) => String(profile.id)));
+
+        // Reconcile stale cached cloud profiles only after Supabase returns a non-empty directory.
+        // Keep local drafts and all users with queued changes until their writes are confirmed.
+        if (remoteIds.size > 0) {
+          for (const cached of erpStore.getUsers()) {
+            if (
+              isSupabaseProfileId(cached.id) &&
+              !remoteIds.has(String(cached.id)) &&
+              !hasPendingUserChange(String(cached.id), String(cached.username || ""))
+            ) {
+              erpStore.deleteUser(cached.id);
+            }
+          }
+        }
+
+        for (const profile of remoteProfiles) {
+          if (!hasPendingUserChange(String(profile.id), String(profile.username))) {
             erpStore.upsertUser(profileToSystemUser(profile));
           }
         }
@@ -966,7 +990,7 @@ export function UsersPage() {
 
     try {
       if (editing) {
-        const pendingCreate = hosted && hasPendingUserCreate(editing.id);
+        const pendingCreate = hosted && isLocalUserDraft(editing);
         if (pendingCreate && !form.password.trim()) {
           throw new Error(
             "هذا الحساب محفوظ محليًا ولم يكتمل إنشاؤه في Supabase. أدخل كلمة المرور مرة أخرى لإكمال المزامنة.",
@@ -1116,7 +1140,7 @@ export function UsersPage() {
       return;
     }
 
-    const wasPendingCreate = !!target && isHostedDeployment() && hasPendingUserCreate(target.id);
+    const wasPendingCreate = !!target && isHostedDeployment() && isLocalUserDraft(target);
     try {
       // Remove locally immediately; if cloud deletion fails the tombstone stays in the queue.
       erpStore.deleteUser(userToDelete);
@@ -1447,12 +1471,12 @@ export function UsersPage() {
               className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1"
               placeholder={
                 editing
-                  ? hasPendingUserCreate(editing.id)
+                  ? isLocalUserDraft(editing)
                     ? "أعد إدخاله لإكمال المزامنة"
                     : "كلمة المرور لا تتغير من هذه الصفحة"
                   : "الرقم السري"
               }
-              disabled={!!editing && isHostedDeployment() && !hasPendingUserCreate(editing.id)}
+              disabled={!!editing && isHostedDeployment() && !isLocalUserDraft(editing)}
               value={form.password}
               onChange={(e) => setForm((s) => ({ ...s, password: e.target.value }))}
             />
