@@ -531,6 +531,7 @@ function profileToSystemUser(profile: any): SystemUser {
     id: profile.id,
     full_name: profile.full_name || profile.username || "",
     username: profile.username || String(profile.email || "").split("@")[0],
+    email: String(profile.email || "").trim().toLowerCase(),
     phone: profile.phone || "",
     role: profile.role || "cashier",
     permissions: (profile.permissions || {}) as UserPermission,
@@ -561,9 +562,12 @@ function isSupabaseProfileId(value: unknown): boolean {
   );
 }
 
-function emailForUsername(username: string): string {
-  const normalized = username.trim().toLowerCase();
-  return normalized.includes("@") ? normalized : `${normalized}@restocash.com`;
+function isValidSupabaseEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function normalizeSupabaseEmail(value: unknown): string {
+  return String(value || "").trim().toLowerCase();
 }
 
 async function queueUserChangeSafely(input: Parameters<typeof queueUserChange>[0]): Promise<UserSyncResult> {
@@ -823,6 +827,7 @@ export function UsersPage() {
   const [form, setForm] = useState({
     full_name: "",
     username: "",
+    email: "",
     phone: "",
     password: "",
     role: "cashier",
@@ -935,17 +940,16 @@ export function UsersPage() {
         );
         const remoteIds = new Set(remoteProfiles.map((profile) => String(profile.id)));
 
-        // Reconcile stale cached cloud profiles only after Supabase returns a non-empty directory.
-        // Keep local drafts and all users with queued changes until their writes are confirmed.
-        if (remoteIds.size > 0) {
-          for (const cached of erpStore.getUsers()) {
-            if (
-              isSupabaseProfileId(cached.id) &&
-              !remoteIds.has(String(cached.id)) &&
-              !hasPendingUserChange(String(cached.id), String(cached.username || ""))
-            ) {
-              erpStore.deleteUser(cached.id);
-            }
+        // Supabase is authoritative after a successful directory read, including an empty
+        // directory. This prevents stale local copies from reappearing after the reset.
+        // Unconfirmed local drafts remain visible only while they still have queued writes.
+        for (const cached of erpStore.getUsers()) {
+          if (
+            isSupabaseProfileId(cached.id) &&
+            !remoteIds.has(String(cached.id)) &&
+            !hasPendingUserChange(String(cached.id), String(cached.username || ""))
+          ) {
+            erpStore.deleteUser(cached.id);
           }
         }
 
@@ -974,6 +978,7 @@ export function UsersPage() {
   const upsert = async () => {
     const username = form.username.trim();
     const normalizedUsername = username.toLowerCase();
+    const email = normalizeSupabaseEmail(form.email);
     const actorPermissions = currentActorPermissions(erpState);
     const hosted = isHostedDeployment();
 
@@ -990,6 +995,13 @@ export function UsersPage() {
     }
 
     try {
+      if (hosted && !isValidSupabaseEmail(email)) {
+        throw new Error("أدخل بريدًا إلكترونيًا حقيقيًا وصالحًا ليطابق متطلبات Supabase.");
+      }
+      if (hosted && !/^[a-z0-9._-]{3,32}$/.test(normalizedUsername)) {
+        throw new Error("اسم المستخدم يجب أن يكون من 3 إلى 32 حرفًا أو رقمًا، ويمكن استخدام النقطة والشرطة فقط.");
+      }
+
       if (editing) {
         const pendingCreate = hosted && isLocalUserDraft(editing);
         if (
@@ -1012,6 +1024,7 @@ export function UsersPage() {
           ...editing,
           full_name: form.full_name.trim(),
           username,
+          email: hosted ? (editing.email || email) : (editing.email || ""),
           phone: form.phone.trim(),
           role: form.role,
           permissions,
@@ -1030,6 +1043,7 @@ export function UsersPage() {
         if (hosted) {
           const profile = {
             username: normalizedUsername,
+            email: editing.email || email,
             full_name: form.full_name.trim(),
             phone: form.phone.trim(),
             role: form.role,
@@ -1042,7 +1056,7 @@ export function UsersPage() {
                   kind: "create",
                   localUserId: editing.id,
                   username: normalizedUsername,
-                  email: emailForUsername(normalizedUsername),
+                  email: email,
                   password: form.password.trim(),
                   profile,
                 }
@@ -1059,20 +1073,22 @@ export function UsersPage() {
         setErpState(erpStore.getState());
         setPendingSyncCount(getPendingUserSyncCount());
         setEditing(null);
-        setForm({ full_name: "", username: "", phone: "", password: "", role: "cashier" });
+        setForm({ full_name: "", username: "", email: "", phone: "", password: "", role: "cashier" });
         setIsConfirmUpsertOpen(false);
         notifyUserChange(toast, "تم تحديث المستخدم", syncResult);
         return;
       }
 
-      if (!form.password || form.password.length < 4) {
-        throw new Error("أدخل كلمة مرور للحساب الجديد (لا تقل عن 4 خانات).");
+      if (!form.password || form.password.length < 8) {
+        throw new Error("أدخل كلمة مرور لا تقل عن 8 أحرف. وسيطبق Supabase أي شروط إضافية مضبوطة في المشروع.");
       }
       const duplicate = directoryUsers().some(
-        (user) => String(user.username).trim().toLowerCase() === normalizedUsername,
+        (user) =>
+          String(user.username || "").trim().toLowerCase() === normalizedUsername ||
+          (hosted && normalizeSupabaseEmail(user.email) === email),
       );
       if (duplicate) {
-        throw new Error("اسم المستخدم موجود بالفعل. اختر اسم دخول مختلفًا.");
+        throw new Error("اسم المستخدم أو البريد الإلكتروني موجود بالفعل. استخدم بيانات مختلفة.");
       }
 
       const permissions = limitPermissionsToActor(
@@ -1083,6 +1099,7 @@ export function UsersPage() {
         id: `u-${Date.now()}`,
         full_name: form.full_name.trim(),
         username,
+        email: hosted ? email : "",
         phone: form.phone.trim(),
         role: form.role,
         ...(!hosted ? { password: form.password } : {}),
@@ -1103,10 +1120,11 @@ export function UsersPage() {
           kind: "create",
           localUserId: localUser.id,
           username: normalizedUsername,
-          email: emailForUsername(normalizedUsername),
+          email,
           password: form.password,
           profile: {
             username: normalizedUsername,
+            email,
             full_name: form.full_name.trim(),
             phone: form.phone.trim(),
             role: form.role,
@@ -1119,7 +1137,7 @@ export function UsersPage() {
       setLocalUsers(directoryUsers());
       setErpState(erpStore.getState());
       setPendingSyncCount(getPendingUserSyncCount());
-      setForm({ full_name: "", username: "", phone: "", password: "", role: "cashier" });
+      setForm({ full_name: "", username: "", email: "", phone: "", password: "", role: "cashier" });
       setIsConfirmUpsertOpen(false);
       notifyUserChange(toast, "تم إنشاء المستخدم", syncResult);
     } catch (error: any) {
@@ -1194,6 +1212,7 @@ export function UsersPage() {
     setForm({
       full_name: p.full_name ?? "",
       username: p.username ?? "",
+      email: p.email ?? "",
       phone: p.phone ?? "",
       password: "",
       role: p.role,
@@ -1455,15 +1474,31 @@ export function UsersPage() {
             />
           </div>
           <div className="md:col-span-2 lg:col-span-1">
-            <Label className="text-xs font-bold">اسم المستخدم / البريد (للدخول)</Label>
+            <Label className="text-xs font-bold">اسم المستخدم (داخل النظام)</Label>
             <Input
               className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1"
-              placeholder="مثال: admin"
+              placeholder="مثال: ahmed"
               disabled={!!editing && isHostedDeployment()}
               value={form.username}
               onChange={(e) => setForm((s) => ({ ...s, username: e.target.value }))}
             />
           </div>
+          {isHostedDeployment() && (
+            <div className="md:col-span-2 lg:col-span-1">
+              <Label className="text-xs font-bold">البريد الحقيقي لحساب Supabase</Label>
+              <Input
+                type="email"
+                required
+                autoComplete="email"
+                dir="ltr"
+                className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1"
+                placeholder="name@example.com"
+                disabled={!!editing && !isLocalUserDraft(editing)}
+                value={form.email}
+                onChange={(e) => setForm((s) => ({ ...s, email: e.target.value }))}
+              />
+            </div>
+          )}
           <div className="md:col-span-2 lg:col-span-1">
             <Label className="text-xs font-bold">رقم الهاتف</Label>
             <Input
@@ -1555,7 +1590,12 @@ export function UsersPage() {
               {localUsers.map((u) => (
                 <tr key={u.id} className="hover:bg-muted/30 transition-colors">
                   <td className="p-3 font-bold text-foreground">{u.full_name || "-"}</td>
-                  <td className="p-3 font-mono">{u.username || "-"}</td>
+                  <td className="p-3 font-mono">
+                    <div>{u.email || u.username || "-"}</div>
+                    {u.email && u.username && u.username !== u.email && (
+                      <div className="text-[10px] text-muted-foreground mt-1">اسم المستخدم: {u.username}</div>
+                    )}
+                  </td>
                   <td className="p-3 font-mono">{u.phone || "-"}</td>
                   <td className="p-3">
                     <span className="bg-primary/10 text-primary border border-primary/20 px-2.5 py-0.5 rounded-full font-black text-[10px]">

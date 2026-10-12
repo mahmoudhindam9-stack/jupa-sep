@@ -273,7 +273,8 @@ export interface TreasuryReconciliation {
 export interface SystemUser {
   id: string;
   full_name: string;
-  username: string; // Used for login (email or plain text)
+  username: string; // Unique in-app username; hosted sign-in uses the Supabase email.
+  email?: string;
   phone: string;
   role: string;
   password?: string;

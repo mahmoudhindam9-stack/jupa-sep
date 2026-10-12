@@ -167,6 +167,7 @@ function profileToUser(profile: ProfilePayload): SystemUser {
     id: String(profile.id),
     full_name: profile.full_name || profile.username || "",
     username: String(profile.username || "").trim().toLowerCase(),
+    email: String(profile.email || "").trim().toLowerCase(),
     phone: profile.phone || "",
     role: profile.role || "cashier",
     permissions: profile.permissions || {},
@@ -194,6 +195,40 @@ function cacheConfirmedProfile(profile: ProfilePayload, localUserId?: string): v
 
   erpStore.upsertUser(profileToUser(profile));
   erpStore.updateUserPermission(username, profile.permissions || {});
+  announceChange();
+}
+
+/**
+ * Once Supabase confirms the profiles table is empty, discard stale browser copies
+ * and queued writes from the legacy directory. Otherwise an offline queue could
+ * recreate users after the intentional server-side reset.
+ */
+export function resetLocalManagedUserDirectoryForBootstrap(): void {
+  if (!canUseBrowserStorage()) return;
+
+  try {
+    window.localStorage.removeItem(QUEUE_KEY);
+    window.localStorage.removeItem("restocash_auth_user");
+    window.localStorage.removeItem("restocash_user_role");
+    window.sessionStorage.removeItem("restocash_auth_user");
+    window.sessionStorage.removeItem("restocash_user_role");
+
+    const secretKeys = Array.from({ length: window.sessionStorage.length }, (_, index) =>
+      window.sessionStorage.key(index),
+    ).filter((key): key is string => !!key && key.startsWith(SECRET_PREFIX));
+    for (const key of secretKeys) window.sessionStorage.removeItem(key);
+  } catch (error) {
+    console.warn("[UserSync] Could not clear all legacy browser user data.", error);
+  }
+
+  for (const user of erpStore.getUsers()) {
+    try {
+      erpStore.updateUserPermission(String(user.username || ""), {});
+      erpStore.deleteUser(user.id);
+    } catch (error) {
+      console.warn("[UserSync] Could not remove a cached legacy user.", error);
+    }
+  }
   announceChange();
 }
 
