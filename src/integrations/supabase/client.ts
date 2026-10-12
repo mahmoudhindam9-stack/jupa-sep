@@ -58,15 +58,7 @@ function createSupabaseFetch(supabaseKey: string): typeof fetch {
 
     headers.set("apikey", supabaseKey);
 
-    try {
-      // Preserve Supabase's real HTTP responses. Converting 401/4xx responses to
-      // fake 200 responses hides invalid credentials and breaks auth/session handling.
-      return await fetch(input, { ...init, headers });
-    } catch (err) {
-      // Network failures must remain visible to Supabase so the UI can report them;
-      // never fabricate an empty successful response for an unavailable backend.
-      throw err;
-    }
+    return await fetch(input, { ...init, headers });
   };
 }
 

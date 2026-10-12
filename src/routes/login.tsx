@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
-import { erpStore, SystemUser, ROOT_DEFAULT_ADMIN } from "@/shared/services/erpStore";
+import { erpStore, SystemUser } from "@/shared/services/erpStore";
 import { authService } from "@/features/auth/services/authService";
 import { useSettings } from "@/hooks/use-settings";
 
@@ -38,13 +38,9 @@ function isHostedDeployment(): boolean {
 }
 
 function localLoginUsers(): SystemUser[] {
-  const users = erpStore
+  return erpStore
     .getUsers()
-    .filter((user) => typeof user.password === "string" && user.password.length > 0);
-  if (users.length === 0 && ROOT_DEFAULT_ADMIN) {
-    return [ROOT_DEFAULT_ADMIN];
-  }
-  return users;
+    .filter((user) => typeof user.username === "string" && user.username.trim().length > 0);
 }
 
 function safeInternalRedirect(value: string | null): string {
@@ -251,57 +247,38 @@ function LoginPage() {
 
     try {
       // Hosted deployments must authenticate against Supabase; browser-local users are not valid credentials.
-      let foundUser = isHostedDeployment() ? undefined : localLoginUsers().find((user) => {
-        const storedUsername = String(user.username || "")
-          .trim()
-          .toLowerCase();
-        const fullName = String(user.full_name || "")
-          .trim()
-          .toLowerCase();
-        const phone = normalizeDigits(String(user.phone || "").trim());
-        return (
-          storedUsername === normalizedUsername ||
-          (storedUsername.includes("@") && storedUsername.split("@")[0] === normalizedUsername) ||
-          (normalizedUsername.includes("@") &&
-            storedUsername === normalizedUsername.split("@")[0]) ||
-          `${storedUsername}@restocash.local` === normalizedUsername ||
-          `${storedUsername}@restocash.com` === normalizedUsername ||
-          `${storedUsername}@juba.com` === normalizedUsername ||
-          ((storedUsername === "admin" || storedUsername === "mahmoudhindam9@gmail.com") &&
-            (normalizedUsername === "admin" ||
-              normalizedUsername === "mahmoudhindam9@gmail.com")) ||
-          (fullName && fullName === normalizedUsername) ||
-          (phone && phone === normalizedUsername)
-        );
-      });
-
-      if (
-        !isHostedDeployment() &&
-        !foundUser &&
-        (normalizedUsername === "admin" ||
-          normalizedUsername === "admin@restocash.com" ||
-          normalizedUsername === "admin@restocash.local")
-      ) {
-        foundUser = ROOT_DEFAULT_ADMIN;
-      }
+      const foundUser = isHostedDeployment()
+        ? undefined
+        : localLoginUsers().find((user) => {
+            const storedUsername = String(user.username || "")
+              .trim()
+              .toLowerCase();
+            const fullName = String(user.full_name || "")
+              .trim()
+              .toLowerCase();
+            const phone = normalizeDigits(String(user.phone || "").trim());
+            return (
+              storedUsername === normalizedUsername ||
+              (storedUsername.includes("@") &&
+                storedUsername.split("@")[0] === normalizedUsername) ||
+              (normalizedUsername.includes("@") &&
+                storedUsername === normalizedUsername.split("@")[0]) ||
+              `${storedUsername}@restocash.local` === normalizedUsername ||
+              `${storedUsername}@restocash.com` === normalizedUsername ||
+              `${storedUsername}@juba.com` === normalizedUsername ||
+              ((storedUsername === "admin" || storedUsername === "mahmoudhindam9@gmail.com") &&
+                (normalizedUsername === "admin" ||
+                  normalizedUsername === "mahmoudhindam9@gmail.com")) ||
+              (fullName && fullName === normalizedUsername) ||
+              (phone && phone === normalizedUsername)
+            );
+          });
 
       const passwordMatches =
         !isHostedDeployment() &&
         !!foundUser &&
         (foundUser.password === password ||
-          normalizeDigits(foundUser.password || "") === normalizedPassword ||
-          ((foundUser.role === "admin" ||
-            String(foundUser.username || "")
-              .trim()
-              .toLowerCase() === "admin" ||
-            String(foundUser.username || "")
-              .trim()
-              .toLowerCase() === "mahmoudhindam9@gmail.com") &&
-            (password === "admin" ||
-              password === "admin123" ||
-              password === "123456" ||
-              password === "admin123456" ||
-              password === "password123")));
+          normalizeDigits(foundUser.password || "") === normalizedPassword);
 
       if (foundUser && passwordMatches) {
         const activeUsername = String(foundUser.username).trim().toLowerCase();
