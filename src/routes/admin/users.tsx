@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -721,7 +721,7 @@ function defaultPermissionsForRole(role: string): UserPermission {
   return permissions as UserPermission;
 }
 
-function UsersPage() {
+export function UsersPage() {
   const { toast } = useToast();
   const [erpState, setErpState] = useState(erpStore.getState());
   const [localUsers, setLocalUsers] = useState<SystemUser[]>([]);
@@ -1180,6 +1180,21 @@ function UsersPage() {
 
   return (
     <div className="space-y-8 p-1 sm:p-2">
+      {/* Integrated HR banner */}
+      <div className="bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 rounded-xl p-3 flex items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-2 text-indigo-900 dark:text-indigo-200 font-bold">
+          <UsersIcon size={16} />
+          <span>هذا القسم متاح ومدمج أيضاً ضمن قسم إدارة الموارد البشرية.</span>
+        </div>
+        <Link
+          to="/admin/hr"
+          search={{ tab: "users" }}
+          className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 rounded-lg transition"
+        >
+          فتح داخل الموارد البشرية ←
+        </Link>
+      </div>
+
       {/* Page Header */}
       <div>
         <div className="flex items-center gap-2">

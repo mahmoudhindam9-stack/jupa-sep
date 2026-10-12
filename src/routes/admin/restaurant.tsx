@@ -1,7 +1,8 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
   ArrowUpRight,
+  ArrowRight,
   ClipboardList,
   Clock,
   Grid3X3,
@@ -248,31 +249,29 @@ function RestaurantHubPage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 pb-12">
-      <section className="relative overflow-hidden rounded-3xl border border-slate-800 bg-gradient-to-l from-slate-900 via-slate-800 to-indigo-950 p-6 text-white shadow-xl sm:p-8">
-        <div className="pointer-events-none absolute -bottom-10 -left-10 h-64 w-64 rounded-full bg-primary/20 blur-3xl" />
-        <div className="relative z-10 flex flex-col justify-between gap-6 md:flex-row md:items-center">
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-amber-300 backdrop-blur-md">
-              <Sparkles size={14} aria-hidden="true" />
-              <span>نظام إدارة المطاعم المتقدم</span>
-            </div>
-            <h1 className="text-2xl font-black tracking-tight sm:text-3xl">
-              إدارة تشغيل المطعم بالكامل
-            </h1>
-            <p className="max-w-2xl text-sm leading-relaxed text-slate-300">
-              منصة مركزية متكاملة للكاشير، نقاط البيع، المطبخ، المنيو والمخزن. اختر القسم الذي تريد
-              فتحه مباشرة.
-            </p>
-          </div>
-          <Button
-            onClick={() => setIsLauncherOpen(true)}
-            className="w-full gap-2 bg-primary font-black text-primary-foreground shadow-lg hover:bg-primary/90 sm:w-auto"
-          >
-            <Grid3X3 size={18} aria-hidden="true" />
-            فتح نقطة البيع الآن
-          </Button>
+      {/* Sticky top navigation bar with back button and clear title */}
+      <div className="sticky top-0 z-40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border/80 py-3 px-4 -mx-4 sm:mx-0 sm:rounded-2xl shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <Link to="/admin">
+            <Button variant="outline" size="sm" className="gap-2 font-bold rounded-xl text-xs">
+              <ArrowRight size={16} />
+              العودة إلى الأقسام الرئيسية
+            </Button>
+          </Link>
+          <div className="h-4 w-px bg-border hidden sm:block" />
+          <h1 className="text-base sm:text-lg font-black text-foreground flex items-center gap-2">
+            <Store size={18} className="text-primary" />
+            إدارة المطعم والتشغيل
+          </h1>
         </div>
-      </section>
+        <Button
+          onClick={() => setIsLauncherOpen(true)}
+          className="gap-2 bg-primary font-black text-primary-foreground shadow-sm rounded-xl text-xs h-9"
+        >
+          <Grid3X3 size={16} />
+          فتح نقطة البيع (POS)
+        </Button>
+      </div>
 
       <section aria-labelledby="restaurant-modules-heading">
         <div className="mb-4 flex items-center justify-between gap-4">

@@ -9,6 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { erpStore, SystemUser, ROOT_DEFAULT_ADMIN } from "@/shared/services/erpStore";
 import { authService } from "@/features/auth/services/authService";
+import { useSettings } from "@/hooks/use-settings";
 
 export const Route = createFileRoute("/login")({
   head: () => ({ meta: [{ title: "تسجيل الدخول" }] }),
@@ -97,6 +98,7 @@ async function signInHostedUser(username: string, password: string) {
 }
 
 function LoginPage() {
+  const { lang } = useSettings();
   const navigate = useNavigate();
   const [isMounted, setIsMounted] = useState(false);
   const [username, setUsername] = useState("");
@@ -248,55 +250,6 @@ function LoginPage() {
     localStorage.setItem("remember_me", rememberMe ? "true" : "false");
 
     try {
-      if (isHostedDeployment()) {
-        try {
-          const authenticated = await signInHostedUser(normalizedUsername, normalizedPassword);
-          if (authenticated && "session" in authenticated && authenticated.session?.user?.id) {
-            const { session, profile, email } = authenticated;
-            const activeUsername = String(
-              profile.username || normalizedUsername.split("@")[0] || "admin",
-            )
-              .trim()
-              .toLowerCase();
-            const activeEmail = session.user.email || email;
-            localStorage.removeItem("restocash_auth_user");
-            sessionStorage.removeItem("restocash_auth_user");
-            localStorage.removeItem("restocash_user_role");
-            sessionStorage.removeItem("restocash_user_role");
-            const storage = rememberMe ? localStorage : sessionStorage;
-            storage.setItem("restocash_auth_user", activeEmail);
-            storage.setItem("restocash_user_role", String(profile.role || "admin"));
-            const permissions = profile.permissions || { super_admin_full_access: true };
-            erpStore.updateUserPermission(activeUsername, permissions);
-            erpStore.upsertUser({
-              id: profile.id,
-              full_name: profile.full_name || activeUsername,
-              username: activeUsername,
-              phone: profile.phone || "",
-              role: profile.role || "admin",
-              permissions,
-              created_at: profile.created_at || new Date().toISOString(),
-            } as SystemUser);
-            erpStore.setCurrentUser(activeUsername);
-            const role = String(profile.role || "admin");
-            const finalDestination = new URLSearchParams(window.location.search).has("redirect")
-              ? destination
-              : role === "captain"
-                ? "/captain"
-                : role === "kitchen"
-                  ? "/oven"
-                  : "/admin";
-            navigate({ to: finalDestination as any });
-            return;
-          }
-        } catch (hostedErr) {
-          console.warn(
-            "Hosted authentication check failed, attempting local credentials:",
-            hostedErr,
-          );
-        }
-      }
-
       let foundUser = localLoginUsers().find((user) => {
         const storedUsername = String(user.username || "")
           .trim()
@@ -346,41 +299,88 @@ function LoginPage() {
               password === "123456" ||
               password === "admin123456" ||
               password === "password123")));
-      if (!foundUser || !passwordMatches) {
-        setError(
-          "اسم المستخدم أو كلمة المرور غير صحيحة. يرجى التأكد من بيانات الدخول (أو استخدام حساب المسؤول الافتراضي admin / admin).",
-        );
+
+      if (foundUser && passwordMatches) {
+        const activeUsername = String(foundUser.username).trim().toLowerCase();
+        const activeEmail = activeUsername.includes("@")
+          ? activeUsername
+          : `${activeUsername}@restocash.local`;
+        localStorage.removeItem("restocash_auth_user");
+        sessionStorage.removeItem("restocash_auth_user");
+        localStorage.removeItem("restocash_user_role");
+        sessionStorage.removeItem("restocash_user_role");
+        const storage = rememberMe ? localStorage : sessionStorage;
+        storage.setItem("restocash_auth_user", activeEmail);
+        storage.setItem("restocash_user_role", foundUser.role || "cashier");
+        const statePermissions = erpStore.getState().userPermissions;
+        const permissions =
+          foundUser.permissions ||
+          statePermissions[activeUsername] ||
+          statePermissions[foundUser.role] ||
+          {};
+        erpStore.updateUserPermission(activeUsername, permissions);
+        erpStore.setCurrentUser(activeUsername);
+        const role = String(foundUser.role || "cashier");
+        const finalDestination = new URLSearchParams(window.location.search).has("redirect")
+          ? destination
+          : role === "captain"
+            ? "/captain"
+            : role === "kitchen"
+              ? "/oven"
+              : "/admin";
+        navigate({ to: finalDestination as any });
         return;
       }
 
-      const activeUsername = String(foundUser.username).trim().toLowerCase();
-      const activeEmail = activeUsername.includes("@")
-        ? activeUsername
-        : `${activeUsername}@restocash.local`;
-      localStorage.removeItem("restocash_auth_user");
-      sessionStorage.removeItem("restocash_auth_user");
-      localStorage.removeItem("restocash_user_role");
-      sessionStorage.removeItem("restocash_user_role");
-      const storage = rememberMe ? localStorage : sessionStorage;
-      storage.setItem("restocash_auth_user", activeEmail);
-      storage.setItem("restocash_user_role", foundUser.role || "cashier");
-      const statePermissions = erpStore.getState().userPermissions;
-      const permissions =
-        foundUser.permissions ||
-        statePermissions[activeUsername] ||
-        statePermissions[foundUser.role] ||
-        {};
-      erpStore.updateUserPermission(activeUsername, permissions);
-      erpStore.setCurrentUser(activeUsername);
-      const role = String(foundUser.role || "cashier");
-      const finalDestination = new URLSearchParams(window.location.search).has("redirect")
-        ? destination
-        : role === "captain"
-          ? "/captain"
-          : role === "kitchen"
-            ? "/oven"
-            : "/admin";
-      navigate({ to: finalDestination as any });
+      if (isHostedDeployment()) {
+        try {
+          const authenticated = await signInHostedUser(normalizedUsername, normalizedPassword);
+          if (authenticated && "session" in authenticated && authenticated.session?.user?.id) {
+            const { session, profile, email } = authenticated;
+            const activeUsername = String(
+              profile.username || normalizedUsername.split("@")[0] || "admin",
+            )
+              .trim()
+              .toLowerCase();
+            const activeEmail = session.user.email || email;
+            localStorage.removeItem("restocash_auth_user");
+            sessionStorage.removeItem("restocash_auth_user");
+            localStorage.removeItem("restocash_user_role");
+            sessionStorage.removeItem("restocash_user_role");
+            const storage = rememberMe ? localStorage : sessionStorage;
+            storage.setItem("restocash_auth_user", activeEmail);
+            storage.setItem("restocash_user_role", String(profile.role || "admin"));
+            const permissions = profile.permissions || { super_admin_full_access: true };
+            erpStore.updateUserPermission(activeUsername, permissions);
+            erpStore.upsertUser({
+              id: profile.id,
+              full_name: profile.full_name || activeUsername,
+              username: activeUsername,
+              phone: profile.phone || "",
+              role: profile.role || "admin",
+              permissions,
+              created_at: profile.created_at || new Date().toISOString(),
+            } as SystemUser);
+            erpStore.setCurrentUser(activeUsername);
+            const role = String(profile.role || "admin");
+            const finalDestination = new URLSearchParams(window.location.search).has("redirect")
+              ? destination
+              : role === "captain"
+                ? "/captain"
+                : role === "kitchen"
+                  ? "/oven"
+                  : "/admin";
+            navigate({ to: finalDestination as any });
+            return;
+          }
+        } catch (hostedErr) {
+          console.warn("Hosted authentication failed:", hostedErr);
+        }
+      }
+
+      setError(
+        "اسم المستخدم أو كلمة المرور غير صحيحة. يرجى التأكد من بيانات الدخول (أو استخدام حساب المسؤول الافتراضي admin / admin).",
+      );
     } catch (cause) {
       console.error("Login failed", cause);
       setError("تعذر تسجيل الدخول. تحقق من الاتصال والإعدادات ثم حاول مرة أخرى.");
@@ -393,7 +393,7 @@ function LoginPage() {
     return (
       <div
         className="min-h-screen flex items-center justify-center bg-background p-4 relative"
-        dir="rtl"
+        dir={lang === "ar" ? "rtl" : "ltr"}
       >
         <div className="absolute top-4 left-4">
           <LanguageSwitcher />
@@ -470,7 +470,10 @@ function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4 relative">
+    <div
+      className="min-h-screen flex items-center justify-center bg-background p-4 relative"
+      dir={lang === "ar" ? "rtl" : "ltr"}
+    >
       <div className="absolute top-4 left-4">
         <LanguageSwitcher />
       </div>

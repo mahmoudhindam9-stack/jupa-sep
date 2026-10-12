@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { createFileRoute, useNavigate, useBlocker } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, useBlocker, useLocation } from "@tanstack/react-router";
 import { useState, useEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
 import {
@@ -26,6 +26,9 @@ const getLineBaseValue = (
 };
 import { AccountSearchSelect } from "@/components/AccountSearchSelect";
 import { VouchersLedgerSection } from "@/components/admin/VouchersLedgerSection";
+import { AccountsPage } from "./accounts";
+import { ReportsPage } from "./reports";
+import { TreasuryManagementView } from "@/components/admin/TreasuryManagementView";
 import {
   printAccountingDocument,
   printJournalEntryDocument,
@@ -72,6 +75,12 @@ import {
   Database,
   ShieldCheck,
   CheckCheck,
+  Landmark,
+  Wallet,
+  Building2,
+  Store,
+  BarChart3,
+  Receipt,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -110,7 +119,9 @@ import { Separator } from "@/components/ui/separator";
 import { JournalEntryCurrencyGroups } from "@/components/JournalEntryCurrencyGroups";
 
 export const Route = createFileRoute("/admin/ledger")({
-  head: () => ({ meta: [{ title: "حساب الأستاذ العام والدفاتر المالية" }] }),
+  head: () => ({
+    meta: [{ title: "الإدارة المالية - حساب الأستاذ ودليل الحسابات والخزائن والتقارير" }],
+  }),
   component: LedgerPage,
 });
 
@@ -333,15 +344,49 @@ function LedgerPage() {
   };
 
   // UI state
+  const location = useLocation();
   const [selectedTab, setSelectedTab] = useState(() => {
     if (typeof window !== "undefined") {
       const tabParam = new URLSearchParams(window.location.search).get("tab");
-      if (tabParam && ["ledger", "journal", "vouchers", "trial", "statements"].includes(tabParam)) {
+      if (
+        tabParam &&
+        [
+          "ledger",
+          "journal",
+          "vouchers",
+          "trial",
+          "statements",
+          "accounts",
+          "treasury",
+          "reports",
+        ].includes(tabParam)
+      ) {
         return tabParam;
       }
     }
     return "journal";
   });
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const tabParam = new URLSearchParams(location.search).get("tab");
+      if (
+        tabParam &&
+        [
+          "ledger",
+          "journal",
+          "vouchers",
+          "trial",
+          "statements",
+          "accounts",
+          "treasury",
+          "reports",
+        ].includes(tabParam)
+      ) {
+        setSelectedTab(tabParam);
+      }
+    }
+  }, [location.search]);
 
   const [isImportingOracle, setIsImportingOracle] = useState(false);
   const [isSavingToDb, setIsSavingToDb] = useState(false);
@@ -1556,10 +1601,13 @@ function LedgerPage() {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
-            <BookOpen className="h-6 w-6 text-primary shrink-0" />
-            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
-              حساب الأستاذ العام والدفاتر المحاسبية
+            <Landmark className="h-6 w-6 text-primary shrink-0" />
+            <h1 className="text-xl sm:text-2xl font-black tracking-tight text-foreground">
+              الإدارة المالية
             </h1>
+            <Badge className="bg-primary/10 text-primary text-xs font-bold px-2.5 py-0.5 rounded-lg">
+              حساب الأستاذ · دليل الحسابات · الخزائن · التقارير
+            </Badge>
             {hasUnsavedChanges && (
               <Badge className="bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold px-2 py-0.5 animate-pulse">
                 {unsavedEntries.length} قيد بحاجة للحفظ
@@ -1567,8 +1615,8 @@ function LedgerPage() {
             )}
           </div>
           <p className="text-muted-foreground text-xs sm:text-sm mt-1">
-            نظام مالي ومحاسبي متكامل يدير القيود المزدوجة، ميزان المراجعة، كشوف الأستاذ للشركات
-            والمخازن.
+            الإدارة المالية والمحاسبية الموحدة: حساب الأستاذ العام، دفتر اليومية، سندات الصرف
+            والقبض، شجرة الحسابات، إدارة الخزائن، والتقارير والقوائم الختامية.
           </p>
         </div>
 
@@ -2123,8 +2171,280 @@ function LedgerPage() {
         </Button>
       </div>
 
+      {/* Financial Modules Square Cards Grid (نظام المربعات مثل قسم المطعم) */}
+      <section aria-labelledby="financial-modules-heading" className="space-y-3">
+        <div className="flex items-center justify-between gap-4">
+          <h2
+            id="financial-modules-heading"
+            className="flex items-center gap-2 text-base font-black text-foreground"
+          >
+            <Landmark size={18} className="text-primary" aria-hidden="true" />
+            أقسام ووظائف الإدارة المالية والمحاسبية
+          </h2>
+          <span className="text-xs font-bold text-muted-foreground">8 أقسام ومحاور مالية</span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card
+            onClick={() => setSelectedTab("ledger")}
+            className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
+              selectedTab === "ledger"
+                ? "border-primary bg-primary/5 shadow-sm ring-2 ring-primary/30"
+                : "border-border/80 bg-card hover:border-primary/40 hover:bg-accent/30"
+            }`}
+          >
+            <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
+              <div className="rounded-xl bg-gradient-to-br from-blue-500/20 to-indigo-500/20 text-blue-600 dark:text-blue-400 p-2.5 shadow-xs">
+                <BookOpen size={22} />
+              </div>
+              <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                الأستاذ
+              </span>
+            </CardHeader>
+            <CardContent className="space-y-1.5 p-4 pt-0">
+              <h3 className="font-black text-sm text-foreground group-hover:text-primary transition-colors">
+                حساب الأستاذ العام
+              </h3>
+              <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                كشوفات الحسابات التفصيلية، الأرصدة الافتتاحية والحركات الدائنة والمدينة
+              </p>
+              <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
+                <span className="text-primary">{accounts.length} حساب مسجل</span>
+                <span className="text-muted-foreground group-hover:text-primary text-xs transition-transform group-hover:translate-x-[-2px]">
+                  فتح الكشف ←
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card
+            onClick={() => setSelectedTab("journal")}
+            className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
+              selectedTab === "journal"
+                ? "border-indigo-500 bg-indigo-50/40 dark:bg-indigo-950/20 shadow-sm ring-2 ring-indigo-400/30"
+                : "border-border/80 bg-card hover:border-indigo-500/40 hover:bg-accent/30"
+            }`}
+          >
+            <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
+              <div className="rounded-xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 text-indigo-600 dark:text-indigo-400 p-2.5 shadow-xs">
+                <FileText size={22} />
+              </div>
+              <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                اليومية
+              </span>
+            </CardHeader>
+            <CardContent className="space-y-1.5 p-4 pt-0">
+              <h3 className="font-black text-sm text-foreground group-hover:text-indigo-600 transition-colors">
+                دفتر اليومية والقيود المزدوجة
+              </h3>
+              <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                متابعة القيود اليومية المرحلة، ترقيم الفترات، وتدقيق التوازن المحاسبي
+              </p>
+              <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
+                <span className="text-indigo-600 dark:text-indigo-400">
+                  {journalEntries.length} قيد مسجل
+                </span>
+                <span className="text-muted-foreground group-hover:text-indigo-600 text-xs transition-transform group-hover:translate-x-[-2px]">
+                  عرض القيود ←
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card
+            onClick={() => setSelectedTab("vouchers")}
+            className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
+              selectedTab === "vouchers"
+                ? "border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/20 shadow-sm ring-2 ring-emerald-400/30"
+                : "border-border/80 bg-card hover:border-emerald-500/40 hover:bg-accent/30"
+            }`}
+          >
+            <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
+              <div className="rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 text-emerald-600 dark:text-emerald-400 p-2.5 shadow-xs">
+                <Receipt size={22} />
+              </div>
+              <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                السندات
+              </span>
+            </CardHeader>
+            <CardContent className="space-y-1.5 p-4 pt-0">
+              <h3 className="font-black text-sm text-foreground group-hover:text-emerald-600 transition-colors">
+                سندات الصرف والقبض
+              </h3>
+              <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                إصدار سندات القبض والصرف، الترحيل الفوري للخزائن والطباعة الرسمية A4
+              </p>
+              <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
+                <span className="text-emerald-600 dark:text-emerald-400">ترحيل فوري</span>
+                <span className="text-muted-foreground group-hover:text-emerald-600 text-xs transition-transform group-hover:translate-x-[-2px]">
+                  إدارة السندات ←
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card
+            onClick={() => setSelectedTab("accounts")}
+            className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
+              selectedTab === "accounts"
+                ? "border-blue-500 bg-blue-50/40 dark:bg-blue-950/20 shadow-sm ring-2 ring-blue-400/30"
+                : "border-border/80 bg-card hover:border-blue-500/40 hover:bg-accent/30"
+            }`}
+          >
+            <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
+              <div className="rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 text-blue-600 dark:text-blue-400 p-2.5 shadow-xs">
+                <Layers size={22} />
+              </div>
+              <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                الشجرة
+              </span>
+            </CardHeader>
+            <CardContent className="space-y-1.5 p-4 pt-0">
+              <h3 className="font-black text-sm text-foreground group-hover:text-blue-600 transition-colors">
+                دليل وشجرة الحسابات
+              </h3>
+              <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                شجرة الحسابات الرباعية (أصول، التزامات، حقوق ملكية، إيرادات ومصروفات)
+              </p>
+              <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
+                <span className="text-blue-600 dark:text-blue-400">4 مستويات</span>
+                <span className="text-muted-foreground group-hover:text-blue-600 text-xs transition-transform group-hover:translate-x-[-2px]">
+                  شجرة الحسابات ←
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card
+            onClick={() => setSelectedTab("treasury")}
+            className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
+              selectedTab === "treasury"
+                ? "border-amber-500 bg-amber-50/40 dark:bg-amber-950/20 shadow-sm ring-2 ring-amber-400/30"
+                : "border-border/80 bg-card hover:border-amber-500/40 hover:bg-accent/30"
+            }`}
+          >
+            <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
+              <div className="rounded-xl bg-gradient-to-br from-amber-500/20 to-yellow-500/20 text-amber-600 dark:text-amber-400 p-2.5 shadow-xs">
+                <Wallet size={22} />
+              </div>
+              <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                الخزائن
+              </span>
+            </CardHeader>
+            <CardContent className="space-y-1.5 p-4 pt-0">
+              <h3 className="font-black text-sm text-foreground group-hover:text-amber-600 transition-colors">
+                إدارة الخزائن النقدية
+              </h3>
+              <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                أرصدة الخزائن، إيداعات وسحوبات النقدية، تحويلات بين الخزائن وكشوف الحساب
+              </p>
+              <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
+                <span className="text-amber-600 dark:text-amber-400">
+                  {treasuries.length} خزائن نشطة
+                </span>
+                <span className="text-muted-foreground group-hover:text-amber-600 text-xs transition-transform group-hover:translate-x-[-2px]">
+                  فتح الخزائن ←
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card
+            onClick={() => setSelectedTab("reports")}
+            className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
+              selectedTab === "reports"
+                ? "border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/20 shadow-sm ring-2 ring-emerald-400/30"
+                : "border-border/80 bg-card hover:border-emerald-500/40 hover:bg-accent/30"
+            }`}
+          >
+            <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
+              <div className="rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 text-emerald-600 dark:text-emerald-400 p-2.5 shadow-xs">
+                <BarChart3 size={22} />
+              </div>
+              <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                التقارير
+              </span>
+            </CardHeader>
+            <CardContent className="space-y-1.5 p-4 pt-0">
+              <h3 className="font-black text-sm text-foreground group-hover:text-emerald-600 transition-colors">
+                التقارير المالية والميزانية
+              </h3>
+              <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                قائمة الدخل، الأرباح والخسائر، الميزانية العمومية والتدفقات النقدية
+              </p>
+              <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
+                <span className="text-emerald-600 dark:text-emerald-400">تقارير ختامية</span>
+                <span className="text-muted-foreground group-hover:text-emerald-600 text-xs transition-transform group-hover:translate-x-[-2px]">
+                  عرض التقارير ←
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card
+            onClick={() => setSelectedTab("trial")}
+            className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
+              selectedTab === "trial"
+                ? "border-purple-500 bg-purple-50/40 dark:bg-purple-950/20 shadow-sm ring-2 ring-purple-400/30"
+                : "border-border/80 bg-card hover:border-purple-500/40 hover:bg-accent/30"
+            }`}
+          >
+            <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
+              <div className="rounded-xl bg-gradient-to-br from-purple-500/20 to-indigo-500/20 text-purple-600 dark:text-purple-400 p-2.5 shadow-xs">
+                <Scale size={22} />
+              </div>
+              <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                الميزان
+              </span>
+            </CardHeader>
+            <CardContent className="space-y-1.5 p-4 pt-0">
+              <h3 className="font-black text-sm text-foreground group-hover:text-purple-600 transition-colors">
+                ميزان المراجعة بالمجاميع والأرصدة
+              </h3>
+              <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                فحص اتزان الأرصدة المدينة والدائنة مع خيارات تصدير Excel والطباعة
+              </p>
+              <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
+                <span className="text-purple-600 dark:text-purple-400">فحص فوري</span>
+                <span className="text-muted-foreground group-hover:text-purple-600 text-xs transition-transform group-hover:translate-x-[-2px]">
+                  فتح الميزان ←
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card
+            onClick={() => handleOpenNewEntry()}
+            className="group cursor-pointer rounded-2xl border border-primary/30 bg-primary/5 hover:border-primary hover:bg-primary/10 transition-all duration-200 hover:shadow-lg"
+          >
+            <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
+              <div className="rounded-xl bg-primary text-primary-foreground p-2.5 shadow-xs">
+                <Plus size={22} />
+              </div>
+              <span className="rounded-full border border-primary/30 bg-primary/20 px-2 py-0.5 text-[10px] font-bold text-primary">
+                قيد يدوي
+              </span>
+            </CardHeader>
+            <CardContent className="space-y-1.5 p-4 pt-0">
+              <h3 className="font-black text-sm text-primary transition-colors">
+                إضافة قيد مزدوج يدوي
+              </h3>
+              <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                نافذة إدخال القيود المحاسبية اليدوية مع التحقق الآلي من اتزان المدين والدائن
+              </p>
+              <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
+                <span className="text-primary font-bold">تسجيل فوري</span>
+                <span className="text-primary text-xs transition-transform group-hover:translate-x-[-2px]">
+                  فتح النافذة +
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+
       <Tabs value={selectedTab} onValueChange={setSelectedTab} className="space-y-4">
-        <TabsList className="bg-muted/80 p-1 rounded-xl w-full sm:w-auto grid grid-cols-2 sm:grid-cols-5 gap-1 h-auto">
+        <TabsList className="bg-muted/80 p-1 rounded-xl w-full sm:w-auto grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-1 h-auto">
           <TabsTrigger value="ledger" className="rounded-lg py-2 text-xs md:text-sm font-medium">
             كشف حساب الأستاذ
           </TabsTrigger>
@@ -2135,7 +2455,25 @@ function LedgerPage() {
             value="vouchers"
             className="rounded-lg py-2 text-xs md:text-sm font-bold text-emerald-700 dark:text-emerald-400"
           >
-            سندات الإيراد والمصروف
+            سندات الصرف والقبض
+          </TabsTrigger>
+          <TabsTrigger
+            value="accounts"
+            className="rounded-lg py-2 text-xs md:text-sm font-bold text-blue-700 dark:text-blue-400"
+          >
+            دليل الحسابات
+          </TabsTrigger>
+          <TabsTrigger
+            value="treasury"
+            className="rounded-lg py-2 text-xs md:text-sm font-bold text-indigo-700 dark:text-indigo-400"
+          >
+            إدارة الخزائن
+          </TabsTrigger>
+          <TabsTrigger
+            value="reports"
+            className="rounded-lg py-2 text-xs md:text-sm font-bold text-amber-700 dark:text-amber-400"
+          >
+            التقارير المالية
           </TabsTrigger>
           <TabsTrigger value="trial" className="rounded-lg py-2 text-xs md:text-sm font-medium">
             ميزان المراجعة
@@ -3238,6 +3576,27 @@ function LedgerPage() {
                 </div>
               </CardContent>
             </Card>
+          </div>
+        </TabsContent>
+
+        {/* Tab 6: Chart of Accounts (دليل وشجرة الحسابات) */}
+        <TabsContent value="accounts" className="space-y-6">
+          <div className="bg-card rounded-2xl border border-border p-2 sm:p-4">
+            <AccountsPage />
+          </div>
+        </TabsContent>
+
+        {/* Tab 7: Treasury Management (إدارة الخزائن والصناديق) */}
+        <TabsContent value="treasury" className="space-y-6">
+          <div className="bg-card rounded-2xl border border-border p-2 sm:p-4">
+            <TreasuryManagementView />
+          </div>
+        </TabsContent>
+
+        {/* Tab 8: Financial Reports (التقارير المالية) */}
+        <TabsContent value="reports" className="space-y-6">
+          <div className="bg-card rounded-2xl border border-border p-2 sm:p-4">
+            <ReportsPage />
           </div>
         </TabsContent>
       </Tabs>

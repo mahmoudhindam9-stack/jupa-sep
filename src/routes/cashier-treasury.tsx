@@ -1438,7 +1438,7 @@ function CashierTreasuryPage() {
                 {lang === "ar" ? "الفرع المالي" : "Branch"}
               </span>
               <span className="font-bold text-slate-800 mt-0.5 block">
-                الفرع الرئيسي (بهجت جروب)
+                {lang === "ar" ? "الفرع الرئيسي" : "Main Branch"}
               </span>
             </div>
           </div>

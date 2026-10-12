@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useLocation, Link } from "@tanstack/react-router";
 import { useState, useEffect, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useSettings } from "@/hooks/use-settings";
@@ -11,6 +11,7 @@ import {
   type PayrollRecord,
 } from "@/shared/services/erpStore";
 import { printRawHtml } from "@/shared/utils/printAccountingDocument";
+import { UsersPage } from "./users";
 import {
   Users,
   UserPlus,
@@ -37,6 +38,7 @@ import {
   Search,
   CheckSquare,
   Printer,
+  ArrowRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -76,7 +78,16 @@ function HRPage() {
   const payrolls = useMemo(() => erpState.payrolls || [], [erpState.payrolls]);
 
   // Active Tab state
-  const [activeTab, setActiveTab] = useState("employees");
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const tabParam = searchParams.get("tab");
+  const [activeTab, setActiveTab] = useState(tabParam || "grid");
+
+  useEffect(() => {
+    if (tabParam) {
+      setActiveTab(tabParam);
+    }
+  }, [tabParam]);
 
   // Search & Filter States
   const [empSearch, setEmpSearch] = useState("");
@@ -155,8 +166,8 @@ function HRPage() {
 </head>
 <body>
   <div class="header">
-    <h1>الشركة المصرية لادارة المشروعات السياحية والترفيهية (بهجت جروب)</h1>
-    <p>Restocash ERP - الموارد البشرية والشؤون المالية</p>
+    <h1>Restocash ERP</h1>
+    <p>إدارة الموارد البشرية وشؤون الموظفين</p>
     <h2 style="margin-top:10px; color:#0284c7; font-size:18px;">${vData.title}</h2>
   </div>
 
@@ -750,643 +761,922 @@ function HRPage() {
 
   return (
     <div className="space-y-6">
-      {/* Visual Header */}
-      <div className="bg-card border border-border p-6 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4">
-        <div className="space-y-1.5 text-right">
-          <h2 className="text-2xl font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
-            <Users size={28} className="text-primary" />
-            شؤون الموظفين والموارد البشرية (HR)
-          </h2>
-          <p className="text-sm text-muted-foreground font-medium">
-            متابعة الحضور والانصراف، احتساب مسيرات الرواتب الشهرية وصرفها نقداً من الخزينة، وإدارة
-            السلف والقروض
-          </p>
+      {/* Top Bar */}
+      {activeTab === "grid" ? (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60 pb-4">
+          <Link to="/admin">
+            <Button variant="outline" size="sm" className="gap-2 font-bold rounded-xl text-xs">
+              <ArrowRight size={16} />
+              العودة إلى الأقسام الرئيسية
+            </Button>
+          </Link>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={() => setIsAddEmpOpen(true)}
+              className="gap-1.5 rounded-xl font-bold text-xs h-9 px-4"
+            >
+              <UserPlus size={16} />
+              إضافة موظف جديد
+            </Button>
+            <Button
+              variant="outline"
+              onClick={openLoanDialog}
+              className="gap-1.5 rounded-xl font-bold text-xs h-9 px-3.5"
+            >
+              <Coins size={16} />
+              صرف سلفة
+            </Button>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <Button
-            onClick={() => setIsAddEmpOpen(true)}
-            className="gap-2 rounded-xl font-bold px-5 py-6"
-          >
-            <UserPlus size={18} />
-            إضافة موظف جديد
-          </Button>
+      ) : (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60 pb-3">
           <Button
             variant="outline"
-            onClick={openLoanDialog}
-            className="gap-2 rounded-xl font-bold px-5 py-6"
+            onClick={() => setActiveTab("grid")}
+            className="gap-2 font-black rounded-xl text-xs py-2 px-4 border-primary/30 text-primary hover:bg-primary/10 w-fit cursor-pointer"
           >
-            <Coins size={18} />
-            صرف سلفة لموظف
+            <ArrowRight size={16} />
+            العودة إلى أقسام الموارد البشرية
           </Button>
+
+          <div className="flex items-center gap-1.5 overflow-x-auto">
+            <Button
+              size="sm"
+              variant={activeTab === "employees" ? "default" : "outline"}
+              onClick={() => setActiveTab("employees")}
+              className="rounded-xl font-bold text-xs h-8"
+            >
+              الكادر ({employees.length})
+            </Button>
+            <Button
+              size="sm"
+              variant={activeTab === "attendance" ? "default" : "outline"}
+              onClick={() => setActiveTab("attendance")}
+              className="rounded-xl font-bold text-xs h-8"
+            >
+              الحضور والدوام
+            </Button>
+            <Button
+              size="sm"
+              variant={activeTab === "payroll" ? "default" : "outline"}
+              onClick={() => setActiveTab("payroll")}
+              className="rounded-xl font-bold text-xs h-8"
+            >
+              الرواتب
+            </Button>
+            <Button
+              size="sm"
+              variant={activeTab === "loans" ? "default" : "outline"}
+              onClick={() => setActiveTab("loans")}
+              className="rounded-xl font-bold text-xs h-8"
+            >
+              السلف والقروض
+            </Button>
+            <Button
+              size="sm"
+              variant={activeTab === "users" ? "default" : "outline"}
+              onClick={() => setActiveTab("users")}
+              className="rounded-xl font-bold text-xs h-8"
+            >
+              المستخدمين
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Overview Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="border border-border shadow-sm rounded-2xl bg-card">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-bold text-muted-foreground flex items-center gap-1.5">
-              <Users size={14} />
-              إجمالي الكادر الوظيفي
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-black text-slate-800 dark:text-slate-100">
-              {employees.length} موظفين
-            </div>
-            <p className="text-[10px] text-muted-foreground mt-1">
-              منهم {activeEmployeesCount} نشطين حالياً في الفروع
-            </p>
-          </CardContent>
-        </Card>
+      {/* Grid view containing overview cards and HR modules cards */}
+      {activeTab === "grid" && (
+        <div className="space-y-6">
+          {/* Overview Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card className="border border-border shadow-sm rounded-2xl bg-card">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-xs font-bold text-muted-foreground flex items-center gap-1.5">
+                  <Users size={14} />
+                  إجمالي الكادر الوظيفي
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-black text-slate-800 dark:text-slate-100">
+                  {employees.length} موظفين
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  منهم {activeEmployeesCount} نشطين حالياً في الفروع
+                </p>
+              </CardContent>
+            </Card>
 
-        <Card className="border border-border shadow-sm rounded-2xl bg-card">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-bold text-muted-foreground flex items-center gap-1.5">
-              <Building2 size={14} />
-              الأجور الشهرية الأساسية
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-black text-slate-800 dark:text-slate-100">
-              {formatPrice(totalPayrollCost)}
-            </div>
-            <p className="text-[10px] text-muted-foreground mt-1">
-              مجموع الرواتب بعد التحويل لعملة العرض الحالية
-            </p>
-          </CardContent>
-        </Card>
+            <Card className="border border-border shadow-sm rounded-2xl bg-card">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-xs font-bold text-muted-foreground flex items-center gap-1.5">
+                  <Building2 size={14} />
+                  الأجور الشهرية الأساسية
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-black text-slate-800 dark:text-slate-100">
+                  {formatPrice(totalPayrollCost)}
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  مجموع الرواتب بعد التحويل لعملة العرض الحالية
+                </p>
+              </CardContent>
+            </Card>
 
-        <Card className="border border-border shadow-sm rounded-2xl bg-card">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-bold text-muted-foreground flex items-center gap-1.5">
-              <Coins size={14} />
-              القروض والسلف الجارية
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-black text-amber-600 dark:text-amber-400">
-              {formatPrice(activeLoansAmount)}
-            </div>
-            <p className="text-[10px] text-muted-foreground mt-1">
-              موزعة على {activeLoansCount} سلف جاري سدادها
-            </p>
-          </CardContent>
-        </Card>
+            <Card className="border border-border shadow-sm rounded-2xl bg-card">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-xs font-bold text-muted-foreground flex items-center gap-1.5">
+                  <Coins size={14} />
+                  القروض والسلف الجارية
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-black text-amber-600 dark:text-amber-400">
+                  {formatPrice(activeLoansAmount)}
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  موزعة على {activeLoansCount} سلف جاري سدادها
+                </p>
+              </CardContent>
+            </Card>
 
-        <Card className="border border-border shadow-sm rounded-2xl bg-card">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-bold text-muted-foreground flex items-center gap-1.5">
-              <Clock size={14} />
-              انضباط الحضور والدوام اليوم
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-black text-emerald-600 dark:text-emerald-400">
-              {attendanceStatsForDate.total > 0
-                ? Math.round(
-                    ((attendanceStatsForDate.present + attendanceStatsForDate.late) /
-                      attendanceStatsForDate.total) *
-                      100,
-                  )
-                : 0}
-              %
+            <Card className="border border-border shadow-sm rounded-2xl bg-card">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-xs font-bold text-muted-foreground flex items-center gap-1.5">
+                  <Clock size={14} />
+                  انضباط الحضور والدوام اليوم
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-black text-emerald-600 dark:text-emerald-400">
+                  {attendanceStatsForDate.total > 0
+                    ? Math.round(
+                        ((attendanceStatsForDate.present + attendanceStatsForDate.late) /
+                          attendanceStatsForDate.total) *
+                          100,
+                      )
+                    : 0}
+                  %
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  معدل حضور الدوام والتواجد لليوم الحالي
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* HR Modules Square Cards Grid (نظام المربعات مثل قسم المطعم) */}
+          <section aria-labelledby="hr-modules-heading" className="space-y-3">
+            <div className="flex items-center justify-between gap-4">
+              <h2
+                id="hr-modules-heading"
+                className="flex items-center gap-2 text-base font-black text-foreground"
+              >
+                <Users size={18} className="text-primary" aria-hidden="true" />
+                أقسام ووظائف الموارد البشرية وشؤون الموظفين
+              </h2>
+              <span className="text-xs font-bold text-muted-foreground">6 أقسام ومحاور</span>
             </div>
-            <p className="text-[10px] text-muted-foreground mt-1">
-              معدل حضور الدوام والتواجد لليوم الحالي
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <Card
+                onClick={() => setActiveTab("employees")}
+                className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
+                  activeTab === "employees"
+                    ? "border-primary bg-primary/5 shadow-sm ring-2 ring-primary/30"
+                    : "border-border/80 bg-card hover:border-primary/40 hover:bg-accent/30"
+                }`}
+              >
+                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
+                  <div className="rounded-xl bg-gradient-to-br from-blue-500/20 to-indigo-500/20 text-blue-600 dark:text-blue-400 p-2.5 shadow-xs">
+                    <Users size={22} />
+                  </div>
+                  <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                    الكادر
+                  </span>
+                </CardHeader>
+                <CardContent className="space-y-1.5 p-4 pt-0">
+                  <h3 className="font-black text-sm text-foreground group-hover:text-primary transition-colors">
+                    دليل الكادر الوظيفي
+                  </h3>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                    بيانات الموظفين، المسميات الوظيفية، الرواتب الأساسية وتواريخ التعيين
+                  </p>
+                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
+                    <span className="text-primary">{employees.length} موظف مسجل</span>
+                    <span className="text-muted-foreground group-hover:text-primary text-xs transition-transform group-hover:translate-x-[-2px]">
+                      فتح الدليل ←
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card
+                onClick={() => setActiveTab("attendance")}
+                className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
+                  activeTab === "attendance"
+                    ? "border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/20 shadow-sm ring-2 ring-emerald-400/30"
+                    : "border-border/80 bg-card hover:border-emerald-500/40 hover:bg-accent/30"
+                }`}
+              >
+                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
+                  <div className="rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 text-emerald-600 dark:text-emerald-400 p-2.5 shadow-xs">
+                    <CalendarDays size={22} />
+                  </div>
+                  <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                    الحضور
+                  </span>
+                </CardHeader>
+                <CardContent className="space-y-1.5 p-4 pt-0">
+                  <h3 className="font-black text-sm text-foreground group-hover:text-emerald-600 transition-colors">
+                    حضور وانصراف الدوام
+                  </h3>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                    تسجيل حضور اليوم، التأخيرات، الإجازات وحساب ساعات العمل الإضافية
+                  </p>
+                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
+                    <span className="text-emerald-600 dark:text-emerald-400">
+                      {attendanceStatsForDate.present} حاضر اليوم
+                    </span>
+                    <span className="text-muted-foreground group-hover:text-emerald-600 text-xs transition-transform group-hover:translate-x-[-2px]">
+                      تسجيل الحضور ←
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card
+                onClick={() => setActiveTab("payroll")}
+                className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
+                  activeTab === "payroll"
+                    ? "border-amber-500 bg-amber-50/40 dark:bg-amber-950/20 shadow-sm ring-2 ring-amber-400/30"
+                    : "border-border/80 bg-card hover:border-amber-500/40 hover:bg-accent/30"
+                }`}
+              >
+                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
+                  <div className="rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 text-amber-600 dark:text-amber-400 p-2.5 shadow-xs">
+                    <FileSpreadsheet size={22} />
+                  </div>
+                  <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                    الرواتب
+                  </span>
+                </CardHeader>
+                <CardContent className="space-y-1.5 p-4 pt-0">
+                  <h3 className="font-black text-sm text-foreground group-hover:text-amber-600 transition-colors">
+                    مسيرات الأجور والرواتب
+                  </h3>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                    احتساب الرواتب الشهرية، المكافآت، الخصومات وإصدار سندات الاستحقاق والصرف
+                  </p>
+                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
+                    <span className="text-amber-600 dark:text-amber-400">مسيرات معتمدة</span>
+                    <span className="text-muted-foreground group-hover:text-amber-600 text-xs transition-transform group-hover:translate-x-[-2px]">
+                      عرض المسيرات ←
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card
+                onClick={() => setActiveTab("loans")}
+                className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
+                  activeTab === "loans"
+                    ? "border-teal-500 bg-teal-50/40 dark:bg-teal-950/20 shadow-sm ring-2 ring-teal-400/30"
+                    : "border-border/80 bg-card hover:border-teal-500/40 hover:bg-accent/30"
+                }`}
+              >
+                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
+                  <div className="rounded-xl bg-gradient-to-br from-teal-500/20 to-cyan-500/20 text-teal-600 dark:text-teal-400 p-2.5 shadow-xs">
+                    <Coins size={22} />
+                  </div>
+                  <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                    السلف
+                  </span>
+                </CardHeader>
+                <CardContent className="space-y-1.5 p-4 pt-0">
+                  <h3 className="font-black text-sm text-foreground group-hover:text-teal-600 transition-colors">
+                    القروض والسلف المالية
+                  </h3>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                    صرف السلف النقدية، تتبع الأقساط الشهرية وخصمها آلياً من الراتب
+                  </p>
+                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
+                    <span className="text-teal-600 dark:text-teal-400">سلف نشطة</span>
+                    <span className="text-muted-foreground group-hover:text-teal-600 text-xs transition-transform group-hover:translate-x-[-2px]">
+                      متابعة السلف ←
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card
+                onClick={() => setActiveTab("users")}
+                className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
+                  activeTab === "users"
+                    ? "border-indigo-500 bg-indigo-50/40 dark:bg-indigo-950/20 shadow-sm ring-2 ring-indigo-400/30"
+                    : "border-border/80 bg-card hover:border-indigo-500/40 hover:bg-accent/30"
+                }`}
+              >
+                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
+                  <div className="rounded-xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 text-indigo-600 dark:text-indigo-400 p-2.5 shadow-xs">
+                    <UserCheck size={22} />
+                  </div>
+                  <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                    المستخدمين
+                  </span>
+                </CardHeader>
+                <CardContent className="space-y-1.5 p-4 pt-0">
+                  <h3 className="font-black text-sm text-foreground group-hover:text-indigo-600 transition-colors">
+                    المستخدمين والصلاحيات
+                  </h3>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                    إدارة حسابات الدخول، تعيين الأدوار (مدير، كاشير، كابتن، مطبخ) وتخصيص الصلاحيات
+                  </p>
+                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
+                    <span className="text-indigo-600 dark:text-indigo-400">أمان وتحكم</span>
+                    <span className="text-muted-foreground group-hover:text-indigo-600 text-xs transition-transform group-hover:translate-x-[-2px]">
+                      إدارة الصلاحيات ←
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card
+                onClick={() => setIsAddModalOpen(true)}
+                className="group cursor-pointer rounded-2xl border border-primary/30 bg-primary/5 hover:border-primary hover:bg-primary/10 transition-all duration-200 hover:shadow-lg"
+              >
+                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
+                  <div className="rounded-xl bg-primary text-primary-foreground p-2.5 shadow-xs">
+                    <UserPlus size={22} />
+                  </div>
+                  <span className="rounded-full border border-primary/30 bg-primary/20 px-2 py-0.5 text-[10px] font-bold text-primary">
+                    موظف جديد
+                  </span>
+                </CardHeader>
+                <CardContent className="space-y-1.5 p-4 pt-0">
+                  <h3 className="font-black text-sm text-primary transition-colors">
+                    إضافة موظف جديد
+                  </h3>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                    تسجيل موظف جديد في النظام مع الراتب، الفرع، القسم، وبيانات التواصل
+                  </p>
+                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
+                    <span className="text-primary font-bold">إضافة فورية</span>
+                    <span className="text-primary text-xs transition-transform group-hover:translate-x-[-2px]">
+                      فتح النموذج +
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </section>
+        </div>
+      )}
 
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="bg-muted p-1 rounded-xl flex flex-wrap gap-1 h-auto w-full md:w-auto">
-          <TabsTrigger value="employees" className="rounded-lg font-bold py-2.5 px-5">
-            <Users size={16} className="ml-1.5 inline" />
-            دليل الكادر الوظيفي
-          </TabsTrigger>
-          <TabsTrigger value="attendance" className="rounded-lg font-bold py-2.5 px-5">
-            <CalendarDays size={16} className="ml-1.5 inline" />
-            حضور وانصراف اليوم
-          </TabsTrigger>
-          <TabsTrigger value="payroll" className="rounded-lg font-bold py-2.5 px-5">
-            <FileSpreadsheet size={16} className="ml-1.5 inline" />
-            مسيرات الأجور والرواتب
-          </TabsTrigger>
-          <TabsTrigger value="loans" className="rounded-lg font-bold py-2.5 px-5">
-            <Coins size={16} className="ml-1.5 inline" />
-            القروض والسلف المالية
-          </TabsTrigger>
-        </TabsList>
+      {activeTab !== "grid" && (
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="bg-muted p-1 rounded-xl flex flex-wrap gap-1 h-auto w-full md:w-auto">
+            <TabsTrigger value="employees" className="rounded-lg font-bold py-2.5 px-5">
+              <Users size={16} className="ml-1.5 inline" />
+              دليل الكادر الوظيفي
+            </TabsTrigger>
+            <TabsTrigger value="attendance" className="rounded-lg font-bold py-2.5 px-5">
+              <CalendarDays size={16} className="ml-1.5 inline" />
+              حضور وانصراف اليوم
+            </TabsTrigger>
+            <TabsTrigger value="payroll" className="rounded-lg font-bold py-2.5 px-5">
+              <FileSpreadsheet size={16} className="ml-1.5 inline" />
+              مسيرات الأجور والرواتب
+            </TabsTrigger>
+            <TabsTrigger value="loans" className="rounded-lg font-bold py-2.5 px-5">
+              <Coins size={16} className="ml-1.5 inline" />
+              القروض والسلف المالية
+            </TabsTrigger>
+            <TabsTrigger
+              value="users"
+              className="rounded-lg font-bold py-2.5 px-5 text-indigo-700 dark:text-indigo-400"
+            >
+              <UserCheck size={16} className="ml-1.5 inline" />
+              المستخدمين والصلاحيات
+            </TabsTrigger>
+          </TabsList>
 
-        {/* TAB 1: EMPLOYEE DIRECTORY */}
-        <TabsContent value="employees" className="mt-4 space-y-4">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-muted/40 p-4 rounded-xl">
-            <div className="relative w-full md:w-80">
-              <Search className="absolute right-3 top-3 text-muted-foreground" size={16} />
-              <Input
-                placeholder="ابحث باسم الموظف أو وظيفته أو هاتفه..."
-                value={empSearch}
-                onChange={(e) => setEmpSearch(e.target.value)}
-                className="pr-10 bg-card rounded-xl text-xs"
-              />
-            </div>
-            <div className="flex items-center gap-2 w-full md:w-auto justify-end">
-              <Badge variant="outline" className="text-[10px] py-1 px-3">
-                تصفية القسم:
-              </Badge>
-              <select
-                value={empDeptFilter}
-                onChange={(e) => setEmpDeptFilter(e.target.value)}
-                className="bg-card border border-border text-xs rounded-xl px-3 py-1.5 font-bold outline-none"
-              >
-                <option value="all">كل الأقسام والمطابخ</option>
-                <option value="المطبخ">المطبخ (Kitchen)</option>
-                <option value="الصالة والتوصيل">الصالة والتوصيل (Floor)</option>
-                <option value="الإدارة">الإدارة (Administration)</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {filteredEmployees.length === 0 ? (
-              <div className="col-span-1 md:col-span-3 text-center py-12 text-muted-foreground">
-                لا يوجد موظفين يطابقون خيارات البحث حالياً.
-              </div>
-            ) : (
-              filteredEmployees.map((emp) => (
-                <Card key={emp.id} className="border border-border shadow-sm rounded-2xl bg-card">
-                  <CardHeader className="pb-3 border-b border-border/50">
-                    <div className="flex items-start justify-between">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-1.5">
-                          <h3 className="font-black text-base text-slate-800 dark:text-slate-100">
-                            {emp.name}
-                          </h3>
-                          <Badge
-                            className={
-                              emp.status === "active"
-                                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
-                                : "bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20"
-                            }
-                            variant="outline"
-                          >
-                            {emp.status === "active"
-                              ? "نشط"
-                              : emp.status === "inactive"
-                                ? "غير نشط"
-                                : "موقوف"}
-                          </Badge>
-                        </div>
-                        <p className="text-xs font-bold text-primary flex items-center gap-1">
-                          <Briefcase size={12} />
-                          {emp.job_title} • {emp.department}
-                        </p>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="pt-4 space-y-3.5">
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div className="space-y-1">
-                        <span className="text-muted-foreground block font-bold text-[10px]">
-                          الهاتف
-                        </span>
-                        <span className="font-mono font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
-                          <Phone size={11} />
-                          {emp.phone}
-                        </span>
-                      </div>
-                      <div className="space-y-1">
-                        <span className="text-muted-foreground block font-bold text-[10px]">
-                          تاريخ التعيين
-                        </span>
-                        <span className="font-mono font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
-                          <Calendar size={11} />
-                          {emp.hire_date}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="bg-slate-50 dark:bg-slate-900/40 p-3 rounded-xl flex items-center justify-between">
-                      <div className="space-y-0.5">
-                        <span className="text-muted-foreground block font-bold text-[10px]">
-                          الراتب الأساسي
-                        </span>
-                        <span className="font-black text-sm text-slate-800 dark:text-slate-200">
-                          {formatTreasuryCurrency(emp.salary, emp.currency)}
-                        </span>
-                      </div>
-                      <div className="text-left space-y-0.5">
-                        <span className="text-muted-foreground block font-bold text-[10px]">
-                          الراتب المقوم
-                        </span>
-                        <span className="font-bold text-xs text-slate-500">
-                          {formatPrice(emp.salary, emp.currency as any)}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="flex justify-end gap-2 border-t border-border/50 pt-3">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => openEditDialog(emp)}
-                        className="rounded-lg text-xs gap-1 h-8"
-                      >
-                        <Edit2 size={12} />
-                        تعديل
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => openDeleteDialog(emp)}
-                        className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg text-xs gap-1 h-8"
-                      >
-                        <Trash2 size={12} />
-                        حذف
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))
-            )}
-          </div>
-        </TabsContent>
-
-        {/* TAB 2: DAILY ATTENDANCE */}
-        <TabsContent value="attendance" className="mt-4 space-y-4">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-muted/40 p-4 rounded-xl">
-            <div className="flex items-center gap-3">
-              <CalendarDays className="text-primary" size={20} />
-              <div className="space-y-0.5 text-right">
-                <span className="text-[10px] text-muted-foreground font-bold block">
-                  تاريخ رصد الحضور
-                </span>
+          {/* TAB 1: EMPLOYEE DIRECTORY */}
+          <TabsContent value="employees" className="mt-4 space-y-4">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-muted/40 p-4 rounded-xl">
+              <div className="relative w-full md:w-80">
+                <Search className="absolute right-3 top-3 text-muted-foreground" size={16} />
                 <Input
-                  type="date"
-                  value={attendanceDate}
-                  onChange={(e) => setAttendanceDate(e.target.value)}
-                  className="bg-card border border-border text-xs rounded-xl px-3 h-9 py-1 font-bold outline-none"
+                  placeholder="ابحث باسم الموظف أو وظيفته أو هاتفه..."
+                  value={empSearch}
+                  onChange={(e) => setEmpSearch(e.target.value)}
+                  className="pr-10 bg-card rounded-xl text-xs"
                 />
               </div>
+              <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+                <Badge variant="outline" className="text-[10px] py-1 px-3">
+                  تصفية القسم:
+                </Badge>
+                <select
+                  value={empDeptFilter}
+                  onChange={(e) => setEmpDeptFilter(e.target.value)}
+                  className="bg-card border border-border text-xs rounded-xl px-3 py-1.5 font-bold outline-none"
+                >
+                  <option value="all">كل الأقسام والمطابخ</option>
+                  <option value="المطبخ">المطبخ (Kitchen)</option>
+                  <option value="الصالة والتوصيل">الصالة والتوصيل (Floor)</option>
+                  <option value="الإدارة">الإدارة (Administration)</option>
+                </select>
+              </div>
             </div>
 
-            <div className="flex flex-wrap gap-2 text-xs">
-              <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 py-1.5 px-3">
-                حاضر: {attendanceStatsForDate.present}
-              </Badge>
-              <Badge className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 py-1.5 px-3">
-                متأخر: {attendanceStatsForDate.late}
-              </Badge>
-              <Badge className="bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 py-1.5 px-3">
-                غائب: {attendanceStatsForDate.absent}
-              </Badge>
-              <Badge className="bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20 py-1.5 px-3">
-                إجازة: {attendanceStatsForDate.leave}
-              </Badge>
-              {attendanceStatsForDate.unrecorded > 0 && (
-                <Badge className="bg-slate-100 text-slate-700 py-1.5 px-3">
-                  غير مرصود: {attendanceStatsForDate.unrecorded}
-                </Badge>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {filteredEmployees.length === 0 ? (
+                <div className="col-span-1 md:col-span-3 text-center py-12 text-muted-foreground">
+                  لا يوجد موظفين يطابقون خيارات البحث حالياً.
+                </div>
+              ) : (
+                filteredEmployees.map((emp) => (
+                  <Card key={emp.id} className="border border-border shadow-sm rounded-2xl bg-card">
+                    <CardHeader className="pb-3 border-b border-border/50">
+                      <div className="flex items-start justify-between">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5">
+                            <h3 className="font-black text-base text-slate-800 dark:text-slate-100">
+                              {emp.name}
+                            </h3>
+                            <Badge
+                              className={
+                                emp.status === "active"
+                                  ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+                                  : "bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20"
+                              }
+                              variant="outline"
+                            >
+                              {emp.status === "active"
+                                ? "نشط"
+                                : emp.status === "inactive"
+                                  ? "غير نشط"
+                                  : "موقوف"}
+                            </Badge>
+                          </div>
+                          <p className="text-xs font-bold text-primary flex items-center gap-1">
+                            <Briefcase size={12} />
+                            {emp.job_title} • {emp.department}
+                          </p>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="pt-4 space-y-3.5">
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="space-y-1">
+                          <span className="text-muted-foreground block font-bold text-[10px]">
+                            الهاتف
+                          </span>
+                          <span className="font-mono font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                            <Phone size={11} />
+                            {emp.phone}
+                          </span>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-muted-foreground block font-bold text-[10px]">
+                            تاريخ التعيين
+                          </span>
+                          <span className="font-mono font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                            <Calendar size={11} />
+                            {emp.hire_date}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="bg-slate-50 dark:bg-slate-900/40 p-3 rounded-xl flex items-center justify-between">
+                        <div className="space-y-0.5">
+                          <span className="text-muted-foreground block font-bold text-[10px]">
+                            الراتب الأساسي
+                          </span>
+                          <span className="font-black text-sm text-slate-800 dark:text-slate-200">
+                            {formatTreasuryCurrency(emp.salary, emp.currency)}
+                          </span>
+                        </div>
+                        <div className="text-left space-y-0.5">
+                          <span className="text-muted-foreground block font-bold text-[10px]">
+                            الراتب المقوم
+                          </span>
+                          <span className="font-bold text-xs text-slate-500">
+                            {formatPrice(emp.salary, emp.currency as any)}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end gap-2 border-t border-border/50 pt-3">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openEditDialog(emp)}
+                          className="rounded-lg text-xs gap-1 h-8"
+                        >
+                          <Edit2 size={12} />
+                          تعديل
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openDeleteDialog(emp)}
+                          className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg text-xs gap-1 h-8"
+                        >
+                          <Trash2 size={12} />
+                          حذف
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
               )}
             </div>
-          </div>
+          </TabsContent>
 
-          <Card className="border border-border shadow-sm rounded-2xl bg-card overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm text-right">
-                <thead className="bg-muted/70 text-muted-foreground text-xs border-b border-border font-bold">
-                  <tr>
-                    <th className="p-3.5 pr-6">اسم الموظف</th>
-                    <th className="p-3.5">القسم</th>
-                    <th className="p-3.5">المسمى الوظيفي</th>
-                    <th className="p-3.5">حالة اليوم</th>
-                    <th className="p-3.5 text-center pl-6">تسجيل وتعديل الدوام اليومي</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/60">
-                  {employees
-                    .filter((e) => e.status === "active")
-                    .map((emp) => {
-                      const currentStatus = getEmployeeAttendanceStatus(emp.id);
-                      return (
-                        <tr key={emp.id} className="hover:bg-muted/30 transition">
-                          <td className="p-3.5 pr-6 font-bold text-slate-800">{emp.name}</td>
-                          <td className="p-3.5 text-xs text-muted-foreground font-bold">
-                            {emp.department}
-                          </td>
-                          <td className="p-3.5 text-xs font-bold text-slate-700">
-                            {emp.job_title}
-                          </td>
-                          <td className="p-3.5">
-                            {currentStatus === "present" && (
-                              <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                                حاضر
-                              </Badge>
-                            )}
-                            {currentStatus === "late" && (
-                              <Badge className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-                                متأخر
-                              </Badge>
-                            )}
-                            {currentStatus === "absent" && (
-                              <Badge className="bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
-                                غائب
-                              </Badge>
-                            )}
-                            {currentStatus === "leave" && (
-                              <Badge className="bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20">
-                                إجازة
-                              </Badge>
-                            )}
-                            {currentStatus === "unrecorded" && (
-                              <Badge variant="outline" className="text-slate-400 border-dashed">
-                                لم يسجل بعد
-                              </Badge>
-                            )}
-                          </td>
-                          <td className="p-3.5 text-center pl-6">
-                            <div className="flex items-center justify-center gap-1.5">
-                              <Button
-                                size="sm"
-                                variant={currentStatus === "present" ? "default" : "outline"}
-                                onClick={() => handleRecordAttendance(emp.id, "present")}
-                                className="h-7 text-[10px] rounded-lg font-bold px-2.5"
-                              >
-                                <CheckCircle2 size={12} className="ml-1" /> حاضر
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant={currentStatus === "late" ? "default" : "outline"}
-                                onClick={() => handleRecordAttendance(emp.id, "late")}
-                                className="h-7 text-[10px] rounded-lg font-bold px-2.5 bg-amber-500 hover:bg-amber-600 text-white border-amber-500"
-                              >
-                                <Clock size={12} className="ml-1" /> متأخر
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant={currentStatus === "absent" ? "destructive" : "outline"}
-                                onClick={() => handleRecordAttendance(emp.id, "absent")}
-                                className="h-7 text-[10px] rounded-lg font-bold px-2.5"
-                              >
-                                <XCircle size={12} className="ml-1" /> غائب
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant={currentStatus === "leave" ? "default" : "outline"}
-                                onClick={() => handleRecordAttendance(emp.id, "leave")}
-                                className="h-7 text-[10px] rounded-lg font-bold px-2.5 bg-sky-500 hover:bg-sky-600 text-white border-sky-500"
-                              >
-                                <Calendar size={12} className="ml-1" /> إجازة
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        </TabsContent>
+          {/* TAB 2: DAILY ATTENDANCE */}
+          <TabsContent value="attendance" className="mt-4 space-y-4">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-muted/40 p-4 rounded-xl">
+              <div className="flex items-center gap-3">
+                <CalendarDays className="text-primary" size={20} />
+                <div className="space-y-0.5 text-right">
+                  <span className="text-[10px] text-muted-foreground font-bold block">
+                    تاريخ رصد الحضور
+                  </span>
+                  <Input
+                    type="date"
+                    value={attendanceDate}
+                    onChange={(e) => setAttendanceDate(e.target.value)}
+                    className="bg-card border border-border text-xs rounded-xl px-3 h-9 py-1 font-bold outline-none"
+                  />
+                </div>
+              </div>
 
-        {/* TAB 3: PAYROLL SHEETS */}
-        <TabsContent value="payroll" className="mt-4 space-y-4">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-muted/40 p-4 rounded-xl">
-            <div className="flex items-center gap-3">
-              <FileSpreadsheet className="text-primary" size={20} />
-              <div className="space-y-0.5 text-right">
-                <span className="text-[10px] text-muted-foreground font-bold block">
-                  شهر صرف الرواتب
-                </span>
-                <Input
-                  type="month"
-                  value={payrollMonth}
-                  onChange={(e) => setPayrollMonth(e.target.value)}
-                  className="bg-card border border-border text-xs rounded-xl px-3 h-9 py-1 font-bold outline-none"
-                />
+              <div className="flex flex-wrap gap-2 text-xs">
+                <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 py-1.5 px-3">
+                  حاضر: {attendanceStatsForDate.present}
+                </Badge>
+                <Badge className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 py-1.5 px-3">
+                  متأخر: {attendanceStatsForDate.late}
+                </Badge>
+                <Badge className="bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 py-1.5 px-3">
+                  غائب: {attendanceStatsForDate.absent}
+                </Badge>
+                <Badge className="bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20 py-1.5 px-3">
+                  إجازة: {attendanceStatsForDate.leave}
+                </Badge>
+                {attendanceStatsForDate.unrecorded > 0 && (
+                  <Badge className="bg-slate-100 text-slate-700 py-1.5 px-3">
+                    غير مرصود: {attendanceStatsForDate.unrecorded}
+                  </Badge>
+                )}
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                onClick={handleGeneratePayroll}
-                variant="outline"
-                className="gap-2 rounded-xl font-bold px-4"
-              >
-                <PlusCircle size={16} />
-                احتساب كشف الرواتب
-              </Button>
-              <Button
-                onClick={handlePostPayrollAccrual}
-                className="gap-2 rounded-xl font-bold px-5 bg-purple-600 hover:bg-purple-700 text-white shadow-sm"
-              >
-                <CheckCircle2 size={16} />
-                توليد قيود استحقاق المرتبات اوتوماتيك (M/N)
-              </Button>
-              <Button
-                onClick={() => openAccrualVoucher(payrollMonth)}
-                variant="outline"
-                className="gap-2 rounded-xl font-bold px-4 border-purple-500/40 text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/30"
-              >
-                <Printer size={16} />
-                عرض/طباعة قيد الاستحقاق
-              </Button>
-            </div>
-          </div>
-
-          <Card className="border border-border shadow-sm rounded-2xl bg-card overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm text-right">
-                <thead className="bg-muted/70 text-muted-foreground text-xs border-b border-border font-bold">
-                  <tr>
-                    <th className="p-3.5 pr-6">اسم الموظف</th>
-                    <th className="p-3.5">الراتب الأساسي</th>
-                    <th className="p-3.5 text-rose-600">خصومات الحضور والغياب</th>
-                    <th className="p-3.5 text-amber-600">خصم قسط السلفة</th>
-                    <th className="p-3.5 text-emerald-600">صافي المستحق للقبض</th>
-                    <th className="p-3.5">العملة الأساسية</th>
-                    <th className="p-3.5">الحالة</th>
-                    <th className="p-3.5 text-center pl-6">صرف النقدية والإجراءات</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/60">
-                  {payrolls.filter((p) => p.month === payrollMonth).length === 0 ? (
+            <Card className="border border-border shadow-sm rounded-2xl bg-card overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-right">
+                  <thead className="bg-muted/70 text-muted-foreground text-xs border-b border-border font-bold">
                     <tr>
-                      <td colSpan={8} className="p-8 text-center text-muted-foreground">
-                        لم يتم توليد مسير رواتب لهذا الشهر بعد. يرجى الضغط على زر توليد مسير الرواتب
-                        أعلاه.
-                      </td>
+                      <th className="p-3.5 pr-6">اسم الموظف</th>
+                      <th className="p-3.5">القسم</th>
+                      <th className="p-3.5">المسمى الوظيفي</th>
+                      <th className="p-3.5">حالة اليوم</th>
+                      <th className="p-3.5 text-center pl-6">تسجيل وتعديل الدوام اليومي</th>
                     </tr>
-                  ) : (
-                    payrolls
-                      .filter((p) => p.month === payrollMonth)
-                      .map((p) => {
-                        const emp = employees.find((e) => e.id === p.employee_id);
+                  </thead>
+                  <tbody className="divide-y divide-border/60">
+                    {employees
+                      .filter((e) => e.status === "active")
+                      .map((emp) => {
+                        const currentStatus = getEmployeeAttendanceStatus(emp.id);
                         return (
-                          <tr key={p.id} className="hover:bg-muted/30 transition">
-                            <td className="p-3.5 pr-6 font-bold text-slate-800">
-                              {emp ? emp.name : "موظف محذوف"}
+                          <tr key={emp.id} className="hover:bg-muted/30 transition">
+                            <td className="p-3.5 pr-6 font-bold text-slate-800">{emp.name}</td>
+                            <td className="p-3.5 text-xs text-muted-foreground font-bold">
+                              {emp.department}
                             </td>
-                            <td className="p-3.5 font-mono font-bold">
-                              {formatTreasuryCurrency(p.basic_salary, p.currency)}
-                            </td>
-                            <td className="p-3.5 font-mono font-bold text-rose-600">
-                              -{formatTreasuryCurrency(p.deductions, p.currency)}
-                            </td>
-                            <td className="p-3.5 font-mono font-bold text-amber-600">
-                              -{formatTreasuryCurrency(p.loan_deduction, p.currency)}
-                            </td>
-                            <td className="p-3.5 font-mono font-black text-emerald-600">
-                              {formatTreasuryCurrency(p.net_salary, p.currency)}
-                            </td>
-                            <td className="p-3.5 text-xs text-muted-foreground font-black">
-                              {p.currency}
+                            <td className="p-3.5 text-xs font-bold text-slate-700">
+                              {emp.job_title}
                             </td>
                             <td className="p-3.5">
-                              {p.status === "paid" ? (
-                                <Badge className="bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
-                                  تم الصرف
+                              {currentStatus === "present" && (
+                                <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                                  حاضر
                                 </Badge>
-                              ) : (
+                              )}
+                              {currentStatus === "late" && (
+                                <Badge className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                                  متأخر
+                                </Badge>
+                              )}
+                              {currentStatus === "absent" && (
+                                <Badge className="bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+                                  غائب
+                                </Badge>
+                              )}
+                              {currentStatus === "leave" && (
+                                <Badge className="bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20">
+                                  إجازة
+                                </Badge>
+                              )}
+                              {currentStatus === "unrecorded" && (
                                 <Badge variant="outline" className="text-slate-400 border-dashed">
-                                  بانتظار الصرف
+                                  لم يسجل بعد
                                 </Badge>
                               )}
                             </td>
                             <td className="p-3.5 text-center pl-6">
-                              <div className="flex items-center justify-center gap-2">
+                              <div className="flex items-center justify-center gap-1.5">
                                 <Button
                                   size="sm"
-                                  variant="outline"
-                                  onClick={() => viewPayrollVoucher(p)}
-                                  className="h-7 text-xs rounded-lg font-bold px-3 gap-1"
+                                  variant={currentStatus === "present" ? "default" : "outline"}
+                                  onClick={() => handleRecordAttendance(emp.id, "present")}
+                                  className="h-7 text-[10px] rounded-lg font-bold px-2.5"
                                 >
-                                  <Printer size={12} />
-                                  عرض السند
+                                  <CheckCircle2 size={12} className="ml-1" /> حاضر
                                 </Button>
-                                {p.status === "paid" ? (
-                                  <div className="text-xs text-slate-400 font-bold font-mono">
-                                    تاريخ الدفع: {p.payment_date}
-                                  </div>
-                                ) : (
-                                  <Button
-                                    size="sm"
-                                    onClick={() => openPaySalaryDialog(p)}
-                                    className="h-7 text-xs rounded-lg font-bold px-4 bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 gap-1"
-                                  >
-                                    <CreditCard size={12} />
-                                    صرف الراتب نقداً
-                                  </Button>
-                                )}
+                                <Button
+                                  size="sm"
+                                  variant={currentStatus === "late" ? "default" : "outline"}
+                                  onClick={() => handleRecordAttendance(emp.id, "late")}
+                                  className="h-7 text-[10px] rounded-lg font-bold px-2.5 bg-amber-500 hover:bg-amber-600 text-white border-amber-500"
+                                >
+                                  <Clock size={12} className="ml-1" /> متأخر
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant={currentStatus === "absent" ? "destructive" : "outline"}
+                                  onClick={() => handleRecordAttendance(emp.id, "absent")}
+                                  className="h-7 text-[10px] rounded-lg font-bold px-2.5"
+                                >
+                                  <XCircle size={12} className="ml-1" /> غائب
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant={currentStatus === "leave" ? "default" : "outline"}
+                                  onClick={() => handleRecordAttendance(emp.id, "leave")}
+                                  className="h-7 text-[10px] rounded-lg font-bold px-2.5 bg-sky-500 hover:bg-sky-600 text-white border-sky-500"
+                                >
+                                  <Calendar size={12} className="ml-1" /> إجازة
+                                </Button>
                               </div>
                             </td>
                           </tr>
                         );
-                      })
-                  )}
-                </tbody>
-              </table>
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          </TabsContent>
+
+          {/* TAB 3: PAYROLL SHEETS */}
+          <TabsContent value="payroll" className="mt-4 space-y-4">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-muted/40 p-4 rounded-xl">
+              <div className="flex items-center gap-3">
+                <FileSpreadsheet className="text-primary" size={20} />
+                <div className="space-y-0.5 text-right">
+                  <span className="text-[10px] text-muted-foreground font-bold block">
+                    شهر صرف الرواتب
+                  </span>
+                  <Input
+                    type="month"
+                    value={payrollMonth}
+                    onChange={(e) => setPayrollMonth(e.target.value)}
+                    className="bg-card border border-border text-xs rounded-xl px-3 h-9 py-1 font-bold outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  onClick={handleGeneratePayroll}
+                  variant="outline"
+                  className="gap-2 rounded-xl font-bold px-4"
+                >
+                  <PlusCircle size={16} />
+                  احتساب كشف الرواتب
+                </Button>
+                <Button
+                  onClick={handlePostPayrollAccrual}
+                  className="gap-2 rounded-xl font-bold px-5 bg-purple-600 hover:bg-purple-700 text-white shadow-sm"
+                >
+                  <CheckCircle2 size={16} />
+                  توليد قيود استحقاق المرتبات اوتوماتيك (M/N)
+                </Button>
+                <Button
+                  onClick={() => openAccrualVoucher(payrollMonth)}
+                  variant="outline"
+                  className="gap-2 rounded-xl font-bold px-4 border-purple-500/40 text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/30"
+                >
+                  <Printer size={16} />
+                  عرض/طباعة قيد الاستحقاق
+                </Button>
+              </div>
             </div>
-          </Card>
-        </TabsContent>
 
-        {/* TAB 4: EMPLOYEES LOANS AND ADVANCES */}
-        <TabsContent value="loans" className="mt-4 space-y-4">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-muted/40 p-4 rounded-xl">
-            <h3 className="font-bold text-sm text-slate-700 flex items-center gap-1.5">
-              <Coins className="text-primary" size={18} />
-              متابعة تسديد السلف من رواتب الموظفين
-            </h3>
-            <Button onClick={openLoanDialog} className="gap-2 rounded-xl font-bold px-5">
-              <PlusCircle size={16} />
-              طلب سلفة نقدية جديدة لموظف
-            </Button>
-          </div>
-
-          <Card className="border border-border shadow-sm rounded-2xl bg-card overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm text-right">
-                <thead className="bg-muted/70 text-muted-foreground text-xs border-b border-border font-bold">
-                  <tr>
-                    <th className="p-3.5 pr-6">اسم الموظف</th>
-                    <th className="p-3.5">تاريخ السلفة</th>
-                    <th className="p-3.5">مبلغ السلفة الأصلي</th>
-                    <th className="p-3.5">شهور السداد</th>
-                    <th className="p-3.5">القسط الشهري</th>
-                    <th className="p-3.5 text-emerald-600">المبلغ المسدد حتى الآن</th>
-                    <th className="p-3.5 text-rose-600">المبلغ المتبقي للتحصيل</th>
-                    <th className="p-3.5">الحالة العامة</th>
-                    <th className="p-3.5 text-center pl-6">المستند والطباعة</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/60">
-                  {loans.length === 0 ? (
+            <Card className="border border-border shadow-sm rounded-2xl bg-card overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-right">
+                  <thead className="bg-muted/70 text-muted-foreground text-xs border-b border-border font-bold">
                     <tr>
-                      <td colSpan={9} className="p-8 text-center text-muted-foreground">
-                        لا يوجد سلف أو قروض مسجلة في هذا الحساب حالياً.
-                      </td>
+                      <th className="p-3.5 pr-6">اسم الموظف</th>
+                      <th className="p-3.5">الراتب الأساسي</th>
+                      <th className="p-3.5 text-rose-600">خصومات الحضور والغياب</th>
+                      <th className="p-3.5 text-amber-600">خصم قسط السلفة</th>
+                      <th className="p-3.5 text-emerald-600">صافي المستحق للقبض</th>
+                      <th className="p-3.5">العملة الأساسية</th>
+                      <th className="p-3.5">الحالة</th>
+                      <th className="p-3.5 text-center pl-6">صرف النقدية والإجراءات</th>
                     </tr>
-                  ) : (
-                    loans.map((l) => {
-                      const emp = employees.find((e) => e.id === l.employee_id);
-                      const monthlyInstallment = l.amount / l.repayment_months;
-                      const remainingAmount = l.amount - l.paid_amount;
-                      return (
-                        <tr key={l.id} className="hover:bg-muted/30 transition">
-                          <td className="p-3.5 pr-6 font-bold text-slate-800">
-                            {emp ? emp.name : "موظف محذوف"}
-                          </td>
-                          <td className="p-3.5 font-mono text-xs">{l.date}</td>
-                          <td className="p-3.5 font-mono font-bold">
-                            {formatTreasuryCurrency(l.amount, l.currency)}
-                          </td>
-                          <td className="p-3.5 font-mono text-xs font-bold">
-                            {l.repayment_months} أشهر
-                          </td>
-                          <td className="p-3.5 font-mono font-bold text-slate-600">
-                            {formatTreasuryCurrency(Math.round(monthlyInstallment), l.currency)} /
-                            شهر
-                          </td>
-                          <td className="p-3.5 font-mono font-bold text-emerald-600">
-                            {formatTreasuryCurrency(l.paid_amount, l.currency)}
-                          </td>
-                          <td className="p-3.5 font-mono font-bold text-rose-600">
-                            {formatTreasuryCurrency(remainingAmount, l.currency)}
-                          </td>
-                          <td className="p-3.5">
-                            {l.status === "paid" ? (
-                              <Badge className="bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
-                                مسددة بالكامل
-                              </Badge>
-                            ) : (
-                              <Badge className="bg-amber-500/10 text-amber-600 border border-amber-500/20">
-                                جاري التحصيل
-                              </Badge>
-                            )}
-                          </td>
-                          <td className="p-3.5 text-center pl-6">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => viewLoanVoucher(l)}
-                              className="h-7 text-xs rounded-lg font-bold px-3 gap-1"
-                            >
-                              <Printer size={12} />
-                              عرض السند
-                            </Button>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-border/60">
+                    {payrolls.filter((p) => p.month === payrollMonth).length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="p-8 text-center text-muted-foreground">
+                          لم يتم توليد مسير رواتب لهذا الشهر بعد. يرجى الضغط على زر توليد مسير
+                          الرواتب أعلاه.
+                        </td>
+                      </tr>
+                    ) : (
+                      payrolls
+                        .filter((p) => p.month === payrollMonth)
+                        .map((p) => {
+                          const emp = employees.find((e) => e.id === p.employee_id);
+                          return (
+                            <tr key={p.id} className="hover:bg-muted/30 transition">
+                              <td className="p-3.5 pr-6 font-bold text-slate-800">
+                                {emp ? emp.name : "موظف محذوف"}
+                              </td>
+                              <td className="p-3.5 font-mono font-bold">
+                                {formatTreasuryCurrency(p.basic_salary, p.currency)}
+                              </td>
+                              <td className="p-3.5 font-mono font-bold text-rose-600">
+                                -{formatTreasuryCurrency(p.deductions, p.currency)}
+                              </td>
+                              <td className="p-3.5 font-mono font-bold text-amber-600">
+                                -{formatTreasuryCurrency(p.loan_deduction, p.currency)}
+                              </td>
+                              <td className="p-3.5 font-mono font-black text-emerald-600">
+                                {formatTreasuryCurrency(p.net_salary, p.currency)}
+                              </td>
+                              <td className="p-3.5 text-xs text-muted-foreground font-black">
+                                {p.currency}
+                              </td>
+                              <td className="p-3.5">
+                                {p.status === "paid" ? (
+                                  <Badge className="bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                                    تم الصرف
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="outline" className="text-slate-400 border-dashed">
+                                    بانتظار الصرف
+                                  </Badge>
+                                )}
+                              </td>
+                              <td className="p-3.5 text-center pl-6">
+                                <div className="flex items-center justify-center gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => viewPayrollVoucher(p)}
+                                    className="h-7 text-xs rounded-lg font-bold px-3 gap-1"
+                                  >
+                                    <Printer size={12} />
+                                    عرض السند
+                                  </Button>
+                                  {p.status === "paid" ? (
+                                    <div className="text-xs text-slate-400 font-bold font-mono">
+                                      تاريخ الدفع: {p.payment_date}
+                                    </div>
+                                  ) : (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => openPaySalaryDialog(p)}
+                                      className="h-7 text-xs rounded-lg font-bold px-4 bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 gap-1"
+                                    >
+                                      <CreditCard size={12} />
+                                      صرف الراتب نقداً
+                                    </Button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          </TabsContent>
+
+          {/* TAB 4: EMPLOYEES LOANS AND ADVANCES */}
+          <TabsContent value="loans" className="mt-4 space-y-4">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-muted/40 p-4 rounded-xl">
+              <h3 className="font-bold text-sm text-slate-700 flex items-center gap-1.5">
+                <Coins className="text-primary" size={18} />
+                متابعة تسديد السلف من رواتب الموظفين
+              </h3>
+              <Button onClick={openLoanDialog} className="gap-2 rounded-xl font-bold px-5">
+                <PlusCircle size={16} />
+                طلب سلفة نقدية جديدة لموظف
+              </Button>
             </div>
-          </Card>
-        </TabsContent>
-      </Tabs>
+
+            <Card className="border border-border shadow-sm rounded-2xl bg-card overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-right">
+                  <thead className="bg-muted/70 text-muted-foreground text-xs border-b border-border font-bold">
+                    <tr>
+                      <th className="p-3.5 pr-6">اسم الموظف</th>
+                      <th className="p-3.5">تاريخ السلفة</th>
+                      <th className="p-3.5">مبلغ السلفة الأصلي</th>
+                      <th className="p-3.5">شهور السداد</th>
+                      <th className="p-3.5">القسط الشهري</th>
+                      <th className="p-3.5 text-emerald-600">المبلغ المسدد حتى الآن</th>
+                      <th className="p-3.5 text-rose-600">المبلغ المتبقي للتحصيل</th>
+                      <th className="p-3.5">الحالة العامة</th>
+                      <th className="p-3.5 text-center pl-6">المستند والطباعة</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/60">
+                    {loans.length === 0 ? (
+                      <tr>
+                        <td colSpan={9} className="p-8 text-center text-muted-foreground">
+                          لا يوجد سلف أو قروض مسجلة في هذا الحساب حالياً.
+                        </td>
+                      </tr>
+                    ) : (
+                      loans.map((l) => {
+                        const emp = employees.find((e) => e.id === l.employee_id);
+                        const monthlyInstallment = l.amount / l.repayment_months;
+                        const remainingAmount = l.amount - l.paid_amount;
+                        return (
+                          <tr key={l.id} className="hover:bg-muted/30 transition">
+                            <td className="p-3.5 pr-6 font-bold text-slate-800">
+                              {emp ? emp.name : "موظف محذوف"}
+                            </td>
+                            <td className="p-3.5 font-mono text-xs">{l.date}</td>
+                            <td className="p-3.5 font-mono font-bold">
+                              {formatTreasuryCurrency(l.amount, l.currency)}
+                            </td>
+                            <td className="p-3.5 font-mono text-xs font-bold">
+                              {l.repayment_months} أشهر
+                            </td>
+                            <td className="p-3.5 font-mono font-bold text-slate-600">
+                              {formatTreasuryCurrency(Math.round(monthlyInstallment), l.currency)} /
+                              شهر
+                            </td>
+                            <td className="p-3.5 font-mono font-bold text-emerald-600">
+                              {formatTreasuryCurrency(l.paid_amount, l.currency)}
+                            </td>
+                            <td className="p-3.5 font-mono font-bold text-rose-600">
+                              {formatTreasuryCurrency(remainingAmount, l.currency)}
+                            </td>
+                            <td className="p-3.5">
+                              {l.status === "paid" ? (
+                                <Badge className="bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                                  مسددة بالكامل
+                                </Badge>
+                              ) : (
+                                <Badge className="bg-amber-500/10 text-amber-600 border border-amber-500/20">
+                                  جاري التحصيل
+                                </Badge>
+                              )}
+                            </td>
+                            <td className="p-3.5 text-center pl-6">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => viewLoanVoucher(l)}
+                                className="h-7 text-xs rounded-lg font-bold px-3 gap-1"
+                              >
+                                <Printer size={12} />
+                                عرض السند
+                              </Button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          </TabsContent>
+
+          {/* TAB 5: USERS & PERMISSIONS EMBEDDED */}
+          <TabsContent value="users" className="mt-4 space-y-4">
+            <div className="bg-card border border-border rounded-2xl p-2 sm:p-4 shadow-xs">
+              <UsersPage />
+            </div>
+          </TabsContent>
+        </Tabs>
+      )}
 
       {/* DIALOG 1: ADD EMPLOYEE */}
       <Dialog open={isAddEmpOpen} onOpenChange={setIsAddEmpOpen}>

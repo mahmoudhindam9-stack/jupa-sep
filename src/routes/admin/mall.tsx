@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { toast } from "sonner";
-import { createFileRoute, useLocation } from "@tanstack/react-router";
+import { createFileRoute, useLocation, Link } from "@tanstack/react-router";
 import { useState, useMemo, useEffect } from "react";
 import {
   Building2,
@@ -94,7 +94,7 @@ import {
 import { useSyncExternalStore } from "react";
 
 export const Route = createFileRoute("/admin/mall")({
-  head: () => ({ meta: [{ title: "إدارة المول والحديقة - النظام الشامل" }] }),
+  head: () => ({ meta: [{ title: "إدارة المول - النظام الشامل" }] }),
   component: MallManagementPage,
 });
 
@@ -152,11 +152,8 @@ function MallManagementPage() {
   const tabParam = searchParams.get("tab");
 
   const [activeTab, setActiveTab] = useState<
-    "shops" | "payments" | "garden" | "expenses" | "reports"
+    "grid" | "shops" | "payments" | "expenses" | "reports"
   >(() => {
-    if (tabParam === "garden" || tabParam === "park" || tabParam === "park_tickets") {
-      return "garden";
-    }
     if (
       tabParam === "payments" ||
       tabParam === "expenses" ||
@@ -165,14 +162,12 @@ function MallManagementPage() {
     ) {
       return tabParam;
     }
-    return "garden";
+    return "grid";
   });
 
   useEffect(() => {
     if (tabParam) {
-      if (tabParam === "garden" || tabParam === "park" || tabParam === "park_tickets") {
-        setActiveTab("garden");
-      } else if (
+      if (
         tabParam === "payments" ||
         tabParam === "expenses" ||
         tabParam === "reports" ||
@@ -638,19 +633,13 @@ function MallManagementPage() {
   const collectionPercentage =
     totalDueThisMonth > 0 ? Math.round((totalCollectedThisMonth / totalDueThisMonth) * 100) : 0;
 
-  // Garden Revenue & Expense month calculations
-  const monthGardenRevenues = gardenRevenues.filter(
-    (r) => r.year === selectedYear && r.month === selectedMonth,
-  );
-  const totalGardenRevenueMonth = monthGardenRevenues.reduce((sum, r) => sum + r.amount, 0);
-
+  // Mall Expenses month calculations
   const monthGardenExpenses = gardenExpenses.filter(
     (e) => e.year === selectedYear && e.month === selectedMonth,
   );
   const totalGardenExpenseMonth = monthGardenExpenses.reduce((sum, e) => sum + e.amount, 0);
 
-  const netOperatingIncomeMonth =
-    totalCollectedThisMonth + totalGardenRevenueMonth - totalGardenExpenseMonth;
+  const netOperatingIncomeMonth = totalCollectedThisMonth - totalGardenExpenseMonth;
 
   const filteredShops = useMemo(() => {
     return shops.filter((s) => {
@@ -1547,182 +1536,315 @@ function MallManagementPage() {
 
   return (
     <div className="space-y-6 w-full px-2 lg:px-6 mx-auto pb-12">
-      {/* Page Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border/60 pb-5">
-        <div>
-          <h1 className="text-2xl font-black text-foreground tracking-tight flex items-center gap-2">
-            <Building2 className="text-emerald-600" size={24} />
-            إدارة إيرادات ومصروفات المول والحديقة ($)
-          </h1>
-          <p className="text-xs text-muted-foreground mt-1 font-medium">
-            متابعة عقود المحلات والمستأجرين، تحصيل الإيجارات الشهرية، ومراقبة الحديقة والتشغيل
-            بالدولار الأمريكي.
-          </p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0 flex-wrap">
-          <Button
-            onClick={() => setIsContractModalOpen(true)}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white font-black gap-2 shadow-sm rounded-xl cursor-pointer"
-          >
-            <Plus size={16} />
-            طباعة وعمل عقد جديد
-          </Button>
-          <Button
-            id="btn-register-tickets-pos"
-            onClick={handleOpenTicketsPos}
-            className="bg-teal-600 hover:bg-teal-700 text-white font-black gap-2 shadow-sm rounded-xl cursor-pointer"
-          >
-            <Ticket size={16} />
-            تسجيل تذاكر الدخول (POS)
-          </Button>
-          <Button
-            onClick={() => setIsTerminationModalOpen(true)}
-            variant="outline"
-            className="border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-800 font-black gap-2 shadow-sm rounded-xl cursor-pointer"
-          >
-            <XCircle size={16} />
-            طباعة وفسخ تعاقد
-          </Button>
-          <Button
-            onClick={() => setIsStatusReportModalOpen(true)}
-            variant="outline"
-            className="border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 font-black gap-2 shadow-sm rounded-xl cursor-pointer"
-          >
-            <Printer size={16} />
-            طباعة تقرير حالة المول
-          </Button>
-        </div>
-      </div>
-
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        <Card className="border border-border/80 bg-card shadow-sm rounded-2xl p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-muted-foreground">إجمالي المحلات</span>
-            <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-600">
-              <Store size={20} />
-            </div>
-          </div>
-          <div className="mt-3">
-            <h3 className="text-2xl font-black text-foreground">{totalShops}</h3>
-            <p className="text-[11px] text-muted-foreground mt-1">
-              {rentedShops} مؤجر | {vacantShops} فارغ | {maintenanceShops} صيانة
-            </p>
-          </div>
-        </Card>
-
-        <Card className="border border-border/80 bg-card shadow-sm rounded-2xl p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-muted-foreground">
-              محصول الإيجار ({MONTHS_AR[selectedMonth - 1]})
-            </span>
-            <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-600">
-              <DollarSign size={20} />
-            </div>
-          </div>
-          <div className="mt-3">
-            <h3 className="text-xl sm:text-2xl font-black text-emerald-600">
-              ${totalCollectedThisMonth.toLocaleString()}
-            </h3>
-            <p className="text-[11px] text-muted-foreground mt-1">
-              من إجمالي المستحق ${totalDueThisMonth.toLocaleString()}
-            </p>
-          </div>
-        </Card>
-
-        <Card className="border border-border/80 bg-card shadow-sm rounded-2xl p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-muted-foreground">
-              إيراد الحديقة ({MONTHS_AR[selectedMonth - 1]})
-            </span>
-            <div className="p-2.5 rounded-xl bg-teal-500/10 text-teal-600">
-              <Trees size={20} />
-            </div>
-          </div>
-          <div className="mt-3">
-            <h3 className="text-xl sm:text-2xl font-black text-teal-600">
-              ${totalGardenRevenueMonth.toLocaleString()}
-            </h3>
-            <p className="text-[11px] text-muted-foreground mt-1">تذاكر، حفلات، ومواقف</p>
-          </div>
-        </Card>
-
-        <Card className="border border-border/80 bg-card shadow-sm rounded-2xl p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-muted-foreground">مصروفات المول والحديقة</span>
-            <div className="p-2.5 rounded-xl bg-rose-500/10 text-rose-600">
-              <TrendingDown size={20} />
-            </div>
-          </div>
-          <div className="mt-3">
-            <h3 className="text-xl sm:text-2xl font-black text-rose-600">
-              ${totalGardenExpenseMonth.toLocaleString()}
-            </h3>
-            <p className="text-[11px] text-muted-foreground mt-1">صيانة، كهرباء، أمن ونظافة</p>
-          </div>
-        </Card>
-
-        <Card className="border border-border/80 bg-card shadow-sm rounded-2xl p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-muted-foreground">صافي الدخل التشغيلي</span>
-            <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-600">
-              <Wallet size={20} />
-            </div>
-          </div>
-          <div className="mt-3">
-            <h3
-              className={`text-xl sm:text-2xl font-black ${netOperatingIncomeMonth >= 0 ? "text-purple-600" : "text-rose-600"}`}
+      {/* Mall Top Bar */}
+      {activeTab === "grid" ? (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60 pb-4">
+          <Link to="/admin">
+            <Button variant="outline" size="sm" className="gap-2 font-bold rounded-xl text-xs">
+              <ArrowRight size={16} />
+              العودة إلى الأقسام الرئيسية
+            </Button>
+          </Link>
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+            <Button
+              onClick={() => setIsContractModalOpen(true)}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-1.5 shadow-xs rounded-xl text-xs h-9 cursor-pointer"
             >
-              ${netOperatingIncomeMonth.toLocaleString()}
-            </h3>
-            <p className="text-[11px] text-muted-foreground mt-1">الإيرادات ناقص المصروفات</p>
+              <Plus size={15} />
+              عمل عقد جديد
+            </Button>
+            <Button
+              onClick={() => setIsTerminationModalOpen(true)}
+              variant="outline"
+              className="border-rose-200 text-rose-700 hover:bg-rose-50 font-bold gap-1.5 rounded-xl text-xs h-9 cursor-pointer"
+            >
+              <XCircle size={15} />
+              فسخ تعاقد
+            </Button>
+            <Button
+              onClick={() => setIsStatusReportModalOpen(true)}
+              variant="outline"
+              className="border-emerald-200 text-emerald-700 hover:bg-emerald-50 font-bold gap-1.5 rounded-xl text-xs h-9 cursor-pointer"
+            >
+              <Printer size={15} />
+              تقرير حالة المول
+            </Button>
           </div>
-        </Card>
-      </div>
+        </div>
+      ) : (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60 pb-3">
+          <Button
+            variant="outline"
+            onClick={() => setActiveTab("grid")}
+            className="gap-2 font-black rounded-xl text-xs py-2 px-4 border-emerald-500/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 w-fit cursor-pointer"
+          >
+            <ArrowRight size={16} />
+            العودة إلى أقسام المول
+          </Button>
 
-      {/* Tabs Navigation */}
-      <div className="flex items-center gap-2 border-b border-border pb-3 overflow-x-auto">
-        <Button
-          variant={activeTab === "shops" ? "default" : "outline"}
-          onClick={() => setActiveTab("shops")}
-          className="rounded-xl font-bold gap-2 shrink-0 cursor-pointer"
-        >
-          <Store size={16} />
-          قائمة المحلات والعقود ورقم الحساب ({totalShops})
-        </Button>
-        <Button
-          variant={activeTab === "payments" ? "default" : "outline"}
-          onClick={() => setActiveTab("payments")}
-          className="rounded-xl font-bold gap-2 shrink-0 cursor-pointer"
-        >
-          <Calendar size={16} />
-          متابعة الدفعات والشهور
-        </Button>
-        <Button
-          variant={activeTab === "garden" ? "default" : "outline"}
-          onClick={() => setActiveTab("garden")}
-          className="rounded-xl font-bold gap-2 shrink-0 cursor-pointer"
-        >
-          <Trees size={16} />
-          إيرادات الحديقة ({gardenRevenues.length})
-        </Button>
-        <Button
-          variant={activeTab === "expenses" ? "default" : "outline"}
-          onClick={() => setActiveTab("expenses")}
-          className="rounded-xl font-bold gap-2 shrink-0 cursor-pointer"
-        >
-          <CreditCard size={16} />
-          مصروفات المول والحديقة ({gardenExpenses.length})
-        </Button>
-        <Button
-          variant={activeTab === "reports" ? "default" : "outline"}
-          onClick={() => setActiveTab("reports")}
-          className="rounded-xl font-bold gap-2 shrink-0 cursor-pointer"
-        >
-          <TrendingUp size={16} />
-          التقارير المالية والملخص الشامل
-        </Button>
-      </div>
+          <div className="flex items-center gap-1.5 overflow-x-auto">
+            <Button
+              size="sm"
+              variant={activeTab === "shops" ? "default" : "outline"}
+              onClick={() => setActiveTab("shops")}
+              className="rounded-xl font-bold text-xs h-8"
+            >
+              المحلات ({totalShops})
+            </Button>
+            <Button
+              size="sm"
+              variant={activeTab === "payments" ? "default" : "outline"}
+              onClick={() => setActiveTab("payments")}
+              className="rounded-xl font-bold text-xs h-8"
+            >
+              الدفعات
+            </Button>
+            <Button
+              size="sm"
+              variant={activeTab === "expenses" ? "default" : "outline"}
+              onClick={() => setActiveTab("expenses")}
+              className="rounded-xl font-bold text-xs h-8"
+            >
+              المصروفات
+            </Button>
+            <Button
+              size="sm"
+              variant={activeTab === "reports" ? "default" : "outline"}
+              onClick={() => setActiveTab("reports")}
+              className="rounded-xl font-bold text-xs h-8"
+            >
+              التقارير
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Mall Modules Square Cards Grid (نظام المربعات مثل قسم المطعم) */}
+      {activeTab === "grid" && (
+        <div className="space-y-6">
+          <section aria-labelledby="mall-modules-heading" className="space-y-3">
+            <div className="flex items-center justify-between gap-4">
+              <h2
+                id="mall-modules-heading"
+                className="flex items-center gap-2 text-base font-black text-foreground"
+              >
+                <Building2 size={18} className="text-emerald-600" aria-hidden="true" />
+                أقسام ووظائف إدارة المول
+              </h2>
+              <span className="text-xs font-bold text-muted-foreground">4 أقسام تشغيلية</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <Card
+                onClick={() => setActiveTab("shops")}
+                className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
+                  activeTab === "shops"
+                    ? "border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/20 shadow-sm ring-2 ring-emerald-400/30"
+                    : "border-border/80 bg-card hover:border-emerald-500/40 hover:bg-accent/30"
+                }`}
+              >
+                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
+                  <div className="rounded-xl bg-gradient-to-br from-blue-500/20 to-indigo-500/20 text-blue-600 dark:text-blue-400 p-2.5 shadow-xs">
+                    <Store size={22} />
+                  </div>
+                  <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                    المحلات
+                  </span>
+                </CardHeader>
+                <CardContent className="space-y-1.5 p-4 pt-0">
+                  <h3 className="font-black text-sm text-foreground group-hover:text-emerald-600 transition-colors">
+                    قائمة المحلات والعقود
+                  </h3>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                    إدارة عقود الإيجار، بيانات المستأجرين، المساحات والقيمة الإيجارية الشهرية
+                  </p>
+                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
+                    <span className="text-emerald-700 dark:text-emerald-400">
+                      {totalShops} محل مسجل ({rentedShops} مؤجر)
+                    </span>
+                    <span className="text-muted-foreground group-hover:text-emerald-600 text-xs transition-transform group-hover:translate-x-[-2px]">
+                      فتح القسم ←
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card
+                onClick={() => setActiveTab("payments")}
+                className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
+                  activeTab === "payments"
+                    ? "border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/20 shadow-sm ring-2 ring-emerald-400/30"
+                    : "border-border/80 bg-card hover:border-emerald-500/40 hover:bg-accent/30"
+                }`}
+              >
+                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
+                  <div className="rounded-xl bg-gradient-to-br from-emerald-500/25 to-teal-500/25 text-emerald-600 dark:text-emerald-400 p-2.5 shadow-xs">
+                    <Calendar size={22} />
+                  </div>
+                  <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                    التحصيل
+                  </span>
+                </CardHeader>
+                <CardContent className="space-y-1.5 p-4 pt-0">
+                  <h3 className="font-black text-sm text-foreground group-hover:text-emerald-600 transition-colors">
+                    متابعة الدفعات والأقساط
+                  </h3>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                    تحصيل الإيجارات الشهرية، سجل الدفعات المسددة، وتتبع المتأخرات والمستحقات
+                  </p>
+                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
+                    <span className="text-emerald-700 dark:text-emerald-400">
+                      ${totalCollectedThisMonth.toLocaleString()} محصل هذا الشهر
+                    </span>
+                    <span className="text-muted-foreground group-hover:text-emerald-600 text-xs transition-transform group-hover:translate-x-[-2px]">
+                      فتح القسم ←
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card
+                onClick={() => setActiveTab("expenses")}
+                className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
+                  activeTab === "expenses"
+                    ? "border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/20 shadow-sm ring-2 ring-emerald-400/30"
+                    : "border-border/80 bg-card hover:border-emerald-500/40 hover:bg-accent/30"
+                }`}
+              >
+                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
+                  <div className="rounded-xl bg-gradient-to-br from-rose-500/20 to-orange-500/20 text-rose-600 dark:text-rose-400 p-2.5 shadow-xs">
+                    <CreditCard size={22} />
+                  </div>
+                  <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                    التشغيل
+                  </span>
+                </CardHeader>
+                <CardContent className="space-y-1.5 p-4 pt-0">
+                  <h3 className="font-black text-sm text-foreground group-hover:text-emerald-600 transition-colors">
+                    مصروفات وتشغيل المول
+                  </h3>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                    تسجيل فواتير الصيانة، الإنارة، الأمن، النظافة والخدمات العامة للمول
+                  </p>
+                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
+                    <span className="text-rose-600 dark:text-rose-400">
+                      ${totalGardenExpenseMonth.toLocaleString()} مصروفات
+                    </span>
+                    <span className="text-muted-foreground group-hover:text-emerald-600 text-xs transition-transform group-hover:translate-x-[-2px]">
+                      فتح القسم ←
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card
+                onClick={() => setActiveTab("reports")}
+                className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
+                  activeTab === "reports"
+                    ? "border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/20 shadow-sm ring-2 ring-emerald-400/30"
+                    : "border-border/80 bg-card hover:border-emerald-500/40 hover:bg-accent/30"
+                }`}
+              >
+                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
+                  <div className="rounded-xl bg-gradient-to-br from-purple-500/20 to-indigo-500/20 text-purple-600 dark:text-purple-400 p-2.5 shadow-xs">
+                    <TrendingUp size={22} />
+                  </div>
+                  <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                    التقارير
+                  </span>
+                </CardHeader>
+                <CardContent className="space-y-1.5 p-4 pt-0">
+                  <h3 className="font-black text-sm text-foreground group-hover:text-emerald-600 transition-colors">
+                    التقارير والملخص المالي
+                  </h3>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                    الملخص الشامل لإيرادات ومصروفات المول وصافي الدخل التشغيلي السنوي والشهري
+                  </p>
+                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
+                    <span className="text-purple-600 dark:text-purple-400">
+                      صافي ${netOperatingIncomeMonth.toLocaleString()}
+                    </span>
+                    <span className="text-muted-foreground group-hover:text-emerald-600 text-xs transition-transform group-hover:translate-x-[-2px]">
+                      فتح القسم ←
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </section>
+
+          {/* KPI Cards (4 Mall Cards) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card className="border border-border/80 bg-card shadow-sm rounded-2xl p-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-muted-foreground">إجمالي المحلات</span>
+                <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-600">
+                  <Store size={20} />
+                </div>
+              </div>
+              <div className="mt-3">
+                <h3 className="text-2xl font-black text-foreground">{totalShops}</h3>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  {rentedShops} مؤجر | {vacantShops} فارغ | {maintenanceShops} صيانة
+                </p>
+              </div>
+            </Card>
+
+            <Card className="border border-border/80 bg-card shadow-sm rounded-2xl p-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-muted-foreground">
+                  محصول الإيجار ({MONTHS_AR[selectedMonth - 1]})
+                </span>
+                <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-600">
+                  <DollarSign size={20} />
+                </div>
+              </div>
+              <div className="mt-3">
+                <h3 className="text-xl sm:text-2xl font-black text-emerald-600">
+                  ${totalCollectedThisMonth.toLocaleString()}
+                </h3>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  من إجمالي المستحق ${totalDueThisMonth.toLocaleString()}
+                </p>
+              </div>
+            </Card>
+
+            <Card className="border border-border/80 bg-card shadow-sm rounded-2xl p-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-muted-foreground">
+                  مصروفات وتشغيل المول
+                </span>
+                <div className="p-2.5 rounded-xl bg-rose-500/10 text-rose-600">
+                  <TrendingDown size={20} />
+                </div>
+              </div>
+              <div className="mt-3">
+                <h3 className="text-xl sm:text-2xl font-black text-rose-600">
+                  ${totalGardenExpenseMonth.toLocaleString()}
+                </h3>
+                <p className="text-[11px] text-muted-foreground mt-1">صيانة، كهرباء، أمن ونظافة</p>
+              </div>
+            </Card>
+
+            <Card className="border border-border/80 bg-card shadow-sm rounded-2xl p-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-muted-foreground">صافي الدخل التشغيلي</span>
+                <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-600">
+                  <Wallet size={20} />
+                </div>
+              </div>
+              <div className="mt-3">
+                <h3
+                  className={`text-xl sm:text-2xl font-black ${netOperatingIncomeMonth >= 0 ? "text-purple-600" : "text-rose-600"}`}
+                >
+                  ${netOperatingIncomeMonth.toLocaleString()}
+                </h3>
+                <p className="text-[11px] text-muted-foreground mt-1">الإيرادات ناقص المصروفات</p>
+              </div>
+            </Card>
+          </div>
+        </div>
+      )}
 
       {/* TAB 1: SHOPS LIST */}
       {activeTab === "shops" && (
@@ -2104,1371 +2226,6 @@ function MallManagementPage() {
         </div>
       )}
 
-      {/* TAB 3: PARK REVENUE & ENTRANCE TICKETS POS */}
-      {activeTab === "garden" && (
-        <>
-          {isParkPosOpen ? (
-            <ParkTicketsPOSView onClosePOS={() => setIsParkPosOpen(false)} />
-          ) : (
-            <div className="space-y-4">
-              {/* TOP HEADER BAR */}
-              <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4 bg-card p-4 rounded-2xl border border-border shadow-xs">
-                <div>
-                  <h2 className="text-base font-black text-foreground flex items-center gap-2">
-                    <Trees size={20} className="text-teal-600" />
-                    <span>سجل إيرادات وتذاكر الحديقة والمرافق</span>
-                  </h2>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    إدارة مبيعات تذاكر الدخول، الورديات، الخزائن التشغيلية الثمانية، وتصدير التقارير
-                    والقيود.
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Button
-                    onClick={handleOpenTicketsPos}
-                    className="bg-teal-600 hover:bg-teal-700 text-white font-black rounded-xl text-xs gap-1.5 cursor-pointer shadow-xs h-9 px-3.5"
-                  >
-                    <Ticket size={15} />
-                    تسجيل تذاكر الدخول (POS)
-                  </Button>
-
-                  <Button
-                    onClick={() => setIsParkShiftLauncherOpen(true)}
-                    variant="outline"
-                    className="border-teal-300 text-teal-700 hover:bg-teal-50 dark:border-teal-700 dark:text-teal-300 font-black rounded-xl text-xs gap-1.5 cursor-pointer h-9 px-3"
-                  >
-                    <Plus size={15} />
-                    فتح وردية جديدة
-                  </Button>
-
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setIsParkTreasuriesModalOpen(true)}
-                    className="rounded-xl text-xs font-bold gap-1.5 cursor-pointer"
-                  >
-                    <Landmark size={14} />
-                    الخزائن التشغيلية (8)
-                  </Button>
-
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setIsParkCustomersModalOpen(true)}
-                    className="rounded-xl text-xs font-bold gap-1.5 cursor-pointer"
-                  >
-                    <Users size={14} />
-                    إدارة العملاء
-                  </Button>
-
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setIsParkPricesModalOpen(true)}
-                    className="rounded-xl text-xs font-bold gap-1.5 cursor-pointer"
-                  >
-                    <Settings size={14} />
-                    أسعار التذاكر
-                  </Button>
-
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setIsParkShiftCloseModalOpen(true)}
-                    className="rounded-xl text-xs font-bold gap-1.5 cursor-pointer border-rose-200 text-rose-700 hover:bg-rose-50 dark:border-rose-900/50 dark:text-rose-400 dark:hover:bg-rose-900/20"
-                  >
-                    <History size={14} />
-                    سجل إغلاق الورديات
-                  </Button>
-                </div>
-              </div>
-
-              {/* TOP PROMINENT BOX: ACTIVE SESSIONS & SHIFTS (المربع الخاص بالجلسات المفتوحة في أعلى الصفحة) */}
-              {(() => {
-                const openShifts = (state.parkShifts || []).filter((s: any) => s.status === "open");
-                const sspRate = erpStore.getExchangeRate("SSP") || 3000;
-
-                return (
-                  <div className="bg-gradient-to-r from-teal-500/10 via-emerald-500/5 to-teal-500/10 border-2 border-teal-500/30 dark:border-teal-500/40 rounded-3xl p-4 sm:p-5 shadow-sm space-y-4">
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-teal-500/20 pb-3">
-                      <div className="flex items-center gap-2.5">
-                        <div className="p-2 rounded-xl bg-teal-600 text-white shadow-xs">
-                          <Clock size={18} className="animate-pulse" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-base font-black text-foreground">
-                              جلسات وورديات نقاط البيع المفتوحة (Active POS Shifts)
-                            </h3>
-                            <Badge className="bg-teal-600 text-white hover:bg-teal-700 font-black text-xs px-2 py-0.5 rounded-lg">
-                              {openShifts.length} وردية مفتوحة
-                            </Badge>
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            الورديات الجارية حالياً لتسجيل تذاكر الدخول ومتابعة المبيعات المباشرة
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <Button
-                          id="btn-open-new-shift-top"
-                          onClick={() => setIsParkShiftLauncherOpen(true)}
-                          className="bg-teal-600 hover:bg-teal-700 text-white font-black rounded-xl text-xs gap-1.5 cursor-pointer shadow-xs h-9 px-4"
-                        >
-                          <Plus size={15} />
-                          فتح وردية جديدة
-                        </Button>
-                      </div>
-                    </div>
-
-                    {openShifts.length === 0 ? (
-                      <div className="p-6 bg-card/80 backdrop-blur-xs rounded-2xl border border-dashed border-teal-500/30 text-center space-y-3">
-                        <Ticket className="mx-auto text-teal-600/70" size={36} />
-                        <div>
-                          <h4 className="text-sm font-black text-foreground">
-                            لا توجد وردية مفتوحة حالياً
-                          </h4>
-                          <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto">
-                            لبدء قطع تذاكر الحديقة والمرافق، يرجى فتح وردية جديدة وتعيين أمين
-                            الصندوق.
-                          </p>
-                        </div>
-                        <Button
-                          onClick={() => setIsParkShiftLauncherOpen(true)}
-                          className="bg-teal-600 hover:bg-teal-700 text-white font-black rounded-xl gap-2 cursor-pointer shadow-md text-xs px-5 h-10"
-                        >
-                          <Plus size={16} />
-                          بدء وفتح وردية تذاكر جديدة (POS)
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 gap-3">
-                        {openShifts.map((s: any) => {
-                          const shiftTxs = (state.parkTicketTransactions || []).filter(
-                            (tx: any) => tx.shift_id === s.id,
-                          );
-                          const shiftTotalUsd = shiftTxs
-                            .filter((tx: any) => tx.currency === "USD" && tx.status !== "refunded")
-                            .reduce(
-                              (acc: number, tx: any) => acc + (tx.total_paid_in_currency || 0),
-                              0,
-                            );
-                          const shiftTotalSsp = shiftTxs
-                            .filter((tx: any) => tx.currency === "SSP" && tx.status !== "refunded")
-                            .reduce(
-                              (acc: number, tx: any) => acc + (tx.total_paid_in_currency || 0),
-                              0,
-                            );
-
-                          return (
-                            <div
-                              key={s.id}
-                              className="bg-card border border-teal-500/30 p-4 rounded-2xl shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:border-teal-500/60 transition"
-                            >
-                              <div className="space-y-2">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-black text-base text-foreground font-mono">
-                                    {s.shift_number}
-                                  </span>
-                                  <Badge className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 font-black text-xs">
-                                    ● جارية الآن
-                                  </Badge>
-                                  <span className="bg-teal-500/10 text-teal-700 dark:text-teal-400 px-2 py-0.5 rounded-md font-mono text-[11px] border border-teal-500/20">
-                                    رقم النظام: {s.auto_shift_number}
-                                  </span>
-                                </div>
-
-                                <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-muted-foreground">
-                                  <span className="flex items-center gap-1 bg-muted/80 px-2.5 py-1 rounded-lg text-foreground">
-                                    <User size={13} className="text-teal-600" /> الكاشير:{" "}
-                                    {s.cashier_name}
-                                  </span>
-                                  <span className="flex items-center gap-1 bg-muted/80 px-2.5 py-1 rounded-lg">
-                                    <Calendar size={13} className="text-muted-foreground" />{" "}
-                                    {new Date(s.start_at).toLocaleDateString("ar-EG")} -{" "}
-                                    {new Date(s.start_at).toLocaleTimeString("ar-EG")}
-                                  </span>
-                                  <span className="font-mono text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-lg text-xs">
-                                    معامل SSP: 1$ = {sspRate.toLocaleString()} SSP
-                                  </span>
-                                  <span className="flex items-center gap-1 text-teal-700 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/40 px-2.5 py-1 rounded-lg border border-teal-200/50 font-mono font-black">
-                                    <ShoppingCart size={13} /> {shiftTxs.length} تذكرة | $
-                                    {shiftTotalUsd.toLocaleString()}{" "}
-                                    {shiftTotalSsp > 0 && `+ ${shiftTotalSsp.toLocaleString()} SSP`}
-                                  </span>
-                                </div>
-                              </div>
-
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <Button
-                                  variant="default"
-                                  className="rounded-xl font-black cursor-pointer h-9 px-4 bg-teal-600 hover:bg-teal-700 text-white text-xs shadow-xs gap-1.5"
-                                  onClick={() => {
-                                    try {
-                                      erpStore.resumeParkShift(s.id);
-                                      setIsParkPosOpen(true);
-                                    } catch (e: any) {
-                                      toast.error(e.message);
-                                    }
-                                  }}
-                                >
-                                  <ArrowRight size={14} /> دخول شاشة التذاكر (POS)
-                                </Button>
-
-                                <Button
-                                  variant="outline"
-                                  className="rounded-xl font-bold cursor-pointer h-9 px-3 text-amber-700 bg-amber-50 hover:bg-amber-100 border-amber-200 text-xs gap-1"
-                                  onClick={() => {
-                                    const newName = prompt(
-                                      "تعديل اسم أمين الصندوق:",
-                                      s.cashier_name,
-                                    );
-                                    if (newName && newName.trim()) {
-                                      erpStore.updateParkShift(s.id, { cashier_name: newName });
-                                      toast.success("تم التعديل بنجاح");
-                                    }
-                                  }}
-                                >
-                                  <Edit size={13} /> تعديل الكاشير
-                                </Button>
-
-                                <Button
-                                  variant="outline"
-                                  className="rounded-xl font-bold cursor-pointer h-9 px-3 text-slate-700 bg-slate-50 hover:bg-slate-100 border-slate-200 text-xs gap-1"
-                                  onClick={() => {
-                                    setShiftToCloseFromLauncher(s);
-                                  }}
-                                >
-                                  <Printer size={13} /> تقرير الإغلاق
-                                </Button>
-
-                                <Button
-                                  variant="outline"
-                                  className="rounded-xl font-bold cursor-pointer h-9 px-3 text-rose-600 bg-rose-50 hover:bg-rose-100 border-rose-200 text-xs gap-1"
-                                  onClick={() => {
-                                    try {
-                                      setShiftToCloseFromLauncher(s);
-                                    } catch (e: any) {
-                                      toast.error(e.message);
-                                    }
-                                  }}
-                                >
-                                  <Lock size={13} /> إغلاق الوردية
-                                </Button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-
-              {/* REQUIREMENT 9 & 10: 8 OPERATIONAL SHIFT TREASURIES SUMMARY */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-black text-foreground flex items-center gap-1.5">
-                    <Wallet size={14} className="text-teal-600" />
-                    الخزائن التشغيلية للوردية (8 خزائن منفصلة حسب العملة وطريقة الدفع):
-                  </h3>
-                  <button
-                    onClick={() => setIsParkTreasuriesModalOpen(true)}
-                    className="text-[11px] font-bold text-teal-600 hover:underline cursor-pointer"
-                  >
-                    ربط بالخزائن الحقيقية &larr;
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
-                  {(erpStore.getParkOperationalTreasuries
-                    ? erpStore.getParkOperationalTreasuries()
-                    : []
-                  ).map((opTr) => {
-                    const realTr = (state.treasuries || []).find(
-                      (t) => t.id === opTr.linked_real_treasury_id,
-                    );
-                    return (
-                      <div
-                        key={opTr.id}
-                        className="p-2.5 rounded-2xl bg-card border border-border/80 flex flex-col justify-between hover:border-teal-500/50 transition"
-                      >
-                        <span
-                          className="text-[10px] font-bold text-muted-foreground truncate"
-                          title={opTr.name_ar || ""}
-                        >
-                          {(opTr.name_ar || "").replace("Park Tickets - ", "")}
-                        </span>
-                        <div className="mt-1">
-                          <span className="text-xs font-black text-teal-600 block">
-                            {opTr.currency === "USD"
-                              ? `$${opTr.balance || 0}`
-                              : `${(opTr.balance || 0).toLocaleString()} ${opTr.currency}`}
-                          </span>
-                          <span
-                            className="text-[9px] text-muted-foreground block truncate"
-                            title={realTr?.name_ar || "الرئيسية"}
-                          >
-                            مربوط بـ: {realTr ? realTr.name_ar : "الرئيسية"}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* REQUIREMENT 20 & 21: FAST SEARCH & REPORT FILTER TOOLBAR */}
-              <Card className="border border-border/80 bg-card rounded-2xl shadow-xs">
-                <CardHeader className="p-4 border-b border-border/60">
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-                    {/* Report type filter */}
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-foreground shrink-0">عرض السجل:</span>
-                      <div className="flex items-center gap-1 bg-muted p-1 rounded-xl">
-                        <button
-                          onClick={() => setParkReportType("transactions")}
-                          className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                            parkReportType === "transactions"
-                              ? "bg-card text-teal-600 shadow-xs"
-                              : "text-muted-foreground hover:text-foreground"
-                          }`}
-                        >
-                          حركات الفواتير والتذاكر
-                        </button>
-                        <button
-                          onClick={() => setParkReportType("journal_entries")}
-                          className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                            parkReportType === "journal_entries"
-                              ? "bg-card text-teal-600 shadow-xs"
-                              : "text-muted-foreground hover:text-foreground"
-                          }`}
-                        >
-                          القيود المحاسبية (MM/NN)
-                        </button>
-                        <button
-                          onClick={() => setParkReportType("closed_shifts")}
-                          className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                            parkReportType === "closed_shifts"
-                              ? "bg-card text-teal-600 shadow-xs"
-                              : "text-muted-foreground hover:text-foreground"
-                          }`}
-                        >
-                          الورديات المغلقة
-                        </button>
-                        <button
-                          onClick={() => setParkReportType("open_shifts")}
-                          className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
-                            parkReportType === "open_shifts"
-                              ? "bg-card text-teal-600 shadow-xs"
-                              : "text-muted-foreground hover:text-foreground"
-                          }`}
-                        >
-                          <Clock size={12} />
-                          الورديات المفتوحة
-                        </button>
-                        <button
-                          onClick={() => setParkReportType("shift_audit" as any)}
-                          className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
-                            parkReportType === ("shift_audit" as any)
-                              ? "bg-card text-teal-600 shadow-xs"
-                              : "text-muted-foreground hover:text-foreground"
-                          }`}
-                        >
-                          <Database size={12} />
-                          تدقيق الورديات (Supabase)
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Search, Date Calendar Filter & Export */}
-                    <div className="flex flex-wrap items-center gap-2">
-                      {/* Date Filter & Calendar Picker */}
-                      <div className="flex items-center gap-1 bg-muted/60 border border-border p-1 rounded-xl">
-                        <Calendar size={14} className="text-teal-600 mr-1 ml-1" />
-                        <input
-                          type="date"
-                          value={parkDateFilter}
-                          onChange={(e) => setParkDateFilter(e.target.value)}
-                          className="h-7 px-2 text-xs font-bold bg-background border border-border rounded-lg text-foreground focus:outline-none focus:ring-1 focus:ring-teal-500 cursor-pointer"
-                          title="اختيار التاريخ المطلوب من التقويم (Calendar Date Search)"
-                        />
-                        {parkDateFilter ? (
-                          <button
-                            type="button"
-                            onClick={() => setParkDateFilter("")}
-                            className="text-[10px] font-black bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 px-1.5 py-1 rounded-md transition cursor-pointer"
-                            title="مسح تصفية التاريخ (Clear Date)"
-                          >
-                            مسح
-                          </button>
-                        ) : (
-                          <div className="flex items-center gap-0.5">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const today = new Date().toISOString().split("T")[0];
-                                setParkDateFilter(today);
-                              }}
-                              className="text-[10px] font-bold text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded transition hover:bg-card cursor-pointer"
-                            >
-                              اليوم
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const d = new Date();
-                                d.setDate(d.getDate() - 1);
-                                setParkDateFilter(d.toISOString().split("T")[0]);
-                              }}
-                              className="text-[10px] font-bold text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded transition hover:bg-card cursor-pointer"
-                            >
-                              أمس
-                            </button>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="relative w-full sm:w-[240px]">
-                        <Search className="absolute right-3 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-                        <Input
-                          placeholder="بحث بالسرعة (تاريخ، رقم قيد MM/NN، رقم فاتورة)..."
-                          value={parkSearchQuery}
-                          onChange={(e) => setParkSearchQuery(e.target.value)}
-                          className="pr-9 h-8 rounded-xl text-xs font-medium"
-                        />
-                      </div>
-
-                      {/* REQUIREMENT 22: Excel export */}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          const parkTxs = state.parkTicketTransactions || [];
-                          let csvContent = "\uFEFF";
-                          csvContent +=
-                            "الرقم الفعلي (رقم النظام),الرقم الآخر (القابل للتعديل),اسم الكاشير,التاريخ,الوقت,العملة,المعامل (إذا كانت العملة غير الدولار),المبلغ بالعملة,المعادل بالدولار ($),طريقة الدفع,العميل / البيان,رقم القيد (MM/NN),الحالة,ملاحظات\n";
-                          parkTxs.forEach((t: any) => {
-                            const rateStr =
-                              t.currency !== "USD"
-                                ? `1$ = ${Number(t.exchange_rate || 3000).toLocaleString()} ${t.currency}`
-                                : "1.00";
-                            csvContent += `"${t.tx_number}","${t.manual_tx_number || t.reference_number || t.tx_number}","${t.created_by || "-"}",${t.transaction_date},${t.transaction_time},${t.currency},"${rateStr}",${t.total_paid_in_currency},${t.total_usd},${t.payment_method},"${t.customer_name || "عميل نقدي"}",${t.journal_entry_ref || "-"},${t.status},"${(t.notes || "").replace(/"/g, '""')}"\n`;
-                          });
-                          const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-                          const url = URL.createObjectURL(blob);
-                          const link = document.createElement("a");
-                          link.setAttribute("href", url);
-                          link.setAttribute(
-                            "download",
-                            `تقرير_تذاكر_الحديقة_الشامل_${new Date().toISOString().split("T")[0]}.csv`,
-                          );
-                          document.body.appendChild(link);
-                          link.click();
-                          document.body.removeChild(link);
-                          URL.revokeObjectURL(url);
-                          toast.success(
-                            "تم تصدير ملف Excel (CSV) بنجاح متضمناً جميع الخانات الجديدة!",
-                          );
-                        }}
-                        className="rounded-xl text-xs font-bold gap-1 cursor-pointer h-8"
-                      >
-                        <FileSpreadsheet size={14} className="text-emerald-600" />
-                        تصدير Excel
-                      </Button>
-
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          const parkTxs = state.parkTicketTransactions || [];
-                          const html = `
-                            <!DOCTYPE html>
-                            <html dir="rtl" lang="ar">
-                            <head>
-                              <meta charset="utf-8">
-                              <title>تقرير مبيعات تذاكر الحديقة</title>
-                              <style>
-                                @page { size: A4 landscape; margin: 15mm; }
-                                body { font-family: 'Tajawal', sans-serif; font-size: 11px; }
-                                table { width: 100%; border-collapse: collapse; margin-top: 15px; text-align: right; }
-                                th, td { border: 1px solid #ccc; padding: 6px; }
-                                th { background: #f3f4f6; font-weight: bold; }
-                                .header { text-align: center; margin-bottom: 20px; }
-                                .header h2 { font-size: 18px; margin: 0 0 5px 0; }
-                              </style>
-                            </head>
-                            <body>
-                              <div class="header">
-                                <h2>تقرير مبيعات تذاكر الحديقة الشامل</h2>
-                                <p>تاريخ الطباعة: ${new Date().toLocaleString("ar-EG")}</p>
-                              </div>
-                              <table>
-                                <thead>
-                                  <tr>
-                                    <th>رقم الفاتورة</th>
-                                    <th>الكاشير</th>
-                                    <th>التاريخ والوقت</th>
-                                    <th>العملة</th>
-                                    <th>المبلغ بالعملة</th>
-                                    <th>المعادل ($)</th>
-                                    <th>طريقة الدفع</th>
-                                    <th>رقم القيد</th>
-                                    <th>الحالة</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  ${parkTxs
-                                    .map(
-                                      (t) => `
-                                    <tr>
-                                      <td>${t.tx_number}</td>
-                                      <td>${t.created_by || "-"}</td>
-                                      <td>${t.transaction_date} ${t.transaction_time}</td>
-                                      <td>${t.currency}</td>
-                                      <td>${t.total_paid_in_currency}</td>
-                                      <td>${t.total_usd}</td>
-                                      <td>${t.payment_method}</td>
-                                      <td>${t.journal_entry_ref || "-"}</td>
-                                      <td>${t.status === "refunded" ? "مرتجع" : "مكتملة"}</td>
-                                    </tr>
-                                  `,
-                                    )
-                                    .join("")}
-                                </tbody>
-                              </table>
-                            </body>
-                            </html>
-                          `;
-
-                          import("@/shared/utils/printAccountingDocument").then(
-                            ({ printRawHtml }) => {
-                              printRawHtml(html);
-                            },
-                          );
-                        }}
-                        className="rounded-xl text-xs font-bold gap-1 cursor-pointer h-8"
-                      >
-                        <Printer size={14} />
-                        طباعة المستند
-                      </Button>
-                    </div>
-                  </div>
-                </CardHeader>
-
-                <CardContent className="p-0">
-                  {/* TRANSACTIONS TABLE */}
-                  {parkReportType === "transactions" && (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-right border-collapse text-xs">
-                        <thead>
-                          <tr className="border-b border-border bg-muted/40 font-black text-muted-foreground">
-                            <th className="p-3">الرقم الفعلي (النظام)</th>
-                            <th className="p-3">الرقم الآخر (قابل للتعديل)</th>
-                            <th className="p-3">التاريخ</th>
-                            <th className="p-3">الوقت</th>
-                            <th className="p-3">اسم الكاشير</th>
-                            <th className="p-3">العملة</th>
-                            <th className="p-3">المعامل (إذا كانت غير الدولار)</th>
-                            <th className="p-3">المبلغ بالعملة</th>
-                            <th className="p-3">المعادل ($)</th>
-                            <th className="p-3">طريقة الدفع</th>
-                            <th className="p-3">العميل / البيان</th>
-                            <th className="p-3">رقم القيد (MM/NN)</th>
-                            <th className="p-3 text-center">الحالة</th>
-                            <th className="p-3 text-center">الإجراءات</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-border">
-                          {((state && state.parkTicketTransactions) || [])
-                            .filter((tx: any) => {
-                              if (parkDateFilter) {
-                                const txDate = tx.transaction_date || "";
-                                if (!txDate.includes(parkDateFilter)) return false;
-                              }
-                              if (!parkSearchQuery.trim()) return true;
-                              const q = parkSearchQuery.toLowerCase();
-                              return (
-                                tx.tx_number?.toLowerCase().includes(q) ||
-                                tx.manual_tx_number?.toLowerCase().includes(q) ||
-                                tx.reference_number?.toLowerCase().includes(q) ||
-                                tx.created_by?.toLowerCase().includes(q) ||
-                                tx.journal_entry_ref?.toLowerCase().includes(q) ||
-                                tx.transaction_date?.includes(q) ||
-                                tx.customer_name?.toLowerCase().includes(q) ||
-                                tx.notes?.toLowerCase().includes(q)
-                              );
-                            })
-                            .map((tx: any) => {
-                              const manualNum =
-                                tx.manual_tx_number || tx.reference_number || tx.tx_number;
-                              const cashier =
-                                tx.created_by ||
-                                state.parkShifts?.find((s: any) => s.id === tx.shift_id)
-                                  ?.cashier_name ||
-                                "أمين الصندوق";
-                              return (
-                                <tr key={tx.id} className="hover:bg-muted/30 transition">
-                                  {/* 1. الرقم الفعلي */}
-                                  <td className="p-3">
-                                    <span className="font-mono font-black text-teal-700 dark:text-teal-400 bg-teal-500/10 px-2 py-1 rounded-lg">
-                                      {tx.tx_number}
-                                    </span>
-                                  </td>
-
-                                  {/* 2. الرقم الآخر (قابل للتعديل) */}
-                                  <td className="p-3">
-                                    <div className="flex items-center gap-1.5 font-bold">
-                                      <span className="font-mono text-foreground font-black">
-                                        {manualNum}
-                                      </span>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          const newVal = prompt(
-                                            "تعديل الرقم الآخر (رقم السند أو الإيصال اليدوي القابل للتعديل):",
-                                            manualNum,
-                                          );
-                                          if (newVal !== null && newVal.trim() !== "") {
-                                            erpStore.updateParkTicketTransaction(tx.id, {
-                                              manual_tx_number: newVal.trim(),
-                                            });
-                                            toast.success("تم تحديث الرقم الآخر بنجاح!");
-                                          }
-                                        }}
-                                        className="text-muted-foreground hover:text-teal-600 p-1 rounded-md hover:bg-muted transition cursor-pointer"
-                                        title="تعديل هذا الرقم"
-                                      >
-                                        <Edit size={12} />
-                                      </button>
-                                    </div>
-                                  </td>
-
-                                  {/* 3. التاريخ */}
-                                  <td className="p-3 font-bold text-foreground">
-                                    {tx.transaction_date}
-                                  </td>
-
-                                  {/* 4. الوقت */}
-                                  <td className="p-3 font-mono text-muted-foreground font-bold">
-                                    {tx.transaction_time}
-                                  </td>
-
-                                  {/* 5. اسم الكاشير */}
-                                  <td className="p-3 font-bold text-foreground">
-                                    <div className="flex items-center gap-1">
-                                      <User size={13} className="text-muted-foreground shrink-0" />
-                                      <span>{cashier}</span>
-                                    </div>
-                                  </td>
-
-                                  {/* 6. العملة */}
-                                  <td className="p-3">
-                                    <Badge
-                                      variant="outline"
-                                      className={`font-mono font-bold text-[10px] ${
-                                        tx.currency === "USD"
-                                          ? "text-emerald-600 border-emerald-500/30 bg-emerald-500/5"
-                                          : "text-blue-600 border-blue-500/30 bg-blue-500/5"
-                                      }`}
-                                    >
-                                      {tx.currency}
-                                    </Badge>
-                                  </td>
-
-                                  {/* 7. المعامل إذا كانت العملة غير الدولار */}
-                                  <td className="p-3">
-                                    {tx.currency !== "USD" ? (
-                                      <span
-                                        className="font-mono font-black text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-lg text-[11px]"
-                                        title={`سعر الصرف: 1 USD = ${Number(tx.exchange_rate || 3000).toLocaleString()} ${tx.currency}`}
-                                      >
-                                        1$ = {Number(tx.exchange_rate || 3000).toLocaleString()}{" "}
-                                        {tx.currency}
-                                      </span>
-                                    ) : (
-                                      <span className="text-muted-foreground font-mono text-[11px]">
-                                        - (1.00)
-                                      </span>
-                                    )}
-                                  </td>
-
-                                  {/* 8. المبلغ بالعملة المحصلة */}
-                                  <td className="p-3 font-black text-teal-600">
-                                    {tx.currency === "USD"
-                                      ? `$${tx.total_paid_in_currency}`
-                                      : `${(tx.total_paid_in_currency || 0).toLocaleString()} SSP`}
-                                  </td>
-
-                                  {/* 9. المعادل بالدولار ($) */}
-                                  <td className="p-3 font-mono font-bold text-muted-foreground">
-                                    ${Number(tx.total_usd || 0).toFixed(2)}
-                                  </td>
-
-                                  {/* 10. طريقة الدفع */}
-                                  <td className="p-3 font-bold">
-                                    <Badge variant="outline" className="text-[10px]">
-                                      {tx.payment_method === "cash"
-                                        ? "نقدي"
-                                        : tx.payment_method === "visa"
-                                          ? "فيزا"
-                                          : tx.payment_method === "bank_transfer"
-                                            ? "تحويل بنكي"
-                                            : "آجل"}
-                                    </Badge>
-                                  </td>
-
-                                  {/* 11. العميل / البيان */}
-                                  <td className="p-3 font-bold text-foreground">
-                                    <div>{tx.customer_name || "عميل نقدي"}</div>
-                                    {tx.notes && (
-                                      <div
-                                        className="text-[10px] text-muted-foreground font-normal truncate max-w-[180px]"
-                                        title={tx.notes}
-                                      >
-                                        {tx.notes}
-                                      </div>
-                                    )}
-                                  </td>
-
-                                  {/* 12. رقم القيد (MM/NN) */}
-                                  <td className="p-3 font-mono font-bold text-primary">
-                                    {tx.journal_entry_ref || "-"}
-                                  </td>
-
-                                  {/* 13. الحالة */}
-                                  <td className="p-3 text-center">
-                                    <Badge
-                                      variant="outline"
-                                      className={
-                                        tx.status === "refunded"
-                                          ? "bg-rose-500/10 text-rose-600 border-rose-500/30 text-[10px]"
-                                          : "bg-emerald-500/10 text-emerald-600 border-emerald-500/30 text-[10px]"
-                                      }
-                                    >
-                                      {tx.status === "refunded" ? "مرتجع / ملغاة" : "مكتملة"}
-                                    </Badge>
-                                  </td>
-
-                                  {/* 14. الإجراءات */}
-                                  <td className="p-3 text-center">
-                                    <div className="flex items-center justify-center gap-1">
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        onClick={() => setSelectedParkTxForPreview(tx)}
-                                        className="h-7 px-2 text-[11px] font-bold text-teal-600 hover:bg-teal-50 rounded-lg cursor-pointer"
-                                      >
-                                        <Eye size={13} className="mr-1" /> معاينة
-                                      </Button>
-
-                                      {tx.status !== "refunded" && (
-                                        <Button
-                                          size="sm"
-                                          variant="ghost"
-                                          onClick={() => setSelectedParkTxForRefund(tx)}
-                                          className="h-7 px-2 text-[11px] font-bold text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
-                                        >
-                                          <RotateCcw size={13} className="mr-1" /> إرجاع
-                                        </Button>
-                                      )}
-                                    </div>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-
-                          {(!state.parkTicketTransactions ||
-                            state.parkTicketTransactions.length === 0) && (
-                            <tr>
-                              <td
-                                colSpan={14}
-                                className="text-center py-8 text-muted-foreground font-bold"
-                              >
-                                لا توجد معاملات تذاكر مسجلة بعد. انقر على &quot;تسجيل تذاكر الدخول
-                                (POS)&quot; لبدء مبيعات التذاكر.
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-
-                  {/* JOURNAL ENTRIES TABLE (MM/NN format verification) */}
-                  {parkReportType === "journal_entries" && (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-right border-collapse text-xs">
-                        <thead>
-                          <tr className="border-b border-border bg-muted/40 font-black text-muted-foreground">
-                            <th className="p-3">رقم القيد الفعلي (MM/NN)</th>
-                            <th className="p-3">الرقم المرجعي (المصدر)</th>
-                            <th className="p-3">التاريخ</th>
-                            <th className="p-3">الوقت</th>
-                            <th className="p-3">اسم الكاشير / المسؤول</th>
-                            <th className="p-3">البيان / الوصف</th>
-                            <th className="p-3">المعامل (إذا كانت غير الدولار)</th>
-                            <th className="p-3 text-left">إجمالي المدين</th>
-                            <th className="p-3 text-left">إجمالي الدائن</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-border">
-                          {(state.journalEntries || [])
-                            .filter((je: any) => {
-                              return (
-                                je.description?.includes("تذاكر") ||
-                                je.description?.includes("الحديقة") ||
-                                je.reference?.includes("PARK")
-                              );
-                            })
-                            .filter((je: any) => {
-                              if (parkDateFilter) {
-                                const entryDate = je.entry_date || "";
-                                const createdDate = je.created_at || "";
-                                if (
-                                  !entryDate.includes(parkDateFilter) &&
-                                  !createdDate.includes(parkDateFilter)
-                                ) {
-                                  return false;
-                                }
-                              }
-                              if (!parkSearchQuery.trim()) return true;
-                              const q = parkSearchQuery.toLowerCase();
-                              return (
-                                (je.reference || je.id)?.toLowerCase().includes(q) ||
-                                je.source?.toLowerCase().includes(q) ||
-                                je.description?.toLowerCase().includes(q) ||
-                                je.created_by?.toLowerCase().includes(q) ||
-                                je.entry_date?.includes(q)
-                              );
-                            })
-                            .map((je: any) => {
-                              const totalDebit =
-                                je.lines?.reduce((s: number, l: any) => s + (l.debit || 0), 0) || 0;
-                              const totalCredit =
-                                je.lines?.reduce((s: number, l: any) => s + (l.credit || 0), 0) ||
-                                0;
-                              const sspRate = erpStore.getExchangeRate("SSP") || 3000;
-                              return (
-                                <tr key={je.id} className="hover:bg-muted/30 transition">
-                                  {/* 1. رقم القيد الفعلي */}
-                                  <td className="p-3 font-mono font-black text-primary">
-                                    {je.reference || je.id}
-                                  </td>
-
-                                  {/* 2. الرقم المرجعي */}
-                                  <td className="p-3 font-mono font-bold text-foreground">
-                                    {je.source || "-"}
-                                  </td>
-
-                                  {/* 3. التاريخ */}
-                                  <td className="p-3 font-bold">{je.entry_date}</td>
-
-                                  {/* 4. الوقت */}
-                                  <td className="p-3 font-mono text-muted-foreground font-bold">
-                                    {je.created_at
-                                      ? new Date(je.created_at).toLocaleTimeString("ar-EG")
-                                      : "-"}
-                                  </td>
-
-                                  {/* 5. اسم الكاشير */}
-                                  <td className="p-3 font-bold text-foreground">
-                                    <div className="flex items-center gap-1">
-                                      <User size={13} className="text-muted-foreground shrink-0" />
-                                      <span>{je.created_by || "أمين الصندوق / الإدارة"}</span>
-                                    </div>
-                                  </td>
-
-                                  {/* 6. البيان */}
-                                  <td className="p-3 font-bold text-foreground">
-                                    {je.description}
-                                  </td>
-
-                                  {/* 7. المعامل إذا كانت العملة غير الدولار */}
-                                  <td className="p-3">
-                                    {je.description?.includes("SSP") || je.currency === "SSP" ? (
-                                      <span className="font-mono font-black text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-lg text-[11px]">
-                                        1$ = {sspRate.toLocaleString()} SSP
-                                      </span>
-                                    ) : (
-                                      <span className="text-muted-foreground font-mono text-[11px]">
-                                        - (1.00)
-                                      </span>
-                                    )}
-                                  </td>
-
-                                  {/* 8. إجمالي المدين */}
-                                  <td className="p-3 text-left font-black text-emerald-600">
-                                    ${totalDebit.toLocaleString()}
-                                  </td>
-
-                                  {/* 9. إجمالي الدائن */}
-                                  <td className="p-3 text-left font-black text-rose-600">
-                                    ${totalCredit.toLocaleString()}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-
-                  {/* CLOSED SHIFTS TABLE */}
-                  {parkReportType === "closed_shifts" && (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-right border-collapse text-xs">
-                        <thead>
-                          <tr className="border-b border-border bg-muted/40 font-black text-muted-foreground">
-                            <th className="p-3">الرقم الفعلي (رقم النظام)</th>
-                            <th className="p-3">الرقم الآخر (قابل للتعديل)</th>
-                            <th className="p-3">اسم الكاشير</th>
-                            <th className="p-3">تاريخ ووقت البدء</th>
-                            <th className="p-3">تاريخ ووقت الإغلاق</th>
-                            <th className="p-3">المعامل (إذا كانت العملة غير الدولار)</th>
-                            <th className="p-3">القيود المحاسبية التابعة (MM/NN)</th>
-                            <th className="p-3 text-center">الحالة</th>
-                            <th className="p-3 text-center">تقرير الإغلاق</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-border">
-                          {(state.parkShifts || [])
-                            .filter((s: any) => s.status === "closed")
-                            .filter((s: any) => {
-                              if (parkDateFilter) {
-                                const startDate = s.start_at || "";
-                                const endDate = s.end_at || "";
-                                if (
-                                  !startDate.includes(parkDateFilter) &&
-                                  !endDate.includes(parkDateFilter)
-                                ) {
-                                  return false;
-                                }
-                              }
-                              if (!parkSearchQuery.trim()) return true;
-                              const q = parkSearchQuery.toLowerCase();
-                              return (
-                                s.shift_number?.toLowerCase().includes(q) ||
-                                s.auto_shift_number?.toLowerCase().includes(q) ||
-                                s.cashier_name?.toLowerCase().includes(q) ||
-                                s.generated_journal_refs?.some((r: string) =>
-                                  r.toLowerCase().includes(q),
-                                )
-                              );
-                            })
-                            .map((s: any) => {
-                              const sspRate = erpStore.getExchangeRate("SSP") || 3000;
-                              return (
-                                <tr key={s.id} className="hover:bg-muted/30 transition">
-                                  {/* 1. الرقم الفعلي */}
-                                  <td className="p-3">
-                                    <span className="font-mono font-black text-teal-700 dark:text-teal-400 bg-teal-500/10 px-2 py-1 rounded-lg">
-                                      {s.auto_shift_number || s.id}
-                                    </span>
-                                  </td>
-
-                                  {/* 2. الرقم الآخر (قابل للتعديل) */}
-                                  <td className="p-3">
-                                    <div className="flex items-center gap-1.5 font-bold">
-                                      <span className="font-mono text-foreground font-black">
-                                        {s.shift_number}
-                                      </span>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          const newVal = prompt(
-                                            "تعديل الرقم الآخر (رقم الوردية القابل للتعديل):",
-                                            s.shift_number,
-                                          );
-                                          if (newVal !== null && newVal.trim() !== "") {
-                                            erpStore.updateParkShift(s.id, {
-                                              shift_number: newVal.trim(),
-                                            });
-                                            toast.success("تم تحديث رقم الوردية بنجاح!");
-                                          }
-                                        }}
-                                        className="text-muted-foreground hover:text-teal-600 p-1 rounded-md hover:bg-muted transition cursor-pointer"
-                                        title="تعديل هذا الرقم"
-                                      >
-                                        <Edit size={12} />
-                                      </button>
-                                    </div>
-                                  </td>
-
-                                  {/* 3. اسم الكاشير */}
-                                  <td className="p-3">
-                                    <div className="flex items-center gap-1.5 font-bold">
-                                      <User size={13} className="text-muted-foreground shrink-0" />
-                                      <span>{s.cashier_name}</span>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          const newVal = prompt(
-                                            "تعديل اسم الكاشير:",
-                                            s.cashier_name,
-                                          );
-                                          if (newVal !== null && newVal.trim() !== "") {
-                                            erpStore.updateParkShift(s.id, {
-                                              cashier_name: newVal.trim(),
-                                            });
-                                            toast.success("تم تحديث اسم الكاشير بنجاح!");
-                                          }
-                                        }}
-                                        className="text-muted-foreground hover:text-teal-600 p-1 rounded-md hover:bg-muted transition cursor-pointer"
-                                        title="تعديل اسم الكاشير"
-                                      >
-                                        <Edit size={12} />
-                                      </button>
-                                    </div>
-                                  </td>
-
-                                  {/* 4. تاريخ ووقت البدء */}
-                                  <td className="p-3">
-                                    <div className="font-bold text-foreground">
-                                      {new Date(s.start_at).toLocaleDateString("ar-EG")}
-                                    </div>
-                                    <div className="font-mono text-[10px] text-muted-foreground">
-                                      {new Date(s.start_at).toLocaleTimeString("ar-EG")}
-                                    </div>
-                                  </td>
-
-                                  {/* 5. تاريخ ووقت الإغلاق */}
-                                  <td className="p-3">
-                                    {s.end_at ? (
-                                      <div>
-                                        <div className="font-bold text-foreground">
-                                          {new Date(s.end_at).toLocaleDateString("ar-EG")}
-                                        </div>
-                                        <div className="font-mono text-[10px] text-muted-foreground">
-                                          {new Date(s.end_at).toLocaleTimeString("ar-EG")}
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      "-"
-                                    )}
-                                  </td>
-
-                                  {/* 6. المعامل إذا كانت العملة غير الدولار */}
-                                  <td className="p-3">
-                                    <span
-                                      className="font-mono font-black text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-lg text-[11px]"
-                                      title="معامل تحويل الجنيه الجنوب سوداني"
-                                    >
-                                      1$ = {sspRate.toLocaleString()} SSP
-                                    </span>
-                                  </td>
-
-                                  {/* 7. القيود المحاسبية التابعة */}
-                                  <td className="p-3 font-mono text-primary font-bold">
-                                    {s.generated_journal_refs?.join(", ") || "-"}
-                                  </td>
-
-                                  {/* 8. الحالة */}
-                                  <td className="p-3 text-center">
-                                    <Badge
-                                      variant="outline"
-                                      className="bg-slate-500/10 text-slate-600"
-                                    >
-                                      مغلقة ومرحلة
-                                    </Badge>
-                                  </td>
-
-                                  {/* 9. تقرير الإغلاق */}
-                                  <td className="p-3 text-center">
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() => setSelectedClosedShiftForReport(s)}
-                                      className="rounded-xl text-xs font-bold gap-1 text-teal-700 hover:bg-teal-50 border-teal-300 cursor-pointer h-8"
-                                    >
-                                      <Printer size={13} />
-                                      استعراض وطباعة التقرير
-                                    </Button>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-
-                  {/* OPEN SHIFTS TABLE */}
-                  {parkReportType === "open_shifts" && (
-                    <div className="space-y-4 p-4">
-                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 bg-teal-500/5 rounded-2xl border border-teal-500/20">
-                        <div className="flex items-center gap-2">
-                          <Clock size={18} className="text-teal-600" />
-                          <div>
-                            <h3 className="text-sm font-black text-foreground">
-                              جلسات وورديات تذاكر الحديقة
-                            </h3>
-                            <p className="text-xs text-muted-foreground">
-                              استعراض الجلسات المفتوحة أو فتح جلسة جديدة بالبيانات التي تحددها
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            onClick={() => setIsShiftAuditModalOpen(true)}
-                            variant="outline"
-                            className="border-teal-500/40 text-teal-600 hover:bg-teal-500/10 font-bold rounded-xl gap-1.5 cursor-pointer shadow-xs text-xs h-9"
-                          >
-                            <Database size={15} />
-                            سجل تدقيق الورديات (Supabase)
-                          </Button>
-                          <Button
-                            id="btn-open-new-shift-manual"
-                            onClick={() => setIsParkShiftLauncherOpen(true)}
-                            className="bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl gap-1.5 cursor-pointer shadow-xs text-xs h-9"
-                          >
-                            <Plus size={15} />
-                            فتح وردية جديدة
-                          </Button>
-                        </div>
-                      </div>
-
-                      {(state.parkShifts || [])
-                        .filter((s: any) => s.status === "open")
-                        .map((s: any) => {
-                          const shiftTxs = (state.parkTicketTransactions || []).filter(
-                            (tx: any) => tx.shift_id === s.id,
-                          );
-                          const shiftTotalUsd = shiftTxs
-                            .filter((tx: any) => tx.currency === "USD" && tx.status !== "refunded")
-                            .reduce((acc: number, tx: any) => acc + tx.total_paid_in_currency, 0);
-                          const shiftTotalSsp = shiftTxs
-                            .filter((tx: any) => tx.currency === "SSP" && tx.status !== "refunded")
-                            .reduce((acc: number, tx: any) => acc + tx.total_paid_in_currency, 0);
-                          const sspRate = erpStore.getExchangeRate("SSP") || 3000;
-
-                          return (
-                            <div
-                              key={s.id}
-                              className="bg-card border border-border p-4 rounded-3xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4"
-                            >
-                              <div>
-                                <div className="flex items-center gap-2 mb-2">
-                                  <h3 className="font-black text-base">{s.shift_number}</h3>
-                                  <Badge
-                                    variant="outline"
-                                    className="bg-teal-500/10 text-teal-600 border-teal-500/30 font-bold"
-                                  >
-                                    وردية مفتوحة
-                                  </Badge>
-                                </div>
-                                <div className="flex flex-wrap items-center gap-3 text-xs font-bold text-muted-foreground">
-                                  {/* الرقم الفعلي */}
-                                  <span className="bg-teal-500/10 text-teal-700 dark:text-teal-400 px-2.5 py-1 rounded-lg font-mono text-xs border border-teal-500/20">
-                                    الرقم الفعلي (رقم النظام): {s.auto_shift_number}
-                                  </span>
-
-                                  {/* الرقم الآخر القابل للتعديل */}
-                                  <span className="bg-muted px-2.5 py-1 rounded-lg font-mono text-xs text-foreground flex items-center gap-1">
-                                    الرقم الآخر: {s.shift_number}
-                                  </span>
-
-                                  {/* اسم الكاشير */}
-                                  <span className="flex items-center gap-1 text-slate-800 dark:text-slate-200 bg-muted/60 px-2.5 py-1 rounded-lg">
-                                    <User size={14} className="text-teal-600" /> الكاشير:{" "}
-                                    {s.cashier_name}
-                                  </span>
-
-                                  {/* التاريخ والوقت */}
-                                  <span className="flex items-center gap-1 bg-muted/60 px-2.5 py-1 rounded-lg">
-                                    <Calendar size={14} className="text-muted-foreground" />{" "}
-                                    {new Date(s.start_at).toLocaleDateString("ar-EG")} -{" "}
-                                    {new Date(s.start_at).toLocaleTimeString("ar-EG")}
-                                  </span>
-
-                                  {/* المعامل إذا كانت العملة غير الدولار */}
-                                  <span className="font-mono text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-lg text-xs">
-                                    معامل SSP: 1$ = {sspRate.toLocaleString()} SSP
-                                  </span>
-
-                                  {/* المبيعات */}
-                                  <span className="flex items-center gap-1 text-teal-700 bg-teal-50 dark:bg-teal-950/40 px-2.5 py-1 rounded-lg border border-teal-200/50">
-                                    <ShoppingCart size={14} /> {shiftTxs.length} تذكرة ($
-                                    {shiftTotalUsd.toLocaleString()}{" "}
-                                    {shiftTotalSsp > 0 && `+ ${shiftTotalSsp.toLocaleString()} SSP`}
-                                    )
-                                  </span>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <Button
-                                  variant="outline"
-                                  className="rounded-xl font-bold cursor-pointer h-9 px-3 text-amber-700 bg-amber-50 hover:bg-amber-100 border-amber-200 text-xs"
-                                  onClick={() => {
-                                    const newName = prompt(
-                                      "تعديل اسم أمين الصندوق:",
-                                      s.cashier_name,
-                                    );
-                                    if (newName && newName.trim()) {
-                                      erpStore.updateParkShift(s.id, { cashier_name: newName });
-                                      toast.success("تم التعديل بنجاح");
-                                    }
-                                  }}
-                                >
-                                  <Edit size={13} className="ml-1" /> تعديل
-                                </Button>
-                                <Button
-                                  variant="default"
-                                  className="rounded-xl font-bold cursor-pointer h-9 px-3 bg-teal-600 hover:bg-teal-700 text-white text-xs"
-                                  onClick={() => {
-                                    try {
-                                      erpStore.resumeParkShift(s.id);
-                                      setIsParkPosOpen(true);
-                                    } catch (e: any) {
-                                      toast.error(e.message);
-                                    }
-                                  }}
-                                >
-                                  <ArrowRight size={13} className="ml-1" /> دخول الوردية (بيع /
-                                  مرتجع)
-                                </Button>
-
-                                <Button
-                                  variant="outline"
-                                  className="rounded-xl font-bold cursor-pointer h-9 px-3 text-slate-700 bg-slate-50 hover:bg-slate-100 border-slate-200 text-xs"
-                                  onClick={() => {
-                                    setShiftToCloseFromLauncher(s);
-                                  }}
-                                >
-                                  <Printer size={13} className="ml-1" /> تقرير الإغلاق
-                                </Button>
-
-                                <Button
-                                  variant="outline"
-                                  className="rounded-xl font-bold cursor-pointer h-9 px-3 text-rose-600 bg-rose-50 hover:bg-rose-100 border-rose-200 text-xs"
-                                  onClick={() => {
-                                    try {
-                                      setShiftToCloseFromLauncher(s);
-                                    } catch (e: any) {
-                                      toast.error(e.message);
-                                    }
-                                  }}
-                                >
-                                  <Lock size={13} className="ml-1" /> إغلاق
-                                </Button>
-
-                                <Button
-                                  variant="outline"
-                                  size="icon"
-                                  title="حذف الوردية نهائياً"
-                                  className="rounded-xl font-bold cursor-pointer h-9 w-9 text-rose-600 border-rose-200 hover:bg-rose-100 hover:text-rose-700"
-                                  onClick={() => {
-                                    erpStore.deleteParkShift(s.id);
-                                    toast.success("تم حذف الوردية بنجاح");
-                                  }}
-                                >
-                                  <Trash2 size={15} />
-                                </Button>
-                              </div>
-                            </div>
-                          );
-                        })}
-
-                      {(state.parkShifts || []).filter((s: any) => s.status === "open").length ===
-                        0 && (
-                        <div className="text-center py-12 px-4 bg-muted/20 border border-dashed border-border rounded-3xl space-y-3">
-                          <div className="w-12 h-12 rounded-2xl bg-teal-500/10 text-teal-600 flex items-center justify-center mx-auto">
-                            <Ticket size={24} />
-                          </div>
-                          <h4 className="font-black text-foreground text-sm">
-                            لا توجد أي ورديات مفتوحة حالياً
-                          </h4>
-                          <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                            لبدء تسجيل ومبيعات التذاكر، قم بفتح جلسة / وردية جديدة بالبيانات التي
-                            تدخلها بنفسك.
-                          </p>
-                          <Button
-                            onClick={() => setIsParkShiftLauncherOpen(true)}
-                            className="bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl gap-1.5 cursor-pointer shadow-xs text-xs h-9 mt-2"
-                          >
-                            <Plus size={15} />
-                            فتح وردية جديدة الآن
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {parkReportType === ("shift_audit" as any) && (
-                    <div className="p-4">
-                      <ShiftAuditLogViewer initialShiftType="park" showHeaderTitle={false} />
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          )}
-
-          {/* MODALS INTEGRATION */}
-          <ParkTransactionDetailsModal
-            isOpen={selectedParkTxForPreview !== null}
-            onClose={() => setSelectedParkTxForPreview(null)}
-            transaction={selectedParkTxForPreview}
-          />
-
-          <ParkRefundModal
-            isOpen={selectedParkTxForRefund !== null}
-            onClose={() => setSelectedParkTxForRefund(null)}
-            transaction={selectedParkTxForRefund}
-          />
-
-          <ParkOperationalTreasuriesModal
-            isOpen={isParkTreasuriesModalOpen}
-            onClose={() => setIsParkTreasuriesModalOpen(false)}
-          />
-
-          <ParkCustomersModal
-            isOpen={isParkCustomersModalOpen}
-            onClose={() => setIsParkCustomersModalOpen(false)}
-          />
-
-          <ParkTicketPricesModal
-            isOpen={isParkPricesModalOpen}
-            onClose={() => setIsParkPricesModalOpen(false)}
-          />
-
-          <ParkShiftLauncherModal
-            isOpen={isParkShiftLauncherOpen}
-            onClose={() => setIsParkShiftLauncherOpen(false)}
-            onOpenPOS={() => setIsParkPosOpen(true)}
-            onRequestCloseShift={(shift) => setShiftToCloseFromLauncher(shift)}
-          />
-
-          <ShiftAuditLogViewerModal
-            isOpen={isShiftAuditModalOpen}
-            onClose={() => setIsShiftAuditModalOpen(false)}
-            initialShiftType="park"
-          />
-
-          <ParkShiftClosingReportModal
-            isOpen={
-              isParkShiftCloseModalOpen ||
-              selectedClosedShiftForReport !== null ||
-              shiftToCloseFromLauncher !== null
-            }
-            onClose={() => {
-              setIsParkShiftCloseModalOpen(false);
-              setSelectedClosedShiftForReport(null);
-              setShiftToCloseFromLauncher(null);
-            }}
-            viewOnlyShift={selectedClosedShiftForReport}
-            shiftToClose={shiftToCloseFromLauncher}
-            onShiftClosed={() => {
-              setIsParkShiftCloseModalOpen(false);
-              setShiftToCloseFromLauncher(null);
-              setSelectedClosedShiftForReport(null);
-            }}
-          />
-        </>
-      )}
-
       {/* TAB 4: MALL & GARDEN EXPENSES */}
       {activeTab === "expenses" && (
         <div className="space-y-4">
@@ -3512,13 +2269,13 @@ function MallManagementPage() {
           <Card className="border border-border/80 bg-card rounded-2xl shadow-sm overflow-hidden">
             <CardHeader className="pb-3 border-b border-border/60">
               <CardTitle className="text-base font-black text-foreground flex items-center justify-between">
-                <span>سجل مصروفات المول والحديقة (صيانة، كهرباء، أمن، نظافة)</span>
+                <span>سجل مصروفات وتشغيل المول (صيانة، كهرباء، أمن، نظافة)</span>
                 <span className="text-xs font-bold bg-rose-500/10 text-rose-600 px-3 py-1 rounded-full">
                   الإجمالي: ${gardenExpenses.reduce((sum, e) => sum + e.amount, 0).toLocaleString()}
                 </span>
               </CardTitle>
               <CardDescription className="text-xs">
-                حساب المصروفات التشغيلية للمول التجاري والحديقة بالدولار الأمريكي.
+                حساب المصروفات التشغيلية للمول التجاري بالدولار الأمريكي.
               </CardDescription>
             </CardHeader>
             <CardContent className="p-0">
@@ -3579,7 +2336,7 @@ function MallManagementPage() {
                     {gardenExpenses.length === 0 && (
                       <tr>
                         <td colSpan={7} className="text-center py-8 text-muted-foreground">
-                          لا توجد مصروفات مسجلة للمول أو الحديقة.
+                          لا توجد مصروفات مسجلة للمول.
                         </td>
                       </tr>
                     )}
@@ -3597,7 +2354,7 @@ function MallManagementPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Card className="border border-border/80 bg-card rounded-2xl p-6 shadow-sm">
               <h3 className="text-sm font-bold text-muted-foreground">
-                إجمالي إيرادات المحلات المؤجرة
+                إجمالي إيرادات المحلات المحصلة
               </h3>
               <p className="text-3xl font-black text-emerald-600 mt-2">
                 ${totalCollectedThisMonth.toLocaleString()}
@@ -3607,27 +2364,31 @@ function MallManagementPage() {
               </p>
             </Card>
             <Card className="border border-border/80 bg-card rounded-2xl p-6 shadow-sm">
-              <h3 className="text-sm font-bold text-muted-foreground">إجمالي إيرادات الحديقة</h3>
-              <p className="text-3xl font-black text-teal-600 mt-2">
-                ${totalGardenRevenueMonth.toLocaleString()}
-              </p>
-              <p className="text-xs text-muted-foreground mt-2">تذاكر وفعاليات الحديقة</p>
-            </Card>
-            <Card className="border border-border/80 bg-card rounded-2xl p-6 shadow-sm">
               <h3 className="text-sm font-bold text-muted-foreground">
-                إجمالي المصروفات التشغيلية
+                إجمالي المصروفات التشغيلية للمول
               </h3>
               <p className="text-3xl font-black text-rose-600 mt-2">
                 ${totalGardenExpenseMonth.toLocaleString()}
               </p>
               <p className="text-xs text-muted-foreground mt-2">صيانة، كهرباء وأمن ونظافة</p>
             </Card>
+            <Card className="border border-border/80 bg-card rounded-2xl p-6 shadow-sm">
+              <h3 className="text-sm font-bold text-muted-foreground">صافي الدخل التشغيلي للمول</h3>
+              <p
+                className={`text-3xl font-black mt-2 ${
+                  netOperatingIncomeMonth >= 0 ? "text-purple-600" : "text-rose-600"
+                }`}
+              >
+                ${netOperatingIncomeMonth.toLocaleString()}
+              </p>
+              <p className="text-xs text-muted-foreground mt-2">الإيرادات المحصلة ناقص المصروفات</p>
+            </Card>
           </div>
 
           <Card className="border border-border/80 bg-card rounded-2xl p-6 shadow-sm">
             <CardHeader className="px-0 pt-0">
               <CardTitle className="text-lg font-black text-foreground">
-                بيان الأرباح والخسائر التشغيلي (المول والحديقة)
+                بيان الأرباح والخسائر التشغيلي للمول
               </CardTitle>
               <CardDescription className="text-xs">
                 ملخص مالي شامل للشهر المحدد بالدولار الأمريكي ($)
@@ -3644,14 +2405,6 @@ function MallManagementPage() {
               </div>
               <div className="flex justify-between items-center py-2.5 border-b border-border text-sm">
                 <span className="font-bold text-muted-foreground">
-                  + إيرادات مرافق وحفلات الحديقة
-                </span>
-                <span className="font-black text-teal-600">
-                  ${totalGardenRevenueMonth.toLocaleString()}
-                </span>
-              </div>
-              <div className="flex justify-between items-center py-2.5 border-b border-border text-sm">
-                <span className="font-bold text-muted-foreground">
                   - إجمالي مصروفات التشغيل والصيانة
                 </span>
                 <span className="font-black text-rose-600">
@@ -3659,7 +2412,7 @@ function MallManagementPage() {
                 </span>
               </div>
               <div className="flex justify-between items-center py-4 bg-muted/30 px-4 rounded-xl text-base font-black">
-                <span className="text-foreground">صافي الدخل التشغيلي للمول والحديقة:</span>
+                <span className="text-foreground">صافي الدخل التشغيلي للمول والمحلات:</span>
                 <span
                   className={
                     netOperatingIncomeMonth >= 0

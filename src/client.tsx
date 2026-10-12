@@ -3,6 +3,30 @@ import { StrictMode, startTransition } from "react";
 import { hydrateRoot } from "react-dom/client";
 import { StartClient } from "@tanstack/react-start/client";
 
+if (typeof window !== "undefined") {
+  window.addEventListener("error", (event) => {
+    const msg = event.message || "";
+    if (
+      msg.includes("Failed to fetch dynamically imported module") ||
+      msg.includes("Importing a module script failed") ||
+      msg.includes("Loading chunk")
+    ) {
+      window.location.reload();
+    }
+  });
+
+  window.addEventListener("unhandledrejection", (event) => {
+    const reason = event.reason?.message || String(event.reason || "");
+    if (
+      reason.includes("Failed to fetch dynamically imported module") ||
+      reason.includes("Importing a module script failed") ||
+      reason.includes("Loading chunk")
+    ) {
+      window.location.reload();
+    }
+  });
+}
+
 startTransition(() => {
   hydrateRoot(
     document,
