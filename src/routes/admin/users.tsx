@@ -1145,7 +1145,11 @@ export function UsersPage() {
       return;
     }
 
-    const wasPendingCreate = !!target && isHostedDeployment() && isLocalUserDraft(target);
+    const wasPendingCreate =
+      !!target &&
+      isHostedDeployment() &&
+      isLocalUserDraft(target) &&
+      needsPasswordForPendingUserCreate(target.id);
     try {
       // Remove locally immediately; if cloud deletion fails the tombstone stays in the queue.
       erpStore.deleteUser(userToDelete);
