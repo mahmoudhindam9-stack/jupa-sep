@@ -250,7 +250,8 @@ function LoginPage() {
     localStorage.setItem("remember_me", rememberMe ? "true" : "false");
 
     try {
-      let foundUser = localLoginUsers().find((user) => {
+      // Hosted deployments must authenticate against Supabase; browser-local users are not valid credentials.
+      let foundUser = isHostedDeployment() ? undefined : localLoginUsers().find((user) => {
         const storedUsername = String(user.username || "")
           .trim()
           .toLowerCase();
@@ -275,6 +276,7 @@ function LoginPage() {
       });
 
       if (
+        !isHostedDeployment() &&
         !foundUser &&
         (normalizedUsername === "admin" ||
           normalizedUsername === "admin@restocash.com" ||
@@ -284,6 +286,7 @@ function LoginPage() {
       }
 
       const passwordMatches =
+        !isHostedDeployment() &&
         !!foundUser &&
         (foundUser.password === password ||
           normalizeDigits(foundUser.password || "") === normalizedPassword ||
@@ -379,7 +382,9 @@ function LoginPage() {
       }
 
       setError(
-        "اسم المستخدم أو كلمة المرور غير صحيحة. يرجى التأكد من بيانات الدخول (أو استخدام حساب المسؤول الافتراضي admin / admin).",
+        isHostedDeployment()
+          ? "تعذر تسجيل الدخول بالحساب السحابي. تأكد من إنشاء حساب admin في Supabase وأن كلمة المرور مضبوطة في إعدادات المشروع، ثم حاول مرة أخرى."
+          : "اسم المستخدم أو كلمة المرور غير صحيحة. يرجى التأكد من بيانات الدخول.",
       );
     } catch (cause) {
       console.error("Login failed", cause);
