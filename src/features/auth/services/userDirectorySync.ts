@@ -113,11 +113,11 @@ function readQueue(): QueuedChange[] {
   }
 }
 
-function writeQueue(queue: QueuedChange[]): void {
+function writeQueue(queue: QueuedChange[], notify = true): void {
   if (!canUseBrowserStorage()) return;
   try {
     window.localStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
-    announceChange();
+    if (notify) announceChange();
   } catch (error) {
     throw new Error(
       "تعذر حفظ قائمة المزامنة محليًا. وفّر مساحة في المتصفح ثم أعد المحاولة.",
@@ -244,8 +244,8 @@ function enqueueChange(input: UserChangeInput): { operationId: string | null; no
         updatedAt: now,
         lastError: undefined,
       };
-      persistUpdatedOperation(queue, existing);
       if (input.password) writeCreatePassword(existing.id, input.password);
+      persistUpdatedOperation(queue, existing);
       return { operationId: existing.id };
     }
 
@@ -259,8 +259,11 @@ function enqueueChange(input: UserChangeInput): { operationId: string | null; no
       updatedAt: now,
       attempts: 0,
     };
-    writeQueue([...queue, operation]);
+    // Persist the queue before notification, but only wake the sync worker after the
+    // session-scoped password is ready. The password itself never enters localStorage.
+    writeQueue([...queue, operation], false);
     writeCreatePassword(operation.id, input.password);
+    announceChange();
     return { operationId: operation.id };
   }
 
