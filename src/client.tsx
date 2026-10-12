@@ -13,42 +13,8 @@ if (typeof window !== "undefined") {
     // Storage can be unavailable in restricted preview iframes.
   }
 
-  const recoverFromChunkLoadFailure = (reason: string) => {
-    const isChunkLoadFailure =
-      reason.includes("Failed to fetch dynamically imported module") ||
-      reason.includes("Importing a module script failed") ||
-      reason.includes("Loading chunk");
-
-    if (!isChunkLoadFailure) return;
-
-    // A preview server restart can leave the browser with a stale Vite module URL.
-    // Reload at most once per session; otherwise a persistent 404/500 creates a reload loop.
-    try {
-      if (window.sessionStorage.getItem(CHUNK_RECOVERY_KEY) === "1") {
-        console.error(
-          "The app entry module still cannot load after one recovery reload. Check the Vite server output for the underlying compile/import error.",
-          reason,
-        );
-        return;
-      }
-      window.sessionStorage.setItem(CHUNK_RECOVERY_KEY, "1");
-    } catch {
-      // If storage is blocked, avoid automatic reloads that could loop indefinitely.
-      console.error("Module load failed and session storage is unavailable.", reason);
-      return;
-    }
-
-    window.location.reload();
-  };
-
-  window.addEventListener("error", (event) => {
-    recoverFromChunkLoadFailure(event.message || "");
-  });
-
-  window.addEventListener("unhandledrejection", (event) => {
-    const reason = event.reason?.message || String(event.reason || "");
-    recoverFromChunkLoadFailure(reason);
-  });
+  // The recovery listener runs from server-rendered HTML in __root.tsx,
+  // before this module is imported, so it can handle failure to load this entry itself.
 }
 
 startTransition(() => {
