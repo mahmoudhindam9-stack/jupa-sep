@@ -132,6 +132,13 @@ export const authService = {
       },
     });
     if (error) throw error;
+
+    // Supabase can return an obfuscated "existing user" response instead of an error
+    // when email enumeration protection is enabled. Do not treat that as a new account.
+    if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+      throw new Error("هذا البريد الإلكتروني مسجّل بالفعل في Supabase. استخدم بريدًا آخر.");
+    }
+
     return data;
   },
 };
