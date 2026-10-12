@@ -9,6 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { erpStore, SystemUser } from "@/shared/services/erpStore";
 import { authService } from "@/features/auth/services/authService";
+import { resetLocalManagedUserDirectoryForBootstrap } from "@/features/auth/services/userDirectorySync";
 import { useSettings } from "@/hooks/use-settings";
 
 export const Route = createFileRoute("/login")({
@@ -49,15 +50,8 @@ function safeInternalRedirect(value: string | null): string {
 
 async function signInHostedUser(username: string, password: string) {
   const normalized = username.trim().toLowerCase();
-  const candidates = normalized.includes("@")
-    ? [normalized]
-    : [
-        `${normalized}@restocash.local`,
-        `${normalized}@almokhtar.local`,
-        `${normalized}@mokhtar.local`,
-        `${normalized}@restocash.com`,
-        `${normalized}@juba.com`,
-      ];
+  // Hosted Supabase accounts always authenticate with their real Auth email.
+  const candidates = normalized.includes("@") ? [normalized] : [];
 
   for (const email of Array.from(new Set(candidates))) {
     try {
@@ -69,20 +63,10 @@ async function signInHostedUser(username: string, password: string) {
       } catch (err) {
         console.warn("Could not load hosted user profile.", err);
       }
-      if (!profile || !profile.id) {
-        const isAdmin =
-          email.startsWith("admin") ||
-          normalized === "admin" ||
-          email === "mahmoudhindam9@gmail.com" ||
-          email.includes("admin");
-        profile = {
-          id: data.session.user.id,
-          username: normalized.includes("@") ? normalized.split("@")[0] : normalized,
-          full_name: normalized,
-          email,
-          role: isAdmin ? "admin" : "cashier",
-          permissions: isAdmin ? { super_admin_full_access: true } : {},
-        };
+      if (!profile?.id || !profile?.username) {
+        // An Auth identity without a managed profile is not an ERP account.
+        await supabase.auth.signOut().catch(() => undefined);
+        return null;
       }
       return { session: data.session, email, profile };
     } catch {
@@ -103,14 +87,39 @@ function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [hasLocalAccounts, setHasLocalAccounts] = useState(true);
+  const [isBootstrapChecked, setIsBootstrapChecked] = useState(false);
+  const [bootstrapAvailable, setBootstrapAvailable] = useState(false);
   const [bootstrapFullName, setBootstrapFullName] = useState("");
   const [bootstrapUsername, setBootstrapUsername] = useState("");
+  const [bootstrapEmail, setBootstrapEmail] = useState("");
   const [bootstrapPassword, setBootstrapPassword] = useState("");
   const [bootstrapConfirm, setBootstrapConfirm] = useState("");
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     setIsMounted(true);
     setHasLocalAccounts(localLoginUsers().length > 0);
+
+    if (!isHostedDeployment()) {
+      setIsBootstrapChecked(true);
+      return;
+    }
+
+    void authService
+      .isInitialAdminSetupAvailable()
+      .then((available) => {
+        if (available) {
+          resetLocalManagedUserDirectoryForBootstrap();
+        }
+        setBootstrapAvailable(available);
+      })
+      .catch((cause) => {
+        console.error("Could not check the initial Supabase user directory.", cause);
+        setError(
+          "تعذر فحص حسابات Supabase. طبّق ترحيل تهيئة المدير الأول في مجلد supabase/migrations ثم أعد تحميل التطبيق.",
+        );
+      })
+      .finally(() => setIsBootstrapChecked(true));
   }, []);
 
   useEffect(() => {
@@ -232,6 +241,109 @@ function LoginPage() {
     localStorage.setItem("restocash_user_role", "admin");
     setHasLocalAccounts(true);
     navigate({ to: "/admin/users" });
+  };
+
+  const createFirstHostedAdmin = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError(null);
+    setNotice(null);
+    setLoading(true);
+
+    const fullName = bootstrapFullName.trim();
+    const email = bootstrapEmail.trim().toLowerCase();
+    const newUsername = normalizeDigits(bootstrapUsername.trim().toLowerCase());
+    const newPassword = normalizeDigits(bootstrapPassword);
+    const confirmation = normalizeDigits(bootstrapConfirm);
+
+    try {
+      if (!fullName || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        throw new Error("أدخل الاسم الكامل وبريدًا إلكترونيًا حقيقيًا وصالحًا.");
+      }
+      if (!/^[a-z0-9._-]{3,32}$/.test(newUsername)) {
+        throw new Error("اسم المستخدم يجب أن يكون من 3 إلى 32 حرفًا أو رقمًا، ويمكن استخدام النقطة والشرطة فقط.");
+      }
+      if (newPassword.length < 8) {
+        throw new Error("كلمة المرور يجب ألا تقل عن 8 أحرف، وقد يفرض مشروع Supabase شروطًا إضافية.");
+      }
+      if (newPassword !== confirmation) {
+        throw new Error("تأكيد كلمة المرور غير مطابق.");
+      }
+
+      // Re-check at submit time. The database trigger also serializes first-user creation.
+      if (!(await authService.isInitialAdminSetupAvailable())) {
+        setBootstrapAvailable(false);
+        throw new Error("تم إنشاء المدير الأول بالفعل. استخدم البريد وكلمة المرور لتسجيل الدخول.");
+      }
+
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password: newPassword,
+        options: {
+          data: {
+            username: newUsername,
+            full_name: fullName,
+            phone: "",
+            role: "admin",
+          },
+          emailRedirectTo: `${window.location.origin}/login`,
+        },
+      });
+      if (signUpError) throw signUpError;
+      if (!data.user?.id) {
+        throw new Error("لم تُرجع Supabase معرّف الحساب. لم يتم تأكيد إنشاء المدير الأول.");
+      }
+
+      setBootstrapAvailable(false);
+      setBootstrapEmail("");
+      setBootstrapPassword("");
+      setBootstrapConfirm("");
+
+      if (!data.session?.user?.id) {
+        // Email confirmation may be enabled in Supabase. The database trigger creates
+        // the first admin profile in the same transaction as the Auth account.
+        setUsername(email);
+        setNotice("تم تسجيل الحساب الأول. افتح رسالة التأكيد التي أُرسلت إلى بريدك، ثم سجّل الدخول باستخدام البريد نفسه.");
+        return;
+      }
+
+      const profile = await authService.getProfile(data.session.user.id);
+      if (
+        !profile?.id ||
+        profile.role !== "admin" ||
+        profile.permissions?.super_admin_full_access !== true
+      ) {
+        await supabase.auth.signOut().catch(() => undefined);
+        throw new Error("أنشأت Supabase حساب Auth، لكن لم يُنشأ ملف المدير الأول بصلاحياته. تحقق من تطبيق آخر ترحيل قاعدة بيانات.");
+      }
+
+      localStorage.setItem("remember_me", "true");
+      localStorage.removeItem("restocash_auth_user");
+      sessionStorage.removeItem("restocash_auth_user");
+      localStorage.removeItem("restocash_user_role");
+      sessionStorage.removeItem("restocash_user_role");
+      localStorage.setItem("restocash_auth_user", email);
+      localStorage.setItem("restocash_user_role", "admin");
+
+      const activeUsername = String(profile.username || newUsername).trim().toLowerCase();
+      const permissions = profile.permissions || {};
+      erpStore.updateUserPermission(activeUsername, permissions);
+      erpStore.upsertUser({
+        id: profile.id,
+        full_name: profile.full_name || fullName,
+        username: activeUsername,
+        email,
+        phone: profile.phone || "",
+        role: profile.role,
+        permissions,
+        created_at: profile.created_at || new Date().toISOString(),
+      } as SystemUser);
+      erpStore.setCurrentUser(activeUsername);
+      navigate({ to: "/admin/users" });
+    } catch (cause: any) {
+      setError(cause?.message || "تعذر إنشاء المدير الأول في Supabase.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -371,7 +483,22 @@ function LoginPage() {
     }
   };
 
-  if (isMounted && !isHostedDeployment() && !hasLocalAccounts) {
+  if (isMounted && isHostedDeployment() && !isBootstrapChecked) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4" dir={lang === "ar" ? "rtl" : "ltr"}>
+        <div className="w-full max-w-md space-y-4 bg-card border border-border p-7 rounded-2xl text-center">
+          <RestocashLogo size={48} />
+          <p className="text-sm text-muted-foreground">جارٍ التحقق من وجود حسابات في Supabase…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (
+    isMounted &&
+    ((isHostedDeployment() && bootstrapAvailable) ||
+      (!isHostedDeployment() && !hasLocalAccounts))
+  ) {
     return (
       <div
         className="min-h-screen flex items-center justify-center bg-background p-4 relative"
@@ -381,15 +508,16 @@ function LoginPage() {
           <LanguageSwitcher />
         </div>
         <form
-          onSubmit={createFirstLocalAdmin}
+          onSubmit={isHostedDeployment() ? createFirstHostedAdmin : createFirstLocalAdmin}
           className="w-full max-w-md space-y-5 bg-card border border-border p-7 rounded-2xl shadow-elegant"
         >
           <div className="text-center space-y-2">
             <RestocashLogo size={52} />
             <h1 className="text-2xl font-black text-foreground">تهيئة حساب المدير الأول</h1>
             <p className="text-sm text-muted-foreground">
-              تم حذف حسابات الدخول الافتراضية القديمة. أنشئ حساب المدير الأول، ثم أدرج باقي الحسابات
-              وصلاحياتها من صفحة المستخدمين.
+              {isHostedDeployment()
+                ? "لم يتم العثور على أي مستخدم في Supabase. أنشئ حساب المدير الأول ببريد حقيقي، وسيُمنح صلاحيات الإدارة مرة واحدة فقط."
+                : "تم حذف حسابات الدخول الافتراضية القديمة. أنشئ حساب المدير الأول، ثم أدرج باقي الحسابات وصلاحياتها من صفحة المستخدمين."}
             </p>
           </div>
           <div className="space-y-1.5">
@@ -401,18 +529,36 @@ function LoginPage() {
               autoComplete="name"
             />
           </div>
+          {isHostedDeployment() && (
+            <div className="space-y-1.5">
+              <Label>البريد الإلكتروني الحقيقي في Supabase</Label>
+              <Input
+                required
+                type="email"
+                value={bootstrapEmail}
+                onChange={(e) => setBootstrapEmail(e.target.value)}
+                autoComplete="email"
+                placeholder="name@example.com"
+                dir="ltr"
+              />
+            </div>
+          )}
           <div className="space-y-1.5">
-            <Label>اسم المستخدم الجديد</Label>
+            <Label>اسم المستخدم داخل النظام</Label>
             <Input
               required
               value={bootstrapUsername}
               onChange={(e) => setBootstrapUsername(e.target.value)}
               autoComplete="username"
+              minLength={3}
+              maxLength={32}
+              pattern="[A-Za-z0-9._-]{3,32}"
+              placeholder="مثال: admin"
               dir="ltr"
             />
           </div>
           <div className="space-y-1.5">
-            <Label>كلمة المرور الجديدة (8 أحرف على الأقل)</Label>
+            <Label>كلمة المرور الجديدة (8 أحرف على الأقل، مع تطبيق سياسة Supabase)</Label>
             <Input
               required
               type="password"
@@ -444,7 +590,11 @@ function LoginPage() {
             </p>
           )}
           <Button type="submit" className="w-full" disabled={loading}>
-            إنشاء حساب المدير والمتابعة إلى إدارة المستخدمين
+            {loading
+              ? "جارٍ إنشاء حساب المدير…"
+              : isHostedDeployment()
+                ? "إنشاء أول مدير في Supabase"
+                : "إنشاء حساب المدير والمتابعة إلى إدارة المستخدمين"}
           </Button>
         </form>
       </div>
@@ -466,13 +616,15 @@ function LoginPage() {
         <p className="text-sm text-muted-foreground text-center">تسجيل الدخول للإدارة</p>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <Label>اسم المستخدم</Label>
+            <Label>{isHostedDeployment() ? "البريد الإلكتروني" : "اسم المستخدم"}</Label>
             <Input
-              type="text"
+              type={isHostedDeployment() ? "email" : "text"}
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
-              placeholder="admin"
+              placeholder={isHostedDeployment() ? "name@example.com" : "admin"}
+              autoComplete={isHostedDeployment() ? "email" : "username"}
+              dir={isHostedDeployment() ? "ltr" : undefined}
               className="mt-1"
               autoFocus
             />
@@ -501,6 +653,11 @@ function LoginPage() {
             </Label>
           </div>
 
+          {notice && (
+            <p role="status" className="text-sm text-emerald-700 bg-emerald-500/10 p-3 rounded-lg border border-emerald-500/20 text-center">
+              {notice}
+            </p>
+          )}
           {error && (
             <p className="text-xs text-destructive bg-destructive/10 p-2.5 rounded-lg border border-destructive/20 text-center font-bold">
               {error}
