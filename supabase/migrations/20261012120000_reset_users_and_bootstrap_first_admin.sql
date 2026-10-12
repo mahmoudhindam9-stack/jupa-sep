@@ -6,6 +6,28 @@ BEGIN;
 
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS email text;
 
+-- Keep the SQL role constraint aligned with the roles supported by the Users page.
+-- Previous migrations only allowed a subset and caused legitimate role saves to fail.
+DO $
+DECLARE
+  role_constraint record;
+BEGIN
+  FOR role_constraint IN
+    SELECT conname
+    FROM pg_constraint
+    WHERE conrelid = 'public.profiles'::regclass
+      AND contype = 'c'
+      AND pg_get_constraintdef(oid) ILIKE '%role%'
+  LOOP
+    EXECUTE format('ALTER TABLE public.profiles DROP CONSTRAINT %I', role_constraint.conname);
+  END LOOP;
+END;
+$;
+
+ALTER TABLE public.profiles
+  ADD CONSTRAINT profiles_role_allowed_check
+  CHECK (role IN ('admin', 'super_admin', 'manager', 'cashier', 'captain', 'kitchen'));
+
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 DROP TRIGGER IF EXISTS on_auth_user_created_almokhtar_profile ON auth.users;
 DROP TRIGGER IF EXISTS on_auth_user_created_initial_admin ON auth.users;
