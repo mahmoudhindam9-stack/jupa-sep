@@ -111,6 +111,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     ],
     scripts: [
       {
+        // This runs before the client entry is imported, so it can recover if client.tsx itself fails to load.
+        children: `try{const k="restocash:chunk-recovery-attempted";const recover=(r)=>{const m=String(r||"");if(!m.includes("Failed to fetch dynamically imported module")&&!m.includes("Importing a module script failed")&&!m.includes("Loading chunk"))return;try{if(sessionStorage.getItem(k)==="1"){console.error("Client entry still failed after one recovery reload. Check the preview/Vite server error.",m);return;}sessionStorage.setItem(k,"1");}catch(e){console.error("Client entry failed; session storage is unavailable.",m);return;}window.location.reload();};window.addEventListener("error",e=>recover(e.message||""));window.addEventListener("unhandledrejection",e=>recover(e.reason?.message||String(e.reason||"")));}catch(e){console.error("Could not install client entry recovery handler.",e);}`,
+      },
+      {
         children: `try{const s=localStorage.getItem("restocash-theme");if(s==="dark"||(!s&&window.matchMedia("(prefers-color-scheme: dark)").matches)){document.documentElement.classList.add("dark");}}catch(e){}`,
       },
     ],
