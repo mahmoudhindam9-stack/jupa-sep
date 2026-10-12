@@ -1,14 +1,14 @@
 -- One-time user-directory reset requested for the clean Supabase bootstrap.
 -- This is intentionally destructive: it deletes every existing Auth account and profile.
--- Operational tables are not truncated. After this migration, the first Auth signup only
--- receives administrator access when the profile directory is still empty.
+-- Operational tables are not truncated. Only the first Auth identity, when it is the
+-- only Auth user and the profile directory is empty, receives administrator access.
 BEGIN;
 
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS email text;
 
 -- Keep the SQL role constraint aligned with the roles supported by the Users page.
 -- Previous migrations only allowed a subset and caused legitimate role saves to fail.
-DO $
+DO $$
 DECLARE
   role_constraint record;
 BEGIN
@@ -22,7 +22,7 @@ BEGIN
     EXECUTE format('ALTER TABLE public.profiles DROP CONSTRAINT %I', role_constraint.conname);
   END LOOP;
 END;
-$;
+$$;
 
 ALTER TABLE public.profiles
   ADD CONSTRAINT profiles_role_allowed_check
@@ -61,18 +61,18 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  has_profiles boolean;
   initial_permissions jsonb;
   normalized_email text;
   normalized_username text;
 BEGIN
-  -- Serialize signups so two simultaneous first registrations cannot both become admins.
+  -- Serialize concurrent signups before checking the one-time bootstrap condition.
   PERFORM pg_advisory_xact_lock(hashtext('jupa-sep-initial-admin-bootstrap'), 0);
 
-  SELECT EXISTS (SELECT 1 FROM public.profiles) INTO has_profiles;
-  IF has_profiles THEN
-    -- Later Auth identities are not automatically managed ERP users. They must be
-    -- explicitly added through the authenticated Users page.
+  -- Do not promote a signup if any managed profile or any other Auth identity exists.
+  -- Checking Auth as well as profiles prevents an orphaned legacy Auth identity from
+  -- accidentally allowing a later public signup to receive administrator privileges.
+  IF EXISTS (SELECT 1 FROM public.profiles)
+     OR EXISTS (SELECT 1 FROM auth.users WHERE id <> NEW.id) THEN
     RETURN NEW;
   END IF;
 
