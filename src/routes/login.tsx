@@ -11,10 +11,11 @@ import { erpStore, SystemUser } from "@/shared/services/erpStore";
 import { authService } from "@/features/auth/services/authService";
 import { resetLocalManagedUserDirectoryForBootstrap } from "@/features/auth/services/userDirectorySync";
 import { useSettings } from "@/hooks/use-settings";
+import { isAiStudioPreview } from "@/shared/services/previewAccess";
 
 export const Route = createFileRoute("/login")({
   head: () => ({ meta: [{ title: "تسجيل الدخول" }] }),
-  component: LoginPage,
+  component: LoginRouteEntry,
 });
 
 // Helper to normalize eastern Arabic/Persian digits to western ASCII digits
@@ -75,6 +76,27 @@ async function signInHostedUser(username: string, password: string) {
   }
 
   return null;
+}
+
+function LoginRouteEntry() {
+  const navigate = useNavigate();
+  const [showLogin, setShowLogin] = useState(false);
+
+  useEffect(() => {
+    if (isAiStudioPreview()) {
+      navigate({ to: "/admin", replace: true } as any);
+      return;
+    }
+    setShowLogin(true);
+  }, [navigate]);
+
+  if (showLogin) return <LoginPage />;
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background p-6" dir="rtl">
+      <div className="text-sm font-bold text-muted-foreground">جاري فتح لوحة التحكم...</div>
+    </div>
+  );
 }
 
 function LoginPage() {
