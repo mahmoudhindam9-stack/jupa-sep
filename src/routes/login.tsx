@@ -150,6 +150,7 @@ function LoginPage() {
         id: profile.id,
         full_name: profile.full_name || activeUsername,
         username: activeUsername,
+        email: profile.email || session.user.email || "",
         phone: profile.phone || "",
         role: profile.role || "cashier",
         permissions: profile.permissions || {},
@@ -441,20 +442,21 @@ function LoginPage() {
             sessionStorage.removeItem("restocash_user_role");
             const storage = rememberMe ? localStorage : sessionStorage;
             storage.setItem("restocash_auth_user", activeEmail);
-            storage.setItem("restocash_user_role", String(profile.role || "admin"));
-            const permissions = profile.permissions || { super_admin_full_access: true };
+            storage.setItem("restocash_user_role", String(profile.role || "cashier"));
+            const permissions = profile.permissions || {};
             erpStore.updateUserPermission(activeUsername, permissions);
             erpStore.upsertUser({
               id: profile.id,
               full_name: profile.full_name || activeUsername,
               username: activeUsername,
+              email: profile.email || session.user.email || "",
               phone: profile.phone || "",
-              role: profile.role || "admin",
+              role: profile.role || "cashier",
               permissions,
               created_at: profile.created_at || new Date().toISOString(),
             } as SystemUser);
             erpStore.setCurrentUser(activeUsername);
-            const role = String(profile.role || "admin");
+            const role = String(profile.role || "cashier");
             const finalDestination = new URLSearchParams(window.location.search).has("redirect")
               ? destination
               : role === "captain"
