@@ -26,6 +26,7 @@ import { authService } from "@/features/auth/services/authService";
 import {
   getPendingUserSyncCount,
   hasPendingUserChange,
+  needsPasswordForPendingUserCreate,
   queueUserChange,
   startUserSync,
   syncPendingUserChanges,
@@ -991,7 +992,11 @@ export function UsersPage() {
     try {
       if (editing) {
         const pendingCreate = hosted && isLocalUserDraft(editing);
-        if (pendingCreate && !form.password.trim()) {
+        if (
+          pendingCreate &&
+          needsPasswordForPendingUserCreate(editing.id) &&
+          !form.password.trim()
+        ) {
           throw new Error(
             "هذا الحساب محفوظ محليًا ولم يكتمل إنشاؤه في Supabase. أدخل كلمة المرور مرة أخرى لإكمال المزامنة.",
           );
@@ -1472,11 +1477,17 @@ export function UsersPage() {
               placeholder={
                 editing
                   ? isLocalUserDraft(editing)
-                    ? "أعد إدخاله لإكمال المزامنة"
+                    ? needsPasswordForPendingUserCreate(editing.id)
+                      ? "أعد إدخاله لإكمال المزامنة"
+                      : "سيُستكمل حفظ الملف السحابي"
                     : "كلمة المرور لا تتغير من هذه الصفحة"
                   : "الرقم السري"
               }
-              disabled={!!editing && isHostedDeployment() && !isLocalUserDraft(editing)}
+              disabled={
+                !!editing &&
+                isHostedDeployment() &&
+                (!isLocalUserDraft(editing) || !needsPasswordForPendingUserCreate(editing.id))
+              }
               value={form.password}
               onChange={(e) => setForm((s) => ({ ...s, password: e.target.value }))}
             />
