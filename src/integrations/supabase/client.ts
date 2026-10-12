@@ -59,31 +59,13 @@ function createSupabaseFetch(supabaseKey: string): typeof fetch {
     headers.set("apikey", supabaseKey);
 
     try {
-      const response = await fetch(input, { ...init, headers });
-      if (response.status === 401) {
-        const urlString =
-          typeof input === "string" ? input : input instanceof Request ? input.url : "";
-        const body = urlString.includes("/auth/v1") ? { user: null, session: null } : [];
-        return new Response(JSON.stringify(body), {
-          status: 200,
-          headers: {
-            "Content-Type": "application/json",
-            "Content-Range": "0-0/0",
-          },
-        });
-      }
-      return response;
+      // Preserve Supabase's real HTTP responses. Converting 401/4xx responses to
+      // fake 200 responses hides invalid credentials and breaks auth/session handling.
+      return await fetch(input, { ...init, headers });
     } catch (err) {
-      const urlString =
-        typeof input === "string" ? input : input instanceof Request ? input.url : "";
-      const body = urlString.includes("/auth/v1") ? { user: null, session: null } : [];
-      return new Response(JSON.stringify(body), {
-        status: 200,
-        headers: {
-          "Content-Type": "application/json",
-          "Content-Range": "0-0/0",
-        },
-      });
+      // Network failures must remain visible to Supabase so the UI can report them;
+      // never fabricate an empty successful response for an unavailable backend.
+      throw err;
     }
   };
 }
