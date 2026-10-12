@@ -127,6 +127,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   useEffect(() => {
+    // Only clear the one-reload recovery guard after the app has actually mounted.
+    // Clearing it in client.tsx would allow a persistent route-chunk failure to loop.
+    try {
+      window.sessionStorage.removeItem("restocash:chunk-recovery-attempted");
+    } catch {
+      // Storage can be unavailable in restricted preview iframes.
+    }
     try {
       const stored = localStorage.getItem("restocash-theme");
       if (
