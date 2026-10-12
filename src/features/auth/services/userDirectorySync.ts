@@ -277,6 +277,11 @@ function enqueueChange(input: UserChangeInput): { operationId: string | null; no
         (operation.localUserId === input.userId ||
           normalizeUsername(operation.username) === username),
     );
+    if (String(input.userId).startsWith("u-") && !pendingCreate) {
+      throw new Error(
+        "الحساب محفوظ كمسودة محلية. افتح تعديل بياناته وأعد إدخال كلمة المرور حتى يُنشأ حسابه في Supabase.",
+      );
+    }
     if (pendingCreate) {
       const updated: QueuedCreate = {
         ...pendingCreate,
