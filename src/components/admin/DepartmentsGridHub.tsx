@@ -161,8 +161,6 @@ export const DEPARTMENTS: DepartmentCardItem[] = [
       { title: "بيع التذاكر والدخول", to: "/admin/park", search: { tab: "tickets" }, icon: Ticket, desc: "مبيعات التذاكر والألعاب" },
       { title: "ورديات الكاشير", to: "/admin/park", search: { tab: "shifts" }, icon: Clock, desc: "فتح ومراجعة الورديات" },
       { title: "الخزائن التشغيلية", to: "/admin/park", search: { tab: "treasury" }, icon: Wallet, desc: "الصناديق والأرصدة" },
-      { title: "العملاء واشتراكات الزوار", to: "/admin/park", search: { tab: "customers" }, icon: Users, desc: "بيانات الزوار والاشتراكات" },
-      { title: "أسعار التذاكر والألعاب", to: "/admin/park", search: { tab: "prices" }, icon: Settings, desc: "الفئات والأسعار" },
       { title: "تقارير الإيرادات", to: "/admin/park", search: { tab: "reports" }, icon: TrendingUp, desc: "الإيرادات وحركة التذاكر" },
     ],
   },
