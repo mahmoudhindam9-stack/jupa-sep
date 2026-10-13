@@ -1,4 +1,5 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, useLocation } from "@tanstack/react-router";
+import { DepartmentSubpagesGrid } from "@/components/admin/DepartmentsGridHub";
 import { useEffect, useState } from "react";
 import {
   ArrowUpRight,
@@ -95,6 +96,8 @@ function getSyncCounts(): RestaurantCounts {
 
 function RestaurantHubPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const routeTab = new URLSearchParams(location.search).get("tab");
   const [counts, setCounts] = useState<RestaurantCounts>({ menu: 8, inventory: 6, orders: 0 });
   const [isLauncherOpen, setIsLauncherOpen] = useState(false);
   const [closingShift, setClosingShift] = useState<RestaurantShift | null>(null);
@@ -169,7 +172,9 @@ function RestaurantHubPage() {
       handleUpdate();
     });
 
-    return () => {
+    if (routeTab === "grid") return <DepartmentSubpagesGrid departmentId="restaurant" />;
+
+  return () => {
       active = false;
       window.removeEventListener("menu_updated", handleUpdate);
       window.removeEventListener("inventory_updated", handleUpdate);
