@@ -1,5 +1,6 @@
 // @ts-nocheck
-import { createFileRoute, useNavigate, useBlocker } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, useBlocker, useLocation } from "@tanstack/react-router";
+import { DepartmentSubpagesGrid } from "@/components/admin/DepartmentsGridHub";
 import { useState, useEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
 import {
@@ -332,16 +333,16 @@ function LedgerPage() {
     }
   };
 
-  // UI state
-  const [selectedTab, setSelectedTab] = useState(() => {
-    if (typeof window !== "undefined") {
-      const tabParam = new URLSearchParams(window.location.search).get("tab");
-      if (tabParam && ["ledger", "journal", "vouchers", "trial", "statements"].includes(tabParam)) {
-        return tabParam;
-      }
-    }
-    return "journal";
-  });
+  // UI state follows the URL so square-grid selections also work on refresh/direct links.
+  const location = useLocation();
+  const tabParam = new URLSearchParams(location.search).get("tab");
+  const validTabs = ["grid", "ledger", "journal", "vouchers", "trial", "statements"];
+  const [selectedTab, setSelectedTab] = useState(() =>
+    validTabs.includes(tabParam || "") ? tabParam! : "journal",
+  );
+  useEffect(() => {
+    if (tabParam && validTabs.includes(tabParam)) setSelectedTab(tabParam);
+  }, [tabParam]);
 
   const [isImportingOracle, setIsImportingOracle] = useState(false);
   const [isSavingToDb, setIsSavingToDb] = useState(false);
@@ -2022,7 +2023,9 @@ function LedgerPage() {
                         line.rate || 1,
                         line.currency || "USD",
                       );
-                      return (
+                      if (selectedTab === "grid") return <DepartmentSubpagesGrid departmentId="finance" />;
+
+  return (
                         <div key={idx} className="p-2.5 flex items-center justify-between text-xs">
                           <div className="flex items-center gap-2">
                             <Badge
