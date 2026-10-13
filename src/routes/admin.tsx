@@ -90,6 +90,17 @@ const nav = [
     ],
   },
   {
+    to: "/admin/park",
+    label: "إدارة الحديقة والألعاب",
+    icon: Building2,
+    permissionKeys: [
+      "manage_park_shifts",
+      "mall_garden_finance",
+      "park_reports",
+      "mall_manage_shops",
+    ],
+  },
+  {
     to: "/admin",
     search: { tab: "treasury" },
     label: "إدارة الخزائن",
@@ -306,6 +317,8 @@ function hasAnyPermission(
   keys: string[] = [],
 ): boolean {
   if (keys.length === 0) return true;
+  if (!user) return false;
+  if (user.role === "admin" || user.role === "super_admin") return true;
   const permissions = permissionsForUser(user);
   return keys.some((key) => permissions[key] === true);
 }
@@ -622,47 +635,249 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
     </div>
   );
 
+  const pageInfo = (() => {
+    const tab = searchParams.get("tab");
+    if (pathname === "/admin" || pathname === "/admin/") {
+      if (tab === "treasury")
+        return {
+          title: "إدارة الخزائن والحسابات البنكية",
+          sub: "الخزائن والصناديق والنقدية",
+          icon: Wallet,
+          badge: "المالية والنقدية",
+        };
+      if (tab === "vouchers_entry")
+        return {
+          title: "تسجيل سندات الإيراد والمصروف",
+          sub: "سندات القبض والصرف المحاسبية",
+          icon: Receipt,
+          badge: "المحاسبة",
+        };
+      if (tab === "chart_of_accounts")
+        return {
+          title: "شجرة ودليل الحسابات",
+          sub: "الأكواد والأرصدة المحاسبية",
+          icon: Landmark,
+          badge: "دليل الحسابات",
+        };
+      if (tab === "shift_audit")
+        return {
+          title: "تدقيق الورديات (Supabase)",
+          sub: "مطابقة الورديات المسجلة",
+          icon: ShieldCheck,
+          badge: "الرقابة",
+        };
+      if (tab === "audit_logs")
+        return {
+          title: "سجل العمليات الإدارية",
+          sub: "مراجعة أنشطة النظام",
+          icon: ShieldCheck,
+          badge: "الأمان والرقابة",
+        };
+      if (tab === "dashboard")
+        return {
+          title: "النظرة العامة والذكاء المالي",
+          sub: "المؤشرات المالي والشاملة",
+          icon: BarChart3,
+          badge: "المؤشرات",
+        };
+      return {
+        title: "لوحة الأقسام الرئيسية",
+        sub: "منظومة ERP الشاملة والمنظومة الرقمية",
+        icon: LayoutDashboard,
+        badge: "الرئيسية",
+      };
+    }
+    if (pathname.startsWith("/admin/restaurant"))
+      return {
+        title: "إدارة المطعم والصالة",
+        sub: "نقطة البيع الكاشير، الطاولات والمطبخ",
+        icon: Store,
+        badge: "قسم المطعم",
+      };
+    if (pathname.startsWith("/admin/mall"))
+      return {
+        title: "إدارة المول والوحدات",
+        sub: "المحلات، الإيجارات ومصروفات التشغيل",
+        icon: Building2,
+        badge: "قسم المول",
+      };
+    if (pathname.startsWith("/admin/park"))
+      return {
+        title: "إدارة الحديقة والمرافق",
+        sub: "تذاكر الدخول، الألعاب وورديات الكاشير",
+        icon: Building2,
+        badge: "قسم الحديقة",
+      };
+    if (pathname.startsWith("/admin/ledger"))
+      return {
+        title: "الإدارة المالية وحساب الأستاذ",
+        sub: "دفتر اليومية العامة والقيود المحاسبية",
+        icon: BookOpen,
+        badge: "الحسابات",
+      };
+    if (pathname.startsWith("/admin/hr"))
+      return {
+        title: "الموارد البشرية والموظفين",
+        sub: "سجل الموظفين، الرواتب والحضور",
+        icon: UserCheck,
+        badge: "شؤون الموظفين",
+      };
+    if (pathname.startsWith("/admin/inventory"))
+      return {
+        title: "إدارة المخزون والمستودعات",
+        sub: "المخازن، الأصناف وفواتير المشتريات",
+        icon: Package,
+        badge: "المخازن",
+      };
+    if (pathname.startsWith("/admin/system-update"))
+      return {
+        title: "خيارات المطور والرقابة",
+        sub: "تحديثات النظام وسجل التدقيق",
+        icon: Settings,
+        badge: "المطور والرقابة",
+      };
+    if (pathname.startsWith("/admin/accounts"))
+      return {
+        title: "شجرة ودليل الحسابات",
+        sub: "دليل الحسابات الشامل",
+        icon: Landmark,
+        badge: "دليل الحسابات",
+      };
+    if (pathname.startsWith("/admin/reports"))
+      return {
+        title: "التقارير والميزانية العمومية",
+        sub: "تقارير الأداء المالي والمبيعات",
+        icon: BarChart3,
+        badge: "التقارير المالية",
+      };
+    if (pathname.startsWith("/admin/users"))
+      return {
+        title: "إدارة المستخدمين والصلاحيات",
+        sub: "حسابات المستخدمين ومستويات الوصول",
+        icon: Users,
+        badge: "إدارة المستخدمين",
+      };
+    if (pathname.startsWith("/admin/receipts"))
+      return {
+        title: "تصميم وإدارة السندات والإيصالات",
+        sub: "قوالب ومستندات الطباعة",
+        icon: Receipt,
+        badge: "إدارة المستندات",
+      };
+    if (pathname.startsWith("/admin/orders"))
+      return {
+        title: "سجل الطلبات والفواتير",
+        sub: "الطلبات والمبيعات",
+        icon: ClipboardList,
+        badge: "الطلبات",
+      };
+    if (pathname.startsWith("/admin/menu"))
+      return {
+        title: "قائمة الطعام والمنيو",
+        sub: "الأصناف والأسعار",
+        icon: Utensils,
+        badge: "المنيو",
+      };
+    return {
+      title: activeNavItem?.label || "لوحة التحكم",
+      sub: "نظام إدارة المطاعم والمحاسبة ERP",
+      icon: LayoutDashboard,
+      badge: "اللوحة الرئيسية",
+    };
+  })();
+
+  const isNotMainGrid =
+    pathname !== "/admin" || (searchParams.get("tab") && searchParams.get("tab") !== "grid");
+
+  const IconComponent = pageInfo.icon;
+
   return (
-    <div className="min-h-screen flex bg-background">
-      {/* Desktop Sidebar */}
-      <aside className="hidden md:flex w-64 shrink-0 border-l border-border bg-card flex-col h-screen sticky top-0">
-        {renderSidebarNav()}
-      </aside>
-
-      {/* Mobile Drawer Navigation (Sheet) */}
-      <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
-        <SheetContent side="right" className="w-[280px] p-0 border-l border-border bg-card">
-          {renderSidebarNav(() => setIsMobileMenuOpen(false))}
-        </SheetContent>
-      </Sheet>
-
+    <div className="min-h-screen flex flex-col bg-background">
       <main className="flex-1 flex flex-col min-w-0 overflow-auto">
         {/* GitHub Auto-Update Notification Banner */}
         <GitHubUpdateBanner />
 
-        {/* Admin Header with Page Title, Mobile Toggle, and Currency/Language Switcher */}
-        <header className="sticky top-0 z-20 bg-card/95 backdrop-blur border-b border-border px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2.5">
-            {/* Mobile Sidebar Toggle Icon Button */}
-            <Button
-              variant="outline"
-              size="icon"
-              className="md:hidden shrink-0 h-9 w-9 border-border"
-              onClick={() => setIsMobileMenuOpen(true)}
-              aria-label="فتح القائمة الجانبية"
+        {/* Sticky Frozen Top Header */}
+        <header className="sticky top-0 z-50 bg-card/95 backdrop-blur-md border-b border-border/80 shadow-xs px-4 sm:px-6 py-2.5 flex items-center justify-between gap-3 sm:gap-4">
+          <div className="flex items-center gap-2.5 sm:gap-4 min-w-0">
+            {/* Logo */}
+            <Link
+              to="/admin"
+              search={{ tab: "grid" }}
+              className="flex items-center gap-2 shrink-0 group"
+              title="الصفحة الرئيسية"
             >
-              <Menu size={20} />
-            </Button>
-            <span className="font-black text-sm text-foreground">
-              {activeNavItem?.label || "لوحة التحكم"}
-            </span>
-            <span className="text-xs text-muted-foreground font-medium hidden sm:inline">
-              | نظام إدارة المطاعم والمحاسبة ERP
-            </span>
+              <RestocashLogo size={24} />
+            </Link>
+
+            <div className="h-6 w-px bg-border/70 hidden sm:block shrink-0" />
+
+            {/* Quick Navigation Button to Main Department Grid */}
+            {isNotMainGrid && (
+              <Link to="/admin" search={{ tab: "grid" }} className="shrink-0">
+                <Button
+                  variant="default"
+                  size="sm"
+                  className="gap-1.5 rounded-xl text-xs font-black shadow-xs bg-primary text-primary-foreground hover:bg-primary/90 h-8 px-3"
+                >
+                  <Grid3X3 size={15} />
+                  <span className="hidden md:inline">لوحة الأقسام</span>
+                </Button>
+              </Link>
+            )}
+
+            {/* Section Icon + Title + Subtitle + Badge */}
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="p-1.5 rounded-lg bg-primary/10 text-primary border border-primary/20 shrink-0 hidden sm:flex items-center justify-center">
+                <IconComponent size={18} />
+              </div>
+
+              <div className="flex flex-col min-w-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-black text-sm sm:text-base text-foreground truncate tracking-tight">
+                    {pageInfo.title}
+                  </span>
+                  <span className="hidden lg:inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-primary/10 text-primary border border-primary/20 shrink-0">
+                    {pageInfo.badge}
+                  </span>
+                </div>
+                <span className="text-[11px] text-muted-foreground font-medium truncate hidden md:block">
+                  {pageInfo.sub}
+                </span>
+              </div>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+
+          {/* Right Tools & User Info */}
+          <div className="flex items-center gap-2 shrink-0">
+            {/* User Profile Badge */}
+            {user && (
+              <div className="hidden xl:flex items-center gap-2 px-2.5 py-1 rounded-xl bg-muted/60 border border-border text-xs">
+                <ShieldCheck size={14} className="text-primary" />
+                <span className="font-bold text-foreground max-w-[120px] truncate">
+                  {user.name || user.username || "الأدمن"}
+                </span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-primary/15 text-primary font-bold">
+                  {user.role === "admin" || user.role === "super_admin"
+                    ? "مسؤول النظام"
+                    : user.role || "مستخدم"}
+                </span>
+              </div>
+            )}
+
             <LanguageSwitcher />
             <CurrencySwitcher />
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleSignOut}
+              className="gap-1.5 text-xs font-bold rounded-xl h-8 px-3 border-destructive/30 text-destructive hover:bg-destructive hover:text-destructive-foreground transition-all duration-200"
+              title="تسجيل الخروج من النظام"
+            >
+              <LogOut size={14} />
+              <span className="hidden sm:inline">خروج</span>
+            </Button>
           </div>
         </header>
         <div className="p-4 sm:p-6 flex-1">
@@ -670,15 +885,15 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
             const searchParams = new URLSearchParams(location.search);
             let required: string[] | undefined;
             if ((pathname === "/admin" || pathname === "/admin/") && searchParams.has("tab")) {
-              required = nav.find(
-                (item) => item.search && item.search.tab === searchParams.get("tab"),
-              )?.permissionKeys || ["__no_access_to_unmapped_page__"];
+              required =
+                nav.find((item) => item.search && item.search.tab === searchParams.get("tab"))
+                  ?.permissionKeys || [];
             } else if (
               pathname === "/admin" ||
               pathname === "/admin/" ||
               pathname === "/admin/index"
             ) {
-              required = nav[0].permissionKeys;
+              required = [];
             } else if (
               pathname.startsWith("/admin/accounts") ||
               pathname.startsWith("/admin/ledger")
@@ -702,9 +917,39 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
               required = ["pos", "inventory", "orders"];
             } else if (pathname.startsWith("/admin/inventory")) {
               required = ["inventory", "inventory_view", "purchasing", "purchasing_view"];
+            } else if (pathname.startsWith("/admin/park")) {
+              required = [
+                "manage_park_shifts",
+                "mall_garden_finance",
+                "park_reports",
+                "mall_manage_shops",
+              ];
+            } else if (pathname.startsWith("/admin/mall")) {
+              required = [
+                "mall_manage_shops",
+                "mall_garden_finance",
+                "manage_park_shifts",
+                "park_reports",
+              ];
+            } else if (pathname.startsWith("/admin/hr")) {
+              required = ["hr", "hr_view_attendance", "hr_manage_payroll_loans"];
+            } else if (pathname.startsWith("/admin/reports")) {
+              required = [
+                "reports",
+                "reports_view_sales",
+                "reports_view_financials",
+                "park_reports",
+              ];
+            } else if (pathname.startsWith("/admin/receipts")) {
+              required = ["treasury", "accounting", "revenue_approval", "expense_approval"];
+            } else if (pathname.startsWith("/admin/users")) {
+              required = ["users_roles", "system_manage_users"];
+            } else if (pathname.startsWith("/admin/system-update")) {
+              required = ["system_backup_update", "developer_options"];
             } else {
-              required = nav.find((item) => item.to !== "/admin" && pathname.startsWith(item.to))
-                ?.permissionKeys || ["__no_access_to_unmapped_page__"];
+              required =
+                nav.find((item) => item.to !== "/admin" && pathname.startsWith(item.to))
+                  ?.permissionKeys || [];
             }
             return hasAnyPermission(user, required) ? (
               children || <Outlet />

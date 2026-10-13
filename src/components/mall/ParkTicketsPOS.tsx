@@ -126,9 +126,10 @@ export function ParkTicketsPOSView({ onClosePOS }: ParkTicketsPOSViewProps) {
   const [, forceRender] = useState(0);
 
   useEffect(() => {
-    return erpStore.subscribe(() => {
+    const unsub = erpStore.subscribe(() => {
       forceRender((prev) => prev + 1);
     });
+    return () => unsub();
   }, []);
 
   const state = erpStore.getState();

@@ -68,9 +68,10 @@ function HRPage() {
   // ERP Store subscription
   const [erpState, setErpState] = useState(erpStore.getState());
   useEffect(() => {
-    return erpStore.subscribe(() => {
+    const unsub = erpStore.subscribe(() => {
       setErpState(erpStore.getState());
     });
+    return () => unsub();
   }, []);
 
   const employees = useMemo(() => erpState.employees || [], [erpState.employees]);

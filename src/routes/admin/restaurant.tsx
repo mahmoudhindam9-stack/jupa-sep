@@ -168,26 +168,23 @@ function RestaurantHubPage() {
     window.addEventListener("storage", handleUpdate);
     window.addEventListener("focus", handleUpdate);
 
+    const unsubscribeErp = erpStore.subscribe(handleUpdate);
     const unsubscribeTableOrders = tableOrdersStore.subscribe(() => {
       handleUpdate();
     });
 
-    const unsubscribeErp = erpStore.subscribe(() => {
-      handleUpdate();
-    });
-
-    if (routeTab === "grid") return <DepartmentSubpagesGrid departmentId="restaurant" />;
-
-  return () => {
+    return () => {
       active = false;
       window.removeEventListener("menu_updated", handleUpdate);
       window.removeEventListener("inventory_updated", handleUpdate);
       window.removeEventListener("storage", handleUpdate);
       window.removeEventListener("focus", handleUpdate);
       unsubscribeTableOrders();
-      unsubscribeErp();
+      unsubscribeErp?.();
     };
   }, []);
+
+  if (routeTab === "grid") return <DepartmentSubpagesGrid departmentId="restaurant" />;
 
   const modules = [
     {

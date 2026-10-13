@@ -266,9 +266,10 @@ function CashierTreasuryPage() {
   // Hydration safeguard & real-time store subscription
   useEffect(() => {
     setIsMounted(true);
-    return erpStore.subscribe(() => {
+    const unsub = erpStore.subscribe(() => {
       setErpState(erpStore.getState());
     });
+    return () => unsub();
   }, []);
 
   const cashierTreasuryId = erpState.treasuries.find((t) => t.linked_to_restaurant)?.id || "tr-1";

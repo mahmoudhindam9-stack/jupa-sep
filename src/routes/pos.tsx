@@ -213,9 +213,10 @@ function Index() {
 
   useEffect(() => {
     setMounted(true);
-    return erpStore.subscribe(() => {
+    const unsub = erpStore.subscribe(() => {
       setErpState(erpStore.getState());
     });
+    return () => unsub();
   }, []);
 
   const [cart, setCart] = useState<CartLine[]>([]);

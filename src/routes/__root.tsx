@@ -123,7 +123,10 @@ function RootComponent() {
     } catch (e) {
       console.error("Failed to start translator:", e);
     }
-    return createAppSync(queryClient);
+    const cleanup = createAppSync(queryClient);
+    return () => {
+      if (typeof cleanup === "function") cleanup();
+    };
   }, [queryClient]);
   return (
     <html lang="ar" translate="no" suppressHydrationWarning>

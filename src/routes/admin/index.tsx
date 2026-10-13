@@ -131,7 +131,7 @@ function AdminDashboard() {
       setErpState(erpStore.getState());
       statsQuery.refetch();
     });
-    return unsub;
+    return () => unsub();
   }, [activeTab]);
 
   // Vouchers form state
@@ -754,99 +754,28 @@ function AdminDashboard() {
     }
   };
 
+  if (activeTab === "grid") {
+    return (
+      <div className="space-y-6 pb-12 text-right">
+        <DepartmentsGridHub />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 pb-12 text-right">
-      {/* Upper header with switcher */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border pb-5">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="bg-primary/10 text-primary text-xs px-2.5 py-1 rounded-full font-bold">
-              الشركة المصرية لادارة المشروعات السياحية والترفيهية (بهجت جروب)
-            </span>
-            <span className="bg-amber-500/10 text-amber-600 text-xs px-2.5 py-1 rounded-full font-bold flex items-center gap-1">
-              <Building size={12} />
-              {currentBranch.name_ar}
-            </span>
-          </div>
-          <h1 className="text-3xl font-black tracking-tight text-foreground mt-2">
-            نظام الحسابات والـ ERP الشامل
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            إشراف مركزي متكامل على فروع المؤسسة، الخزائن النقدية، الحسابات البنكية، السندات والرقابة
-            العامة
-          </p>
-        </div>
-
-        {/* Branch switcher & reports */}
-        <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3">
-          {erpState.branches.length > 1 && (
-            <div className="flex items-center gap-2 bg-muted p-1 rounded-xl border border-border">
-              <span className="text-xs font-bold text-muted-foreground px-2">الفرع الحالي:</span>
-              {erpState.branches.map((b) => (
-                <Button
-                  key={b.id}
-                  size="sm"
-                  variant={currentBranch.id === b.id ? "default" : "ghost"}
-                  onClick={() => handleBranchChange(b.id)}
-                  className="text-xs font-bold rounded-lg h-8"
-                >
-                  {b.name_ar}
-                </Button>
-              ))}
-            </div>
-          )}
-          <Link to="/admin/reports">
-            <Button variant="outline" className="gap-2 rounded-xl text-xs font-bold py-5">
-              <FileBarChart size={16} />
-              التقارير والميزانية العمومية
-            </Button>
-          </Link>
-        </div>
+      <div className="flex items-center justify-between gap-3 border-b border-border/60 pb-3">
+        <Button
+          variant="outline"
+          onClick={() => setActiveTab("grid")}
+          className="gap-2 font-black rounded-xl text-xs py-2 px-4 border-primary/30 text-primary hover:bg-primary/10 w-fit cursor-pointer"
+        >
+          <ArrowLeft size={16} />
+          العودة إلى لوحة الأقسام الرئيسية
+        </Button>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="bg-muted p-1 rounded-xl flex flex-wrap gap-1 h-auto">
-          <TabsTrigger value="grid" className="rounded-lg font-black py-2 px-4 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-            <Grid3X3 size={16} className="ml-1.5 inline" />
-            شبكة الأقسام الرئيسية
-          </TabsTrigger>
-          <TabsTrigger value="dashboard" className="rounded-lg font-bold py-2 px-4">
-            <Grid3X3 size={16} className="ml-1.5 inline" />
-            نظرة عامة والذكاء المالي
-          </TabsTrigger>
-          <TabsTrigger value="treasury" className="rounded-lg font-bold py-2 px-4">
-            <Wallet size={16} className="ml-1.5 inline" />
-            إدارة الخزائن والحسابات البنكية
-          </TabsTrigger>
-          <TabsTrigger value="vouchers_entry" className="rounded-lg font-bold py-2 px-4">
-            <FileText size={16} className="ml-1.5 inline" />
-            تسجيل سندات الإيراد والمصروف
-          </TabsTrigger>
-          <TabsTrigger value="chart_of_accounts" className="rounded-lg font-bold py-2 px-4">
-            <FileBarChart size={16} className="ml-1.5 inline" />
-            شجرة ودليل الحسابات
-          </TabsTrigger>
-          <TabsTrigger
-            value="shift_audit"
-            className="rounded-lg font-bold py-2 px-4 text-teal-700 dark:text-teal-400"
-          >
-            <Database size={16} className="ml-1.5 inline text-teal-600" />
-            تدقيق الورديات (Supabase)
-          </TabsTrigger>
-          <TabsTrigger
-            value="audit_logs"
-            className="rounded-lg font-bold py-2 px-4 text-indigo-700 dark:text-indigo-400"
-          >
-            <History size={16} className="ml-1.5 inline text-indigo-600" />
-            سجل العمليات
-          </TabsTrigger>
-        </TabsList>
-
-        {/* TAB 0: MAIN DEPARTMENT SQUARE GRID */}
-        <TabsContent value="grid" className="space-y-6 mt-4">
-          <DepartmentsGridHub />
-        </TabsContent>
-
         {/* TAB 1: EXECUTIVE DASHBOARD */}
         <TabsContent value="dashboard" className="space-y-6 mt-4">
           <div data-dashboard-accounting-sync="true" className="space-y-4">

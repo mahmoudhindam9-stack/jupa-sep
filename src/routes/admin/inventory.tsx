@@ -176,7 +176,16 @@ function InventoryPage() {
   });
   const location = useLocation();
   const tabParam = new URLSearchParams(location.search).get("tab");
-  const validTabs = ["grid", "warehouses", "stock", "transactions", "expiry", "purchases", "reports", "settings"];
+  const validTabs = [
+    "grid",
+    "warehouses",
+    "stock",
+    "transactions",
+    "expiry",
+    "purchases",
+    "reports",
+    "settings",
+  ];
   const [activeTab, setActiveTab] = useState(() =>
     validTabs.includes(tabParam || "") ? tabParam! : "stock",
   );

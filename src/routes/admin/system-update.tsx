@@ -301,7 +301,7 @@ function SystemUpdatePage() {
       setUpdateInfo(info);
       setIsCheckingUpdate(githubUpdateService.getIsChecking());
     });
-    return unsub;
+    return () => unsub();
   }, []);
 
   const handleCheckGitHubUpdates = async () => {
@@ -390,9 +390,10 @@ function SystemUpdatePage() {
   const [erpState, setErpState] = useState(erpStore.getState());
 
   useEffect(() => {
-    return erpStore.subscribe(() => {
+    const unsub = erpStore.subscribe(() => {
       setErpState(erpStore.getState());
     });
+    return () => unsub();
   }, []);
 
   // Manual & Realtime Sync Handler

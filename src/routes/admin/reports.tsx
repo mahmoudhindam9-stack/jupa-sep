@@ -73,9 +73,10 @@ function ReportsPage() {
 
   useEffect(() => {
     setErpState(erpStore.getState());
-    return erpStore.subscribe(() => {
+    const unsub = erpStore.subscribe(() => {
       setErpState({ ...erpStore.getState() });
     });
+    return () => unsub();
   }, []);
 
   const ordersQuery = useQuery({

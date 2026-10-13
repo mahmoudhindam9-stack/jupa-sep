@@ -119,7 +119,7 @@ function AccountsPage() {
         accounts: s.accounts.map((a) => ({ ...a })),
       });
     });
-    return unsubscribe;
+    return () => unsubscribe();
   }, []);
 
   // Filtering & View state

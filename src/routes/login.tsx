@@ -184,7 +184,8 @@ function LoginPage() {
   }, [navigate]);
 
   useEffect(() => {
-    return erpStore.subscribe(() => setHasLocalAccounts(localLoginUsers().length > 0));
+    const unsub = erpStore.subscribe(() => setHasLocalAccounts(localLoginUsers().length > 0));
+    return () => unsub();
   }, []);
 
   const createFirstLocalAdmin = (event: React.FormEvent<HTMLFormElement>) => {

@@ -198,10 +198,11 @@ function LedgerPage() {
   // ERP Store subscription
   const [erpState, setErpState] = useState(() => erpStore.getState());
   useEffect(() => {
-    return erpStore.subscribe(() => {
+    const unsub = erpStore.subscribe(() => {
       const state = erpStore.getState();
       if (state) setErpState({ ...state });
     });
+    return () => unsub();
   }, []);
 
   // Track saved snapshot IDs to detect unsaved entries
@@ -1551,7 +1552,7 @@ function LedgerPage() {
     toast({ title: "تم التصدير بنجاح", description: "تم تحميل ميزان المراجعة بصيغة Excel" });
   };
 
-if (selectedTab === "grid") return <DepartmentSubpagesGrid departmentId="finance" />;
+  if (selectedTab === "grid") return <DepartmentSubpagesGrid departmentId="finance" />;
 
   return (
     <div className="p-3 sm:p-6 space-y-5 sm:space-y-6 max-w-7xl mx-auto w-full min-w-0">
