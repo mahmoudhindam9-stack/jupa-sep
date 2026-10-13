@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { toast } from "sonner";
 import { createFileRoute, useLocation } from "@tanstack/react-router";
+import { DepartmentSubpagesGrid } from "@/components/admin/DepartmentsGridHub";
 import { useState, useMemo, useEffect } from "react";
 import {
   Building2,
@@ -152,8 +153,9 @@ function MallManagementPage() {
   const tabParam = searchParams.get("tab");
 
   const [activeTab, setActiveTab] = useState<
-    "shops" | "payments" | "garden" | "expenses" | "reports"
+    "grid" | "shops" | "payments" | "garden" | "expenses" | "reports"
   >(() => {
+    if (tabParam === "grid") return "grid";
     if (tabParam === "garden" || tabParam === "park" || tabParam === "park_tickets") {
       return "garden";
     }
@@ -170,7 +172,9 @@ function MallManagementPage() {
 
   useEffect(() => {
     if (tabParam) {
-      if (tabParam === "garden" || tabParam === "park" || tabParam === "park_tickets") {
+      if (tabParam === "grid") {
+        setActiveTab("grid");
+      } else if (tabParam === "garden" || tabParam === "park" || tabParam === "park_tickets") {
         setActiveTab("garden");
       } else if (
         tabParam === "payments" ||
@@ -1544,6 +1548,8 @@ function MallManagementPage() {
     });
     setIsExpenseModalOpen(false);
   };
+
+  if (activeTab === "grid") return <DepartmentSubpagesGrid departmentId="mall" />;
 
   return (
     <div className="space-y-6 w-full px-2 lg:px-6 mx-auto pb-12">

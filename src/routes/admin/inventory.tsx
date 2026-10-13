@@ -1,5 +1,6 @@
 // @ts-nocheck
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useLocation } from "@tanstack/react-router";
+import { DepartmentSubpagesGrid } from "@/components/admin/DepartmentsGridHub";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as XLSX from "xlsx";
 import { useState, useMemo, useEffect, useCallback } from "react";
@@ -173,7 +174,15 @@ function InventoryPage() {
       });
     },
   });
-  const [activeTab, setActiveTab] = useState("stock");
+  const location = useLocation();
+  const tabParam = new URLSearchParams(location.search).get("tab");
+  const validTabs = ["grid", "warehouses", "stock", "transactions", "expiry", "purchases", "reports", "settings"];
+  const [activeTab, setActiveTab] = useState(() =>
+    validTabs.includes(tabParam || "") ? tabParam! : "stock",
+  );
+  useEffect(() => {
+    if (tabParam && validTabs.includes(tabParam)) setActiveTab(tabParam);
+  }, [tabParam]);
   const [search, setSearch] = useState("");
   const [filterLowStock, setFilterLowStock] = useState(false);
 
@@ -1246,6 +1255,8 @@ function InventoryPage() {
       isLowAfter: expected <= Number(item.min_level),
     };
   }, [txForm, inventoryQuery.data]);
+
+  if (activeTab === "grid") return <DepartmentSubpagesGrid departmentId="inventory" />;
 
   return (
     <div className="space-y-6 text-right">

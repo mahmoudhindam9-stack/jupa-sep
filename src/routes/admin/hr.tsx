@@ -1,5 +1,6 @@
 // @ts-nocheck
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useLocation } from "@tanstack/react-router";
+import { DepartmentSubpagesGrid } from "@/components/admin/DepartmentsGridHub";
 import { useState, useEffect, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useSettings } from "@/hooks/use-settings";
@@ -59,6 +60,8 @@ export const Route = createFileRoute("/admin/hr")({
 });
 
 function HRPage() {
+  const location = useLocation();
+  const tabParam = new URLSearchParams(location.search).get("tab");
   const { toast } = useToast();
   const { formatPrice, formatTreasuryCurrency } = useSettings();
 
@@ -75,8 +78,14 @@ function HRPage() {
   const loans = useMemo(() => erpState.loans || [], [erpState.loans]);
   const payrolls = useMemo(() => erpState.payrolls || [], [erpState.payrolls]);
 
-  // Active Tab state
-  const [activeTab, setActiveTab] = useState("employees");
+  // The route query makes the square sub-navigation deep-linkable.
+  const validTabs = ["grid", "employees", "attendance", "payroll", "loans"];
+  const [activeTab, setActiveTab] = useState(() =>
+    validTabs.includes(tabParam || "") ? tabParam! : "employees",
+  );
+  useEffect(() => {
+    if (tabParam && validTabs.includes(tabParam)) setActiveTab(tabParam);
+  }, [tabParam]);
 
   // Search & Filter States
   const [empSearch, setEmpSearch] = useState("");
@@ -747,6 +756,8 @@ function HRPage() {
 
     return { present, absent, late, leave, total, unrecorded };
   }, [attendance, attendanceDate, employees]);
+
+  if (activeTab === "grid") return <DepartmentSubpagesGrid departmentId="hr" />;
 
   return (
     <div className="space-y-6">

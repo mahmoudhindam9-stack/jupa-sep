@@ -1,5 +1,6 @@
 // @ts-nocheck
-import { createFileRoute, useNavigate, useBlocker } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, useBlocker, useLocation } from "@tanstack/react-router";
+import { DepartmentSubpagesGrid } from "@/components/admin/DepartmentsGridHub";
 import { useState, useEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
 import {
@@ -332,16 +333,16 @@ function LedgerPage() {
     }
   };
 
-  // UI state
-  const [selectedTab, setSelectedTab] = useState(() => {
-    if (typeof window !== "undefined") {
-      const tabParam = new URLSearchParams(window.location.search).get("tab");
-      if (tabParam && ["ledger", "journal", "vouchers", "trial", "statements"].includes(tabParam)) {
-        return tabParam;
-      }
-    }
-    return "journal";
-  });
+  // UI state follows the URL so square-grid selections also work on refresh/direct links.
+  const location = useLocation();
+  const tabParam = new URLSearchParams(location.search).get("tab");
+  const validTabs = ["grid", "ledger", "journal", "vouchers", "trial", "statements"];
+  const [selectedTab, setSelectedTab] = useState(() =>
+    validTabs.includes(tabParam || "") ? tabParam! : "journal",
+  );
+  useEffect(() => {
+    if (tabParam && validTabs.includes(tabParam)) setSelectedTab(tabParam);
+  }, [tabParam]);
 
   const [isImportingOracle, setIsImportingOracle] = useState(false);
   const [isSavingToDb, setIsSavingToDb] = useState(false);
@@ -1549,6 +1550,8 @@ function LedgerPage() {
     XLSX.writeFile(workbook, `ميزان_المراجعة_${new Date().toISOString().split("T")[0]}.xlsx`);
     toast({ title: "تم التصدير بنجاح", description: "تم تحميل ميزان المراجعة بصيغة Excel" });
   };
+
+if (selectedTab === "grid") return <DepartmentSubpagesGrid departmentId="finance" />;
 
   return (
     <div className="p-3 sm:p-6 space-y-5 sm:space-y-6 max-w-7xl mx-auto w-full min-w-0">

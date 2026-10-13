@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { DepartmentSubpagesGrid } from "@/components/admin/DepartmentsGridHub";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -91,6 +92,7 @@ export const Route = createFileRoute("/admin/system-update")({
 function SystemUpdatePage() {
   const { toast } = useToast();
   const location = useLocation();
+  const tabParam = new URLSearchParams(location.search).get("tab");
   const navigate = useNavigate();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -98,7 +100,13 @@ function SystemUpdatePage() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const [devModeOpen, setDevModeOpen] = useState(false);
-  const [currentTab, setCurrentTab] = useState("system");
+  const validTabs = ["grid", "system", "access"];
+  const [currentTab, setCurrentTab] = useState(() =>
+    validTabs.includes(tabParam || "") ? tabParam! : "system",
+  );
+  useEffect(() => {
+    if (tabParam && validTabs.includes(tabParam)) setCurrentTab(tabParam);
+  }, [tabParam]);
   const [editedStrings, setEditedStrings] = useState<Record<string, string>>({});
   const [isLiveSynced, setIsLiveSynced] = useState(true);
   const [lastSyncTime, setLastSyncTime] = useState<string>(new Date().toLocaleTimeString("ar-EG"));
@@ -751,6 +759,8 @@ function SystemUpdatePage() {
       fields: ["id", "entry_number", "date", "description", "total"],
     },
   ];
+
+  if (currentTab === "grid") return <DepartmentSubpagesGrid departmentId="system" />;
 
   return (
     <div className="space-y-6 pb-12 text-right font-cairo px-2 sm:px-4 md:px-6">
