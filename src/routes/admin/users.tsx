@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,15 +23,6 @@ import {
 } from "lucide-react";
 import { erpStore, UserPermission, SystemUser } from "@/shared/services/erpStore";
 import { authService } from "@/features/auth/services/authService";
-import {
-  getPendingUserSyncCount,
-  hasPendingUserChange,
-  needsPasswordForPendingUserCreate,
-  queueUserChange,
-  startUserSync,
-  syncPendingUserChanges,
-  type UserSyncResult,
-} from "@/features/auth/services/userDirectorySync";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -531,7 +522,6 @@ function profileToSystemUser(profile: any): SystemUser {
     id: profile.id,
     full_name: profile.full_name || profile.username || "",
     username: profile.username || String(profile.email || "").split("@")[0],
-    email: String(profile.email || "").trim().toLowerCase(),
     phone: profile.phone || "",
     role: profile.role || "cashier",
     permissions: (profile.permissions || {}) as UserPermission,
@@ -543,76 +533,6 @@ function localLoginUsers(): SystemUser[] {
   return erpStore
     .getUsers()
     .filter((user) => typeof user.password === "string" && user.password.length > 0);
-}
-
-function directoryUsers(): SystemUser[] {
-  const users = erpStore
-    .getUsers()
-    .filter((user) => typeof user.username === "string" && user.username.trim().length > 0);
-  return isHostedDeployment() ? users : users.filter((user) => !!user.password);
-}
-
-function isLocalUserDraft(user: SystemUser | null | undefined): boolean {
-  return String(user?.id || "").startsWith("u-");
-}
-
-function isSupabaseProfileId(value: unknown): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    String(value || ""),
-  );
-}
-
-function isValidSupabaseEmail(value: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-}
-
-function normalizeSupabaseEmail(value: unknown): string {
-  return String(value || "").trim().toLowerCase();
-}
-
-async function queueUserChangeSafely(input: Parameters<typeof queueUserChange>[0]): Promise<UserSyncResult> {
-  try {
-    return await queueUserChange(input);
-  } catch (error: any) {
-    return {
-      synced: false,
-      pending: false,
-      pendingCount: getPendingUserSyncCount(),
-      error: String(error?.message || error || "تعذر تسجيل التغيير للمزامنة."),
-    };
-  }
-}
-
-function notifyUserChange(toast: any, action: string, result: UserSyncResult): void {
-  if (!isHostedDeployment()) {
-    toast({ title: `${action} بنجاح` });
-    return;
-  }
-
-  if (result.synced) {
-    toast({
-      title: `${action} في Supabase`,
-      description: "تم تأكيد حفظ التغيير في قاعدة البيانات السحابية.",
-    });
-    return;
-  }
-
-  if (result.pending) {
-    toast({
-      title: "تم الحفظ محليًا — المزامنة معلّقة",
-      description: result.error
-        ? `لم تؤكد Supabase حفظ التغيير. سيُعاد الإرسال تلقائيًا عند الاتصال. ${result.error}`
-        : "لم تؤكد Supabase حفظ التغيير بعد. ستتم إعادة المزامنة تلقائيًا عند عودة الاتصال.",
-      variant: "destructive",
-    });
-    return;
-  }
-
-  toast({
-    title: "تم الحفظ محليًا، لكن لم تُجدول المزامنة",
-    description: result.error || "لم يتم تأكيد الحفظ السحابي. أعد المحاولة عندما يكون الاتصال مستقرًا.",
-    variant: "destructive",
-  });
 }
 
 function isActiveUserRecord(user: SystemUser | null | undefined, activeAuthUser?: string): boolean {
@@ -801,7 +721,7 @@ function defaultPermissionsForRole(role: string): UserPermission {
   return permissions as UserPermission;
 }
 
-export function UsersPage() {
+function UsersPage() {
   const { toast } = useToast();
   const [erpState, setErpState] = useState(erpStore.getState());
   const [localUsers, setLocalUsers] = useState<SystemUser[]>([]);
@@ -814,8 +734,7 @@ export function UsersPage() {
         sessionStorage.getItem("restocash_auth_user") ||
         "";
       setActiveAuthUser(active);
-      setLocalUsers(directoryUsers());
-      setPendingSyncCount(getPendingUserSyncCount());
+      setLocalUsers(isHostedDeployment() ? [] : localLoginUsers());
     }
   }, []);
 
@@ -827,7 +746,6 @@ export function UsersPage() {
   const [form, setForm] = useState({
     full_name: "",
     username: "",
-    email: "",
     phone: "",
     password: "",
     role: "cashier",
@@ -844,33 +762,6 @@ export function UsersPage() {
   const [isConfirmPeriodLockOpen, setIsConfirmPeriodLockOpen] = useState(false);
   const [isConfirmFiscalYearOpen, setIsConfirmFiscalYearOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [pendingSyncCount, setPendingSyncCount] = useState(0);
-  const [isSyncingUsers, setIsSyncingUsers] = useState(false);
-
-  const handleSyncUsersNow = async () => {
-    setIsSyncingUsers(true);
-    try {
-      const summary = await syncPendingUserChanges();
-      setPendingSyncCount(summary.pendingCount);
-      setLocalUsers(directoryUsers());
-      setErpState(erpStore.getState());
-      if (summary.pendingCount === 0) {
-        toast({
-          title: "تمت المزامنة",
-          description: "تم إرسال التغييرات المعلّقة وتأكيد حفظها في Supabase.",
-        });
-      } else {
-        toast({
-          title: "ما زالت هناك تغييرات معلّقة",
-          description:
-            "احتفظ النظام بالتغييرات محليًا، لكن لم تُؤكد Supabase حفظها كلها. راجع كلمة مرور الحساب الجديد أو الاتصال والصلاحيات ثم أعد المحاولة.",
-          variant: "destructive",
-        });
-      }
-    } finally {
-      setIsSyncingUsers(false);
-    }
-  };
 
   const handleConfirmPeriodLock = () => {
     const nextLock = !erpState.isAccountingPeriodLocked;
@@ -914,54 +805,28 @@ export function UsersPage() {
 
   useEffect(() => {
     let mounted = true;
-
-    const refreshDirectory = () => {
+    const unsubscribe = erpStore.subscribe(() => {
       if (!mounted) return;
       setErpState(erpStore.getState());
-      setLocalUsers(directoryUsers());
-      setPendingSyncCount(getPendingUserSyncCount());
-    };
-
-    const unsubscribe = erpStore.subscribe(refreshDirectory);
-    const onUserSyncChange = () => refreshDirectory();
-    window.addEventListener("restocash-user-sync-updated", onUserSyncChange);
-    const stopUserSync = startUserSync();
+      setLocalUsers(localLoginUsers());
+    });
 
     const loadUsersDirectory = async () => {
-      refreshDirectory();
-      if (!isHostedDeployment()) return;
-
-      try {
-        const profiles = (await authService.getUsers()) as any[];
-        if (!mounted) return;
-
-        const remoteProfiles = (profiles || []).filter(
-          (profile) => profile?.id && profile?.username,
-        );
-        const remoteIds = new Set(remoteProfiles.map((profile) => String(profile.id)));
-
-        // Supabase is authoritative after a successful directory read, including an empty
-        // directory. This prevents stale local copies from reappearing after the reset.
-        // Unconfirmed local drafts remain visible only while they still have queued writes.
-        for (const cached of erpStore.getUsers()) {
-          if (
-            isSupabaseProfileId(cached.id) &&
-            !remoteIds.has(String(cached.id)) &&
-            !hasPendingUserChange(String(cached.id), String(cached.username || ""))
-          ) {
-            erpStore.deleteUser(cached.id);
+      if (mounted) setLocalUsers(localLoginUsers());
+      if (isHostedDeployment()) {
+        try {
+          const profiles = (await authService.getUsers()) as any[];
+          if (profiles && profiles.length > 0 && mounted) {
+            for (const profile of profiles) {
+              if (profile && profile.username) {
+                erpStore.upsertUser(profileToSystemUser(profile));
+              }
+            }
+            setLocalUsers(localLoginUsers());
           }
+        } catch (err) {
+          console.warn("Hosted profiles directory load notice:", err);
         }
-
-        for (const profile of remoteProfiles) {
-          if (!hasPendingUserChange(String(profile.id), String(profile.username))) {
-            erpStore.upsertUser(profileToSystemUser(profile));
-          }
-        }
-        refreshDirectory();
-      } catch (err) {
-        // Keep the local directory visible and queue changes until connectivity/permissions recover.
-        console.warn("Hosted profiles directory load notice:", err);
       }
     };
 
@@ -970,17 +835,13 @@ export function UsersPage() {
     return () => {
       mounted = false;
       unsubscribe();
-      stopUserSync();
-      window.removeEventListener("restocash-user-sync-updated", onUserSyncChange);
     };
   }, []);
 
   const upsert = async () => {
     const username = form.username.trim();
     const normalizedUsername = username.toLowerCase();
-    const email = normalizeSupabaseEmail(form.email);
     const actorPermissions = currentActorPermissions(erpState);
-    const hosted = isHostedDeployment();
 
     if (
       !canGrantElevatedPermissions(erpState) &&
@@ -995,25 +856,7 @@ export function UsersPage() {
     }
 
     try {
-      if (hosted && !isValidSupabaseEmail(email)) {
-        throw new Error("أدخل بريدًا إلكترونيًا حقيقيًا وصالحًا ليطابق متطلبات Supabase.");
-      }
-      if (hosted && !/^[a-z0-9._-]{3,32}$/.test(normalizedUsername)) {
-        throw new Error("اسم المستخدم يجب أن يكون من 3 إلى 32 حرفًا أو رقمًا، ويمكن استخدام النقطة والشرطة فقط.");
-      }
-
       if (editing) {
-        const pendingCreate = hosted && isLocalUserDraft(editing);
-        if (
-          pendingCreate &&
-          needsPasswordForPendingUserCreate(editing.id) &&
-          !form.password.trim()
-        ) {
-          throw new Error(
-            "هذا الحساب محفوظ محليًا ولم يكتمل إنشاؤه في Supabase. أدخل كلمة المرور مرة أخرى لإكمال المزامنة.",
-          );
-        }
-
         const permissions =
           editing.permissions ||
           erpState.userPermissions[editing.username] ||
@@ -1024,71 +867,45 @@ export function UsersPage() {
           ...editing,
           full_name: form.full_name.trim(),
           username,
-          email: hosted ? (editing.email || email) : (editing.email || ""),
           phone: form.phone.trim(),
           role: form.role,
           permissions,
-          ...(!hosted && form.password.trim() ? { password: form.password.trim() } : {}),
+          ...(form.password.trim() ? { password: form.password.trim() } : {}),
         };
-
-        // Local cache is the immediate working copy. Cloud changes remain queued until confirmed.
         erpStore.upsertUser(updated);
-        erpStore.updateUserPermission(normalizedUsername, permissions);
-
-        let syncResult: UserSyncResult = {
-          synced: true,
-          pending: false,
-          pendingCount: getPendingUserSyncCount(),
-        };
-        if (hosted) {
-          const profile = {
-            username: normalizedUsername,
-            email: editing.email || email,
-            full_name: form.full_name.trim(),
-            phone: form.phone.trim(),
-            role: form.role,
-            permissions,
-            updated_at: new Date().toISOString(),
-          };
-          syncResult = await queueUserChangeSafely(
-            pendingCreate
-              ? {
-                  kind: "create",
-                  localUserId: editing.id,
-                  username: normalizedUsername,
-                  email: email,
-                  password: form.password.trim(),
-                  profile,
-                }
-              : {
-                  kind: "upsert",
-                  userId: editing.id,
-                  username: normalizedUsername,
-                  profile: { id: editing.id, ...profile },
-                },
-          );
-        }
-
-        setLocalUsers(directoryUsers());
-        setErpState(erpStore.getState());
-        setPendingSyncCount(getPendingUserSyncCount());
+        erpStore.updateUserPermission(username, permissions);
+        setLocalUsers(localLoginUsers());
         setEditing(null);
-        setForm({ full_name: "", username: "", email: "", phone: "", password: "", role: "cashier" });
+        setForm({ full_name: "", username: "", phone: "", password: "", role: "cashier" });
         setIsConfirmUpsertOpen(false);
-        notifyUserChange(toast, "تم تحديث المستخدم", syncResult);
+        toast({ title: "تم تحديث المستخدم بنجاح" });
+
+        // Background cloud sync attempt (non-blocking)
+        if (isHostedDeployment()) {
+          authService
+            .upsertProfile({
+              id: editing.id,
+              username: normalizedUsername,
+              full_name: form.full_name.trim(),
+              phone: form.phone.trim(),
+              role: form.role,
+              permissions,
+              updated_at: new Date().toISOString(),
+            })
+            .catch(() => undefined);
+        }
         return;
       }
 
-      if (!form.password || form.password.length < 8) {
-        throw new Error("أدخل كلمة مرور لا تقل عن 8 أحرف. وسيطبق Supabase أي شروط إضافية مضبوطة في المشروع.");
+      // Creating new user
+      if (!form.password || form.password.length < 4) {
+        throw new Error("أدخل كلمة مرور للحساب الجديد (لا تقل عن 4 خانات).");
       }
-      const duplicate = directoryUsers().some(
-        (user) =>
-          String(user.username || "").trim().toLowerCase() === normalizedUsername ||
-          (hosted && normalizeSupabaseEmail(user.email) === email),
+      const duplicate = localLoginUsers().some(
+        (user) => String(user.username).trim().toLowerCase() === normalizedUsername,
       );
       if (duplicate) {
-        throw new Error("اسم المستخدم أو البريد الإلكتروني موجود بالفعل. استخدم بيانات مختلفة.");
+        throw new Error("اسم المستخدم موجود بالفعل. اختر اسم دخول مختلفاً.");
       }
 
       const permissions = limitPermissionsToActor(
@@ -1099,47 +916,50 @@ export function UsersPage() {
         id: `u-${Date.now()}`,
         full_name: form.full_name.trim(),
         username,
-        email: hosted ? email : "",
         phone: form.phone.trim(),
         role: form.role,
-        ...(!hosted ? { password: form.password } : {}),
+        password: form.password,
         permissions,
         created_at: new Date().toISOString(),
       };
-
       erpStore.upsertUser(localUser);
-      erpStore.updateUserPermission(normalizedUsername, permissions);
+      erpStore.updateUserPermission(username, permissions);
+      setLocalUsers(localLoginUsers());
+      setForm({ full_name: "", username: "", phone: "", password: "", role: "cashier" });
+      setIsConfirmUpsertOpen(false);
+      toast({
+        title: "تم إنشاء المستخدم بنجاح",
+        description: `تم حفظ الحساب (${username}) بنجاح ويمكنه تسجيل الدخول فوراً.`,
+      });
 
-      let syncResult: UserSyncResult = {
-        synced: true,
-        pending: false,
-        pendingCount: getPendingUserSyncCount(),
-      };
-      if (hosted) {
-        syncResult = await queueUserChangeSafely({
-          kind: "create",
-          localUserId: localUser.id,
-          username: normalizedUsername,
-          email,
-          password: form.password,
-          profile: {
+      // Background cloud sync attempt (non-blocking)
+      if (isHostedDeployment()) {
+        const emailToUse = username.includes("@")
+          ? normalizedUsername
+          : `${normalizedUsername}@restocash.com`;
+        authService
+          .signUpNewUser(emailToUse, form.password, {
             username: normalizedUsername,
-            email,
             full_name: form.full_name.trim(),
             phone: form.phone.trim(),
             role: form.role,
-            permissions,
-            created_at: localUser.created_at,
-          },
-        });
+          })
+          .then(async (created) => {
+            if (created?.user?.id) {
+              await authService
+                .upsertProfile({
+                  id: created.user.id,
+                  username: normalizedUsername,
+                  full_name: form.full_name.trim(),
+                  phone: form.phone.trim(),
+                  role: form.role,
+                  permissions,
+                })
+                .catch(() => undefined);
+            }
+          })
+          .catch((err) => console.warn("Cloud signup sync notice:", err));
       }
-
-      setLocalUsers(directoryUsers());
-      setErpState(erpStore.getState());
-      setPendingSyncCount(getPendingUserSyncCount());
-      setForm({ full_name: "", username: "", email: "", phone: "", password: "", role: "cashier" });
-      setIsConfirmUpsertOpen(false);
-      notifyUserChange(toast, "تم إنشاء المستخدم", syncResult);
     } catch (error: any) {
       toast({
         title: editing ? "تعذر تحديث المستخدم" : "تعذر إنشاء المستخدم",
@@ -1152,7 +972,7 @@ export function UsersPage() {
   const deleteUser = async () => {
     if (!userToDelete) return;
     const target = localUsers.find((user) => user.id === userToDelete);
-    if (isActiveUserRecord(target, activeAuthUser)) {
+    if (isActiveUserRecord(target)) {
       toast({
         title: "لا يمكن حذف الحساب المستخدم حاليًا",
         description: "سجّل الدخول بحساب آخر لديه صلاحية إدارة المستخدمين أولًا.",
@@ -1162,38 +982,13 @@ export function UsersPage() {
       setIsConfirmDeleteOpen(false);
       return;
     }
-
-    const wasPendingCreate =
-      !!target &&
-      isHostedDeployment() &&
-      isLocalUserDraft(target) &&
-      needsPasswordForPendingUserCreate(target.id);
     try {
-      // Remove locally immediately; if cloud deletion fails the tombstone stays in the queue.
       erpStore.deleteUser(userToDelete);
-      const syncResult = isHostedDeployment()
-        ? await queueUserChangeSafely({
-            kind: "delete",
-            userId: userToDelete,
-            username: String(target?.username || ""),
-          })
-        : {
-            synced: true,
-            pending: false,
-            pendingCount: getPendingUserSyncCount(),
-          };
+      setLocalUsers(localLoginUsers());
+      toast({ title: "تم حذف المستخدم بنجاح" });
 
-      setLocalUsers(directoryUsers());
-      setErpState(erpStore.getState());
-      setPendingSyncCount(getPendingUserSyncCount());
-
-      if (wasPendingCreate) {
-        toast({
-          title: "تم إلغاء الحساب المحلي المعلّق",
-          description: "لم يكن الحساب قد أُنشئ في Supabase بعد، لذلك أُلغي طلب الإنشاء المحلي.",
-        });
-      } else {
-        notifyUserChange(toast, "تم حذف المستخدم", syncResult);
+      if (isHostedDeployment()) {
+        authService.deleteUser(userToDelete).catch(() => undefined);
       }
     } catch (error: any) {
       toast({
@@ -1212,7 +1007,6 @@ export function UsersPage() {
     setForm({
       full_name: p.full_name ?? "",
       username: p.username ?? "",
-      email: p.email ?? "",
       phone: p.phone ?? "",
       password: "",
       role: p.role,
@@ -1244,21 +1038,21 @@ export function UsersPage() {
         permissionsUser.role,
         currentActorPermissions(erpStore.getState()),
       );
-
       erpStore.updateUserPermission(permissionsUser.username, editedPermissions);
       erpStore.upsertUser({ ...permissionsUser, permissions: editedPermissions });
+      setLocalUsers(localLoginUsers());
+      setErpState(erpStore.getState());
+      setIsConfirmSavePermsOpen(false);
+      setPermissionsUser(null);
+      setEditedPermissions(null);
+      toast({
+        title: "تم حفظ الصلاحيات بنجاح",
+        description: "تم تحديث وحفظ صلاحيات المستخدم في النظام.",
+      });
 
-      let syncResult: UserSyncResult = {
-        synced: true,
-        pending: false,
-        pendingCount: getPendingUserSyncCount(),
-      };
       if (isHostedDeployment()) {
-        syncResult = await queueUserChangeSafely({
-          kind: "upsert",
-          userId: permissionsUser.id,
-          username: permissionsUser.username,
-          profile: {
+        authService
+          .upsertProfile({
             id: permissionsUser.id,
             username: permissionsUser.username,
             full_name: permissionsUser.full_name,
@@ -1266,17 +1060,9 @@ export function UsersPage() {
             role: permissionsUser.role,
             permissions: editedPermissions,
             updated_at: new Date().toISOString(),
-          },
-        });
+          })
+          .catch((err) => console.warn("Cloud permissions sync notice:", err));
       }
-
-      setLocalUsers(directoryUsers());
-      setErpState(erpStore.getState());
-      setPendingSyncCount(getPendingUserSyncCount());
-      setIsConfirmSavePermsOpen(false);
-      setPermissionsUser(null);
-      setEditedPermissions(null);
-      notifyUserChange(toast, "تم حفظ الصلاحيات", syncResult);
     } catch (error: any) {
       toast({
         title: "تعذر حفظ الصلاحيات",
@@ -1394,21 +1180,6 @@ export function UsersPage() {
 
   return (
     <div className="space-y-8 p-1 sm:p-2">
-      {/* Integrated HR banner */}
-      <div className="bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 rounded-xl p-3 flex items-center justify-between gap-3 text-xs">
-        <div className="flex items-center gap-2 text-indigo-900 dark:text-indigo-200 font-bold">
-          <UsersIcon size={16} />
-          <span>هذا القسم متاح ومدمج أيضاً ضمن قسم إدارة الموارد البشرية.</span>
-        </div>
-        <Link
-          to="/admin/hr"
-          search={{ tab: "users" }}
-          className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 rounded-lg transition"
-        >
-          فتح داخل الموارد البشرية ←
-        </Link>
-      </div>
-
       {/* Page Header */}
       <div>
         <div className="flex items-center gap-2">
@@ -1425,37 +1196,6 @@ export function UsersPage() {
           المالية
         </p>
       </div>
-
-      {isHostedDeployment() && pendingSyncCount > 0 && (
-        <div
-          role="status"
-          className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50/80 p-3 text-xs text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100"
-        >
-          <div className="flex items-start gap-2">
-            <AlertCircle size={17} className="mt-0.5 shrink-0" />
-            <div>
-              <p className="font-black">
-                {pendingSyncCount} تغييرًا محليًا ينتظر تأكيد الحفظ في Supabase
-              </p>
-              <p className="mt-1">
-                {typeof navigator !== "undefined" && !navigator.onLine
-                  ? "لا يوجد اتصال بالإنترنت. سيحاول النظام المزامنة تلقائيًا عند عودته."
-                  : "لم يتم تأكيد كل التغييرات السحابية بعد. ستبقى التغييرات محفوظة محليًا حتى تنجح المزامنة."}
-              </p>
-            </div>
-          </div>
-          <Button
-            size="sm"
-            variant="outline"
-            className="shrink-0 border-amber-500/50 font-bold"
-            onClick={handleSyncUsersNow}
-            disabled={isSyncingUsers}
-          >
-            <RefreshCw size={14} className={isSyncingUsers ? "ml-1 animate-spin" : "ml-1"} />
-            {isSyncingUsers ? "جاري المزامنة..." : "مزامنة الآن"}
-          </Button>
-        </div>
-      )}
 
       {/* User Registration & List */}
       <div className="space-y-4">
@@ -1474,31 +1214,15 @@ export function UsersPage() {
             />
           </div>
           <div className="md:col-span-2 lg:col-span-1">
-            <Label className="text-xs font-bold">اسم المستخدم (داخل النظام)</Label>
+            <Label className="text-xs font-bold">اسم المستخدم / البريد (للدخول)</Label>
             <Input
               className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1"
-              placeholder="مثال: ahmed"
+              placeholder="مثال: admin"
               disabled={!!editing && isHostedDeployment()}
               value={form.username}
               onChange={(e) => setForm((s) => ({ ...s, username: e.target.value }))}
             />
           </div>
-          {isHostedDeployment() && (
-            <div className="md:col-span-2 lg:col-span-1">
-              <Label className="text-xs font-bold">البريد الحقيقي لحساب Supabase</Label>
-              <Input
-                type="email"
-                required
-                autoComplete="email"
-                dir="ltr"
-                className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1"
-                placeholder="name@example.com"
-                disabled={!!editing && !isLocalUserDraft(editing)}
-                value={form.email}
-                onChange={(e) => setForm((s) => ({ ...s, email: e.target.value }))}
-              />
-            </div>
-          )}
           <div className="md:col-span-2 lg:col-span-1">
             <Label className="text-xs font-bold">رقم الهاتف</Label>
             <Input
@@ -1513,20 +1237,8 @@ export function UsersPage() {
             <Input
               type="password"
               className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1"
-              placeholder={
-                editing
-                  ? isLocalUserDraft(editing)
-                    ? needsPasswordForPendingUserCreate(editing.id)
-                      ? "أعد إدخاله لإكمال المزامنة"
-                      : "سيُستكمل حفظ الملف السحابي"
-                    : "كلمة المرور لا تتغير من هذه الصفحة"
-                  : "الرقم السري"
-              }
-              disabled={
-                !!editing &&
-                isHostedDeployment() &&
-                (!isLocalUserDraft(editing) || !needsPasswordForPendingUserCreate(editing.id))
-              }
+              placeholder={editing ? "اتركه فارغاً لعدم التغيير" : "الرقم السري"}
+              disabled={!!editing && isHostedDeployment()}
               value={form.password}
               onChange={(e) => setForm((s) => ({ ...s, password: e.target.value }))}
             />
@@ -1590,12 +1302,7 @@ export function UsersPage() {
               {localUsers.map((u) => (
                 <tr key={u.id} className="hover:bg-muted/30 transition-colors">
                   <td className="p-3 font-bold text-foreground">{u.full_name || "-"}</td>
-                  <td className="p-3 font-mono">
-                    <div>{u.email || u.username || "-"}</div>
-                    {u.email && u.username && u.username !== u.email && (
-                      <div className="text-[10px] text-muted-foreground mt-1">اسم المستخدم: {u.username}</div>
-                    )}
-                  </td>
+                  <td className="p-3 font-mono">{u.username || "-"}</td>
                   <td className="p-3 font-mono">{u.phone || "-"}</td>
                   <td className="p-3">
                     <span className="bg-primary/10 text-primary border border-primary/20 px-2.5 py-0.5 rounded-full font-black text-[10px]">

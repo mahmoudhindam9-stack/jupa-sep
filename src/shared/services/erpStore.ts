@@ -273,8 +273,7 @@ export interface TreasuryReconciliation {
 export interface SystemUser {
   id: string;
   full_name: string;
-  username: string; // Unique in-app username; hosted sign-in uses the Supabase email.
-  email?: string;
+  username: string; // Used for login (email or plain text)
   phone: string;
   role: string;
   password?: string;
@@ -2258,6 +2257,26 @@ function ensureCurrentManagedUsers(users: unknown): SystemUser[] {
           user.username.trim().length > 0,
       ) as SystemUser[])
     : [];
+
+  const hasAdmin = list.some(
+    (u) =>
+      String(u.username || "")
+        .trim()
+        .toLowerCase() === "admin",
+  );
+  if (!hasAdmin) {
+    list.unshift(ROOT_DEFAULT_ADMIN);
+  }
+
+  const hasOwner = list.some(
+    (u) =>
+      String(u.username || "")
+        .trim()
+        .toLowerCase() === "mahmoudhindam9@gmail.com",
+  );
+  if (!hasOwner) {
+    list.push(OWNER_DEFAULT_ADMIN);
+  }
   return list;
 }
 
@@ -2631,11 +2650,6 @@ export class ERPStore {
     if (raw)
       try {
         const parsed = JSON.parse(raw);
-        if (!parsed.wipe_all_users_clean_2026_10_12_v4) {
-          parsed.users = [];
-          parsed.currentUser = "";
-          parsed.wipe_all_users_clean_2026_10_12_v4 = true;
-        }
         let treasuries =
           parsed.treasuries?.map((t) => {
             const currency = t.currency;
@@ -3022,7 +3036,7 @@ export class ERPStore {
       reconciliations: [],
       userPermissions: DEFAULT_PERMISSIONS,
       currentUser: "",
-      users: [],
+      users: [ROOT_DEFAULT_ADMIN],
       fiscalYearStatus: "open",
       inventorySettings: {
         allowNegativeStock: true,

@@ -27,7 +27,6 @@ import { Route as AdminLedgerRouteImport } from './routes/admin/ledger'
 import { Route as AdminMallRouteImport } from './routes/admin/mall'
 import { Route as AdminMenuRouteImport } from './routes/admin/menu'
 import { Route as AdminOrdersRouteImport } from './routes/admin/orders'
-import { Route as AdminParkRouteImport } from './routes/admin/park'
 import { Route as AdminReceiptsRouteImport } from './routes/admin/receipts'
 import { Route as AdminReportsRouteImport } from './routes/admin/reports'
 import { Route as AdminRestaurantRouteImport } from './routes/admin/restaurant'
@@ -124,11 +123,6 @@ const AdminOrdersRoute = AdminOrdersRouteImport.update({
   path: '/orders',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminParkRoute = AdminParkRouteImport.update({
-  id: '/park',
-  path: '/park',
-  getParentRoute: () => AdminRoute,
-} as any)
 const AdminReceiptsRoute = AdminReceiptsRouteImport.update({
   id: '/receipts',
   path: '/receipts',
@@ -173,7 +167,6 @@ export interface FileRoutesByFullPath {
   '/admin/mall': typeof AdminMallRoute
   '/admin/menu': typeof AdminMenuRoute
   '/admin/orders': typeof AdminOrdersRoute
-  '/admin/park': typeof AdminParkRoute
   '/admin/receipts': typeof AdminReceiptsRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/restaurant': typeof AdminRestaurantRoute
@@ -198,7 +191,6 @@ export interface FileRoutesByTo {
   '/admin/mall': typeof AdminMallRoute
   '/admin/menu': typeof AdminMenuRoute
   '/admin/orders': typeof AdminOrdersRoute
-  '/admin/park': typeof AdminParkRoute
   '/admin/receipts': typeof AdminReceiptsRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/restaurant': typeof AdminRestaurantRoute
@@ -225,7 +217,6 @@ export interface FileRoutesById {
   '/admin/mall': typeof AdminMallRoute
   '/admin/menu': typeof AdminMenuRoute
   '/admin/orders': typeof AdminOrdersRoute
-  '/admin/park': typeof AdminParkRoute
   '/admin/receipts': typeof AdminReceiptsRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/restaurant': typeof AdminRestaurantRoute
@@ -253,7 +244,6 @@ export interface FileRouteTypes {
     | '/admin/mall'
     | '/admin/menu'
     | '/admin/orders'
-    | '/admin/park'
     | '/admin/receipts'
     | '/admin/reports'
     | '/admin/restaurant'
@@ -278,7 +268,6 @@ export interface FileRouteTypes {
     | '/admin/mall'
     | '/admin/menu'
     | '/admin/orders'
-    | '/admin/park'
     | '/admin/receipts'
     | '/admin/reports'
     | '/admin/restaurant'
@@ -304,7 +293,6 @@ export interface FileRouteTypes {
     | '/admin/mall'
     | '/admin/menu'
     | '/admin/orders'
-    | '/admin/park'
     | '/admin/receipts'
     | '/admin/reports'
     | '/admin/restaurant'
@@ -454,13 +442,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminOrdersRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/park': {
-      id: '/admin/park'
-      path: '/park'
-      fullPath: '/admin/park'
-      preLoaderRoute: typeof AdminParkRouteImport
-      parentRoute: typeof AdminRoute
-    }
     '/admin/receipts': {
       id: '/admin/receipts'
       path: '/receipts'
@@ -507,7 +488,6 @@ interface AdminRouteChildren {
   AdminMallRoute: typeof AdminMallRoute
   AdminMenuRoute: typeof AdminMenuRoute
   AdminOrdersRoute: typeof AdminOrdersRoute
-  AdminParkRoute: typeof AdminParkRoute
   AdminReceiptsRoute: typeof AdminReceiptsRoute
   AdminReportsRoute: typeof AdminReportsRoute
   AdminRestaurantRoute: typeof AdminRestaurantRoute
@@ -524,7 +504,6 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminMallRoute: AdminMallRoute,
   AdminMenuRoute: AdminMenuRoute,
   AdminOrdersRoute: AdminOrdersRoute,
-  AdminParkRoute: AdminParkRoute,
   AdminReceiptsRoute: AdminReceiptsRoute,
   AdminReportsRoute: AdminReportsRoute,
   AdminRestaurantRoute: AdminRestaurantRoute,

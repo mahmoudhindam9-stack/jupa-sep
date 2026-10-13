@@ -136,7 +136,6 @@ export interface WarehouseTransfer {
 export interface Profile {
   id: string;
   username?: string | null;
-  email?: string | null;
   full_name: string | null;
   phone: string | null;
   role: UserRole;

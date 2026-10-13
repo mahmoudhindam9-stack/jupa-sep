@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
 import { erpStore, type Account } from "@/shared/services/erpStore";
@@ -94,7 +94,7 @@ const ACCOUNT_TYPES: {
   },
 ];
 
-export function AccountsPage() {
+function AccountsPage() {
   const { toast } = useToast();
   const { formatPrice, currency, formatTreasuryCurrency } = useSettings();
 
@@ -573,21 +573,6 @@ export function AccountsPage() {
 
   return (
     <div className="space-y-6 pb-12">
-      {/* Integrated Financial Management banner */}
-      <div className="bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 rounded-xl p-3 flex items-center justify-between gap-3 text-xs">
-        <div className="flex items-center gap-2 text-indigo-900 dark:text-indigo-200 font-bold">
-          <Landmark size={16} />
-          <span>هذا القسم متاح ومدمج أيضاً ضمن قسم الإدارة المالية الشاملة.</span>
-        </div>
-        <Link
-          to="/admin/ledger"
-          search={{ tab: "accounts" }}
-          className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 rounded-lg transition"
-        >
-          فتح داخل الإدارة المالية ←
-        </Link>
-      </div>
-
       {/* Header Banner */}
       <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white rounded-3xl p-6 sm:p-8 shadow-xl relative overflow-hidden">
         <div className="absolute -left-10 -top-10 w-48 h-48 bg-primary/20 rounded-full blur-3xl pointer-events-none" />

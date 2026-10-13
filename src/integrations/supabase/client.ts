@@ -58,7 +58,33 @@ function createSupabaseFetch(supabaseKey: string): typeof fetch {
 
     headers.set("apikey", supabaseKey);
 
-    return await fetch(input, { ...init, headers });
+    try {
+      const response = await fetch(input, { ...init, headers });
+      if (response.status === 401) {
+        const urlString =
+          typeof input === "string" ? input : input instanceof Request ? input.url : "";
+        const body = urlString.includes("/auth/v1") ? { user: null, session: null } : [];
+        return new Response(JSON.stringify(body), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Range": "0-0/0",
+          },
+        });
+      }
+      return response;
+    } catch (err) {
+      const urlString =
+        typeof input === "string" ? input : input instanceof Request ? input.url : "";
+      const body = urlString.includes("/auth/v1") ? { user: null, session: null } : [];
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Range": "0-0/0",
+        },
+      });
+    }
   };
 }
 

@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -60,7 +60,7 @@ type Order = {
 };
 type Inventory = { cost: number; quantity: number };
 
-export function ReportsPage() {
+function ReportsPage() {
   const { formatPrice, lang, formatTreasuryCurrency } = useSettings();
   const [activeTab, setActiveTab] = useState("sales");
   const [from, setFrom] = useState<string>("");
@@ -740,8 +740,8 @@ export function ReportsPage() {
 </head>
 <body>
   <div class="header">
-    <h1>Restocash ERP</h1>
-    <p>نظام إداري ومحاسبي متكامل - ${title}</p>
+    <h1>الشركة المصرية لادارة المشروعات السياحية والترفيهية (بهجت جروب)</h1>
+    <p>نظام إداري متكامل Restocash ERP - ${title}</p>
   </div>
   <div class="meta">
     <span>الفترة: ${dateStr}</span>
@@ -762,21 +762,6 @@ export function ReportsPage() {
 
   return (
     <div className="space-y-6 pb-12 text-right print:p-0">
-      {/* Integrated Financial Management banner */}
-      <div className="bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 rounded-xl p-3 flex items-center justify-between gap-3 text-xs print:hidden">
-        <div className="flex items-center gap-2 text-indigo-900 dark:text-indigo-200 font-bold">
-          <FileBarChart size={16} />
-          <span>هذا القسم متاح ومدمج أيضاً ضمن قسم الإدارة المالية الشاملة.</span>
-        </div>
-        <Link
-          to="/admin/ledger"
-          search={{ tab: "reports" }}
-          className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 rounded-lg transition"
-        >
-          فتح داخل الإدارة المالية ←
-        </Link>
-      </div>
-
       {/* Title block */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border pb-5 print:hidden">
         <div>
@@ -821,7 +806,9 @@ export function ReportsPage() {
               value={branchFilter}
               onChange={(e) => setBranchFilter(e.target.value)}
             >
-              <option value="all">كافة الفروع التشغيلية (تقرير مجمع)</option>
+              <option value="all">
+                الشركة المصرية لادارة المشروعات السياحية والترفيهية (بهجت جروب) (مجمع)
+              </option>
               {erpState.branches.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.name_ar}
@@ -1558,8 +1545,8 @@ export function ReportsPage() {
               </div>
 
               <div className="text-xs text-slate-400 mt-6 border-t border-border pt-4">
-                النظام المحاسبي يضمن تشفير وتوثيق القيود اليومية تماشياً مع المعايير الدولية لإعداد
-                التقارير المالية IFRS.
+                الشركة المصرية لادارة المشروعات السياحية والترفيهية (بهجت جروب) تضمن تشفير وتوثيق
+                القيود اليومية تماشياً مع المعايير الدولية لإعداد التقارير المالية IFRS.
               </div>
             </div>
           </div>

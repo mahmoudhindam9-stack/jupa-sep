@@ -10,7 +10,6 @@ import {
   BarChart3,
   Users,
   ArrowLeft,
-  ArrowRight,
   LogOut,
   RefreshCw,
   Landmark,
@@ -25,8 +24,6 @@ import {
   Building2,
   Settings,
   ShieldCheck,
-  Trees,
-  ChevronDown,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { authService } from "@/features/auth/services/authService";
@@ -35,17 +32,10 @@ import { Button } from "@/components/ui/button";
 import { RestocashLogo } from "@/components/RestocashLogo";
 import { CurrencySwitcher } from "@/components/CurrencySwitcher";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { CURRENT_VERSION } from "@/shared/config/version";
 import { GitHubUpdateBanner } from "@/components/admin/GitHubUpdateBanner";
-import { isAiStudioPreview } from "@/shared/services/previewAccess";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({ meta: [{ title: "لوحة الإدارة" }] }),
@@ -55,7 +45,7 @@ export const Route = createFileRoute("/admin")({
 const nav = [
   {
     to: "/admin",
-    label: "لوحة الأقسام الرئيسية",
+    label: "الرئيسية",
     icon: LayoutDashboard,
     exact: true,
     permissionKeys: [
@@ -75,7 +65,7 @@ const nav = [
   },
   {
     to: "/admin/restaurant",
-    label: "إدارة المطعم",
+    label: "إدارة المطعم (البرنامج الشامل)",
     icon: Store,
     permissionKeys: [
       "orders",
@@ -90,48 +80,66 @@ const nav = [
   },
   {
     to: "/admin/mall",
-    label: "إدارة المول",
+    label: "إدارة المول والحديقة",
     icon: Building2,
-    permissionKeys: ["mall_manage_shops"],
+    permissionKeys: [
+      "mall_manage_shops",
+      "mall_garden_finance",
+      "manage_park_shifts",
+      "park_reports",
+    ],
   },
   {
-    to: "/admin/park",
-    label: "إدارة الحديقة",
-    icon: Trees,
+    to: "/admin",
+    search: { tab: "treasury" },
+    label: "إدارة الخزائن",
+    icon: Wallet,
     permissionKeys: [
-      "manage_park_shifts",
-      "delete_park_shifts",
-      "park_reports",
-      "mall_garden_finance",
+      "treasury",
+      "treasury_view",
+      "treasury_open_close",
+      "treasury_transfer_reconcile",
     ],
+  },
+  {
+    to: "/admin/receipts",
+    label: "تصميم وإدارة الإيصالات والسندات",
+    icon: Receipt,
+    permissionKeys: ["treasury", "accounting", "revenue_approval", "expense_approval"],
+  },
+  {
+    to: "/admin/accounts",
+    label: "إدارة الحسابات",
+    icon: Landmark,
+    permissionKeys: ["accounting", "accounting_view", "accounting_post_journal", "cost_centers"],
   },
   {
     to: "/admin/ledger",
-    label: "الإدارة المالية",
-    icon: Landmark,
-    permissionKeys: ["accounting", "accounting_view", "treasury"],
+    label: "حساب الأستاذ",
+    icon: BookOpen,
+    permissionKeys: ["accounting", "accounting_view"],
   },
   {
     to: "/admin/hr",
-    label: "الموارد البشرية والمستخدمين",
+    label: "إدارة الموارد البشرية",
     icon: UserCheck,
-    permissionKeys: [
-      "hr",
-      "hr_view_attendance",
-      "hr_manage_payroll_loans",
-      "users_roles",
-      "system_manage_users",
-    ],
+    permissionKeys: ["hr", "hr_view_attendance", "hr_manage_payroll_loans"],
   },
   {
-    to: "/admin/inventory",
-    label: "المخزون والمستودعات",
-    icon: Package,
-    permissionKeys: ["inventory", "inventory_view", "purchasing", "purchasing_view"],
+    to: "/admin/reports",
+    label: "التقارير",
+    icon: BarChart3,
+    permissionKeys: ["reports", "reports_view_sales", "reports_view_financials", "park_reports"],
+  },
+  {
+    to: "/admin/users",
+    label: "المستخدمين",
+    icon: Users,
+    permissionKeys: ["users_roles", "system_manage_users"],
   },
   {
     to: "/admin/system-update",
-    label: "خيارات المطور والرقابة",
+    label: "خيارات المطور",
     icon: Settings,
     permissionKeys: ["system_backup_update", "developer_options"],
   },
@@ -403,21 +411,6 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
     };
 
     const checkAuth = async () => {
-      if (isAiStudioPreview()) {
-        localStorage.setItem("restocash_auth_user", "admin@restocash.local");
-        localStorage.setItem("restocash_user_role", "admin");
-        erpStore.setCurrentUser("admin");
-        setUser({
-          email: "admin@restocash.local",
-          username: "admin",
-          role: "admin",
-          permissions: defaultPermissionsForRole("super_admin"),
-          permissionsManaged: true,
-        });
-        setAuthChecking(false);
-        return;
-      }
-
       const localUser =
         localStorage.getItem("restocash_auth_user") ||
         sessionStorage.getItem("restocash_auth_user");
@@ -428,29 +421,35 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
         if (!mounted) return;
         if (isHostedDeployment() && session?.user?.id) {
           await loadHostedProfile(session);
+        } else if (localUser) {
+          const local = readLocalUser(localUser);
+          if (local) setUser(local);
+          else {
+            localStorage.removeItem("restocash_auth_user");
+            localStorage.removeItem("restocash_user_role");
+            sessionStorage.removeItem("restocash_auth_user");
+            sessionStorage.removeItem("restocash_user_role");
+            setUser(null);
+            navigate({ to: "/login" });
+          }
         } else {
-          localStorage.setItem("restocash_auth_user", "admin@restocash.local");
-          localStorage.setItem("restocash_user_role", "admin");
-          setUser({
-            email: "admin@restocash.local",
-            username: "admin",
-            role: "admin",
-            permissions: defaultPermissionsForRole("super_admin"),
-            permissionsManaged: true,
-          });
+          setUser(null);
+          navigate({ to: "/login" });
         }
       } catch (error) {
         console.error("Al-Mokhtar auth check failed:", error);
         if (!mounted) return;
-        localStorage.setItem("restocash_auth_user", "admin@restocash.local");
-        localStorage.setItem("restocash_user_role", "admin");
-        setUser({
-          email: "admin@restocash.local",
-          username: "admin",
-          role: "admin",
-          permissions: defaultPermissionsForRole("super_admin"),
-          permissionsManaged: true,
-        });
+        if (localUser) {
+          const local = readLocalUser(localUser);
+          if (local) setUser(local);
+          else {
+            setUser(null);
+            navigate({ to: "/login" });
+          }
+        } else {
+          setUser(null);
+          navigate({ to: "/login" });
+        }
       } finally {
         if (mounted) setAuthChecking(false);
       }
@@ -458,8 +457,6 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
 
     void checkAuth();
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      // Do not let an empty Supabase session redirect the AI Studio preview back to login.
-      if (isAiStudioPreview()) return;
       if (!mounted) return;
       if (session?.user?.id && isHostedDeployment()) {
         void Promise.resolve().then(() => loadHostedProfile(session));
@@ -529,157 +526,146 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
   };
   const activeNavItem = nav.find(isNavItemActive);
 
-  return (
-    <div className="min-h-screen flex flex-col bg-background text-foreground">
-      {/* GitHub Auto-Update Notification Banner */}
-      <GitHubUpdateBanner />
-
-      {/* Top Navigation Header - Modern & Minimal (No Sidebar) */}
-      <header className="sticky top-0 z-30 bg-card/95 backdrop-blur border-b border-border px-4 sm:px-6 py-2.5 flex items-center justify-between gap-4">
-        {/* Right side in RTL: Brand & Nav Links */}
-        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-          <Link to="/admin" className="flex items-center gap-2 shrink-0 group">
-            <RestocashLogo size={24} />
-            <div className="hidden sm:block text-right">
-              <span className="font-black text-sm tracking-tight text-foreground block group-hover:text-primary transition leading-none">
-                Restocash ERP
-              </span>
-              <span className="text-[10px] text-muted-foreground font-semibold leading-none">
-                نظام الإدارة المتكامل
-              </span>
-            </div>
-          </Link>
-
-          <div className="h-5 w-px bg-border/80 hidden sm:block" />
-
-          {/* Unified Sections Board Button with Quick Dropdown Arrow */}
-          <div
-            className={cn(
-              "inline-flex items-center rounded-xl border border-border/80 overflow-hidden shrink-0 shadow-xs",
-              pathname === "/admin" && !hasRouteSearch
-                ? "bg-primary text-primary-foreground border-primary"
-                : "bg-muted/80 hover:bg-muted text-foreground",
-            )}
-          >
-            <Link
-              to="/admin"
-              className={cn(
-                "inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold transition",
-                pathname === "/admin" && !hasRouteSearch
-                  ? "text-primary-foreground hover:bg-primary/90"
-                  : "text-foreground hover:bg-muted/50",
-              )}
-              title="الانتقال إلى لوحة الأقسام الرئيسية"
-            >
-              <Grid3X3 size={15} />
-              <span>لوحة الأقسام</span>
-            </Link>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className={cn(
-                    "px-2 py-1.5 border-r border-border/60 transition flex items-center justify-center cursor-pointer",
-                    pathname === "/admin" && !hasRouteSearch
-                      ? "text-primary-foreground border-primary/40 hover:bg-primary/90"
-                      : "text-foreground hover:bg-muted",
-                  )}
-                  title="القائمة السريعة للأقسام"
-                >
-                  <ChevronDown size={14} />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="end"
-                className="w-60 p-1.5 rounded-xl shadow-lg border-border"
+  const renderSidebarNav = (onItemClick?: () => void) => (
+    <div className="flex flex-col h-full bg-card text-card-foreground">
+      <div className="p-5 border-b border-border flex items-center justify-between">
+        <div>
+          <RestocashLogo size={20} />
+          <p className="text-[10px] text-muted-foreground mt-1">نظام الإدارة المتكامل</p>
+        </div>
+      </div>
+      <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+        <div className="px-3 py-1.5 text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+          {location.pathname.startsWith("/admin") ? "لوحة التحكم الرئيسية" : "الإدارة"}
+        </div>
+        {nav
+          .filter((item) => hasAnyPermission(user, item.permissionKeys))
+          .map((item) => {
+            const active = isNavItemActive(item);
+            return (
+              <Link
+                key={
+                  item.to + (item.search ? "?" + new URLSearchParams(item.search).toString() : "")
+                }
+                to={item.to}
+                search={item.search}
+                onClick={() => {
+                  if (onItemClick) onItemClick();
+                }}
+                className={cn(
+                  "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition",
+                  active
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                )}
               >
-                <div className="px-2 py-1.5 text-[11px] font-bold text-muted-foreground border-b border-border/60 mb-1">
-                  الانتقال السريع للأقسام
-                </div>
-                {nav
-                  .filter((item) => hasAnyPermission(user, item.permissionKeys))
-                  .map((item) => {
-                    const active = isNavItemActive(item);
-                    return (
-                      <DropdownMenuItem
-                        key={item.to + (item.search ? item.search.tab : "")}
-                        onClick={() => navigate({ to: item.to, search: item.search })}
-                        className={cn(
-                          "flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg cursor-pointer",
-                          active ? "bg-primary text-primary-foreground" : "hover:bg-muted",
-                        )}
-                      >
-                        <item.icon
-                          size={16}
-                          className={active ? "text-primary-foreground" : "text-muted-foreground"}
-                        />
-                        <span>{item.label}</span>
-                      </DropdownMenuItem>
-                    );
-                  })}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+                <item.icon size={18} />
+                {item.label}
+              </Link>
+            );
+          })}
+      </nav>
+      <div className="p-3 border-t border-border space-y-2 shrink-0">
+        <p className="px-3 text-xs text-muted-foreground truncate">{user?.email}</p>
+        <Button
+          variant="ghost"
+          className="w-full justify-start gap-2 text-muted-foreground"
+          onClick={() => {
+            if (onItemClick) onItemClick();
+            handleSignOut();
+          }}
+        >
+          <LogOut size={18} />
+          تسجيل الخروج
+        </Button>
+        <Link
+          to="/"
+          onClick={() => {
+            if (onItemClick) onItemClick();
+          }}
+          className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:bg-muted transition"
+        >
+          <ArrowLeft size={18} />
+          الرئيسية
+        </Link>
 
-          {/* If inside subpage, quick return link */}
-          {pathname !== "/admin" && (
-            <Link
-              to="/admin"
-              className="hidden md:inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground font-bold px-2 py-1 rounded-lg hover:bg-muted transition"
-            >
-              <ArrowRight size={14} />
-              <span>العودة للرئيسية</span>
-            </Link>
-          )}
+        <div className="pt-2 border-t border-border/60 space-y-2">
+          <div className="space-y-1">
+            <span className="px-1 text-[11px] font-bold text-muted-foreground block">
+              لغة التطبيق:
+            </span>
+            <LanguageSwitcher compact />
+          </div>
+          <div className="space-y-1">
+            <span className="px-1 text-[11px] font-bold text-muted-foreground block">
+              عملة عرض اللوحة:
+            </span>
+            <CurrencySwitcher compact className="w-full justify-between" />
+          </div>
         </div>
 
-        {/* Left side in RTL: Tools, User Profile & Logout */}
-        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-          <div className="hidden md:flex items-center gap-2">
-            <LanguageSwitcher compact />
-            <CurrencySwitcher compact />
-          </div>
-
-          {/* System version badge if permitted */}
-          {hasAnyPermission(user, ["system_backup_update", "developer_options"]) && (
+        {/* System Version & Update Status */}
+        {hasAnyPermission(user, ["system_backup_update", "developer_options"]) && (
+          <div className="pt-2 border-t border-border/60 flex items-center justify-between text-[11px] text-muted-foreground px-1">
             <Link
               to="/admin/system-update"
-              className="hidden lg:inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground font-mono bg-muted/50 px-2 py-1 rounded-lg border border-border/60"
-              title="تحديثات النظام"
+              className="flex items-center gap-1.5 hover:text-foreground transition font-medium"
+              title="انتقل إلى صفحة خيارات المطور والتحديثات"
             >
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />v
-              {CURRENT_VERSION}
+              <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse" />
+              <span>الإصدار: v{CURRENT_VERSION}</span>
             </Link>
-          )}
-
-          {/* User profile & Logout */}
-          <div className="flex items-center gap-2 bg-muted/60 border border-border/80 px-2.5 py-1 rounded-xl">
-            <div className="text-right hidden sm:block max-w-[130px]">
-              <p className="text-[11px] font-black text-foreground truncate leading-tight">
-                {user?.email?.split("@")[0] || "المسؤول"}
-              </p>
-              <p className="text-[9px] text-muted-foreground font-semibold leading-tight">
-                {user?.role || "مشرف"}
-              </p>
-            </div>
-
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-              onClick={handleSignOut}
-              title="تسجيل الخروج"
-            >
-              <LogOut size={15} />
-            </Button>
+            <span className="text-[10px] text-muted-foreground/70">GitHub Sync</span>
           </div>
-        </div>
-      </header>
+        )}
+      </div>
+    </div>
+  );
 
-      {/* Main Content Area - Full width, no sidebar margins */}
-      <main className="flex-1 w-full min-w-0 overflow-auto">
-        <div className="p-4 sm:p-6 max-w-7xl mx-auto w-full">
+  return (
+    <div className="min-h-screen flex bg-background">
+      {/* Desktop Sidebar */}
+      <aside className="hidden md:flex w-64 shrink-0 border-l border-border bg-card flex-col h-screen sticky top-0">
+        {renderSidebarNav()}
+      </aside>
+
+      {/* Mobile Drawer Navigation (Sheet) */}
+      <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
+        <SheetContent side="right" className="w-[280px] p-0 border-l border-border bg-card">
+          {renderSidebarNav(() => setIsMobileMenuOpen(false))}
+        </SheetContent>
+      </Sheet>
+
+      <main className="flex-1 flex flex-col min-w-0 overflow-auto">
+        {/* GitHub Auto-Update Notification Banner */}
+        <GitHubUpdateBanner />
+
+        {/* Admin Header with Page Title, Mobile Toggle, and Currency/Language Switcher */}
+        <header className="sticky top-0 z-20 bg-card/95 backdrop-blur border-b border-border px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2.5">
+            {/* Mobile Sidebar Toggle Icon Button */}
+            <Button
+              variant="outline"
+              size="icon"
+              className="md:hidden shrink-0 h-9 w-9 border-border"
+              onClick={() => setIsMobileMenuOpen(true)}
+              aria-label="فتح القائمة الجانبية"
+            >
+              <Menu size={20} />
+            </Button>
+            <span className="font-black text-sm text-foreground">
+              {activeNavItem?.label || "لوحة التحكم"}
+            </span>
+            <span className="text-xs text-muted-foreground font-medium hidden sm:inline">
+              | نظام إدارة المطاعم والمحاسبة ERP
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <LanguageSwitcher />
+            <CurrencySwitcher />
+          </div>
+        </header>
+        <div className="p-4 sm:p-6 flex-1">
           {(() => {
             const searchParams = new URLSearchParams(location.search);
             let required: string[] | undefined;
@@ -695,20 +681,9 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
               required = nav[0].permissionKeys;
             } else if (
               pathname.startsWith("/admin/accounts") ||
-              pathname.startsWith("/admin/ledger") ||
-              pathname.startsWith("/admin/reports")
+              pathname.startsWith("/admin/ledger")
             ) {
               required = ["accounting", "accounting_view"];
-            } else if (pathname.startsWith("/admin/park")) {
-              required = [
-                "manage_park_shifts",
-                "delete_park_shifts",
-                "park_reports",
-                "mall_garden_finance",
-                "super_admin_full_access",
-              ];
-            } else if (pathname.startsWith("/admin/hr") || pathname.startsWith("/admin/users")) {
-              required = ["hr", "users_roles", "system_manage_users"];
             } else if (
               pathname.startsWith("/admin/restaurant") ||
               pathname.startsWith("/admin/orders")
