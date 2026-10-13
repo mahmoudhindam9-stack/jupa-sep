@@ -46,6 +46,7 @@ import {
   ParkShiftClosingReportModal,
 } from "@/components/mall/ParkTicketsPOS";
 import { ShiftAuditLogViewerModal } from "@/components/admin/ShiftAuditLogViewerModal";
+import { DepartmentSubpagesGrid } from "@/components/admin/DepartmentsGridHub";
 
 export const Route = createFileRoute("/admin/park")({
   head: () => ({ meta: [{ title: "إدارة الحديقة - تذاكر الدخول والورديات والخزائن" }] }),
@@ -143,6 +144,8 @@ export function ParkManagementPage() {
   if (isParkPosOpen) {
     return <ParkTicketsPOSView onClosePOS={() => setIsParkPosOpen(false)} />;
   }
+
+  if (activeTab === "grid") return <DepartmentSubpagesGrid departmentId="park" />;
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto w-full pb-12">
