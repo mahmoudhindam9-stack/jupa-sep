@@ -1551,6 +1551,8 @@ function LedgerPage() {
     toast({ title: "تم التصدير بنجاح", description: "تم تحميل ميزان المراجعة بصيغة Excel" });
   };
 
+if (selectedTab === "grid") return <DepartmentSubpagesGrid departmentId="finance" />;
+
   return (
     <div className="p-3 sm:p-6 space-y-5 sm:space-y-6 max-w-7xl mx-auto w-full min-w-0">
       {/* Header */}
@@ -2023,10 +2025,7 @@ function LedgerPage() {
                         line.rate || 1,
                         line.currency || "USD",
                       );
-                      if (selectedTab === "grid") return <DepartmentSubpagesGrid departmentId="finance" />;
-
-  return (
-                        <div key={idx} className="p-2.5 flex items-center justify-between text-xs">
+                                              <div key={idx} className="p-2.5 flex items-center justify-between text-xs">
                           <div className="flex items-center gap-2">
                             <Badge
                               variant="outline"
