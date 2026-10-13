@@ -2025,7 +2025,8 @@ if (selectedTab === "grid") return <DepartmentSubpagesGrid departmentId="finance
                         line.rate || 1,
                         line.currency || "USD",
                       );
-                                              <div key={idx} className="p-2.5 flex items-center justify-between text-xs">
+                      return (
+                        <div key={idx} className="p-2.5 flex items-center justify-between text-xs">
                           <div className="flex items-center gap-2">
                             <Badge
                               variant="outline"
