@@ -807,7 +807,7 @@ function AdminDashboard() {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="bg-muted p-1 rounded-xl flex flex-wrap gap-1 h-auto">
           <TabsTrigger value="grid" className="rounded-lg font-black py-2 px-4 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-            <LayoutGrid size={16} className="ml-1.5 inline" />
+            <Grid3X3 size={16} className="ml-1.5 inline" />
             شبكة الأقسام الرئيسية
           </TabsTrigger>
           <TabsTrigger value="dashboard" className="rounded-lg font-bold py-2 px-4">
