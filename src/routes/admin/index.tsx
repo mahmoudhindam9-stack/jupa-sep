@@ -2,6 +2,7 @@
 import { ORACLE_MIGRATION_ACCOUNTS as oracleAccounts } from "@/shared/data/oracleAccounts";
 import { OracleAccountsViewer } from "@/components/admin/OracleAccountsViewer";
 import { VouchersLedgerSection } from "@/components/admin/VouchersLedgerSection";
+import { DepartmentsGridHub } from "@/components/admin/DepartmentsGridHub";
 import { createFileRoute, Link, useLocation } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useEffect, useMemo, useRef } from "react";
@@ -99,9 +100,9 @@ function AdminDashboard() {
   const { formatPrice } = useSettings();
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
-  const tabParam = searchParams.get("tab") || "dashboard";
+  const tabParam = searchParams.get("tab") || "grid";
 
-  const [activeTab, setActiveTab] = useState(tabParam || "dashboard");
+  const [activeTab, setActiveTab] = useState(tabParam || "grid");
   const [isAuditOperationsOpen, setIsAuditOperationsOpen] = useState(false);
   const [isShiftAuditModalOpen, setIsShiftAuditModalOpen] = useState(false);
 
@@ -805,6 +806,10 @@ function AdminDashboard() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="bg-muted p-1 rounded-xl flex flex-wrap gap-1 h-auto">
+          <TabsTrigger value="grid" className="rounded-lg font-black py-2 px-4 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+            <LayoutGrid size={16} className="ml-1.5 inline" />
+            شبكة الأقسام الرئيسية
+          </TabsTrigger>
           <TabsTrigger value="dashboard" className="rounded-lg font-bold py-2 px-4">
             <Grid3X3 size={16} className="ml-1.5 inline" />
             نظرة عامة والذكاء المالي
@@ -836,6 +841,11 @@ function AdminDashboard() {
             سجل العمليات
           </TabsTrigger>
         </TabsList>
+
+        {/* TAB 0: MAIN DEPARTMENT SQUARE GRID */}
+        <TabsContent value="grid" className="space-y-6 mt-4">
+          <DepartmentsGridHub />
+        </TabsContent>
 
         {/* TAB 1: EXECUTIVE DASHBOARD */}
         <TabsContent value="dashboard" className="space-y-6 mt-4">
