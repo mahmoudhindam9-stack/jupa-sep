@@ -108,7 +108,7 @@ export const DEPARTMENTS: DepartmentCardItem[] = [
       { title: "سجل الطلبات والفواتير", to: "/admin/orders", icon: ClipboardList, desc: "الطلبات الحالية والسابقة" },
       { title: "قائمة الطعام والمنيو", to: "/admin/menu", icon: Coffee, desc: "إدارة الأصناف والأسعار" },
       { title: "المخزون والمستودعات", to: "/admin/inventory", search: { tab: "stock" }, icon: Package, desc: "الخامات والأصناف" },
-      { title: "إدارة ورديات المطعم", to: "/admin/restaurant", icon: Clock, desc: "فتح وإغلاق الورديات" },
+      { title: "إدارة ورديات المطعم", to: "/admin/restaurant", search: { tab: "shifts" }, icon: Clock, desc: "فتح وإغلاق الورديات" },
     ],
   },
   {
