@@ -103,6 +103,10 @@ function RestaurantHubPage() {
   const [closingShift, setClosingShift] = useState<RestaurantShift | null>(null);
 
   useEffect(() => {
+    if (routeTab === "shifts") setIsLauncherOpen(true);
+  }, [routeTab]);
+
+  useEffect(() => {
     let active = true;
     setCounts(getSyncCounts());
 
