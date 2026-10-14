@@ -27,6 +27,7 @@ export const DEFAULT_STUDIO_PUBLISHED_CONFIG: StudioPublishedConfig = {
   publishedAt: new Date().toISOString(),
   publishedBy: "system",
   summary: "الإصدار الأولي لنظام استوديو المطور (Default Seed)",
+  domEdits: {},
   pages: {
     page_dashboard: {
       id: "page_dashboard",
@@ -286,36 +287,45 @@ class StudioService {
   /**
    * Get the active published configuration (from Supabase or local cache)
    */
-  async getPublishedConfig(): Promise<StudioPublishedConfig> {
-    try {
-      const { data, error } = await supabase
-        .from("studio_published_configs" as any)
-        .select("*")
-        .eq("id", "active")
-        .maybeSingle();
+  private async fetchRemotePublishedConfig(): Promise<StudioPublishedConfig> {
+    const { data, error } = await supabase
+      .from("studio_published_configs" as any)
+      .select("*")
+      .eq("id", "active")
+      .maybeSingle();
 
-      if (!error && data && data.pages) {
-        const config: StudioPublishedConfig = {
-          revision: data.revision || 1,
-          schema_version: data.schema_version || CURRENT_SCHEMA_VERSION,
-          publishedAt: data.published_at || new Date().toISOString(),
-          publishedBy: data.published_by || "system",
-          summary: data.summary || "Published version",
-          pages: (data.pages as any) || {},
-          elements: (data.elements as any) || {},
-        };
-        this.inMemoryPublished = config;
-        if (typeof window !== "undefined") {
-          localStorage.setItem(LOCAL_PUBLISHED_KEY, JSON.stringify(config));
-        }
-        return config;
-      }
-    } catch {
-      // Fallback to cache / default
+    if (error) throw new Error("تعذر تحميل النسخة المنشورة من Supabase: " + error.message);
+    if (!data || !data.pages) {
+      throw new Error("لا توجد نسخة منشورة مؤكدة على Supabase. شغّل ترحيلات الاستوديو أولاً.");
     }
 
-    if (this.inMemoryPublished) return this.inMemoryPublished;
-    return DEFAULT_STUDIO_PUBLISHED_CONFIG;
+    return {
+      id: data.id || "active",
+      revision: Number(data.revision || 1),
+      schemaVersion: Number(data.schema_version || CURRENT_SCHEMA_VERSION),
+      schema_version: Number(data.schema_version || CURRENT_SCHEMA_VERSION),
+      publishedAt: data.published_at || new Date().toISOString(),
+      publishedBy: data.published_by || "system",
+      summary: data.summary || "Published version",
+      pages: data.pages || {},
+      elements: data.elements || {},
+      domEdits: data.dom_edits || {},
+    };
+  }
+
+  async getPublishedConfig(): Promise<StudioPublishedConfig> {
+    try {
+      const config = await this.fetchRemotePublishedConfig();
+      this.inMemoryPublished = config;
+      if (typeof window !== "undefined") {
+        try { localStorage.setItem(LOCAL_PUBLISHED_KEY, JSON.stringify(config)); } catch { /* quota/private mode */ }
+      }
+      return config;
+    } catch (error) {
+      console.warn("Studio published config is using the last confirmed local cache:", error);
+      if (this.inMemoryPublished) return this.inMemoryPublished;
+      return DEFAULT_STUDIO_PUBLISHED_CONFIG;
+    }
   }
 
   /**
@@ -323,27 +333,22 @@ class StudioService {
    * If no draft exists, clones from the latest published revision.
    */
   async getDraft(owner = "admin"): Promise<StudioDraft> {
-    // 1. Check local draft cache
-    if (this.inMemoryDraft) {
-      return this.inMemoryDraft;
-    }
+    let cached: StudioDraft | null = this.inMemoryDraft?.owner === owner ? this.inMemoryDraft : null;
 
-    if (typeof window !== "undefined") {
-      const cached = localStorage.getItem(LOCAL_DRAFT_KEY);
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          if (parsed && parsed.pages && parsed.elements) {
-            this.inMemoryDraft = parsed;
-            return parsed;
+    if (!cached && typeof window !== "undefined") {
+      try {
+        const raw = localStorage.getItem(LOCAL_DRAFT_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && parsed.pages && parsed.elements && parsed.owner === owner) {
+            cached = { ...parsed, domEdits: parsed.domEdits || {} } as StudioDraft;
           }
-        } catch {
-          // ignore
         }
+      } catch {
+        // Ignore a damaged local cache and continue with the server.
       }
     }
 
-    // 2. Check remote server draft in Supabase
     try {
       const { data, error } = await supabase
         .from("studio_drafts" as any)
@@ -351,35 +356,51 @@ class StudioService {
         .eq("owner", owner)
         .maybeSingle();
 
-      if (!error && data && data.pages) {
-        const draft: StudioDraft = {
-          id: data.id || `draft_${Date.now()}`,
+      if (error) throw error;
+      if (data && data.pages) {
+        const remote: StudioDraft = {
+          id: data.id || "draft_" + owner,
           owner: data.owner || owner,
-          baseRevision: data.base_revision || 1,
-          schemaVersion: data.schema_version || CURRENT_SCHEMA_VERSION,
+          baseRevision: Number(data.base_revision || 1),
+          schemaVersion: Number(data.schema_version || CURRENT_SCHEMA_VERSION),
           pages: data.pages || {},
           elements: data.elements || {},
+          domEdits: data.dom_edits || {},
           updatedAt: data.updated_at || new Date().toISOString(),
           createdAt: data.created_at || new Date().toISOString(),
           hasUnpublishedChanges: true,
         };
-        this.inMemoryDraft = draft;
-        this.persistLocalDraft(draft);
-        return draft;
+        const localIsNewer = !!cached &&
+          Number.isFinite(Date.parse(cached.updatedAt)) &&
+          Date.parse(cached.updatedAt) > Date.parse(remote.updatedAt);
+        const chosen = localIsNewer ? cached! : remote;
+        this.inMemoryDraft = chosen;
+        this.persistLocalDraft(chosen);
+        return chosen;
       }
-    } catch {
-      // Fallback
+    } catch (error) {
+      // Keep offline work editable, but do not pretend later saves are cloud-confirmed.
+      if (cached) {
+        this.inMemoryDraft = cached;
+        return cached;
+      }
+      console.warn("Could not load the remote studio draft:", error);
     }
 
-    // 3. Brand new draft branched from latest published config
+    if (cached) {
+      this.inMemoryDraft = cached;
+      return cached;
+    }
+
     const published = await this.getPublishedConfig();
     const newDraft: StudioDraft = {
-      id: `draft_${Date.now()}`,
+      id: "draft_" + owner,
       owner,
       baseRevision: published.revision,
-      schemaVersion: published.schema_version || CURRENT_SCHEMA_VERSION,
-      pages: JSON.parse(JSON.stringify(published.pages)),
-      elements: JSON.parse(JSON.stringify(published.elements)),
+      schemaVersion: published.schemaVersion || published.schema_version || CURRENT_SCHEMA_VERSION,
+      pages: JSON.parse(JSON.stringify(published.pages || {})),
+      elements: JSON.parse(JSON.stringify(published.elements || {})),
+      domEdits: JSON.parse(JSON.stringify(published.domEdits || {})),
       updatedAt: new Date().toISOString(),
       createdAt: new Date().toISOString(),
       hasUnpublishedChanges: false,
@@ -396,39 +417,49 @@ class StudioService {
   async saveDraft(
     draft: StudioDraft,
   ): Promise<{ success: boolean; updatedAt: string; error?: string }> {
+    const updatedAt = new Date().toISOString();
+    const updatedDraft: StudioDraft = {
+      ...draft,
+      domEdits: draft.domEdits || {},
+      updatedAt,
+      hasUnpublishedChanges: true,
+    };
+
+    // Preserve local work if the cloud is unavailable, but never report it as cloud-saved.
+    this.inMemoryDraft = updatedDraft;
+    this.persistLocalDraft(updatedDraft);
+
     try {
-      const updatedAt = new Date().toISOString();
-      const updatedDraft: StudioDraft = {
-        ...draft,
-        updatedAt,
-        hasUnpublishedChanges: true,
-      };
-
-      this.inMemoryDraft = updatedDraft;
-      this.persistLocalDraft(updatedDraft);
-
-      // Async write to Supabase drafts table (non-blocking for UI)
-      Promise.resolve(
-        supabase.from("studio_drafts" as any).upsert({
-          id: updatedDraft.id,
+      const { data, error } = await supabase
+        .from("studio_drafts" as any)
+        .upsert({
+          id: updatedDraft.id || "draft_" + updatedDraft.owner,
           owner: updatedDraft.owner,
           base_revision: updatedDraft.baseRevision,
           schema_version: updatedDraft.schemaVersion,
           pages: updatedDraft.pages,
           elements: updatedDraft.elements,
+          dom_edits: updatedDraft.domEdits,
           updated_at: updatedAt,
-        }),
-      )
-        .then(({ error }: any) => {
-          if (error) {
-            console.debug("Remote draft sync notice (cached locally):", error.message);
-          }
-        })
-        .catch(() => {});
+        }, { onConflict: "owner" })
+        .select("id, owner, updated_at")
+        .maybeSingle();
 
-      return { success: true, updatedAt };
+      if (error) throw error;
+      if (!data || data.owner !== updatedDraft.owner) {
+        throw new Error("لم يؤكد Supabase حفظ المسودة؛ بقيت نسخة محلية غير متزامنة.");
+      }
+
+      const confirmedDraft = { ...updatedDraft, id: data.id || updatedDraft.id, updatedAt: data.updated_at || updatedAt };
+      this.inMemoryDraft = confirmedDraft;
+      this.persistLocalDraft(confirmedDraft);
+      return { success: true, updatedAt: confirmedDraft.updatedAt };
     } catch (e: any) {
-      return { success: false, updatedAt: new Date().toISOString(), error: e.message };
+      return {
+        success: false,
+        updatedAt,
+        error: e?.message || "تعذر تأكيد حفظ المسودة على الخادم. احتفظنا بالنسخة المحلية.",
+      };
     }
   }
 
@@ -444,6 +475,7 @@ class StudioService {
       schemaVersion: published.schema_version || CURRENT_SCHEMA_VERSION,
       pages: JSON.parse(JSON.stringify(published.pages)),
       elements: JSON.parse(JSON.stringify(published.elements)),
+      domEdits: JSON.parse(JSON.stringify(published.domEdits || {})),
       updatedAt: new Date().toISOString(),
       createdAt: new Date().toISOString(),
       hasUnpublishedChanges: false,
@@ -472,8 +504,19 @@ class StudioService {
     hasConflict: boolean;
     serverRevision: number;
     conflicts: ConflictDetail[];
+    error?: string;
   }> {
-    const latestPublished = await this.getPublishedConfig();
+    let latestPublished: StudioPublishedConfig;
+    try {
+      latestPublished = await this.fetchRemotePublishedConfig();
+    } catch (e: any) {
+      return {
+        hasConflict: false,
+        serverRevision: this.inMemoryPublished?.revision || 1,
+        conflicts: [],
+        error: e?.message || "تعذر الاتصال بنسخة النشر على Supabase.",
+      };
+    }
     const conflicts: ConflictDetail[] = [];
 
     // If base revision matches, no revision gap conflict
@@ -580,138 +623,122 @@ class StudioService {
     summary = "تحديث ونشر الواجهات من استوديو المطور",
     author = "admin",
   ): Promise<{ success: boolean; newRevision: number; error?: string }> {
-    // 1. Validation check
     const validation = validateDraftHierarchy(draft);
     if (!validation.valid) {
-      return {
-        success: false,
-        newRevision: draft.baseRevision,
-        error: `فشل التحقق من صحة المخطط: ${validation.errors.join(" | ")}`,
-      };
+      return { success: false, newRevision: draft.baseRevision, error: "فشل التحقق من صحة المخطط: " + validation.errors.join(" | ") };
     }
 
-    // 2. Concurrency Conflict check
+    let currentPublished: StudioPublishedConfig;
+    try {
+      currentPublished = await this.fetchRemotePublishedConfig();
+    } catch (e: any) {
+      return { success: false, newRevision: draft.baseRevision, error: e?.message || "تعذر تحميل النسخة الحالية من Supabase. لم يتم النشر." };
+    }
+
     const conflictCheck = await this.checkConflicts(draft);
+    if (conflictCheck.error) {
+      return { success: false, newRevision: currentPublished.revision, error: conflictCheck.error };
+    }
     if (conflictCheck.hasConflict) {
       return {
         success: false,
         newRevision: conflictCheck.serverRevision,
-        error: `CONCURRENCY_CONFLICT: تم نشر إصدار أحدث على الخادم (رقم ${conflictCheck.serverRevision}). يرجى مراجعة التعارض وحله أولاً.`,
+        error: "CONCURRENCY_CONFLICT: تم نشر إصدار أحدث على الخادم (رقم " + conflictCheck.serverRevision + "). يرجى حل التعارض أولاً.",
       };
     }
 
+    const proposedRevision = currentPublished.revision + 1;
+    const publishedAt = new Date().toISOString();
+    const stampedPages: Record<string, PageModel> = {};
+    Object.entries(draft.pages).forEach(([key, page]) => {
+      stampedPages[key] = { ...page, revision: proposedRevision, updatedAt: publishedAt, updatedBy: author };
+    });
+    const stampedElements: Record<string, ElementModel> = {};
+    Object.entries(draft.elements).forEach(([key, element]) => {
+      stampedElements[key] = { ...element, revision: proposedRevision, updatedAt: publishedAt, updatedBy: author };
+    });
+    const nextSummary = summary || ("الإصدار رقم " + proposedRevision);
+
     try {
-      const currentPublished = await this.getPublishedConfig();
-      const newRevision = (currentPublished.revision || 1) + 1;
-      const publishedAt = new Date().toISOString();
+      // Database transaction locks the active row, verifies the base revision,
+      // snapshots history and writes the new published state atomically.
+      const { data, error } = await supabase.rpc("publish_studio_configuration" as any, {
+        p_expected_revision: draft.baseRevision,
+        p_schema_version: CURRENT_SCHEMA_VERSION,
+        p_pages: stampedPages,
+        p_elements: stampedElements,
+        p_dom_edits: draft.domEdits || {},
+        p_summary: nextSummary,
+      } as any);
 
-      // Stamp elements and pages with the new revision
-      const stampedPages: Record<string, PageModel> = {};
-      Object.entries(draft.pages).forEach(([k, p]) => {
-        stampedPages[k] = {
-          ...p,
-          revision: newRevision,
-          updatedAt: publishedAt,
-          updatedBy: author,
-        };
-      });
+      if (error) throw new Error(error.message || "رفض Supabase عملية النشر.");
+      const result: any = data;
+      if (!result || result.success !== true) {
+        const latestRevision = Number(result?.currentRevision || result?.newRevision || currentPublished.revision);
+        if (result?.conflict) {
+          return {
+            success: false,
+            newRevision: latestRevision,
+            error: "CONCURRENCY_CONFLICT: تغيرت النسخة المنشورة أثناء النشر إلى الإصدار " + latestRevision + ". أعد تحميل المسودة وحل التعارض.",
+          };
+        }
+        return { success: false, newRevision: latestRevision, error: result?.error || "لم يؤكد الخادم النشر؛ لم يتم تحديث الحالة محليًا." };
+      }
 
-      const stampedElements: Record<string, ElementModel> = {};
-      Object.entries(draft.elements).forEach(([k, el]) => {
-        stampedElements[k] = {
-          ...el,
-          revision: newRevision,
-          updatedAt: publishedAt,
-          updatedBy: author,
-        };
-      });
-
-      const newPublishedConfig: StudioPublishedConfig = {
-        revision: newRevision,
+      const confirmedRevision = Number(result.newRevision || proposedRevision);
+      const confirmedConfig: StudioPublishedConfig = {
+        id: "active",
+        revision: confirmedRevision,
+        schemaVersion: CURRENT_SCHEMA_VERSION,
         schema_version: CURRENT_SCHEMA_VERSION,
         publishedAt,
         publishedBy: author,
-        summary: summary || `الإصدار رقم ${newRevision}`,
+        summary: nextSummary,
         pages: stampedPages,
         elements: stampedElements,
+        domEdits: draft.domEdits || {},
       };
-
-      // 3. Record previous snapshot in history
       const historyRecord: StudioHistoryRecord = {
         revision: currentPublished.revision,
-        schema_version: currentPublished.schema_version,
+        schemaVersion: currentPublished.schemaVersion || currentPublished.schema_version || CURRENT_SCHEMA_VERSION,
         publishedBy: currentPublished.publishedBy,
         publishedAt: currentPublished.publishedAt,
         summary: currentPublished.summary,
         snapshot: {
           pages: currentPublished.pages,
           elements: currentPublished.elements,
+          domEdits: currentPublished.domEdits || {},
         },
       };
 
       this.inMemoryHistory.unshift(historyRecord);
+      this.inMemoryHistory = this.inMemoryHistory.slice(0, 50);
       if (typeof window !== "undefined") {
-        localStorage.setItem(LOCAL_HISTORY_KEY, JSON.stringify(this.inMemoryHistory.slice(0, 50)));
+        try { localStorage.setItem(LOCAL_HISTORY_KEY, JSON.stringify(this.inMemoryHistory)); } catch { /* cache is best-effort */ }
       }
-
-      // Save to Supabase History table
-      Promise.resolve(
-        supabase.from("studio_history" as any).insert({
-          revision: historyRecord.revision,
-          schema_version: historyRecord.schema_version,
-          published_by: historyRecord.publishedBy,
-          published_at: historyRecord.publishedAt,
-          summary: historyRecord.summary,
-          snapshot: historyRecord.snapshot,
-        }),
-      ).catch(() => {});
-
-      // 4. Save to Supabase Published Config
-      const { error: publishError } = await supabase
-        .from("studio_published_configs" as any)
-        .upsert({
-          id: "active",
-          revision: newRevision,
-          schema_version: CURRENT_SCHEMA_VERSION,
-          pages: stampedPages,
-          elements: stampedElements,
-          published_by: author,
-          published_at: publishedAt,
-          summary: summary || `الإصدار رقم ${newRevision}`,
-        });
-
-      if (publishError) {
-        console.warn("Supabase publish notice, persisting locally:", publishError.message);
-      }
-
-      // 5. Update local published cache
-      this.inMemoryPublished = newPublishedConfig;
+      this.inMemoryPublished = confirmedConfig;
       if (typeof window !== "undefined") {
-        localStorage.setItem(LOCAL_PUBLISHED_KEY, JSON.stringify(newPublishedConfig));
+        try { localStorage.setItem(LOCAL_PUBLISHED_KEY, JSON.stringify(confirmedConfig)); } catch { /* server is authoritative */ }
       }
 
-      // 6. Update draft baseRevision and clear unpublished flag
       const refreshedDraft: StudioDraft = {
         ...draft,
-        baseRevision: newRevision,
+        id: draft.id || "draft_" + draft.owner,
+        baseRevision: confirmedRevision,
         pages: stampedPages,
         elements: stampedElements,
+        domEdits: draft.domEdits || {},
         hasUnpublishedChanges: false,
         updatedAt: publishedAt,
       };
       this.inMemoryDraft = refreshedDraft;
       this.persistLocalDraft(refreshedDraft);
-
-      // Notify window of published update
       if (typeof window !== "undefined") {
-        window.dispatchEvent(
-          new CustomEvent("studio_published_updated", { detail: newPublishedConfig }),
-        );
+        window.dispatchEvent(new CustomEvent("studio_published_updated", { detail: confirmedConfig }));
       }
-
-      return { success: true, newRevision };
+      return { success: true, newRevision: confirmedRevision };
     } catch (e: any) {
-      return { success: false, newRevision: draft.baseRevision, error: e.message };
+      return { success: false, newRevision: draft.baseRevision, error: e?.message || "فشل النشر. لم يتم تأكيد النسخة الجديدة على الخادم." };
     }
   }
 
@@ -757,6 +784,7 @@ class StudioService {
         schemaVersion: CURRENT_SCHEMA_VERSION,
         pages: snapshotToRestore.pages,
         elements: snapshotToRestore.elements,
+        domEdits: (snapshotToRestore as any).domEdits || {},
         updatedAt: new Date().toISOString(),
         createdAt: new Date().toISOString(),
         hasUnpublishedChanges: true,
@@ -811,7 +839,7 @@ class StudioService {
   private persistLocalDraft(draft: StudioDraft) {
     if (typeof window === "undefined") return;
     try {
-      localStorage.setItem(LOCAL_DRAFT_KEY, JSON.stringify(draft));
+      localStorage.setItem(LOCAL_DRAFT_KEY, JSON.stringify({ ...draft, domEdits: draft.domEdits || {} }));
     } catch {
       // storage unavailable
     }

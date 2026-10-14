@@ -184,6 +184,14 @@ export interface PageModel {
   updatedBy: string;
 }
 
+export interface StudioDomEdit {
+  text?: string;
+  styles?: Record<string, string>;
+  deleted?: boolean;
+  duplicateCount?: number;
+  order?: number;
+}
+
 export interface StudioDraft {
   id: string;
   owner: string;
@@ -191,6 +199,7 @@ export interface StudioDraft {
   schemaVersion: number;
   pages: Record<string, PageModel>;
   elements: Record<string, ElementModel>;
+  domEdits: Record<string, StudioDomEdit>;
   updatedAt: string;
   createdAt: string;
   hasUnpublishedChanges: boolean;
@@ -199,12 +208,14 @@ export interface StudioDraft {
 export interface StudioPublishedConfig {
   id?: string;
   revision: number;
-  schemaVersion: number;
+  schemaVersion?: number;
+  schema_version?: number;
   publishedAt: string;
   publishedBy: string;
   summary: string;
   pages: Record<string, PageModel>;
   elements: Record<string, ElementModel>;
+  domEdits: Record<string, StudioDomEdit>;
 }
 
 export interface StudioHistoryRecord {
@@ -217,6 +228,7 @@ export interface StudioHistoryRecord {
   snapshot: {
     pages: Record<string, PageModel>;
     elements: Record<string, ElementModel>;
+    domEdits?: Record<string, StudioDomEdit>;
   };
 }
 
