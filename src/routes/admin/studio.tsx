@@ -809,74 +809,17 @@ export function DeveloperStudioProPage() {
       {/* ========================================================= */}
       {/* MAIN WORKSPACE BODY                                       */}
       {/* ========================================================= */}
-      {workspaceMode === "live" ? (
-        <div className="min-h-0 flex-1 overflow-hidden">
-          <LiveAppPreview
-            route={activePage.route}
-            initialEdits={draft.domEdits || {}}
-            onEditsChange={(domEdits) => {
-              if (!draft) return;
-              commitDraftChange({ ...draft, domEdits, hasUnpublishedChanges: true });
-            }}
-          />
-        </div>
-      ) : (
-        /* Standard 3-Panel Visual Workspace */
-        <div className="flex-1 flex overflow-hidden">
-          {/* Panel 1: Hierarchy Tree & Component Palette (Right side in RTL) */}
-          <ElementTreePanel
-            pages={draft.pages}
-            activePageId={activePageId}
-            elements={draft.elements}
-            selectedElementId={selectedElementId}
-            onSelectPage={(pageId) => {
-              setActivePageId(pageId);
-              setSelectedElementId(null);
-            }}
-            onAddPage={handleAddPage}
-            onSelectElement={(elementId) => setSelectedElementId(elementId)}
-            onAddElement={(type, parentId) => handleAddElement(type, parentId)}
-            onDeleteElement={handleDeleteElement}
-            onDuplicateElement={handleDuplicateElement}
-            onToggleVisibility={(elementId) => {
-              const el = draft.elements[elementId];
-              if (el) {
-                handleUpdateElement(elementId, {
-                  layout: { ...el.layout, visibility: !el.layout.visibility },
-                });
-              }
-            }}
-            onToggleLock={(elementId) => {
-              const el = draft.elements[elementId];
-              if (el) {
-                handleUpdateElement(elementId, { locked: !el.locked });
-              }
-            }}
-          />
-
-          {/* Panel 2: Interactive WYSIWYG Visual Canvas (Center) */}
-          <VisualEditorCanvas
-            page={activePage}
-            elements={draft.elements}
-            selectedElementId={selectedElementId}
-            onSelectElement={(id) => setSelectedElementId(id)}
-            onUpdateElement={handleUpdateElement}
-            onDeleteElement={handleDeleteElement}
-            onDuplicateElement={handleDuplicateElement}
-            onMoveElement={handleMoveElement}
-            onAddElement={(type, parentId) => handleAddElement(type, parentId)}
-            className="flex-1"
-          />
-
-          {/* Panel 3: Element Properties & Styling Controls (Left side in RTL) */}
-          <PropertiesPanel
-            element={selectedElement}
-            onUpdateElement={handleUpdateElement}
-            onDeleteElement={handleDeleteElement}
-            onDuplicateElement={handleDuplicateElement}
-          />
-        </div>
-      )}
+      <div className="min-h-0 flex-1 overflow-hidden">
+        <LiveAppPreview
+          route={activePage?.route || "/admin"}
+          designerMode={workspaceMode === "builder"}
+          initialEdits={draft.domEdits || {}}
+          onEditsChange={(domEdits) => {
+            if (!draft) return;
+            commitDraftChange({ ...draft, domEdits, hasUnpublishedChanges: true });
+          }}
+        />
+      </div>
 
       {/* ========================================================= */}
       {/* WORKFLOW MODALS                                           */}
