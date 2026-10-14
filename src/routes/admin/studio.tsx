@@ -628,7 +628,7 @@ export function DeveloperStudioProPage() {
   const selectedElement = selectedElementId ? draft.elements[selectedElementId] : null;
 
   return (
-    <div className="h-[calc(100vh-105px)] flex flex-col overflow-hidden bg-background font-cairo text-right select-none">
+    <div className="h-[calc(100dvh-88px)] min-h-[560px] flex flex-col overflow-hidden bg-background font-cairo text-right select-none">
       {/* ========================================================= */}
       {/* TOP WORKSPACE NAVIGATION & CONTROL BAR                    */}
       {/* ========================================================= */}
@@ -809,15 +809,17 @@ export function DeveloperStudioProPage() {
       {/* MAIN WORKSPACE BODY                                       */}
       {/* ========================================================= */}
       {workspaceMode === "live" ? (
-        <LiveAppPreview
-          route={activePage.route}
-          initialEdits={draft.domEdits || {}}
-          onEditsChange={(domEdits) => {
-            if (!draft) return;
-            commitDraftChange({ ...draft, domEdits, hasUnpublishedChanges: true });
-          }}
-        />
-            ) : (
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <LiveAppPreview
+            route={activePage.route}
+            initialEdits={draft.domEdits || {}}
+            onEditsChange={(domEdits) => {
+              if (!draft) return;
+              commitDraftChange({ ...draft, domEdits, hasUnpublishedChanges: true });
+            }}
+          />
+        </div>
+      ) : (
         /* Standard 3-Panel Visual Workspace */
         <div className="flex-1 flex overflow-hidden">
           {/* Panel 1: Hierarchy Tree & Component Palette (Right side in RTL) */}
