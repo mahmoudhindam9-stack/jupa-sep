@@ -258,7 +258,7 @@ export function DeveloperStudioProPage() {
             setSaveError(null);
             saveErrorRef.current = null;
             setDraft((current) => current && versionAtSave === draftVersionRef.current
-              ? { ...current, hasUnsavedLocalChanges: false }
+              ? { ...current, updatedAt: result.updatedAt, hasUnsavedLocalChanges: false }
               : current);
             toast({ title: "تم حفظ المسودة على Supabase", description: "تم تأكيد حفظ التغييرات على الخادم." });
           } else {
@@ -357,6 +357,7 @@ export function DeveloperStudioProPage() {
     }
     const snapshot: StudioDraft = { ...draft, updatedAt: local.updatedAt, hasUnsavedLocalChanges: true };
     setDraft(snapshot);
+    setSaveStatus("saving");
 
     // Validate structural compatibility before the single explicit cloud sync.
     const validation = validateDraftHierarchy(snapshot);
