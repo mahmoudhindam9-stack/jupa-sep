@@ -842,7 +842,7 @@ function SystemUpdatePage() {
             </Button>
 
             <Button
-              onClick={() => setDevModeOpen(true)}
+              onClick={() => { const popup = window.open("/admin/developer-studio", "_blank"); if (popup) { try { popup.opener = null; } catch {} } else setDevModeOpen(true); }}
               variant="outline"
               className="gap-2 font-bold text-xs sm:text-sm border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-400 bg-indigo-50/50 hover:bg-indigo-100 dark:bg-indigo-950/20 dark:hover:bg-indigo-900/40 h-11 rounded-xl shrink-0"
             >
