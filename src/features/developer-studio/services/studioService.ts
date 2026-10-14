@@ -475,7 +475,7 @@ class StudioService {
       const raw = String(e?.message || e?.details || "تعذر تأكيد حفظ المسودة على الخادم.");
       let actionable = raw;
       if (/column .*dom_edits.* does not exist|dom_edits.*column/i.test(raw)) {
-        actionable = "قاعدة البيانات تحتاج إلى التحديث قبل حفظ معاينة التطبيق. نفّذ ملف supabase/migrations/20261014140000_harden_developer_studio.sql في Supabase SQL Editor ثم أعد المحاولة. التفاصيل: " + raw;
+        actionable = "قاعدة البيانات تحتاج إلى التحديث قبل حفظ معاينة التطبيق. نفّذ ملف supabase/migrations/20261014153000_fix_developer_studio_rls_and_access_diagnostics.sql في Supabase SQL Editor ثم أعد المحاولة. التفاصيل: " + raw;
       } else if (/row-level security|permission denied|not authorized/i.test(raw)) {
         let accessHint = "";
         try {
@@ -497,7 +497,7 @@ class StudioService {
         }
         actionable = (accessHint || "رفضت Supabase الحفظ بسبب الصلاحيات. يلزم حساب مصادق عليه وصف public.profiles مطابق لـ auth.uid() مع developer_options=true أو role=admin/super_admin. نفّذ ترحيل إصلاح RLS ثم أعد المحاولة.") + " التفاصيل: " + raw;
       } else if (/relation .*studio_drafts.* does not exist|studio_drafts.*does not exist/i.test(raw)) {
-        actionable = "جداول الاستوديو غير موجودة في Supabase. نفّذ أولًا ترحيل 20261014120000_developer_studio_pro.sql ثم 20261014140000_harden_developer_studio.sql. التفاصيل: " + raw;
+        actionable = "جداول الاستوديو غير موجودة في Supabase. نفّذ بالترتيب 20261014120000_developer_studio_pro.sql ثم 20261014140000_harden_developer_studio.sql ثم 20261014153000_fix_developer_studio_rls_and_access_diagnostics.sql. التفاصيل: " + raw;
       }
       return { success: false, updatedAt, error: actionable };
     }
