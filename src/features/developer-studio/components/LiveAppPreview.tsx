@@ -331,6 +331,8 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         }
         if (data.action === "restore") {
           Object.entries(data.edits || {}).forEach(([selector, edit]) => applyEdit(selector, edit));
+          // Refresh the selected element's property controls after undo/redo restores styles or text.
+          if (selected && selected.isConnected) send("STUDIO_SELECTED", { element: describe(selected) });
           return;
         }
         const el = data.action === "select" && data.selector
