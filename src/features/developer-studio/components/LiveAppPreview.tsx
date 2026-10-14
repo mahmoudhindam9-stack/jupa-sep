@@ -260,8 +260,6 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange }: Props) {
       send("STUDIO_BRIDGE_READY", {});
     })();`;
     doc.body.appendChild(script);
-  }, [editMode, send]).toString();
-    doc.body.appendChild(script);
   }, [editMode, send]);
 
   const applyStyle = (styles: Record<string, string>) => {
