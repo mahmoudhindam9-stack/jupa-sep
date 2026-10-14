@@ -713,10 +713,11 @@ class StudioService {
       elements: mergedElements,
       updatedAt: new Date().toISOString(),
       hasUnpublishedChanges: true,
+      hasUnsavedLocalChanges: true,
     };
 
+    // Smart merge prepares an in-memory draft; only Save Draft may persist it.
     this.inMemoryDraft = mergedDraft;
-    this.persistLocalDraft(mergedDraft);
     return mergedDraft;
   }
 
