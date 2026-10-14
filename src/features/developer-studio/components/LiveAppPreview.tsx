@@ -80,7 +80,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange }: Props) {
       setFillColor(/^#[0-9a-f]{6}$/i.test(item.fill) ? item.fill : "#6366f1");
       setStrokeColor(/^#[0-9a-f]{6}$/i.test(item.stroke) ? item.stroke : (item.color && /^#[0-9a-f]{6}$/i.test(item.color) ? item.color : "#334155"));
       setStrokeWidth(String(parseFloat(item.strokeWidth) || 2));
-      setOpacity(String(Math.max(0, Math.min(1, parseFloat(item.opacity) || 1)));
+      setOpacity(String(Math.max(0, Math.min(1, parseFloat(item.opacity) || 1))));
       setBorderRadius(item.borderRadius || "8px");
       setIconRotation(item.rotate || "0deg");
       setTextAlign(item.textAlign || "right");
@@ -211,7 +211,10 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange }: Props) {
       let dragState = null;
       const editableSelector = "button,a,input,textarea,select,label,h1,h2,h3,h4,h5,h6,p,span,div,section,article,li,td,th,svg,path,circle,rect,line,polyline,polygon";
       const selectElement = (el) => {
-        selectElement(el);
+        if (selected) selected.removeAttribute("data-coding-studio-selected");
+        selected = el;
+        selected.setAttribute("data-coding-studio-selected", "true");
+        send("STUDIO_SELECTED", { element: describe(selected) });
       };
       document.body.dataset.codingStudio = "on";
       document.addEventListener("pointerdown", (event) => {
@@ -265,10 +268,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange }: Props) {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
-        if (selected) selected.removeAttribute("data-coding-studio-selected");
-        selected = el;
-        selected.setAttribute("data-coding-studio-selected", "true");
-        send("STUDIO_SELECTED", { element: describe(selected) });
+        selectElement(el);
       }, true);
       window.addEventListener("message", (event) => {
         if (event.origin !== parentOrigin || event.source !== window.parent || event.data?.type !== "STUDIO_COMMAND") return;
