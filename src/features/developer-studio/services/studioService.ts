@@ -354,6 +354,8 @@ class StudioService {
         .from("studio_drafts" as any)
         .select("*")
         .eq("owner", owner)
+        .order("updated_at", { ascending: false })
+        .limit(1)
         .maybeSingle()) as any;
 
       if (error) throw error;
@@ -433,18 +435,30 @@ class StudioService {
     this.persistLocalDraft(updatedDraft);
 
     try {
+      // Select the existing row ID first. This works even on installations where
+      // the hardening migration has not yet installed the unique(owner) index.
+      const { data: existing, error: lookupError } = (await supabase
+        .from("studio_drafts" as any)
+        .select("id, owner")
+        .eq("owner", updatedDraft.owner)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()) as any;
+      if (lookupError) throw lookupError;
+
+      const draftId = existing?.id || updatedDraft.id || "draft_" + updatedDraft.owner;
       const { data, error } = (await supabase
         .from("studio_drafts" as any)
         .upsert({
-          id: updatedDraft.id || "draft_" + updatedDraft.owner,
+          id: draftId,
           owner: updatedDraft.owner,
           base_revision: updatedDraft.baseRevision,
           schema_version: updatedDraft.schemaVersion,
           pages: updatedDraft.pages,
           elements: updatedDraft.elements,
-          dom_edits: updatedDraft.domEdits,
+          dom_edits: updatedDraft.domEdits || {},
           updated_at: updatedAt,
-        }, { onConflict: "owner" })
+        }, { onConflict: "id" })
         .select("id, owner, updated_at")
         .maybeSingle()) as any;
 
@@ -458,11 +472,16 @@ class StudioService {
       this.persistLocalDraft(confirmedDraft);
       return { success: true, updatedAt: confirmedDraft.updatedAt };
     } catch (e: any) {
-      return {
-        success: false,
-        updatedAt,
-        error: e?.message || "تعذر تأكيد حفظ المسودة على الخادم. احتفظنا بالنسخة المحلية.",
-      };
+      const raw = String(e?.message || e?.details || "تعذر تأكيد حفظ المسودة على الخادم.");
+      let actionable = raw;
+      if (/column .*dom_edits.* does not exist|dom_edits.*column/i.test(raw)) {
+        actionable = "قاعدة البيانات تحتاج إلى التحديث قبل حفظ معاينة التطبيق. نفّذ ملف supabase/migrations/20261014140000_harden_developer_studio.sql في Supabase SQL Editor ثم أعد المحاولة. التفاصيل: " + raw;
+      } else if (/row-level security|permission denied|not authorized/i.test(raw)) {
+        actionable = "رفضت Supabase الحفظ بسبب الصلاحيات. سجّل الدخول بحساب إداري مرتبط بصف في public.profiles، وتأكد من وجود developer_options=true أو أن role هي admin/super_admin، ثم طبّق ترحيل تأمين الاستوديو. التفاصيل: " + raw;
+      } else if (/relation .*studio_drafts.* does not exist|studio_drafts.*does not exist/i.test(raw)) {
+        actionable = "جداول الاستوديو غير موجودة في Supabase. نفّذ أولًا ترحيل 20261014120000_developer_studio_pro.sql ثم 20261014140000_harden_developer_studio.sql. التفاصيل: " + raw;
+      }
+      return { success: false, updatedAt, error: actionable };
     }
   }
 

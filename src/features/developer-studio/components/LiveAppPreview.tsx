@@ -6,6 +6,8 @@ import type { StudioDomEdit } from "../models/studio.types";
 type SelectedDomElement = {
   selector: string; tag: string; text: string; color: string; backgroundColor: string;
   fontSize: string; fontWeight: string; width: string; height: string;
+  fill: string; stroke: string; strokeWidth: string; opacity: string;
+  borderRadius: string; rotate: string; textAlign: string;
 };
 type Props = {
   route: string;
@@ -26,6 +28,14 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange }: Props) {
   const [fontWeight, setFontWeight] = useState("400");
   const [width, setWidth] = useState("");
   const [height, setHeight] = useState("");
+  const [fillColor, setFillColor] = useState("#6366f1");
+  const [strokeColor, setStrokeColor] = useState("#334155");
+  const [strokeWidth, setStrokeWidth] = useState("2");
+  const [opacity, setOpacity] = useState("1");
+  const [borderRadius, setBorderRadius] = useState("8px");
+  const [iconRotation, setIconRotation] = useState("0deg");
+  const [textAlign, setTextAlign] = useState("right");
+  const [shadowStyle, setShadowStyle] = useState("none");
   const [previewSize, setPreviewSize] = useState<PreviewSize>("desktop");
   const [editMode, setEditMode] = useState(true);
   const [frameKey, setFrameKey] = useState(0);
@@ -67,6 +77,13 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange }: Props) {
       setFontWeight(item.fontWeight || "400");
       setWidth(item.width === "auto" ? "" : item.width || "");
       setHeight(item.height === "auto" ? "" : item.height || "");
+      setFillColor(/^#[0-9a-f]{6}$/i.test(item.fill) ? item.fill : "#6366f1");
+      setStrokeColor(/^#[0-9a-f]{6}$/i.test(item.stroke) ? item.stroke : (item.color && /^#[0-9a-f]{6}$/i.test(item.color) ? item.color : "#334155"));
+      setStrokeWidth(String(parseFloat(item.strokeWidth) || 2));
+      setOpacity(String(Math.max(0, Math.min(1, parseFloat(item.opacity) || 1)));
+      setBorderRadius(item.borderRadius || "8px");
+      setIconRotation(item.rotate || "0deg");
+      setTextAlign(item.textAlign || "right");
       setStatus("تم تحديد العنصر: " + item.tag);
     } else if (event.data.type === "STUDIO_CHANGE") {
       commitEdits(String(event.data.selector), event.data.patch || {});
@@ -108,7 +125,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange }: Props) {
     if (!doc.getElementById("coding-studio-overlay")) {
       const style = doc.createElement("style");
       style.id = "coding-studio-overlay";
-      style.textContent = 'body[data-coding-studio="on"] *{cursor:crosshair!important}body[data-coding-studio="on"] *:hover{outline:1px dashed #6366f1!important;outline-offset:-1px}[data-coding-studio-selected="true"]{outline:2px solid #6366f1!important;outline-offset:1px!important}';
+      style.textContent = 'body[data-coding-studio="on"] *{cursor:grab!important;user-select:none!important}body[data-coding-studio="on"] *:hover{outline:1px dashed #6366f1!important;outline-offset:-1px}[data-coding-studio-dragging="true"]{cursor:grabbing!important;z-index:9999!important}[data-coding-studio-selected="true"]{outline:2px solid #6366f1!important;outline-offset:1px!important}';
       doc.head.appendChild(style);
     }
     if (doc.getElementById("coding-studio-bridge")) {
@@ -145,7 +162,10 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange }: Props) {
         return { selector: selectorFor(el), tag: el.tagName.toLowerCase(),
           text: (el.innerText || el.textContent || "").trim().slice(0, 1000),
           color: css.color, backgroundColor: css.backgroundColor, fontSize: css.fontSize,
-          width: el.style.width || "auto", height: el.style.height || "auto", fontWeight: css.fontWeight };
+          width: el.style.width || "auto", height: el.style.height || "auto", fontWeight: css.fontWeight,
+          fill: css.fill || el.getAttribute("fill") || "", stroke: css.stroke || el.getAttribute("stroke") || "",
+          strokeWidth: css.strokeWidth || el.getAttribute("stroke-width") || "2", opacity: css.opacity || "1",
+          borderRadius: css.borderRadius || "0px", rotate: css.rotate || "0deg", textAlign: css.textAlign || "right" };
       };
       const applyText = (el, value) => {
         const node = Array.from(el.childNodes).find((child) => child.nodeType === 3 && (child.textContent || "").trim());
@@ -188,12 +208,59 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange }: Props) {
       };
       let selected = null;
       let enabled = true;
+      let dragState = null;
+      const editableSelector = "button,a,input,textarea,select,label,h1,h2,h3,h4,h5,h6,p,span,div,section,article,li,td,th,svg,path,circle,rect,line,polyline,polygon";
+      const selectElement = (el) => {
+        selectElement(el);
+      };
       document.body.dataset.codingStudio = "on";
+      document.addEventListener("pointerdown", (event) => {
+        if (!enabled || document.body.dataset.codingStudio !== "on" || event.button !== 0) return;
+        const target = event.target instanceof Element ? event.target : null;
+        if (!target) return;
+        const el = target.closest(editableSelector);
+        if (!el || el === document.body || el === document.documentElement) return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        selectElement(el);
+        const existingTranslate = getComputedStyle(el).translate || "none";
+        const values = existingTranslate === "none" ? [] : existingTranslate.match(/-?\d+(?:\.\d+)?/g) || [];
+        const baseX = Number(values[0] || 0);
+        const baseY = Number(values[1] || 0);
+        dragState = { el, selector: selectorFor(el), startX: event.clientX, startY: event.clientY, baseX, baseY, x: baseX, y: baseY, moved: false };
+      }, true);
+      document.addEventListener("pointermove", (event) => {
+        if (!enabled || !dragState) return;
+        const dx = event.clientX - dragState.startX;
+        const dy = event.clientY - dragState.startY;
+        if (!dragState.moved && Math.abs(dx) + Math.abs(dy) < 3) return;
+        dragState.moved = true;
+        dragState.x = Math.round(dragState.baseX + dx);
+        dragState.y = Math.round(dragState.baseY + dy);
+        dragState.el.style.translate = dragState.x + "px " + dragState.y + "px";
+        dragState.el.dataset.codingStudioDragging = "true";
+        event.preventDefault();
+      }, true);
+      document.addEventListener("pointerup", () => {
+        if (!dragState) return;
+        const finished = dragState;
+        dragState = null;
+        delete finished.el.dataset.codingStudioDragging;
+        if (finished.moved) {
+          finished.el.style.zIndex = String(Math.max(10, parseInt(getComputedStyle(finished.el).zIndex, 10) || 0));
+          send("STUDIO_CHANGE", {
+            selector: finished.selector,
+            patch: { styles: { translate: finished.x + "px " + finished.y + "px", zIndex: finished.el.style.zIndex } }
+          });
+          send("STUDIO_SELECTED", { element: describe(finished.el) });
+        }
+      }, true);
       document.addEventListener("click", (event) => {
         if (!enabled || document.body.dataset.codingStudio !== "on") return;
         const target = event.target instanceof Element ? event.target : null;
         if (!target) return;
-        const el = target.closest("button,a,input,textarea,select,label,h1,h2,h3,h4,h5,h6,p,span,div,section,article,li,td,th");
+        const el = target.closest(editableSelector);
         if (!el || el === document.body || el === document.documentElement) return;
         event.preventDefault();
         event.stopPropagation();
@@ -279,6 +346,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange }: Props) {
     if (patch) commitEdits(selected.selector, patch);
   };
   const frameWidth = previewSize === "mobile" ? "390px" : previewSize === "tablet" ? "820px" : "100%";
+  const selectedIsVector = !!selected && ["svg", "path", "circle", "rect", "line", "polyline", "polygon"].includes(selected.tag);
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-background" dir="rtl">
@@ -316,26 +384,55 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange }: Props) {
           </div>
           {selected ? (
             <>
-              <label className="block text-xs font-bold">النص<textarea value={textValue} onChange={e => editText(e.target.value)} className="mt-1 min-h-20 w-full rounded-lg border bg-background p-2 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
+              {!selectedIsVector && <label className="block text-xs font-bold">النص<textarea value={textValue} onChange={e => editText(e.target.value)} className="mt-1 min-h-16 w-full rounded-lg border bg-background p-2 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>}
               <div className="grid grid-cols-2 gap-2">
-                <label className="text-xs">لون النص<input aria-label="لون النص" type="color" value={textColor} onChange={e => { setTextColor(e.target.value); applyStyle({ color: e.target.value }); }} className="mt-1 h-9 w-full rounded border bg-background p-1" /></label>
-                <label className="text-xs">الخلفية<input aria-label="لون الخلفية" type="color" value={backgroundColor} onChange={e => { setBackgroundColor(e.target.value); applyStyle({ backgroundColor: e.target.value }); }} className="mt-1 h-9 w-full rounded border bg-background p-1" /></label>
+                {!selectedIsVector && <label className="text-xs">لون النص<input aria-label="لون النص" type="color" value={/^#[0-9a-f]{6}$/i.test(textColor) ? textColor : "#111827"} onChange={e => { setTextColor(e.target.value); applyStyle({ color: e.target.value }); }} className="mt-1 h-9 w-full rounded border bg-background p-1" /></label>}
+                <label className="text-xs">{selectedIsVector ? "خلفية الأيقونة" : "لون الخلفية"}<input aria-label="لون الخلفية" type="color" value={/^#[0-9a-f]{6}$/i.test(backgroundColor) ? backgroundColor : "#ffffff"} onChange={e => { setBackgroundColor(e.target.value); applyStyle({ backgroundColor: e.target.value }); }} className="mt-1 h-9 w-full rounded border bg-background p-1" /></label>
               </div>
-              <label className="block text-xs">حجم الخط (px)<input type="number" min="8" max="120" value={fontSize} onChange={e => { setFontSize(e.target.value); applyStyle({ fontSize: e.target.value + "px" }); }} className="mt-1 w-full rounded-lg border bg-background p-2" /></label>
-              <label className="block text-xs">سُمك الخط<select value={fontWeight} onChange={e => { setFontWeight(e.target.value); applyStyle({ fontWeight: e.target.value }); }} className="mt-1 w-full rounded-lg border bg-background p-2"><option value="300">خفيف</option><option value="400">عادي</option><option value="500">متوسط</option><option value="600">شبه عريض</option><option value="700">عريض</option><option value="900">ثقيل</option></select></label>
+
+              {selectedIsVector && (
+                <div className="rounded-xl border p-3 space-y-3">
+                  <h4 className="text-xs font-black">تصميم الأيقونة / SVG</h4>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="text-xs">لون التعبئة<input aria-label="لون تعبئة الأيقونة" type="color" value={fillColor} onChange={e => { setFillColor(e.target.value); applyStyle({ fill: e.target.value }); }} className="mt-1 h-9 w-full rounded border bg-background p-1" /></label>
+                    <label className="text-xs">لون الخط<input aria-label="لون حد الأيقونة" type="color" value={strokeColor} onChange={e => { setStrokeColor(e.target.value); applyStyle({ stroke: e.target.value }); }} className="mt-1 h-9 w-full rounded border bg-background p-1" /></label>
+                  </div>
+                  <label className="block text-xs">سُمك رسم الأيقونة<input type="range" min="0.5" max="5" step="0.5" value={strokeWidth} onChange={e => { setStrokeWidth(e.target.value); applyStyle({ strokeWidth: e.target.value }); }} className="mt-2 w-full" /><span className="text-muted-foreground">{strokeWidth}px</span></label>
+                  <label className="block text-xs">دوران الأيقونة<select value={iconRotation} onChange={e => { setIconRotation(e.target.value); applyStyle({ rotate: e.target.value }); }} className="mt-1 w-full rounded-lg border bg-background p-2"><option value="0deg">0°</option><option value="45deg">45°</option><option value="90deg">90°</option><option value="135deg">135°</option><option value="180deg">180°</option><option value="270deg">270°</option></select></label>
+                  <label className="block text-xs">شكل خلفية الأيقونة<select onChange={e => {
+                    const shape = e.target.value;
+                    if (shape === "none") applyStyle({ backgroundColor: "transparent", borderRadius: "0px", padding: "0px" });
+                    else if (shape === "circle") applyStyle({ backgroundColor: backgroundColor || "#ffffff", borderRadius: "50%", padding: "8px", display: "inline-block" });
+                    else if (shape === "rounded") applyStyle({ backgroundColor: backgroundColor || "#ffffff", borderRadius: "12px", padding: "8px", display: "inline-block" });
+                    else if (shape === "square") applyStyle({ backgroundColor: backgroundColor || "#ffffff", borderRadius: "0px", padding: "8px", display: "inline-block" });
+                  }} className="mt-1 w-full rounded-lg border bg-background p-2"><option value="none">بدون خلفية</option><option value="circle">دائرة</option><option value="rounded">مربع مستدير</option><option value="square">مربع</option></select></label>
+                </div>
+              )}
+
+              {!selectedIsVector && <>
+                <label className="block text-xs">حجم الخط (px)<input type="number" min="8" max="120" value={fontSize} onChange={e => { setFontSize(e.target.value); applyStyle({ fontSize: e.target.value + "px" }); }} className="mt-1 w-full rounded-lg border bg-background p-2" /></label>
+                <label className="block text-xs">سُمك الخط<select value={fontWeight} onChange={e => { setFontWeight(e.target.value); applyStyle({ fontWeight: e.target.value }); }} className="mt-1 w-full rounded-lg border bg-background p-2"><option value="300">خفيف</option><option value="400">عادي</option><option value="500">متوسط</option><option value="600">شبه عريض</option><option value="700">عريض</option><option value="900">ثقيل</option></select></label>
+                <label className="block text-xs">محاذاة النص<select value={textAlign} onChange={e => { setTextAlign(e.target.value); applyStyle({ textAlign: e.target.value }); }} className="mt-1 w-full rounded-lg border bg-background p-2"><option value="right">يمين</option><option value="center">توسيط</option><option value="left">يسار</option><option value="justify">ضبط</option></select></label>
+              </>}
+
               <div className="grid grid-cols-2 gap-2">
                 <label className="text-xs">العرض<input value={width} placeholder="240px أو 100%" onChange={e => { setWidth(e.target.value); applyStyle({ width: e.target.value }); }} className="mt-1 w-full rounded-lg border bg-background p-2" /></label>
                 <label className="text-xs">الارتفاع<input value={height} placeholder="80px أو auto" onChange={e => { setHeight(e.target.value); applyStyle({ height: e.target.value }); }} className="mt-1 w-full rounded-lg border bg-background p-2" /></label>
               </div>
+              <label className="block text-xs">الشفافية<input type="range" min="0.1" max="1" step="0.05" value={opacity} onChange={e => { setOpacity(e.target.value); applyStyle({ opacity: e.target.value }); }} className="mt-2 w-full" /><span className="text-muted-foreground">{Math.round(Number(opacity) * 100)}%</span></label>
               <div className="grid grid-cols-2 gap-2">
-                <Button type="button" size="sm" variant="outline" onClick={() => action("moveUp")}><ArrowUp size={14} /> نقل لأعلى</Button>
-                <Button type="button" size="sm" variant="outline" onClick={() => action("moveDown")}><ArrowDown size={14} /> نقل لأسفل</Button>
+                <label className="text-xs">استدارة الحواف<input value={borderRadius} placeholder="12px أو 50%" onChange={e => { setBorderRadius(e.target.value); applyStyle({ borderRadius: e.target.value }); }} className="mt-1 w-full rounded-lg border bg-background p-2" /></label>
+                <label className="text-xs">الظل<select value={shadowStyle} onChange={e => { setShadowStyle(e.target.value); applyStyle({ boxShadow: e.target.value }); }} className="mt-1 w-full rounded-lg border bg-background p-2"><option value="none">بدون</option><option value="0 1px 3px rgba(0,0,0,.12)">خفيف</option><option value="0 4px 12px rgba(0,0,0,.16)">متوسط</option><option value="0 12px 32px rgba(0,0,0,.22)">قوي</option><option value="0 0 0 2px rgba(99,102,241,.35)">إطار مضيء</option></select></label>
+              </div>
+              <div className="rounded-lg bg-muted/60 p-2 text-[10px] leading-5 text-muted-foreground">حرّك العنصر بالسحب المباشر داخل المعاينة. يتم حفظ الموقع والتنسيقات في المسودة تلقائيًا.</div>
+              <div className="grid grid-cols-2 gap-2">
+                <Button type="button" size="sm" variant="outline" onClick={() => action("moveUp")}><ArrowUp size={14} /> ترتيب لأعلى</Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => action("moveDown")}><ArrowDown size={14} /> ترتيب لأسفل</Button>
                 <Button type="button" size="sm" variant="outline" onClick={() => action("duplicate", { duplicateCount: Math.min(5, Number(edits[selected.selector]?.duplicateCount || 0) + 1) })}><Copy size={14} /> نسخ العنصر</Button>
                 <Button type="button" size="sm" variant="destructive" onClick={() => action("delete", { deleted: true })}><Trash2 size={14} /> إخفاء العنصر</Button>
               </div>
               <Button type="button" size="sm" variant="ghost" onClick={() => setSelected(null)}><Check size={14} /> إنهاء التحديد</Button>
             </>
-          ) : (
             <div className="rounded-xl border border-dashed p-4 text-xs leading-6 text-muted-foreground">انقر على نص أو زر أو بطاقة من التطبيق نفسه. التعديلات تُحفظ داخل المسودة، ولا تصبح معتمدة لبقية المستخدمين إلا بعد تأكيد النشر من الخادم.</div>
           )}
           <div className="mt-auto rounded-lg bg-muted p-2 text-[10px] leading-5 text-muted-foreground">إذا ظهر خطأ مزامنة، تبقى النسخة المحلية موجودة لكن لا تعتبر محفوظة سحابيًا حتى نجاح التأكيد.</div>

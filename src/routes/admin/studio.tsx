@@ -76,16 +76,18 @@ export function DeveloperStudioProPage() {
   // Auto-Save & Status State
   const [saveStatus, setSaveStatus] = useState<AutoSaveStatus>("saved");
   const [lastSavedAt, setLastSavedAt] = useState<string>("");
-  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const saveErrorRef = useRef<string | null>(null);
+  const draftVersionRef = useRef(0);
+  const saveQueueRef = useRef<Promise<unknown>>(Promise.resolve());
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Undo / Redo History Stack
   const [historyStack, setHistoryStack] = useState<StudioDraft[]>([]);
   const [historyPointer, setHistoryPointer] = useState<number>(-1);
   const isUndoRedoActionRef = useRef<boolean>(false);
 
-  // Preview Mode
-  const [isPreviewMode, setIsPreviewMode] = useState(false);
-  // Open on the real app first; the structured component canvas remains one click away.
+  // Open on the real application by default; the component builder is available separately.
   const [workspaceMode, setWorkspaceMode] = useState<"builder" | "live">("live");
 
   // Modals
@@ -130,52 +132,92 @@ export function DeveloperStudioProPage() {
     };
   }, []);
 
-  // Push draft to undo stack & trigger autosave
+  // Serialize writes to prevent a slower older request from overwriting a newer draft.
+  const persistDraft = useCallback((snapshot: StudioDraft, manual = false) => {
+    const versionAtSave = draftVersionRef.current;
+    const operation = async () => {
+      try {
+        const result = await studioService.saveDraft(snapshot);
+        if (versionAtSave !== draftVersionRef.current && !manual) return result;
+
+        if (result.success) {
+          if (versionAtSave === draftVersionRef.current) {
+            setSaveStatus("saved");
+            setLastSavedAt(result.updatedAt);
+            setSaveError(null);
+            saveErrorRef.current = null;
+          }
+          if (manual && versionAtSave === draftVersionRef.current) {
+            toast({ title: "تم حفظ المسودة على Supabase", description: "تم تأكيد حفظ التغييرات على الخادم." });
+          }
+        } else {
+          setSaveStatus("error");
+          setSaveError(result.error || "لم يؤكد الخادم حفظ المسودة.");
+          if (manual || saveErrorRef.current !== (result.error || "save-failed")) {
+            toast({
+              title: "فشل حفظ التعديلات",
+              description: result.error || "لم يؤكد Supabase الحفظ. التعديلات المحلية ما زالت موجودة.",
+              variant: "destructive",
+            });
+          }
+          saveErrorRef.current = result.error || "save-failed";
+        }
+        return result;
+      } catch (error: any) {
+        const message = error?.message || "تعذر الاتصال بخادم Supabase.";
+        if (versionAtSave === draftVersionRef.current || manual) {
+          setSaveStatus("error");
+          setSaveError(message);
+          if (manual || saveErrorRef.current !== message) {
+            toast({ title: "فشل حفظ التعديلات", description: message, variant: "destructive" });
+          }
+          saveErrorRef.current = message;
+        }
+        return { success: false, error: message };
+      }
+    };
+    const queued = saveQueueRef.current.catch(() => undefined).then(operation);
+    saveQueueRef.current = queued.then(() => undefined, () => undefined);
+    return queued;
+  }, [toast]);
+
+  // Push draft to undo stack & trigger a serialized autosave.
   const commitDraftChange = useCallback(
     (newDraft: StudioDraft) => {
+      draftVersionRef.current += 1;
       setDraft(newDraft);
+      setSaveError(null);
       setSaveStatus("unsaved");
 
-      // Update undo stack if this wasn't an undo/redo
       if (!isUndoRedoActionRef.current) {
         setHistoryStack((prev) => {
           const truncated = prev.slice(0, historyPointer + 1);
-          return [...truncated, JSON.parse(JSON.stringify(newDraft))].slice(-25); // cap at 25 steps
+          return [...truncated, JSON.parse(JSON.stringify(newDraft))].slice(-25);
         });
         setHistoryPointer((prev) => Math.min(prev + 1, 24));
       }
       isUndoRedoActionRef.current = false;
 
-      // Debounced Autosave (800ms)
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
       setSaveStatus("saving");
-      autoSaveTimerRef.current = setTimeout(async () => {
-        try {
-          const res = await studioService.saveDraft(newDraft);
-          if (res.success) {
-            setSaveStatus("saved");
-            setLastSavedAt(res.updatedAt);
-          } else {
-            setSaveStatus("error");
-          }
-        } catch {
-          setSaveStatus("error");
-        }
+      autoSaveTimerRef.current = setTimeout(() => {
+        void persistDraft(newDraft, false);
       }, 800);
     },
-    [historyPointer],
+    [historyPointer, persistDraft],
   );
 
-  // Undo Handler
+  // Undo Handler  // Undo Handler
   const handleUndo = useCallback(() => {
     if (historyPointer > 0) {
       isUndoRedoActionRef.current = true;
       const targetState = historyStack[historyPointer - 1];
       setHistoryPointer(historyPointer - 1);
+      draftVersionRef.current += 1;
       setDraft(JSON.parse(JSON.stringify(targetState)));
-      studioService.saveDraft(targetState);
+      void persistDraft(targetState, false);
     }
-  }, [historyPointer, historyStack]);
+  }, [historyPointer, historyStack, persistDraft]);
 
   // Redo Handler
   const handleRedo = useCallback(() => {
@@ -183,10 +225,18 @@ export function DeveloperStudioProPage() {
       isUndoRedoActionRef.current = true;
       const targetState = historyStack[historyPointer + 1];
       setHistoryPointer(historyPointer + 1);
+      draftVersionRef.current += 1;
       setDraft(JSON.parse(JSON.stringify(targetState)));
-      studioService.saveDraft(targetState);
+      void persistDraft(targetState, false);
     }
-  }, [historyPointer, historyStack]);
+  }, [historyPointer, historyStack, persistDraft]);
+
+  const handleSaveDraft = useCallback(async () => {
+    if (!draft) return;
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    setSaveStatus("saving");
+    await persistDraft(draft, true);
+  }, [draft, persistDraft]);
 
   // Keyboard shortcut listener (Ctrl+Z, Ctrl+Y, Ctrl+S)
   useEffect(() => {
@@ -203,23 +253,13 @@ export function DeveloperStudioProPage() {
         handleRedo();
       } else if ((e.metaKey || e.ctrlKey) && e.key === "s") {
         e.preventDefault();
-        if (draft) {
-          studioService.saveDraft(draft).then((result) => {
-            setSaveStatus(result.success ? "saved" : "error");
-            toast(result.success
-              ? { title: "تم حفظ المسودة على الخادم", description: "أكد Supabase حفظ التغييرات." }
-              : { title: "لم يتم تأكيد الحفظ السحابي", description: result.error || "التعديلات محفوظة محليًا فقط.", variant: "destructive" });
-          }).catch((error) => {
-            setSaveStatus("error");
-            toast({ title: "فشل حفظ المسودة", description: error?.message || "تعذر الاتصال بالخادم.", variant: "destructive" });
-          });
-        }
+        void handleSaveDraft();
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleUndo, handleRedo, draft]);
+  }, [handleUndo, handleRedo, handleSaveDraft]);
 
   // Update specific element
   const handleUpdateElement = useCallback(
@@ -652,7 +692,7 @@ export function DeveloperStudioProPage() {
             {saveStatus === "error" && (
               <Badge variant="outline" className="gap-1 text-[11px] bg-destructive/10 text-destructive border-destructive/30">
                 <AlertCircle className="w-3 h-3" />
-                <span>فشل الحفظ التلقائي</span>
+                <span title={saveError || "تعذر حفظ المسودة على Supabase"}>فشل الحفظ — اضغط «حفظ المسودة» لعرض التفاصيل</span>
               </Badge>
             )}
           </div>
@@ -690,7 +730,7 @@ export function DeveloperStudioProPage() {
             type="button"
             variant={workspaceMode === "builder" ? "default" : "outline"}
             size="sm"
-            onClick={() => { setWorkspaceMode("builder"); setIsPreviewMode(false); }}
+            onClick={() => setWorkspaceMode("builder")}
             className="h-8 px-2.5 text-xs gap-1.5 cursor-pointer font-bold"
           >
             <Layers className="w-3.5 h-3.5" />
@@ -700,7 +740,7 @@ export function DeveloperStudioProPage() {
             type="button"
             variant={workspaceMode === "live" ? "default" : "outline"}
             size="sm"
-            onClick={() => { setWorkspaceMode("live"); setIsPreviewMode(false); }}
+            onClick={() => setWorkspaceMode("live")}
             className="h-8 px-2.5 text-xs gap-1.5 cursor-pointer font-bold"
           >
             <Eye className="w-3.5 h-3.5" />
@@ -708,13 +748,15 @@ export function DeveloperStudioProPage() {
           </Button>
           <Button
             type="button"
-            variant={isPreviewMode ? "default" : "outline"}
+            variant="outline"
             size="sm"
-            onClick={() => { setWorkspaceMode("builder"); setIsPreviewMode(!isPreviewMode); }}
+            onClick={() => void handleSaveDraft()}
+            disabled={saveStatus === "saving"}
             className="h-8 px-2.5 text-xs gap-1.5 cursor-pointer font-bold"
+            title={saveError || "حفظ المسودة (Ctrl+S)"}
           >
-            {isPreviewMode ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-            <span>{isPreviewMode ? "إنهاء معاينة المسودة" : "معاينة المسودة"}</span>
+            {saveStatus === "saving" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+            <span>{saveStatus === "saving" ? "جاري الحفظ" : "حفظ المسودة"}</span>
           </Button>
         </div>
 
@@ -773,47 +815,7 @@ export function DeveloperStudioProPage() {
             commitDraftChange({ ...draft, domEdits, hasUnpublishedChanges: true });
           }}
         />
-      ) : isPreviewMode ? (
-        /* Structured page preview mode */
-        <div className="flex-1 overflow-y-auto p-6 bg-slate-950/5 dark:bg-black/40">
-          <div className="max-w-4xl mx-auto space-y-4">
-            <div className="bg-card border border-border p-4 rounded-2xl flex items-center justify-between">
-              <div>
-                <Badge variant="outline" className="mb-1 text-[10px]">
-                  وضع المعاينة المباشرة (Draft Preview)
-                </Badge>
-                <h2 className="text-lg font-black text-foreground">{activePage.name}</h2>
-                <p className="text-xs text-muted-foreground font-mono">{activePage.route}</p>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setIsPreviewMode(false)}
-                className="text-xs font-bold gap-1 cursor-pointer"
-              >
-                <EyeOff className="w-3.5 h-3.5" />
-                <span>العودة للمحرر</span>
-              </Button>
-            </div>
-
-            {/* Render page root elements */}
-            <div className="space-y-3">
-              {(activePage.elementIds || [])
-                .map((id) => draft.elements[id])
-                .filter((el): el is ElementModel => !!el && el.parentId === null)
-                .map((element) => (
-                  <StudioElementRenderer
-                    key={element.id}
-                    element={element}
-                    allElements={draft.elements}
-                    isEditorMode={false}
-                  />
-                ))}
-            </div>
-          </div>
-        </div>
-      ) : (
+            ) : (
         /* Standard 3-Panel Visual Workspace */
         <div className="flex-1 flex overflow-hidden">
           {/* Panel 1: Hierarchy Tree & Component Palette (Right side in RTL) */}
