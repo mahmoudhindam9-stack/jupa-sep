@@ -765,7 +765,7 @@ export function DeveloperStudioProPage() {
             variant="outline"
             size="sm"
             onClick={() => void handleSaveDraft()}
-            disabled={saveStatus === "saving"}
+            disabled={saveStatus === "saving" || !draft.hasUnsavedLocalChanges}
             className="h-8 px-2.5 text-xs gap-1.5 cursor-pointer font-bold"
             title={saveError || "حفظ المسودة (Ctrl+S)"}
           >
@@ -780,9 +780,15 @@ export function DeveloperStudioProPage() {
             type="button"
             variant="ghost"
             size="sm"
-            onClick={() => setShowHistoryModal(true)}
+            onClick={() => {
+              if (draft.hasUnsavedLocalChanges) {
+                toast({ title: "احفظ المسودة أولًا", description: "افتح سجل الإصدارات بعد حفظ التعديلات الحالية أو إلغائها.", variant: "destructive" });
+                return;
+              }
+              setShowHistoryModal(true);
+            }}
             className="h-8 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground cursor-pointer"
-            title="سجل الإصدارات والاسترجاع"
+            title={draft.hasUnsavedLocalChanges ? "احفظ المسودة أولًا قبل فتح سجل الإصدارات" : "سجل الإصدارات والاسترجاع"}
           >
             <History className="w-3.5 h-3.5" />
             <span className="hidden xl:inline">السجل</span>
