@@ -45,6 +45,7 @@ import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { CURRENT_VERSION } from "@/shared/config/version";
 import { GitHubUpdateBanner } from "@/components/admin/GitHubUpdateBanner";
+import { AppBreadcrumbBar } from "@/components/navigation/AppBreadcrumbBar";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({ meta: [{ title: "لوحة الإدارة" }] }),
@@ -581,13 +582,13 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
       {/* GitHub Auto-Update Notification Banner */}
       <GitHubUpdateBanner />
 
-      {/* Top Navigation Header - Modern & Minimal (No Sidebar) - Fixed Top */}
+      {/* Top Navigation Header - Modern & Minimal (Clean Top Bar) */}
       <header className="shrink-0 z-30 bg-card/95 backdrop-blur border-b border-border px-4 sm:px-6 py-2.5 flex items-center justify-between gap-4">
-        {/* Right side in RTL: Brand & Nav Links */}
+        {/* Right side in RTL: Brand */}
         <div className="flex items-center gap-3 sm:gap-4 min-w-0">
           <Link to="/admin" className="flex items-center gap-2 shrink-0 group">
             <RestocashLogo size={24} />
-            <div className="hidden sm:block text-right">
+            <div className="text-right">
               <span className="font-black text-sm tracking-tight text-foreground block group-hover:text-primary transition leading-none">
                 Restocash ERP
               </span>
@@ -596,89 +597,6 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
               </span>
             </div>
           </Link>
-
-          <div className="h-5 w-px bg-border/80 hidden sm:block" />
-
-          {/* Unified Sections Board Button with Quick Dropdown Arrow */}
-          <div
-            className={cn(
-              "inline-flex items-center rounded-xl border border-border/80 overflow-hidden shrink-0 shadow-xs",
-              pathname === "/admin" && !hasRouteSearch
-                ? "bg-primary text-primary-foreground border-primary"
-                : "bg-muted/80 hover:bg-muted text-foreground",
-            )}
-          >
-            <Link
-              to="/admin"
-              className={cn(
-                "inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold transition",
-                pathname === "/admin" && !hasRouteSearch
-                  ? "text-primary-foreground hover:bg-primary/90"
-                  : "text-foreground hover:bg-muted/50",
-              )}
-              title="الانتقال إلى لوحة الأقسام الرئيسية"
-            >
-              <Grid3X3 size={15} />
-              <span>لوحة الأقسام</span>
-            </Link>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className={cn(
-                    "px-2 py-1.5 border-r border-border/60 transition flex items-center justify-center cursor-pointer",
-                    pathname === "/admin" && !hasRouteSearch
-                      ? "text-primary-foreground border-primary/40 hover:bg-primary/90"
-                      : "text-foreground hover:bg-muted",
-                  )}
-                  title="القائمة السريعة للأقسام"
-                >
-                  <ChevronDown size={14} />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="end"
-                className="w-60 p-1.5 rounded-xl shadow-lg border-border"
-              >
-                <div className="px-2 py-1.5 text-[11px] font-bold text-muted-foreground border-b border-border/60 mb-1">
-                  الانتقال السريع للأقسام
-                </div>
-                {nav
-                  .filter((item) => hasAnyPermission(user, item.permissionKeys))
-                  .map((item) => {
-                    const active = isNavItemActive(item);
-                    return (
-                      <DropdownMenuItem
-                        key={item.to + (item.search ? item.search.tab : "")}
-                        onClick={() => navigate({ to: item.to, search: item.search })}
-                        className={cn(
-                          "flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg cursor-pointer",
-                          active ? "bg-primary text-primary-foreground" : "hover:bg-muted",
-                        )}
-                      >
-                        <item.icon
-                          size={16}
-                          className={active ? "text-primary-foreground" : "text-muted-foreground"}
-                        />
-                        <span>{item.label}</span>
-                      </DropdownMenuItem>
-                    );
-                  })}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-
-          {/* If inside subpage, quick return link */}
-          {pathname !== "/admin" && (
-            <Link
-              to="/admin"
-              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground font-bold px-2 py-1 rounded-lg hover:bg-muted transition"
-            >
-              <ArrowRight size={14} />
-              <span>العودة للرئيسية</span>
-            </Link>
-          )}
         </div>
 
         {/* Left side in RTL: Tools, User Profile & Logout */}
@@ -723,6 +641,9 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
           </div>
         </div>
       </header>
+
+      {/* Secondary Hierarchical Navigation Bar (Appears only inside sections/subsections) */}
+      <AppBreadcrumbBar />
 
       {/* Main Content Area - Full width, no sidebar margins */}
       <main className="flex-1 w-full min-w-0 overflow-y-auto">

@@ -820,48 +820,8 @@ function AdminDashboard() {
       )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
-          <TabsList className="bg-muted p-1 rounded-2xl flex flex-wrap gap-1 h-auto w-full sm:w-auto">
-            <TabsTrigger
-              value="grid"
-              className="rounded-xl font-black py-2 px-4 text-xs sm:text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground shadow-2xs"
-            >
-              <Grid3X3 size={16} className="ml-1.5 inline" />
-              شبكة الأقسام الرئيسية
-            </TabsTrigger>
-            <TabsTrigger
-              value="dashboard"
-              className="rounded-xl font-bold py-2 px-3 text-xs sm:text-sm"
-            >
-              <TrendingUp size={15} className="ml-1.5 inline" />
-              المركز المالي الشامل
-            </TabsTrigger>
-            <TabsTrigger
-              value="treasury"
-              className="rounded-xl font-bold py-2 px-3 text-xs sm:text-sm"
-            >
-              <Wallet size={15} className="ml-1.5 inline" />
-              إدارة الخزائن والحسابات
-            </TabsTrigger>
-            <TabsTrigger
-              value="vouchers_entry"
-              className="rounded-xl font-bold py-2 px-3 text-xs sm:text-sm"
-            >
-              <FileText size={15} className="ml-1.5 inline" />
-              سندات الإيراد والمصروف
-            </TabsTrigger>
-            <TabsTrigger
-              value="chart_of_accounts"
-              className="rounded-xl font-bold py-2 px-3 text-xs sm:text-sm"
-            >
-              <FileBarChart size={15} className="ml-1.5 inline" />
-              دليل الحسابات
-            </TabsTrigger>
-          </TabsList>
-        </div>
-
         {/* TAB 0: THE DEPARTMENTS GRID (PRIMARY LANDING VIEW AFTER LOGIN) */}
-        <TabsContent value="grid" className="space-y-6 mt-4">
+        <TabsContent value="grid" className="space-y-6">
           <DepartmentsGridHub />
         </TabsContent>
 

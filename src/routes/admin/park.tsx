@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React, { useState, useMemo, useEffect, useSyncExternalStore } from "react";
-import { createFileRoute, useLocation, Link } from "@tanstack/react-router";
+import { createFileRoute, useLocation, Link, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import {
   Trees,
@@ -75,16 +75,20 @@ export function ParkManagementPage() {
     () => erpStore.getState(),
   );
 
+  const navigate = useNavigate();
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
   const tabParam = searchParams.get("tab") || "grid";
 
   const [activeTab, setActiveTab] = useState(tabParam);
   useEffect(() => {
-    if (tabParam) {
-      setActiveTab(tabParam);
-    }
+    setActiveTab(tabParam || "grid");
   }, [tabParam]);
+
+  const handleTabChange = (newTab: string) => {
+    setActiveTab(newTab);
+    navigate({ to: "/admin/park", search: newTab === "grid" ? {} : { tab: newTab } });
+  };
 
   // POS full screen view
   const [isParkPosOpen, setIsParkPosOpen] = useState(false);
@@ -263,7 +267,7 @@ export function ParkManagementPage() {
             <Button
               size="sm"
               variant={activeTab === "tickets" ? "default" : "outline"}
-              onClick={() => setActiveTab("tickets")}
+              onClick={() => handleTabChange("tickets")}
               className="rounded-xl font-bold text-xs h-8"
             >
               التذاكر ({transactions.length})
@@ -271,7 +275,7 @@ export function ParkManagementPage() {
             <Button
               size="sm"
               variant={activeTab === "shifts" ? "default" : "outline"}
-              onClick={() => setActiveTab("shifts")}
+              onClick={() => handleTabChange("shifts")}
               className="rounded-xl font-bold text-xs h-8"
             >
               الورديات ({shifts.length})
@@ -279,7 +283,7 @@ export function ParkManagementPage() {
             <Button
               size="sm"
               variant={activeTab === "treasury" ? "default" : "outline"}
-              onClick={() => setActiveTab("treasury")}
+              onClick={() => handleTabChange("treasury")}
               className="rounded-xl font-bold text-xs h-8"
             >
               الخزائن (8)
@@ -287,7 +291,7 @@ export function ParkManagementPage() {
             <Button
               size="sm"
               variant={activeTab === "reports" ? "default" : "outline"}
-              onClick={() => setActiveTab("reports")}
+              onClick={() => handleTabChange("reports")}
               className="rounded-xl font-bold text-xs h-8"
             >
               التقارير
@@ -295,7 +299,7 @@ export function ParkManagementPage() {
             <Button
               size="sm"
               variant={activeTab === "vouchers" ? "default" : "outline"}
-              onClick={() => setActiveTab("vouchers")}
+              onClick={() => handleTabChange("vouchers")}
               className="rounded-xl font-bold text-xs h-8"
             >
               السندات المالية
@@ -488,7 +492,7 @@ export function ParkManagementPage() {
               </Card>
 
               <Card
-                onClick={() => setActiveTab("shifts")}
+                onClick={() => handleTabChange("shifts")}
                 className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
                   activeTab === "shifts"
                     ? "border-teal-500 bg-teal-50/40 dark:bg-teal-950/20 shadow-sm ring-2 ring-teal-400/30"
@@ -523,7 +527,7 @@ export function ParkManagementPage() {
 
               <Card
                 onClick={() => {
-                  setActiveTab("treasury");
+                  handleTabChange("treasury");
                   setIsParkTreasuriesModalOpen(true);
                 }}
                 className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
@@ -559,7 +563,7 @@ export function ParkManagementPage() {
               </Card>
 
               <Card
-                onClick={() => setActiveTab("tickets")}
+                onClick={() => handleTabChange("tickets")}
                 className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
                   activeTab === "tickets"
                     ? "border-amber-500 bg-amber-50/40 dark:bg-amber-950/20 shadow-sm ring-2 ring-amber-400/30"
@@ -621,7 +625,7 @@ export function ParkManagementPage() {
               </Card>
 
               <Card
-                onClick={() => setActiveTab("reports")}
+                onClick={() => handleTabChange("reports")}
                 className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
                   activeTab === "reports"
                     ? "border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/20 shadow-sm ring-2 ring-emerald-400/30"
@@ -655,7 +659,7 @@ export function ParkManagementPage() {
               </Card>
 
               <Card
-                onClick={() => setActiveTab("vouchers")}
+                onClick={() => handleTabChange("vouchers")}
                 className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
                   activeTab === "vouchers"
                     ? "border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/20 shadow-sm ring-2 ring-emerald-400/30"
@@ -747,7 +751,7 @@ export function ParkManagementPage() {
 
       {/* Tabs */}
       {activeTab !== "grid" && (
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
           <TabsList className="bg-muted p-1 rounded-xl flex flex-wrap gap-1 h-auto w-full md:w-auto">
             <TabsTrigger value="tickets" className="rounded-lg font-bold py-2.5 px-5">
               <Ticket size={16} className="ml-1.5 inline" />

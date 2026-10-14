@@ -260,26 +260,17 @@ function RestaurantHubPage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 pb-12">
-      {/* Sleek top navigation bar - Frozen Sticky Header with Clear Department Title */}
-      <div className="sticky top-0 z-20 bg-card/95 backdrop-blur py-3 px-3 sm:px-5 -mx-2 sm:-mx-4 border-b border-border/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
-        <div className="flex items-center gap-3 flex-wrap">
-          <Link to="/admin">
-            <Button variant="outline" size="sm" className="gap-2 font-bold rounded-xl text-xs">
-              <ArrowRight size={16} />
-              العودة إلى الأقسام الرئيسية
-            </Button>
-          </Link>
-          <div className="h-5 w-px bg-border/80 hidden sm:block" />
-          <div className="flex items-center gap-2">
-            <Store size={18} className="text-primary shrink-0" />
-            <h1 className="text-sm sm:text-base font-black text-foreground tracking-tight whitespace-nowrap">
-              إدارة وتشغيل المطعم
-            </h1>
-          </div>
+      {/* Page Header & Quick Launch Action */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-black text-foreground">إدارة وتشغيل المطعم</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
+            نظام تشغيل المطعم، نقاط البيع، المطبخ، الصالة، والورديات اليومية
+          </p>
         </div>
         <Button
           onClick={() => setIsLauncherOpen(true)}
-          className="gap-2 bg-primary font-black text-primary-foreground shadow-sm rounded-xl text-xs h-9"
+          className="gap-2 bg-primary font-black text-primary-foreground shadow-sm rounded-xl text-xs h-9 self-start sm:self-auto cursor-pointer"
         >
           <Grid3X3 size={16} />
           فتح نقطة البيع (POS)

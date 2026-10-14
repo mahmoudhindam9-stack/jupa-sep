@@ -97,8 +97,29 @@ function SystemUpdatePage() {
   const accessPackageInputRef = useRef<HTMLInputElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
+  const location = useLocation();
+  const navigate = useNavigate();
+  const searchParams = new URLSearchParams(location.search);
+  const tabParam = searchParams.get("tab");
+
   const [devModeOpen, setDevModeOpen] = useState(false);
-  const [currentTab, setCurrentTab] = useState("system");
+  const [currentTab, setCurrentTab] = useState(tabParam || "system");
+
+  useEffect(() => {
+    if (tabParam) {
+      setCurrentTab(tabParam);
+    } else {
+      setCurrentTab("system");
+    }
+  }, [tabParam]);
+
+  const handleTabChange = (newTab: string) => {
+    setCurrentTab(newTab);
+    navigate({
+      to: "/admin/system-update",
+      search: newTab === "system" ? {} : { tab: newTab },
+    });
+  };
   const [editedStrings, setEditedStrings] = useState<Record<string, string>>({});
   const [isLiveSynced, setIsLiveSynced] = useState(true);
   const [lastSyncTime, setLastSyncTime] = useState<string>(new Date().toLocaleTimeString("ar-EG"));
@@ -755,7 +776,7 @@ function SystemUpdatePage() {
   return (
     <div className="space-y-6 pb-12 text-right font-cairo px-2 sm:px-4 md:px-6">
       {/* Page Navigation Tabs */}
-      <Tabs value={currentTab} onValueChange={setCurrentTab} className="w-full space-y-6">
+      <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full space-y-6">
         <TabsList>
           <TabsTrigger value="system">تحديث النظام</TabsTrigger>
           <TabsTrigger value="access">حزمة أكسس</TabsTrigger>

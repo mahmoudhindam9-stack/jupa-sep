@@ -1538,23 +1538,16 @@ function MallManagementPage() {
 
   return (
     <div className="space-y-6 w-full px-2 lg:px-6 mx-auto pb-12">
-      {/* Mall Top Bar - Frozen Sticky Header with Clear Department Title */}
+      {/* Mall Top Header & Actions */}
       {activeTab === "grid" ? (
-        <div className="sticky top-0 z-20 bg-card/95 backdrop-blur py-3 px-3 sm:px-5 -mx-2 sm:-mx-4 border-b border-border/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
-          <div className="flex items-center gap-3 flex-wrap">
-            <Link to="/admin">
-              <Button variant="outline" size="sm" className="gap-2 font-bold rounded-xl text-xs">
-                <ArrowRight size={16} />
-                العودة إلى الأقسام الرئيسية
-              </Button>
-            </Link>
-            <div className="h-5 w-px bg-border/80 hidden sm:block" />
-            <div className="flex items-center gap-2">
-              <Building2 size={18} className="text-emerald-600 shrink-0" />
-              <h1 className="text-sm sm:text-base font-black text-foreground tracking-tight whitespace-nowrap">
-                إدارة المول والمحلات التجارية
-              </h1>
-            </div>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-black text-foreground">
+              إدارة المول والمحلات التجارية
+            </h1>
+            <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
+              إدارة المحلات والمستأجرين، عقود الإيجار، مقبوضات الإيجارات، ومصروفات التشغيل
+            </p>
           </div>
           <div className="flex items-center gap-2 shrink-0 flex-wrap">
             <Button
@@ -1583,24 +1576,15 @@ function MallManagementPage() {
           </div>
         </div>
       ) : (
-        <div className="sticky top-0 z-20 bg-card/95 backdrop-blur py-3 px-3 sm:px-5 -mx-2 sm:-mx-4 border-b border-border/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
-          <div className="flex items-center gap-3 flex-wrap">
-            <Button
-              variant="outline"
-              onClick={() => setActiveTab("grid")}
-              className="gap-2 font-black rounded-xl text-xs py-2 px-4 border-emerald-500/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 w-fit cursor-pointer"
-            >
-              <ArrowRight size={16} />
-              العودة إلى أقسام المول
-            </Button>
-            <div className="h-5 w-px bg-border/80 hidden sm:block" />
-            <div className="flex items-center gap-2">
-              <Building2 size={18} className="text-emerald-600 shrink-0" />
-              <h1 className="text-sm sm:text-base font-black text-foreground tracking-tight whitespace-nowrap">
-                إدارة المول والمحلات التجارية
-              </h1>
-            </div>
-          </div>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 pb-2 border-b border-border/60">
+          <Button
+            variant="outline"
+            onClick={() => setActiveTab("grid")}
+            className="gap-2 font-black rounded-xl text-xs py-2 px-4 border-emerald-500/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 w-fit cursor-pointer"
+          >
+            <ArrowRight size={16} />
+            العودة إلى أقسام المول
+          </Button>
 
           <div className="flex items-center gap-1.5 overflow-x-auto">
             <Button

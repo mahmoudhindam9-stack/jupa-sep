@@ -590,39 +590,6 @@ export function DepartmentsGridHub() {
 
   return (
     <div className="space-y-6">
-      {/* Welcome & System Orientation Header */}
-      <div className="relative overflow-hidden rounded-3xl border border-border/80 bg-gradient-to-br from-card via-card to-muted/40 p-6 sm:p-8 shadow-xs">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="bg-primary/10 text-primary text-xs font-black px-3 py-1 rounded-full flex items-center gap-1.5">
-                <Sparkles size={13} />
-                بوابة الوصول السريع - لوحة الأقسام
-              </span>
-              <span className="text-xs text-muted-foreground font-medium">
-                اضغط على أي قسم للدخول، أو استخدم القائمة المنسدلة للوصول المباشر للوظيفة المطلوبة.
-              </span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-foreground">
-              أهلاً بك في نظام Restocash ERP الموحد
-            </h1>
-            <p className="text-xs sm:text-sm text-muted-foreground max-w-3xl leading-relaxed">
-              تم تبسيط وتنسيق واجهة النظام بالكامل؛ اختر القسم المطلوب أدناه للدخول إليه مباشرة، أو
-              انقر على زر القائمة المنسدلة في كل مربع للوصول الفوري لأي شاشة أو تقرير داخلي.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3 shrink-0 self-start lg:self-center">
-            <Badge
-              variant="outline"
-              className="px-3 py-1.5 font-bold text-xs rounded-xl border-border bg-card"
-            >
-              7 قطاعات متكاملة
-            </Badge>
-          </div>
-        </div>
-      </div>
-
       {/* Grid of Department Squares */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-5 sm:gap-6">
         {DEPARTMENTS.map((dept) => {

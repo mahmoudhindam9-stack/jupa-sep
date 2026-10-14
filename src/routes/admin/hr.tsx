@@ -763,21 +763,14 @@ function HRPage() {
     <div className="space-y-6">
       {/* Top Bar - Frozen Sticky Header with Clear Department Name */}
       {activeTab === "grid" ? (
-        <div className="sticky top-0 z-20 bg-card/95 backdrop-blur py-3 px-3 sm:px-5 -mx-2 sm:-mx-4 border-b border-border/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
-          <div className="flex items-center gap-3 flex-wrap">
-            <Link to="/admin">
-              <Button variant="outline" size="sm" className="gap-2 font-bold rounded-xl text-xs">
-                <ArrowRight size={16} />
-                العودة إلى الأقسام الرئيسية
-              </Button>
-            </Link>
-            <div className="h-5 w-px bg-border/80 hidden sm:block" />
-            <div className="flex items-center gap-2">
-              <UserCheck size={18} className="text-primary shrink-0" />
-              <h1 className="text-sm sm:text-base font-black text-foreground tracking-tight whitespace-nowrap">
-                الموارد البشرية وشؤون الموظفين
-              </h1>
-            </div>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-black text-foreground">
+              الموارد البشرية وشؤون الموظفين
+            </h1>
+            <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
+              إدارة الكادر الوظيفي، حسابات المستخدمين، الحضور والانصراف، والرواتب والسلف
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -798,24 +791,15 @@ function HRPage() {
           </div>
         </div>
       ) : (
-        <div className="sticky top-0 z-20 bg-card/95 backdrop-blur py-3 px-3 sm:px-5 -mx-2 sm:-mx-4 border-b border-border/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
-          <div className="flex items-center gap-3 flex-wrap">
-            <Button
-              variant="outline"
-              onClick={() => setActiveTab("grid")}
-              className="gap-2 font-black rounded-xl text-xs py-2 px-4 border-primary/30 text-primary hover:bg-primary/10 w-fit cursor-pointer"
-            >
-              <ArrowRight size={16} />
-              العودة إلى أقسام الموارد البشرية
-            </Button>
-            <div className="h-5 w-px bg-border/80 hidden sm:block" />
-            <div className="flex items-center gap-2">
-              <UserCheck size={18} className="text-primary shrink-0" />
-              <h1 className="text-sm sm:text-base font-black text-foreground tracking-tight whitespace-nowrap">
-                الموارد البشرية وشؤون الموظفين
-              </h1>
-            </div>
-          </div>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 pb-2 border-b border-border/60">
+          <Button
+            variant="outline"
+            onClick={() => setActiveTab("grid")}
+            className="gap-2 font-black rounded-xl text-xs py-2 px-4 border-primary/30 text-primary hover:bg-primary/10 w-fit cursor-pointer"
+          >
+            <ArrowRight size={16} />
+            العودة إلى أقسام الموارد البشرية
+          </Button>
 
           <div className="flex items-center gap-1.5 overflow-x-auto">
             <Button

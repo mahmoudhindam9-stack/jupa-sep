@@ -8,7 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { erpStore } from "@/shared/services/erpStore";
 import { useSettings } from "@/hooks/use-settings";
 import { Button } from "@/components/ui/button";
-import { BackToRestaurantButton } from "@/components/admin/BackToRestaurantButton";
+import { AppBreadcrumbBar } from "@/components/navigation/AppBreadcrumbBar";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { inventoryService } from "@/features/inventory/services/inventoryService";
@@ -1052,11 +1052,13 @@ function CashierTreasuryPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans">
-      {/* Header - Bright Light Theme Sticky frozen */}
+      {/* Unified Navigation Breadcrumb Bar */}
+      <AppBreadcrumbBar />
+
+      {/* Header - Bright Light Theme Sticky */}
       <header className="px-6 py-4 bg-white/95 backdrop-blur border-b border-slate-200/80 sticky top-0 z-50 shadow-sm">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <BackToRestaurantButton />
             <div className="w-10 h-10 rounded-xl bg-emerald-100/80 border border-emerald-300 flex items-center justify-center text-emerald-700 shrink-0 shadow-sm">
               <Wallet size={22} />
             </div>

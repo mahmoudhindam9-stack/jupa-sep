@@ -1685,24 +1685,7 @@ function LedgerPage() {
 
   return (
     <div className="p-3 sm:p-6 space-y-5 sm:space-y-6 max-w-7xl mx-auto w-full min-w-0">
-      {/* Top Bar - Frozen Sticky Header with Clear Department Title */}
-      <div className="sticky top-0 z-20 bg-card/95 backdrop-blur py-3 px-3 sm:px-5 -mx-3 sm:-mx-6 border-b border-border/80 flex items-center justify-between gap-3 shadow-xs">
-        <div className="flex items-center gap-3 flex-wrap">
-          <Link to="/admin">
-            <Button variant="outline" size="sm" className="gap-2 font-bold rounded-xl text-xs">
-              <ArrowRight size={16} />
-              العودة إلى الأقسام الرئيسية
-            </Button>
-          </Link>
-          <div className="h-5 w-px bg-border/80 hidden sm:block" />
-          <div className="flex items-center gap-2">
-            <Landmark size={18} className="text-primary shrink-0" />
-            <h1 className="text-sm sm:text-base font-black text-foreground tracking-tight whitespace-nowrap">
-              الإدارة المالية والمحاسبية الموحدة
-            </h1>
-          </div>
-        </div>
-      </div>
+
 
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">

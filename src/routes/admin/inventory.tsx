@@ -44,7 +44,6 @@ import {
 import { WarehouseManagement } from "@/features/inventory/components/WarehouseManagement";
 import { SupplierManagement } from "@/features/inventory/components/SupplierManagement";
 import { PurchaseManagement } from "@/features/inventory/components/PurchaseManagement";
-import { BackToRestaurantButton } from "@/components/admin/BackToRestaurantButton";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
@@ -1258,46 +1257,29 @@ function InventoryPage() {
     <div className="space-y-6 text-right">
       {/* Top Bar - Frozen Sticky Header with Clear Department Title */}
       {activeTab === "grid" ? (
-        <div className="sticky top-0 z-20 bg-card/95 backdrop-blur py-3 px-3 sm:px-5 -mx-2 sm:-mx-4 border-b border-border/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
-          <div className="flex items-center gap-3 flex-wrap">
-            <Link to="/admin">
-              <Button variant="outline" size="sm" className="gap-2 font-bold rounded-xl text-xs">
-                <ArrowRight size={16} />
-                العودة إلى الأقسام الرئيسية
-              </Button>
-            </Link>
-            <BackToRestaurantButton />
-            <div className="h-5 w-px bg-border/80 hidden sm:block" />
-            <div className="flex items-center gap-2">
-              <Package size={18} className="text-primary shrink-0" />
-              <h1 className="text-sm sm:text-base font-black text-foreground tracking-tight whitespace-nowrap">
-                المخزون والمستودعات
-              </h1>
-            </div>
+        <div className="flex items-center justify-between gap-3 pt-2">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-black text-foreground">
+              المخزون والمستودعات
+            </h1>
+            <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
+              إدارة الأصناف، حركات التحويل الداخلي، المشتريات والموردين، والجرد المخزني
+            </p>
           </div>
           <span className="bg-emerald-500/10 text-emerald-600 text-xs px-2.5 py-1 rounded-full font-bold">
             {currentBranch.name_ar}
           </span>
         </div>
       ) : (
-        <div className="sticky top-0 z-20 bg-card/95 backdrop-blur py-3 px-3 sm:px-5 -mx-2 sm:-mx-4 border-b border-border/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
-          <div className="flex items-center gap-3 flex-wrap">
-            <Button
-              variant="outline"
-              onClick={() => setActiveTab("grid")}
-              className="gap-2 font-black rounded-xl text-xs py-2 px-4 border-primary/30 text-primary hover:bg-primary/10 w-fit cursor-pointer"
-            >
-              <ArrowRight size={16} />
-              العودة إلى أقسام المخازن
-            </Button>
-            <div className="h-5 w-px bg-border/80 hidden sm:block" />
-            <div className="flex items-center gap-2">
-              <Package size={18} className="text-primary shrink-0" />
-              <h1 className="text-sm sm:text-base font-black text-foreground tracking-tight whitespace-nowrap">
-                المخزون والمستودعات
-              </h1>
-            </div>
-          </div>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 pb-2 border-b border-border/60">
+          <Button
+            variant="outline"
+            onClick={() => setActiveTab("grid")}
+            className="gap-2 font-black rounded-xl text-xs py-2 px-4 border-primary/30 text-primary hover:bg-primary/10 w-fit cursor-pointer"
+          >
+            <ArrowRight size={16} />
+            العودة إلى لوحة المخازن
+          </Button>
 
           <div className="flex items-center gap-1.5 overflow-x-auto">
             <Button

@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, useLocation, useNavigate, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -62,7 +62,28 @@ type Inventory = { cost: number; quantity: number };
 
 export function ReportsPage() {
   const { formatPrice, lang, formatTreasuryCurrency } = useSettings();
-  const [activeTab, setActiveTab] = useState("sales");
+  const location = useLocation();
+  const navigate = useNavigate();
+  const searchParams = new URLSearchParams(location.search);
+  const tabParam = searchParams.get("tab");
+  const [activeTab, setActiveTab] = useState(tabParam || "sales");
+
+  useEffect(() => {
+    if (tabParam) {
+      setActiveTab(tabParam);
+    } else {
+      setActiveTab("sales");
+    }
+  }, [tabParam]);
+
+  const handleTabChange = (newTab: string) => {
+    setActiveTab(newTab);
+    navigate({
+      to: "/admin/reports",
+      search: newTab === "sales" ? {} : { tab: newTab },
+    });
+  };
+
   const [from, setFrom] = useState<string>("");
   const [to, setTo] = useState<string>("");
   const [branchFilter, setBranchFilter] = useState<string>("all");
@@ -861,7 +882,7 @@ export function ReportsPage() {
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
         <TabsList className="bg-muted p-1 rounded-xl flex flex-wrap gap-1 h-auto print:hidden">
           <TabsTrigger value="sales" className="rounded-lg font-bold py-2 px-4">
             تحليل المبيعات والطلب

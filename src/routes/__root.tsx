@@ -153,7 +153,7 @@ function RootComponent() {
     return createAppSync(queryClient);
   }, [queryClient]);
   return (
-    <html lang="ar" translate="no" suppressHydrationWarning>
+    <html lang="ar" dir="rtl" translate="no" suppressHydrationWarning>
       <head>
         <meta name="google" content="notranslate" />
         <HeadContent />
