@@ -381,6 +381,7 @@ class StudioService {
           domEdits: data.dom_edits || {},
           updatedAt: data.updated_at || new Date().toISOString(),
           createdAt: data.created_at || new Date().toISOString(),
+          serverUpdatedAt: data.updated_at || undefined,
           hasUnpublishedChanges: true,
         };
         // Dirty local drafts always win over the cached server timestamp, including
@@ -391,7 +392,12 @@ class StudioService {
             Date.parse(cached.updatedAt) > Date.parse(remote.updatedAt))
         );
         const chosen = localIsNewer
-          ? { ...cached!, hasUnsavedLocalChanges: true }
+          ? {
+              ...cached!,
+              // Unknown legacy baselines must not overwrite an existing cloud row.
+              serverUpdatedAt: cached!.serverUpdatedAt || (cached!.hasUnsavedLocalChanges ? "__unknown_server_version__" : remote.serverUpdatedAt),
+              hasUnsavedLocalChanges: true,
+            }
           : { ...remote, hasUnsavedLocalChanges: false };
         this.inMemoryDraft = chosen;
         this.persistLocalDraft(chosen);
@@ -492,6 +498,7 @@ class StudioService {
         ...updatedDraft,
         id: data.id || updatedDraft.id,
         updatedAt: data.updated_at || updatedAt,
+        serverUpdatedAt: data.updated_at || updatedAt,
         hasUnsavedLocalChanges: false,
       };
       this.inMemoryDraft = confirmedDraft;
@@ -532,6 +539,62 @@ class StudioService {
   /**
    * Discard all draft changes and reset back to the latest published config
    */
+  /**
+   * Confirm the shared draft has not been changed by another browser/session.
+   * This read-only check happens after local-first persistence and before cloud upsert.
+   */
+  async checkDraftSyncCompatibility(draft: StudioDraft): Promise<{
+    compatible: boolean;
+    serverUpdatedAt?: string;
+    error?: string;
+  }> {
+    try {
+      const { data, error } = (await supabase
+        .from("studio_drafts" as any)
+        .select("id, owner, updated_at")
+        .eq("owner", draft.owner)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()) as any;
+      if (error) throw error;
+
+      if (!data) {
+        if (draft.serverUpdatedAt) {
+          return {
+            compatible: false,
+            error: "تم حذف المسودة البعيدة منذ تحميلها. لم تتم المزامنة حتى لا نفقد نسخة أخرى؛ استخدم «إلغاء التعديلات» لتحميل الحالة المحفوظة مجددًا.",
+          };
+        }
+        return { compatible: true };
+      }
+
+      if (!draft.serverUpdatedAt) {
+        return {
+          compatible: false,
+          serverUpdatedAt: String(data.updated_at || ""),
+          error: "توجد مسودة سحابية لم تكن ضمن النسخة المحلية عند بدء التعديل. لم نستبدلها؛ استخدم «إلغاء التعديلات» لتحميل أحدث مسودة ثم أعد التعديل.",
+        };
+      }
+      if (
+        draft.serverUpdatedAt === "__unknown_server_version__" ||
+        String(data.updated_at || "") !== String(draft.serverUpdatedAt)
+      ) {
+        return {
+          compatible: false,
+          serverUpdatedAt: String(data.updated_at || ""),
+          error: "تغيرت المسودة المحفوظة على Supabase من جلسة أخرى. تم الاحتفاظ بتعديلاتك محليًا ولم نكتب فوق المسودة البعيدة. استخدم «إلغاء التعديلات» لتحميل أحدث نسخة أو قارن التغييرات يدويًا.",
+        };
+      }
+
+      return { compatible: true, serverUpdatedAt: String(data.updated_at || "") };
+    } catch (error: any) {
+      return {
+        compatible: false,
+        error: "تعذر تأكيد توافق نسخة المسودة مع Supabase؛ لم تتم المزامنة. " + String(error?.message || ""),
+      };
+    }
+  }
+
   async discardDraft(owner = "admin"): Promise<StudioDraft> {
     // Discard only the in-memory edits: restore the last manually saved server draft.
     // If no saved draft exists, restore the latest published configuration.
@@ -559,6 +622,7 @@ class StudioService {
         domEdits: data.dom_edits || {},
         updatedAt: data.updated_at || new Date().toISOString(),
         createdAt: data.created_at || data.updated_at || new Date().toISOString(),
+        serverUpdatedAt: data.updated_at || undefined,
         hasUnpublishedChanges: true,
         hasUnsavedLocalChanges: false,
       };
@@ -987,7 +1051,12 @@ class StudioService {
    * Adopt a row confirmed by Supabase Realtime without triggering another cloud write.
    */
   acceptRealtimeDraft(draft: StudioDraft): void {
-    const confirmed = { ...draft, domEdits: draft.domEdits || {}, hasUnsavedLocalChanges: false };
+    const confirmed = {
+      ...draft,
+      domEdits: draft.domEdits || {},
+      serverUpdatedAt: draft.serverUpdatedAt || draft.updatedAt,
+      hasUnsavedLocalChanges: false,
+    };
     this.inMemoryDraft = confirmed;
     this.persistLocalDraft(confirmed);
   }
