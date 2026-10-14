@@ -202,6 +202,8 @@ export interface StudioDraft {
   domEdits: Record<string, StudioDomEdit>;
   updatedAt: string;
   createdAt: string;
+  /** True only when the current browser has edits that were not manually confirmed by the server. */
+  hasUnsavedLocalChanges?: boolean;
   hasUnpublishedChanges: boolean;
 }
 
