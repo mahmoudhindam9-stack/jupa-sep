@@ -971,7 +971,7 @@ export function DeveloperStudioProPage() {
             {saveStatus === "saving" && (
               <Badge variant="outline" className="gap-1 text-[11px] bg-amber-500/10 text-amber-700 border-amber-500/30">
                 <Loader2 className="w-3 h-3 animate-spin" />
-                <span>جاري حفظ المسودة...</span>
+                <span>فحص التوافق ومزامنة المسودة...</span>
               </Badge>
             )}
             {saveStatus === "saved" && (
@@ -1158,6 +1158,9 @@ export function DeveloperStudioProPage() {
             setLastSavedAt(publishedDraft.updatedAt);
             setSaveStatus("saved");
             setSaveError(null);
+            latestRealtimePublishedRevisionRef.current = Math.max(latestRealtimePublishedRevisionRef.current, newRevision);
+            setRemoteChangesDetected(false);
+            remoteConflictWarnedRef.current = false;
           }}
           onConflictDetected={({ serverRevision }) => {
             studioService.checkConflicts(draft).then((res) => {
