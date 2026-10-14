@@ -15,10 +15,12 @@ type Props = {
   route: string;
   initialEdits: Record<string, StudioDomEdit>;
   onEditsChange: (edits: Record<string, StudioDomEdit>) => void;
+  /** Enable direct DOM editing only while the Element Designer workspace is active. */
+  designerMode?: boolean;
 };
 type PreviewSize = "desktop" | "tablet" | "mobile";
 
-export function LiveAppPreview({ route, initialEdits, onEditsChange }: Props) {
+export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMode = false }: Props) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const editsRef = useRef<Record<string, StudioDomEdit>>(initialEdits || {});
   const changeCallbackRef = useRef(onEditsChange);
@@ -39,7 +41,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange }: Props) {
   const [textAlign, setTextAlign] = useState("right");
   const [shadowStyle, setShadowStyle] = useState("none");
   const [previewSize, setPreviewSize] = useState<PreviewSize>("desktop");
-  const [editMode, setEditMode] = useState(true);
+  const [editMode, setEditMode] = useState(designerMode);
   const [frameKey, setFrameKey] = useState(0);
   const [ready, setReady] = useState(false);
   const [status, setStatus] = useState("جاري تحميل معاينة التطبيق…");
@@ -128,6 +130,10 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange }: Props) {
     setPageLinks([]);
     setStatus("جاري تحميل الصفحة الفعلية: " + safeRoute);
   }, [safeRoute, frameKey]);
+
+  useEffect(() => {
+    setEditMode(designerMode);
+  }, [designerMode]);
 
   useEffect(() => {
     if (ready) send({ action: "setMode", enabled: editMode });
@@ -483,8 +489,8 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange }: Props) {
         <div className="flex min-w-0 items-center gap-2">
           <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><Monitor size={16} /></span>
           <div className="min-w-0">
-            <p className="truncate text-sm font-black">معاينة التطبيق الحقيقية</p>
-            <p className="truncate text-[10px] text-muted-foreground" title={safeRoute}>{safeRoute} · {status}</p>
+            <p className="truncate text-sm font-black">{designerMode ? "مصمم العناصر — معاينة التطبيق الفعلية" : "معاينة التطبيق الحقيقية"}</p>
+            <p className="truncate text-[10px] text-muted-foreground" title={safeRoute}>{safeRoute} · {designerMode ? "تعديلات محلية — الحفظ يدوي" : "وضع العرض الفعلي"} · {status}</p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
