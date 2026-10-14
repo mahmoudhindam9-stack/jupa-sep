@@ -205,25 +205,34 @@ export function DeveloperStudioProPage() {
         schema: "public",
         table: "studio_published_configs",
         filter: "id=eq.active",
-      }, async (payload) => {
+      }, (payload) => {
         if (payload.eventType === "DELETE") return;
-        try {
-          const published = await studioService.getPublishedConfig();
-          window.dispatchEvent(new CustomEvent("studio_published_updated", { detail: published }));
-          const current = draftRef.current;
-          if (current && published.revision > current.baseRevision) {
-            setRemoteChangesDetected(true);
-            if (!remoteConflictWarnedRef.current) {
-              remoteConflictWarnedRef.current = true;
-              toast({
-                title: "تم نشر إصدار أحدث",
-                description: `الإصدار المنشور الآن #${published.revision}. ستُفحص التوافقات قبل مزامنة مسودتك؛ لم نستبدل تعديلاتك المحلية.`,
-                variant: "destructive",
-              });
-            }
+        const row = payload.new as Record<string, any>;
+        if (!row?.pages) return;
+        const published = {
+          id: String(row.id || "active"),
+          revision: Number(row.revision || 1),
+          schemaVersion: Number(row.schema_version || CURRENT_SCHEMA_VERSION),
+          schema_version: Number(row.schema_version || CURRENT_SCHEMA_VERSION),
+          publishedAt: String(row.published_at || new Date().toISOString()),
+          publishedBy: String(row.published_by || "system"),
+          summary: String(row.summary || "Published version"),
+          pages: row.pages || {},
+          elements: row.elements || {},
+          domEdits: row.dom_edits || {},
+        };
+        studioService.acceptRealtimePublishedConfig(published);
+        const current = draftRef.current;
+        if (current && published.revision > current.baseRevision) {
+          setRemoteChangesDetected(true);
+          if (!remoteConflictWarnedRef.current) {
+            remoteConflictWarnedRef.current = true;
+            toast({
+              title: "تم نشر إصدار أحدث",
+              description: `الإصدار المنشور الآن #${published.revision}. ستُفحص التوافقات قبل مزامنة مسودتك؛ لم نستبدل تعديلاتك المحلية.`,
+              variant: "destructive",
+            });
           }
-        } catch {
-          // The channel event is advisory; the explicit compatibility check remains authoritative.
         }
       })
       .subscribe((status) => {
