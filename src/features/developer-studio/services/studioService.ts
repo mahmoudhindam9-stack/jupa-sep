@@ -385,8 +385,9 @@ class StudioService {
     } catch (error) {
       // Keep offline work editable, but do not pretend later saves are cloud-confirmed.
       if (cached) {
-        this.inMemoryDraft = cached;
-        return cached;
+        const pending = { ...cached, hasUnsavedLocalChanges: true };
+        this.inMemoryDraft = pending;
+        return pending;
       }
       console.warn("Could not load the remote studio draft:", error);
     }
