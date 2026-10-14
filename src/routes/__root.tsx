@@ -167,7 +167,15 @@ function RootComponent() {
             html.dataset.studioTextApplied = String(edit.text);
           }
           if (edit.styles && typeof edit.styles === "object") for (const [key, value] of Object.entries(edit.styles)) {
-            if (typeof value === "string" && key in html.style) (html.style as any)[key] = value;
+            if (typeof value !== "string") continue;
+            if (key in html.style) (html.style as any)[key] = value;
+            // SVG paths often define their own stroke/fill attributes. Mirror published
+            // vector styles onto the drawing primitives so icon edits survive reloads.
+            if (html.tagName.toLowerCase() === "svg" && ["fill", "stroke", "strokeWidth", "color"].includes(key)) {
+              html.querySelectorAll("path,circle,rect,line,polyline,polygon,ellipse").forEach((node) => {
+                if (key in (node as HTMLElement).style) ((node as HTMLElement).style as any)[key] = value;
+              });
+            }
           }
           if (edit.deleted) html.style.display = "none";
           if (typeof edit.order === "number" && html.parentElement) {
