@@ -396,7 +396,8 @@ class StudioService {
               ...cached!,
               // Unknown legacy baselines must not overwrite an existing cloud row.
               serverUpdatedAt: cached!.serverUpdatedAt || "__unknown_server_version__",
-              hasUnsavedLocalChanges: true,
+              hasUnsavedLocalChanges: cached!.hasUnsavedLocalChanges === true ||
+                (cached!.hasUnsavedLocalChanges === undefined && !cached!.serverUpdatedAt),
             }
           : { ...remote, hasUnsavedLocalChanges: false };
         this.inMemoryDraft = chosen;
