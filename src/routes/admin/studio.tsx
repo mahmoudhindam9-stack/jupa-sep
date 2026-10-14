@@ -179,6 +179,7 @@ export function DeveloperStudioProPage() {
           domEdits: row.dom_edits || {},
           updatedAt: String(row.updated_at || new Date().toISOString()),
           createdAt: String(row.created_at || row.updated_at || new Date().toISOString()),
+          serverUpdatedAt: String(row.updated_at || ""),
           hasUnpublishedChanges: true,
           hasUnsavedLocalChanges: false,
         };
@@ -487,14 +488,16 @@ export function DeveloperStudioProPage() {
               variant: "destructive",
             });
           } else if (syncResult?.success) {
-            setRemoteChangesDetected(false);
-            remoteConflictWarnedRef.current = false;
+            const newerPublishedExists = latestRealtimePublishedRevisionRef.current > snapshot.baseRevision;
+            setRemoteChangesDetected(newerPublishedExists);
+            if (!newerPublishedExists) remoteConflictWarnedRef.current = false;
           } else if (pendingRemote.__eventType !== "DELETE") {
             setRemoteChangesDetected(true);
           }
         } else if (syncResult?.success) {
-          setRemoteChangesDetected(false);
-          remoteConflictWarnedRef.current = false;
+          const newerPublishedExists = latestRealtimePublishedRevisionRef.current > snapshot.baseRevision;
+          setRemoteChangesDetected(newerPublishedExists);
+          if (!newerPublishedExists) remoteConflictWarnedRef.current = false;
         }
       } finally {
         savingToCloudRef.current = false;
