@@ -129,14 +129,13 @@ export function DeveloperStudioProPage() {
     };
   }, []);
 
-  // Serialize writes to prevent a slower older request from overwriting a newer draft.
-  const persistDraft = useCallback((snapshot: StudioDraft, manual = false) => {
+  // This queue is invoked exclusively by the explicit Save Draft action (or Ctrl+S).
+  const persistDraft = useCallback((snapshot: StudioDraft) => {
     const versionAtSave = draftVersionRef.current;
     const operation = async () => {
+      setSaveStatus("saving");
       try {
         const result = await studioService.saveDraft(snapshot);
-        if (versionAtSave !== draftVersionRef.current && !manual) return result;
-
         if (result.success) {
           if (versionAtSave === draftVersionRef.current) {
             setSaveStatus("saved");
@@ -146,33 +145,32 @@ export function DeveloperStudioProPage() {
             setDraft((current) => current && versionAtSave === draftVersionRef.current
               ? { ...current, hasUnsavedLocalChanges: false }
               : current);
-          }
-          if (manual && versionAtSave === draftVersionRef.current) {
             toast({ title: "تم حفظ المسودة على Supabase", description: "تم تأكيد حفظ التغييرات على الخادم." });
-          }
-        } else {
-          setSaveStatus("error");
-          setSaveError(result.error || "لم يؤكد الخادم حفظ المسودة.");
-          if (manual || saveErrorRef.current !== (result.error || "save-failed")) {
+          } else {
+            setSaveStatus("unsaved");
             toast({
-              title: "فشل حفظ التعديلات",
-              description: result.error || "لم يؤكد Supabase الحفظ. التعديلات المحلية ما زالت موجودة.",
-              variant: "destructive",
+              title: "تم حفظ النسخة السابقة",
+              description: "أجريت تعديلات جديدة أثناء الحفظ؛ ما زالت هناك تغييرات غير محفوظة. اضغط «حفظ المسودة» مرة أخرى.",
             });
           }
-          saveErrorRef.current = result.error || "save-failed";
+        } else {
+          const message = result.error || "لم يؤكد الخادم حفظ المسودة.";
+          setSaveStatus("error");
+          setSaveError(message);
+          saveErrorRef.current = message;
+          toast({
+            title: "فشل حفظ التعديلات",
+            description: message + " التعديلات المحلية ما زالت موجودة.",
+            variant: "destructive",
+          });
         }
         return result;
       } catch (error: any) {
         const message = error?.message || "تعذر الاتصال بخادم Supabase.";
-        if (versionAtSave === draftVersionRef.current || manual) {
-          setSaveStatus("error");
-          setSaveError(message);
-          if (manual || saveErrorRef.current !== message) {
-            toast({ title: "فشل حفظ التعديلات", description: message, variant: "destructive" });
-          }
-          saveErrorRef.current = message;
-        }
+        setSaveStatus("error");
+        setSaveError(message);
+        saveErrorRef.current = message;
+        toast({ title: "فشل حفظ التعديلات", description: message, variant: "destructive" });
         return { success: false, error: message };
       }
     };
@@ -223,7 +221,7 @@ export function DeveloperStudioProPage() {
   const handleSaveDraft = useCallback(async () => {
     if (!draft || !draft.hasUnsavedLocalChanges) return;
     setSaveStatus("saving");
-    await persistDraft({ ...draft, hasUnsavedLocalChanges: true }, true);
+    await persistDraft({ ...draft, hasUnsavedLocalChanges: true });
   }, [draft, persistDraft]);
 
   // Keyboard shortcut listener (Ctrl+Z, Ctrl+Y, Ctrl+S)
