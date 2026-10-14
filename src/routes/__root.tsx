@@ -150,7 +150,43 @@ function RootComponent() {
     } catch (e) {
       console.error("Failed to start translator:", e);
     }
-    return createAppSync(queryClient);
+    // Persist visual editor changes across all routes in this browser.
+    const applySavedStudioEdits = () => {
+      try {
+        const saved = JSON.parse(localStorage.getItem("custom_text_map") || "{}");
+        for (const [selector, edit] of Object.entries(saved) as Array<[string, any]>) {
+          if (!edit || typeof edit !== "object") continue;
+          let element: Element | null = null;
+          try { element = document.querySelector(selector); } catch { continue; }
+          if (!element) continue;
+          const html = element as HTMLElement;
+          if (edit.text !== undefined && html.dataset.studioTextApplied !== String(edit.text)) {
+            const node = Array.from(html.childNodes).find((n) => n.nodeType === Node.TEXT_NODE && n.textContent?.trim());
+            if (node) node.textContent = String(edit.text);
+            else if (!html.children.length) html.textContent = String(edit.text);
+            html.dataset.studioTextApplied = String(edit.text);
+          }
+          if (edit.styles && typeof edit.styles === "object") for (const [key, value] of Object.entries(edit.styles)) {
+            if (typeof value === "string" && key in html.style) (html.style as any)[key] = value;
+          }
+          if (edit.deleted) html.style.display = "none";
+          const wanted = Math.min(5, Math.max(0, Number(edit.duplicateCount) || 0));
+          const present = html.parentElement ? Array.from(html.parentElement.children).filter((el) => (el as HTMLElement).dataset.studioCloneOf === selector).length : 0;
+          for (let n = present; n < wanted; n++) {
+            const clone = html.cloneNode(true) as HTMLElement;
+            clone.removeAttribute("id"); clone.removeAttribute("data-studio-selected"); clone.dataset.studioCloneOf = selector;
+            html.parentElement?.insertBefore(clone, html.nextSibling);
+          }
+        }
+      } catch (error) { console.error("Developer Studio edits could not be applied:", error); }
+    };
+    applySavedStudioEdits();
+    const studioObserver = new MutationObserver(() => {
+      studioObserver.disconnect(); applySavedStudioEdits(); studioObserver.observe(document.body, { childList: true, subtree: true });
+    });
+    studioObserver.observe(document.body, { childList: true, subtree: true });
+    const stopAppSync = createAppSync(queryClient);
+    return () => { studioObserver.disconnect(); stopAppSync?.(); };
   }, [queryClient]);
   return (
     <html lang="ar" dir="rtl" translate="no" suppressHydrationWarning>
