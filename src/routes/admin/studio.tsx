@@ -74,6 +74,7 @@ export function DeveloperStudioProPage() {
   const remoteConflictWarnedRef = useRef(false);
   const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
   const [remoteChangesDetected, setRemoteChangesDetected] = useState(false);
+  const latestRealtimePublishedRevisionRef = useRef(0);
   const [activePageId, setActivePageId] = useState<string>("page_dashboard");
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -230,6 +231,10 @@ export function DeveloperStudioProPage() {
           elements: row.elements || {},
           domEdits: row.dom_edits || {},
         };
+        latestRealtimePublishedRevisionRef.current = Math.max(
+          latestRealtimePublishedRevisionRef.current,
+          published.revision,
+        );
         studioService.acceptRealtimePublishedConfig(published);
         const current = draftRef.current;
         if (current && published.revision > current.baseRevision) {
@@ -364,6 +369,7 @@ export function DeveloperStudioProPage() {
 
   const handleSaveDraft = useCallback(async () => {
     if (!draft || !draft.hasUnsavedLocalChanges || syncWorkflowInFlightRef.current) return;
+    const versionBeforeCheck = draftVersionRef.current;
     syncWorkflowInFlightRef.current = true;
     setIsSyncWorkflowInProgress(true);
     try {
@@ -404,6 +410,34 @@ export function DeveloperStudioProPage() {
         setSaveError("توجد نسخة منشورة أحدث؛ عالج التعارض قبل مزامنة المسودة.");
         setRemoteChangesDetected(true);
         toast({ title: "التعديلات محفوظة محليًا — توجد نسخة أحدث", description: "لم نكتب فوق المسودة البعيدة. افتح حل التعارض ثم احفظ مرة أخرى.", variant: "destructive" });
+        return;
+      }
+
+      // A UI edit made while compatibility was being checked must never be replaced
+      // by the older snapshot captured when Save & Sync was clicked.
+      if (draftVersionRef.current !== versionBeforeCheck) {
+        setSaveStatus("unsaved");
+        setSaveError("تم الاحتفاظ بأحدث تعديلاتك محليًا. اضغط «حفظ ومزامنة» مرة أخرى لإجراء فحص توافق جديد.");
+        toast({ title: "ظهرت تعديلات أحدث أثناء الفحص", description: "لم تتم مزامنة لقطة قديمة. أعد الحفظ لمزامنة أحدث نسخة محلية.", variant: "destructive" });
+        return;
+      }
+
+      // Realtime is also a guard against a publication that arrived after the server check.
+      if (latestRealtimePublishedRevisionRef.current > snapshot.baseRevision) {
+        const currentRevision = latestRealtimePublishedRevisionRef.current;
+        setDetectedConflicts([{
+          type: "revision_gap",
+          targetId: "system",
+          title: "تعارض في رقم الإصدار",
+          localValue: snapshot.baseRevision,
+          serverValue: currentRevision,
+          description: `وصل إشعار Realtime بالإصدار المنشور #${currentRevision} أثناء فحص التوافق.`,
+        }]);
+        setConflictServerRevision(currentRevision);
+        setShowConflictModal(true);
+        setSaveStatus("unsaved");
+        setSaveError("وصل إصدار أحدث أثناء الفحص؛ لم تتم المزامنة.");
+        setRemoteChangesDetected(true);
         return;
       }
 
