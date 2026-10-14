@@ -85,7 +85,8 @@ export function DeveloperStudioProPage() {
 
   // Preview Mode
   const [isPreviewMode, setIsPreviewMode] = useState(false);
-  const [workspaceMode, setWorkspaceMode] = useState<"builder" | "live">("builder");
+  // Open on the real app first; the structured component canvas remains one click away.
+  const [workspaceMode, setWorkspaceMode] = useState<"builder" | "live">("live");
 
   // Modals
   const [showPublishModal, setShowPublishModal] = useState(false);
