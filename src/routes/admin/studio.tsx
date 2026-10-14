@@ -57,7 +57,7 @@ export const Route = createFileRoute("/admin/studio")({
   component: DeveloperStudioProPage,
 });
 
-type AutoSaveStatus = "saved" | "saving" | "unsaved" | "error";
+type SaveStatus = "saved" | "saving" | "unsaved" | "error";
 
 export function DeveloperStudioProPage() {
   const { toast } = useToast();
@@ -73,8 +73,8 @@ export function DeveloperStudioProPage() {
     setIsMounted(true);
   }, []);
 
-  // Auto-Save & Status State
-  const [saveStatus, setSaveStatus] = useState<AutoSaveStatus>("saved");
+  // Manual Save & Status State
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
   const [lastSavedAt, setLastSavedAt] = useState<string>("");
   const [saveError, setSaveError] = useState<string | null>(null);
   const saveErrorRef = useRef<string | null>(null);
@@ -700,7 +700,7 @@ export function DeveloperStudioProPage() {
             )}
             {saveStatus === "unsaved" && (
               <Badge variant="outline" className="gap-1 text-[11px] bg-blue-500/10 text-blue-700 border-blue-500/30">
-                <span>تعديلات غير منشورة</span>
+                <span>تعديلات غير محفوظة</span>
               </Badge>
             )}
             {saveStatus === "error" && (
