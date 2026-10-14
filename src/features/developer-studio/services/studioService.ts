@@ -942,6 +942,41 @@ class StudioService {
     return this.inMemoryHistory;
   }
 
+  /**
+   * Persist the current edit locally without writing to Supabase.
+   * This is safe to call for editing operations; remote sync remains an explicit action.
+   */
+  saveLocalDraft(draft: StudioDraft): { success: boolean; updatedAt: string; error?: string } {
+    const updatedAt = new Date().toISOString();
+    const localDraft: StudioDraft = {
+      ...draft,
+      domEdits: draft.domEdits || {},
+      updatedAt,
+      hasUnsavedLocalChanges: true,
+    };
+    this.inMemoryDraft = localDraft;
+    if (typeof window === "undefined") return { success: true, updatedAt };
+    try {
+      localStorage.setItem(LOCAL_DRAFT_KEY, JSON.stringify(localDraft));
+      return { success: true, updatedAt };
+    } catch (error: any) {
+      return {
+        success: false,
+        updatedAt,
+        error: "تعذر حفظ التعديلات محليًا في المتصفح. تحقق من مساحة التخزين وأذونات المتصفح. " + String(error?.message || ""),
+      };
+    }
+  }
+
+  /**
+   * Adopt a row confirmed by Supabase Realtime without triggering another cloud write.
+   */
+  acceptRealtimeDraft(draft: StudioDraft): void {
+    const confirmed = { ...draft, domEdits: draft.domEdits || {}, hasUnsavedLocalChanges: false };
+    this.inMemoryDraft = confirmed;
+    this.persistLocalDraft(confirmed);
+  }
+
   private persistLocalDraft(draft: StudioDraft) {
     if (typeof window === "undefined") return;
     try {
