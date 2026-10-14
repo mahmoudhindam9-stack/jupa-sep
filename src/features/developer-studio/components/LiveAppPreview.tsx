@@ -167,6 +167,19 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange }: Props) {
           strokeWidth: css.strokeWidth || el.getAttribute("stroke-width") || "2", opacity: css.opacity || "1",
           borderRadius: css.borderRadius || "0px", rotate: css.rotate || "0deg", textAlign: css.textAlign || "right" };
       };
+      const applyStyles = (el, styles) => {
+        const applyTo = [el];
+        const isSvgRoot = el.tagName?.toLowerCase() === "svg";
+        if (isSvgRoot) applyTo.push(...el.querySelectorAll("path,circle,rect,line,polyline,polygon,ellipse"));
+        const inheritableVectorStyles = new Set(["fill", "stroke", "strokeWidth", "color"]);
+        Object.entries(styles || {}).forEach(([key, value]) => {
+          if (typeof value !== "string") return;
+          if (key in el.style) el.style[key] = value;
+          if (isSvgRoot && inheritableVectorStyles.has(key)) {
+            applyTo.slice(1).forEach((node) => { if (key in node.style) node.style[key] = value; });
+          }
+        });
+      };
       const applyText = (el, value) => {
         const node = Array.from(el.childNodes).find((child) => child.nodeType === 3 && (child.textContent || "").trim());
         if (node) node.textContent = String(value);
@@ -177,9 +190,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange }: Props) {
         const el = find(selector);
         if (!el || !edit) return;
         if (edit.text !== undefined && el.dataset.codingStudioTextApplied !== String(edit.text)) applyText(el, edit.text);
-        if (edit.styles && typeof edit.styles === "object") Object.entries(edit.styles).forEach(([key, value]) => {
-          if (typeof value === "string" && key in el.style) el.style[key] = value;
-        });
+        if (edit.styles && typeof edit.styles === "object") applyStyles(el, edit.styles);
         if (edit.deleted) el.style.display = "none";
         if (typeof edit.order === "number" && el.parentElement) {
           const siblings = Array.from(el.parentElement.children).filter((item) =>
@@ -291,7 +302,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange }: Props) {
         const selector = selectorFor(el);
         const notify = (patch) => send("STUDIO_CHANGE", { selector, patch });
         if (data.action === "style") {
-          Object.entries(data.styles || {}).forEach(([key, value]) => { if (typeof value === "string" && key in el.style) el.style[key] = value; });
+          applyStyles(el, data.styles || {});
           notify({ styles: data.styles || {} });
         } else if (data.action === "text") {
           applyText(el, data.text);

@@ -212,6 +212,7 @@ export function DeveloperStudioProPage() {
     if (historyPointer > 0) {
       isUndoRedoActionRef.current = true;
       const targetState = historyStack[historyPointer - 1];
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
       setHistoryPointer(historyPointer - 1);
       draftVersionRef.current += 1;
       setDraft(JSON.parse(JSON.stringify(targetState)));
@@ -224,6 +225,7 @@ export function DeveloperStudioProPage() {
     if (historyPointer < historyStack.length - 1) {
       isUndoRedoActionRef.current = true;
       const targetState = historyStack[historyPointer + 1];
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
       setHistoryPointer(historyPointer + 1);
       draftVersionRef.current += 1;
       setDraft(JSON.parse(JSON.stringify(targetState)));
