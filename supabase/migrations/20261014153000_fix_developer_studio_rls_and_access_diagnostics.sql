@@ -156,7 +156,7 @@ BEGIN
          AND schemaname = 'public'
          AND tablename = 'studio_drafts'
     ) THEN
-      ALTER PUBLICATION supabase_realtime ADD TABLE public.studio_drafts;
+      EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE public.studio_drafts';
     END IF;
 
     IF NOT EXISTS (
@@ -165,7 +165,7 @@ BEGIN
          AND schemaname = 'public'
          AND tablename = 'studio_published_configs'
     ) THEN
-      ALTER PUBLICATION supabase_realtime ADD TABLE public.studio_published_configs;
+      EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE public.studio_published_configs';
     END IF;
   END IF;
 END;
