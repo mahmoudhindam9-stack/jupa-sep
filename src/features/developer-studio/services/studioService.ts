@@ -477,7 +477,25 @@ class StudioService {
       if (/column .*dom_edits.* does not exist|dom_edits.*column/i.test(raw)) {
         actionable = "قاعدة البيانات تحتاج إلى التحديث قبل حفظ معاينة التطبيق. نفّذ ملف supabase/migrations/20261014140000_harden_developer_studio.sql في Supabase SQL Editor ثم أعد المحاولة. التفاصيل: " + raw;
       } else if (/row-level security|permission denied|not authorized/i.test(raw)) {
-        actionable = "رفضت Supabase الحفظ بسبب الصلاحيات. سجّل الدخول بحساب إداري مرتبط بصف في public.profiles، وتأكد من وجود developer_options=true أو أن role هي admin/super_admin، ثم طبّق ترحيل تأمين الاستوديو. التفاصيل: " + raw;
+        let accessHint = "";
+        try {
+          const { data: accessData, error: accessError } = await supabase.rpc("developer_studio_access_status" as any);
+          const access = accessData as any;
+          if (!accessError && access) {
+            if (access.authenticated === false) {
+              accessHint = "لا توجد جلسة دخول Supabase صالحة داخل المعاينة. سجّل الخروج ثم الدخول مرة أخرى.";
+            } else if (access.profile_found === false) {
+              accessHint = "تم تسجيل الدخول، لكن لا يوجد صف في public.profiles يطابق auth.uid() للحساب الحالي. اربط الحساب بملفه الصحيح أولًا.";
+            } else if (access.allowed === false) {
+              accessHint = "ملف المستخدم موجود لكن لا يملك صلاحية الاستوديو. اضبط developer_options=true أو role=admin/super_admin في public.profiles ثم أعد المحاولة.";
+            } else {
+              accessHint = "الجلسة والملف والصلاحية صحيحة حسب فحص الخادم؛ غالبًا لم يُطبّق ترحيل إصلاح سياسات RLS أو توجد سياسة قديمة.";
+            }
+          }
+        } catch {
+          // The diagnostic RPC is only available after the new RLS repair migration is applied.
+        }
+        actionable = (accessHint || "رفضت Supabase الحفظ بسبب الصلاحيات. يلزم حساب مصادق عليه وصف public.profiles مطابق لـ auth.uid() مع developer_options=true أو role=admin/super_admin. نفّذ ترحيل إصلاح RLS ثم أعد المحاولة.") + " التفاصيل: " + raw;
       } else if (/relation .*studio_drafts.* does not exist|studio_drafts.*does not exist/i.test(raw)) {
         actionable = "جداول الاستوديو غير موجودة في Supabase. نفّذ أولًا ترحيل 20261014120000_developer_studio_pro.sql ثم 20261014140000_harden_developer_studio.sql. التفاصيل: " + raw;
       }
