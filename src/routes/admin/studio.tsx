@@ -249,6 +249,17 @@ export function DeveloperStudioProPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleUndo, handleRedo, handleSaveDraft]);
 
+  // Warn before browser-level navigation when manual edits have not been saved.
+  useEffect(() => {
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      if (!draft?.hasUnsavedLocalChanges) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeLeaving);
+    return () => window.removeEventListener("beforeunload", warnBeforeLeaving);
+  }, [draft?.hasUnsavedLocalChanges]);
+
   // Update specific element
   const handleUpdateElement = useCallback(
     (elementId: string, updates: Partial<ElementModel>) => {
@@ -678,7 +689,7 @@ export function DeveloperStudioProPage() {
             {saveStatus === "saving" && (
               <Badge variant="outline" className="gap-1 text-[11px] bg-amber-500/10 text-amber-700 border-amber-500/30">
                 <Loader2 className="w-3 h-3 animate-spin" />
-                <span>جاري الحفظ التلقائي...</span>
+                <span>جاري حفظ المسودة...</span>
               </Badge>
             )}
             {saveStatus === "saved" && (
