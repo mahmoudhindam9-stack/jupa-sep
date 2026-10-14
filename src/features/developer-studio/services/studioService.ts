@@ -388,8 +388,11 @@ class StudioService {
     }
 
     if (cached) {
-      this.inMemoryDraft = cached;
-      return cached;
+      // No server row was returned: keep the local copy, but do not label it
+      // as a server-confirmed clean draft.
+      const pending = { ...cached, hasUnpublishedChanges: true };
+      this.inMemoryDraft = pending;
+      return pending;
     }
 
     const published = await this.getPublishedConfig();
@@ -467,12 +470,22 @@ class StudioService {
    * Discard all draft changes and reset back to the latest published config
    */
   async discardDraft(owner = "admin"): Promise<StudioDraft> {
-    const published = await this.getPublishedConfig();
+    const published = await this.fetchRemotePublishedConfig();
+
+    // Refuse to report a successful discard if the server still retains the old draft.
+    const { error } = await supabase
+      .from("studio_drafts" as any)
+      .delete()
+      .eq("owner", owner);
+    if (error) {
+      throw new Error("تعذر حذف المسودة من Supabase؛ لم يتم تأكيد التراجع: " + error.message);
+    }
+
     const freshDraft: StudioDraft = {
-      id: `draft_${Date.now()}`,
+      id: "draft_" + owner,
       owner,
       baseRevision: published.revision,
-      schemaVersion: published.schema_version || CURRENT_SCHEMA_VERSION,
+      schemaVersion: published.schemaVersion || published.schema_version || CURRENT_SCHEMA_VERSION,
       pages: JSON.parse(JSON.stringify(published.pages)),
       elements: JSON.parse(JSON.stringify(published.elements)),
       domEdits: JSON.parse(JSON.stringify(published.domEdits || {})),
@@ -483,17 +496,6 @@ class StudioService {
 
     this.inMemoryDraft = freshDraft;
     this.persistLocalDraft(freshDraft);
-
-    // Delete remote draft in Supabase
-    try {
-      await supabase
-        .from("studio_drafts" as any)
-        .delete()
-        .eq("owner", owner);
-    } catch {
-      // Ignore
-    }
-
     return freshDraft;
   }
 
