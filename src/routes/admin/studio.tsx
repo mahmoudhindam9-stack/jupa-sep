@@ -413,6 +413,22 @@ export function DeveloperStudioProPage() {
         return;
       }
 
+      // Compare the timestamp of the shared draft row before upserting. Published
+      // revision checks alone cannot detect another browser editing the same draft.
+      const draftSyncCompatibility = await studioService.checkDraftSyncCompatibility(snapshot);
+      if (!draftSyncCompatibility.compatible) {
+        const message = draftSyncCompatibility.error || "تغيّرت المسودة السحابية من جلسة أخرى.";
+        setSaveStatus("unsaved");
+        setSaveError(message);
+        setRemoteChangesDetected(true);
+        toast({
+          title: "تم الاحتفاظ بالتعديلات محليًا",
+          description: message,
+          variant: "destructive",
+        });
+        return;
+      }
+
       // A UI edit made while compatibility was being checked must never be replaced
       // by the older snapshot captured when Save & Sync was clicked.
       if (draftVersionRef.current !== versionBeforeCheck) {
