@@ -1,7 +1,22 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { Route as LoginRoute } from "./login";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/")({
+  beforeLoad: () => {
+    let authUser: string | null = null;
+    if (typeof window !== "undefined") {
+      try {
+        authUser =
+          localStorage.getItem("restocash_auth_user") ||
+          sessionStorage.getItem("restocash_auth_user");
+      } catch {
+        // Storage restricted or unavailable
+      }
+    }
+
+    throw redirect({
+      to: authUser ? "/admin" : "/login",
+    });
+  },
   head: () => ({
     meta: [
       { title: "Restocash — لوحة التحكم الرئيسية" },
@@ -11,10 +26,9 @@ export const Route = createFileRoute("/")({
       },
     ],
   }),
-  component: HomeLogin,
+  component: IndexRouteComponent,
 });
 
-function HomeLogin() {
-  const Login = LoginRoute.options.component as React.ElementType;
-  return <Login />;
+function IndexRouteComponent() {
+  return null;
 }

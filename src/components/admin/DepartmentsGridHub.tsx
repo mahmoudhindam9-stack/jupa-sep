@@ -19,9 +19,6 @@ import {
   History,
   Calendar,
   CreditCard,
-  Clock,
-  Layers,
-  ShoppingCart,
   TrendingUp,
   Ticket,
   Plus,
@@ -56,12 +53,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
-export interface DepartmentCardItem {
+interface DepartmentCardItem {
   id: string;
   title: string;
   subtitle: string;
   description: string;
   to: string;
+  search?: Record<string, string>;
   icon: any;
   colorScheme: {
     bgLight: string;
@@ -83,7 +81,7 @@ export interface DepartmentCardItem {
   }[];
 }
 
-export const DEPARTMENTS: DepartmentCardItem[] = [
+const DEPARTMENTS: DepartmentCardItem[] = [
   {
     id: "restaurant",
     title: "إدارة المطعم",
@@ -104,45 +102,57 @@ export const DEPARTMENTS: DepartmentCardItem[] = [
     },
     badgeText: "8 وظائف تشغيلية",
     subSections: [
-      { title: "نقطة البيع (POS)", to: "/pos", icon: Store, desc: "شاشة البيع والفواتير والتحصيل" },
       {
-        title: "شاشة الكاشير والخزينة",
-        to: "/cashier-treasury",
-        icon: Wallet,
-        desc: "النقدية وورديات الكاشير",
+        title: "نقطة البيع (POS) الكاشير",
+        to: "/pos",
+        icon: Store,
+        desc: "تسجيل المبيعات والفواتير السريعة",
       },
       {
-        title: "شاشة الكابتن والطاولات",
+        title: "شاشة الكابتن أوردر للطاولات",
         to: "/captain",
         icon: Users,
-        desc: "طلبات الصالة وإدارة الطاولات",
+        desc: "أوردرات الصالة وخدمة الطاولات",
       },
-      { title: "شاشة المطبخ والفرن", to: "/oven", icon: Flame, desc: "تحضير الطلبات ومتابعتها" },
       {
-        title: "سجل الطلبات والفواتير",
-        to: "/admin/orders",
+        title: "شاشة المطبخ والفرن الذكية",
+        to: "/oven",
+        icon: Flame,
+        desc: "متابعة تجهيز الأطباق والطلبات",
+      },
+      {
+        title: "متابعة الطلبات والديليفري",
+        to: "/admin/restaurant",
+        search: { tab: "orders" },
         icon: ClipboardList,
-        desc: "الطلبات الحالية والسابقة",
+        desc: "الطلبات الجارية والتوصيل",
       },
       {
-        title: "قائمة الطعام والمنيو",
+        title: "إدارة الطاولات والباركود QR",
+        to: "/admin/restaurant",
+        search: { tab: "tables" },
+        icon: Grid3X3,
+        desc: "تخطيط الصالة والباركود الذكي",
+      },
+      {
+        title: "قائمة الطعام والوجبات (المنيو)",
         to: "/admin/menu",
         icon: Coffee,
-        desc: "إدارة الأصناف والأسعار",
+        desc: "تعديل الأصناف والأسعار",
       },
       {
-        title: "المخزون والمستودعات",
-        to: "/admin/inventory",
-        search: { tab: "stock" },
+        title: "مستودع وخامات المطعم",
+        to: "/admin/restaurant",
+        search: { tab: "inventory" },
         icon: Package,
-        desc: "الخامات والأصناف",
+        desc: "المخزون الداخلي السريع",
       },
       {
-        title: "إدارة ورديات المطعم",
+        title: "إغلاق وردية كاشير المطعم",
         to: "/admin/restaurant",
         search: { tab: "shifts" },
-        icon: Clock,
-        desc: "فتح وإغلاق الورديات",
+        icon: History,
+        desc: "تقارير وتصفية وردية الكاشير",
       },
     ],
   },
@@ -167,39 +177,32 @@ export const DEPARTMENTS: DepartmentCardItem[] = [
     badgeText: "4 أقسام فرعية",
     subSections: [
       {
-        title: "المحلات والمستأجرون",
+        title: "دليل المحلات والمستأجرين والعقود",
         to: "/admin/mall",
         search: { tab: "shops" },
         icon: Store,
-        desc: "المحلات والعقود والحسابات",
+        desc: "قائمة الوحدات والمستأجرين والعقود",
       },
       {
-        title: "الإيجارات والدفعات",
+        title: "متابعة الإيجارات والدفعات الشهرية",
         to: "/admin/mall",
         search: { tab: "payments" },
         icon: Calendar,
-        desc: "الأقساط والاستحقاقات",
+        desc: "سجل التحصيل الشهري والمستحقات",
       },
       {
-        title: "إيرادات الحديقة والتذاكر",
-        to: "/admin/mall",
-        search: { tab: "garden" },
-        icon: Trees,
-        desc: "التذاكر والإيرادات التشغيلية",
-      },
-      {
-        title: "مصروفات التشغيل والصيانة",
+        title: "مصروفات وتشغيل وصيانة المول",
         to: "/admin/mall",
         search: { tab: "expenses" },
         icon: CreditCard,
-        desc: "مصروفات المول والحديقة",
+        desc: "تكاليف التشغيل والصيانة والأمن",
       },
       {
-        title: "التقارير المالية والإشغال",
+        title: "التقارير المالية ونسب الإشغال",
         to: "/admin/mall",
         search: { tab: "reports" },
         icon: TrendingUp,
-        desc: "ملخص الإيرادات والإشغال",
+        desc: "الملخص الإحصائي والمالي للمول",
       },
     ],
   },
@@ -224,32 +227,53 @@ export const DEPARTMENTS: DepartmentCardItem[] = [
     badgeText: "قسم الحديقة المستقل",
     subSections: [
       {
-        title: "بيع التذاكر والدخول",
+        title: "نقطة بيع تذاكر الدخول والألعاب (POS)",
         to: "/admin/park",
         search: { tab: "tickets" },
         icon: Ticket,
-        desc: "مبيعات التذاكر والألعاب",
+        desc: "إصدار تذاكر الدخول والباركود",
       },
       {
-        title: "ورديات الكاشير",
+        title: "فتح وردية كاشير جديدة",
         to: "/admin/park",
         search: { tab: "shifts" },
-        icon: Clock,
-        desc: "فتح ومراجعة الورديات",
+        icon: Plus,
+        desc: "إطلاق وردية كاشير مع العهدة النقدية",
       },
       {
-        title: "الخزائن التشغيلية",
+        title: "إغلاق وتسوية وردية الكاشير",
+        to: "/admin/park",
+        search: { tab: "closing" },
+        icon: History,
+        desc: "تقارير الوردية والتسوية المالية",
+      },
+      {
+        title: "الخزائن التشغيلية الثمانية (8)",
         to: "/admin/park",
         search: { tab: "treasury" },
-        icon: Wallet,
-        desc: "الصناديق والأرصدة",
+        icon: Landmark,
+        desc: "متابعة أرصدة صناديق الحديقة",
       },
       {
-        title: "تقارير الإيرادات",
+        title: "إدارة العملاء واشتراكات الزوار",
+        to: "/admin/park",
+        search: { tab: "customers" },
+        icon: Users,
+        desc: "سجل الزوار والعملاء الدائمين",
+      },
+      {
+        title: "أسعار التذاكر وفئات الألعاب",
+        to: "/admin/park",
+        search: { tab: "prices" },
+        icon: Settings,
+        desc: "تحديد تعرفة الدخول والألعاب",
+      },
+      {
+        title: "تقارير إيرادات الحديقة والورديات",
         to: "/admin/park",
         search: { tab: "reports" },
-        icon: TrendingUp,
-        desc: "الإيرادات وحركة التذاكر",
+        icon: FileBarChart,
+        desc: "إحصائيات المبيعات والتحصيل",
       },
     ],
   },
@@ -274,57 +298,66 @@ export const DEPARTMENTS: DepartmentCardItem[] = [
     badgeText: "ضم الحسابات والخزائن والتقارير",
     subSections: [
       {
-        title: "حساب الأستاذ العام",
+        title: "المركز المالي الشامل والميزانية",
+        to: "/admin/ledger",
+        search: { tab: "financial_position" },
+        icon: TrendingUp,
+        desc: "عرض الأصول والخصوم وقائمة الدخل الموحدة",
+      },
+      {
+        title: "كشف حساب الأستاذ العام",
         to: "/admin/ledger",
         search: { tab: "ledger" },
         icon: BookOpen,
-        desc: "الأرصدة وحركات الحسابات",
+        desc: "كشف حساب مفصل وأرصدة الحسابات",
       },
       {
-        title: "دفتر اليومية العامة",
+        title: "دفتر اليومية العامة والقيود المزدوجة",
         to: "/admin/ledger",
         search: { tab: "journal" },
         icon: FileText,
-        desc: "القيود المحاسبية",
+        desc: "تسجيل وترحيل قيود اليومية",
       },
       {
-        title: "سندات الصرف والقبض",
+        title: "إدارة الخزائن والحسابات البنكية",
+        to: "/admin/ledger",
+        search: { tab: "treasury" },
+        icon: Wallet,
+        desc: "الصناديق النقدية وحركات الخزينة",
+      },
+      {
+        title: "دليل وشجرة الحسابات (Oracle)",
+        to: "/admin/ledger",
+        search: { tab: "accounts" },
+        icon: FileBarChart,
+        desc: "شجرة الحسابات بالأصول والخصوم",
+      },
+      {
+        title: "سندات الصرف والقبض المرحّلة",
         to: "/admin/ledger",
         search: { tab: "vouchers" },
         icon: Receipt,
-        desc: "تسجيل ومراجعة السندات",
+        desc: "سندات الإيرادات والمصروفات",
       },
       {
-        title: "ميزان المراجعة",
+        title: "ميزان المراجعة المحاسبي",
         to: "/admin/ledger",
         search: { tab: "trial" },
         icon: Scale,
-        desc: "مراجعة الأرصدة",
+        desc: "توازن الأرصدة والمجاميع",
       },
       {
-        title: "القوائم المالية",
+        title: "التقارير والميزانية العمومية",
         to: "/admin/ledger",
-        search: { tab: "statements" },
-        icon: FileBarChart,
-        desc: "النتائج والقوائم المالية",
+        search: { tab: "reports" },
+        icon: TrendingUp,
+        desc: "قائمة الدخل والمركز المالي",
       },
       {
-        title: "دليل الحسابات",
-        to: "/admin/accounts",
-        icon: Layers,
-        desc: "شجرة الحسابات والأكواد",
-      },
-      {
-        title: "الإيصالات والسندات",
+        title: "تصميم وإدارة الإيصالات والسندات",
         to: "/admin/receipts",
         icon: Receipt,
-        desc: "قوالب وطباعة المستندات",
-      },
-      {
-        title: "التقارير والميزانية",
-        to: "/admin/reports",
-        icon: TrendingUp,
-        desc: "تقارير الأداء المالي",
+        desc: "نماذج الطباعة الرسمية",
       },
     ],
   },
@@ -349,38 +382,39 @@ export const DEPARTMENTS: DepartmentCardItem[] = [
     badgeText: "ضم إدارة المستخدمين",
     subSections: [
       {
-        title: "دليل الموظفين",
+        title: "سجل وبيانات الموظفين",
         to: "/admin/hr",
         search: { tab: "employees" },
         icon: Users,
-        desc: "بيانات الكادر الوظيفي",
+        desc: "الملفات الشخصية والوظائف",
       },
       {
-        title: "الحضور والانصراف",
+        title: "تسجيل الحضور والانصراف",
         to: "/admin/hr",
         search: { tab: "attendance" },
         icon: CalendarDays,
-        desc: "متابعة الدوام اليومي",
+        desc: "متابعة أوقات العمل والورديات",
       },
       {
-        title: "الرواتب ومسيرات الأجور",
+        title: "مسيرات الرواتب الشهرية والبدلات",
         to: "/admin/hr",
         search: { tab: "payroll" },
         icon: DollarSign,
-        desc: "احتساب الرواتب والمستحقات",
+        desc: "احتساب المستحقات الشهرية",
       },
       {
-        title: "السلف والخصومات",
+        title: "السلف والخصومات والمكافآت",
         to: "/admin/hr",
         search: { tab: "loans" },
         icon: Coins,
-        desc: "السلف وأقساط السداد",
+        desc: "حركات السلف والاستقطاعات",
       },
       {
-        title: "المستخدمون والصلاحيات",
-        to: "/admin/users",
+        title: "إدارة مستخدمي النظام والصلاحيات",
+        to: "/admin/hr",
+        search: { tab: "users" },
         icon: ShieldCheck,
-        desc: "حسابات الدخول ومستويات الوصول",
+        desc: "تحديد أدوار الوصول وحسابات الدخول",
       },
     ],
   },
@@ -405,62 +439,122 @@ export const DEPARTMENTS: DepartmentCardItem[] = [
     badgeText: "5 أقسام فرعية",
     subSections: [
       {
-        title: "المخازن وربط المستودعات",
+        title: "أصناف المخزون وجرد المستودع",
         to: "/admin/inventory",
-        search: { tab: "warehouses" },
-        icon: Building2,
-        desc: "تعريف المستودعات وربطها",
-      },
-      {
-        title: "الأصناف والمخزون",
-        to: "/admin/inventory",
-        search: { tab: "stock" },
+        search: { tab: "items" },
         icon: Package,
-        desc: "الأصناف والكميات والباركود",
+        desc: "متابعة أرصدة المواد وتنبيهات النواقص",
       },
       {
-        title: "الحركات والتحويلات",
+        title: "التحويلات الداخلية بين المستودعات",
         to: "/admin/inventory",
-        search: { tab: "transactions" },
+        search: { tab: "transfers" },
         icon: ArrowLeftRight,
-        desc: "التسويات والتحويلات الداخلية",
+        desc: "نقل الخامات بين الفروع والمخازن",
       },
       {
-        title: "الصلاحية وتتبع الدفعات",
-        to: "/admin/inventory",
-        search: { tab: "expiry" },
-        icon: Calendar,
-        desc: "تواريخ الصلاحية والهالك",
-      },
-      {
-        title: "المشتريات والموردون",
+        title: "فواتير المشتريات وسندات الاستلام",
         to: "/admin/inventory",
         search: { tab: "purchases" },
-        icon: ShoppingCart,
-        desc: "فواتير التوريد والموردين",
+        icon: FileSpreadsheet,
+        desc: "تسجيل فواتير الشراء الواردة",
       },
       {
-        title: "تقارير المخزون",
+        title: "إدارة الموردين والشركات",
         to: "/admin/inventory",
-        search: { tab: "reports" },
-        icon: FileBarChart,
-        desc: "الحركة والتقييم والتنبيهات",
+        search: { tab: "suppliers" },
+        icon: Users,
+        desc: "بيانات وحسابات الموردين",
       },
       {
-        title: "إعدادات المخزن",
+        title: "تسويات الهالك والتوالف",
         to: "/admin/inventory",
-        search: { tab: "settings" },
-        icon: Settings,
-        desc: "إعدادات الوحدات والتخزين",
+        search: { tab: "waste" },
+        icon: Trash2,
+        desc: "إثبات الفاقد وتكلفة الهدر",
+      },
+    ],
+  },
+  {
+    id: "shift_audit",
+    title: "تدقيق الورديات",
+    subtitle: "مطابقة ورديات الكاشير والتحصيل",
+    description:
+      "فحص ومطابقة جميع ورديات المطعم والحديقة والكاشير، تدقيق العجز والزيادة النقدية، ومراجعة سجلات الإغلاق في قاعدة البيانات.",
+    to: "/admin",
+    search: { tab: "shift_audit" },
+    icon: Database,
+    colorScheme: {
+      bgLight: "bg-teal-500/5",
+      border: "border-teal-500/20",
+      iconBg: "bg-teal-500/10 text-teal-600 dark:text-teal-400",
+      iconText: "text-teal-600 dark:text-teal-400",
+      hoverBorder: "hover:border-teal-500/50 hover:shadow-teal-500/5",
+      badgeBg: "bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300",
+      badgeText: "رقابة الورديات",
+      accentGlow: "from-teal-500/10 to-transparent",
+    },
+    badgeText: "مطابقة سحابية ومحلية",
+    subSections: [
+      {
+        title: "عرض ومطابقة الورديات المسجلة",
+        to: "/admin",
+        search: { tab: "shift_audit" },
+        icon: Database,
+        desc: "فحص تقارير الإغلاق وحالات الترحيل",
+      },
+      {
+        title: "فحص العجز والزيادة النقدية",
+        to: "/admin",
+        search: { tab: "shift_audit" },
+        icon: Scale,
+        desc: "مقارنة المبيعات المسجلة مع النقد الفعلي",
+      },
+    ],
+  },
+  {
+    id: "audit_logs",
+    title: "سجل العمليات",
+    subtitle: "الرقابة وتتبع الأنشطة الشاملة",
+    description:
+      "السجل الرقابي الموثق لكافة العمليات المالية، فواتير المبيعات، حركات الخزائن، وتعديلات المستخدمين والصلاحيات لحظياً.",
+    to: "/admin",
+    search: { tab: "audit_logs" },
+    icon: History,
+    colorScheme: {
+      bgLight: "bg-indigo-500/5",
+      border: "border-indigo-500/20",
+      iconBg: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400",
+      iconText: "text-indigo-600 dark:text-indigo-400",
+      hoverBorder: "hover:border-indigo-500/50 hover:shadow-indigo-500/5",
+      badgeBg: "bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300",
+      badgeText: "سجل رقابي وأمني",
+      accentGlow: "from-indigo-500/10 to-transparent",
+    },
+    badgeText: "تتبع لحظي موثق",
+    subSections: [
+      {
+        title: "استعراض سجل الأحداث والأنشطة",
+        to: "/admin",
+        search: { tab: "audit_logs" },
+        icon: History,
+        desc: "سجل زمني لجميع الحركات والتعديلات",
+      },
+      {
+        title: "تصفية الحركات والرقابة الأمنية",
+        to: "/admin",
+        search: { tab: "audit_logs" },
+        icon: ShieldCheck,
+        desc: "تتبع دقيق لكشف التلاعب ومطابقة التغييرات",
       },
     ],
   },
   {
     id: "system",
-    title: "خيارات المطور والرقابة",
-    subtitle: "الرقابة وتحديثات النظام",
+    title: "خيارات المطور والنسخ الاحتياطي",
+    subtitle: "تحديثات النظام وإدارة الإصدارات",
     description:
-      "سجل تدقيق العمليات، تدقيق الورديات في Supabase، فحص المزامنة، وتحديثات النظام التلقائية عبر GitHub.",
+      "فحص المزامنة مع GitHub، سجل التحديثات التلقائية للنظام، والتحكم في إعدادات التطوير والنسخ الاحتياطي.",
     to: "/admin/system-update",
     icon: Settings,
     colorScheme: {
@@ -470,38 +564,22 @@ export const DEPARTMENTS: DepartmentCardItem[] = [
       iconText: "text-slate-700 dark:text-slate-300",
       hoverBorder: "hover:border-slate-500/50 hover:shadow-slate-500/5",
       badgeBg: "bg-slate-100 text-slate-800 dark:bg-slate-900 dark:text-slate-300",
-      badgeText: "نظام وتدقيق",
+      badgeText: "تحديثات ونسخ",
       accentGlow: "from-slate-500/10 to-transparent",
     },
-    badgeText: "رقابة وأمان",
+    badgeText: "تحديث وتطوير",
     subSections: [
       {
-        title: "تحديث النظام",
+        title: "تحديثات النظام ومزامنة GitHub",
         to: "/admin/system-update",
-        search: { tab: "system" },
         icon: RefreshCw,
-        desc: "الإصدار والمزامنة",
+        desc: "الإصدار والتحديثات التلقائية",
       },
       {
-        title: "حزمة قاعدة البيانات",
+        title: "فحص الاتصال والنسخ الاحتياطي",
         to: "/admin/system-update",
-        search: { tab: "access" },
-        icon: FileSpreadsheet,
-        desc: "تصدير واستيراد البيانات",
-      },
-      {
-        title: "سجل العمليات",
-        to: "/admin",
-        search: { tab: "audit_logs" },
-        icon: History,
-        desc: "مراجعة الأنشطة الإدارية",
-      },
-      {
-        title: "تدقيق الورديات",
-        to: "/admin",
-        search: { tab: "shift_audit" },
         icon: Database,
-        desc: "فحص ومطابقة الورديات",
+        desc: "فحص حالة قاعدة البيانات والتخزين",
       },
     ],
   },
@@ -512,6 +590,39 @@ export function DepartmentsGridHub() {
 
   return (
     <div className="space-y-6">
+      {/* Welcome & System Orientation Header */}
+      <div className="relative overflow-hidden rounded-3xl border border-border/80 bg-gradient-to-br from-card via-card to-muted/40 p-6 sm:p-8 shadow-xs">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="bg-primary/10 text-primary text-xs font-black px-3 py-1 rounded-full flex items-center gap-1.5">
+                <Sparkles size={13} />
+                بوابة الوصول السريع - لوحة الأقسام
+              </span>
+              <span className="text-xs text-muted-foreground font-medium">
+                اضغط على أي قسم للدخول، أو استخدم القائمة المنسدلة للوصول المباشر للوظيفة المطلوبة.
+              </span>
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-foreground">
+              أهلاً بك في نظام Restocash ERP الموحد
+            </h1>
+            <p className="text-xs sm:text-sm text-muted-foreground max-w-3xl leading-relaxed">
+              تم تبسيط وتنسيق واجهة النظام بالكامل؛ اختر القسم المطلوب أدناه للدخول إليه مباشرة، أو
+              انقر على زر القائمة المنسدلة في كل مربع للوصول الفوري لأي شاشة أو تقرير داخلي.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3 shrink-0 self-start lg:self-center">
+            <Badge
+              variant="outline"
+              className="px-3 py-1.5 font-bold text-xs rounded-xl border-border bg-card"
+            >
+              7 قطاعات متكاملة
+            </Badge>
+          </div>
+        </div>
+      </div>
+
       {/* Grid of Department Squares */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-5 sm:gap-6">
         {DEPARTMENTS.map((dept) => {
@@ -519,7 +630,7 @@ export function DepartmentsGridHub() {
           return (
             <Card
               key={dept.id}
-              onClick={() => navigate({ to: dept.to as any, search: { tab: "grid" } as any })}
+              onClick={() => navigate({ to: dept.to, search: dept.search })}
               className={cn(
                 "group relative flex flex-col justify-between overflow-hidden rounded-2xl border bg-card p-5 sm:p-6 transition-all duration-200 cursor-pointer shadow-xs hover:shadow-md",
                 dept.colorScheme.border,
@@ -631,107 +742,6 @@ export function DepartmentsGridHub() {
 
                 <span className="inline-flex items-center gap-1 text-primary group-hover:translate-x-[-3px] transition-transform font-black">
                   <span>فتح القسم</span>
-                  <ArrowLeft size={14} />
-                </span>
-              </div>
-            </Card>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-/** Displays the second-level square navigation for one department. */
-export function DepartmentSubpagesGrid({ departmentId }: { departmentId: string }) {
-  const navigate = useNavigate();
-  const department = DEPARTMENTS.find((item) => item.id === departmentId);
-
-  if (!department) {
-    return (
-      <div className="rounded-2xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
-        القسم المطلوب غير موجود.
-      </div>
-    );
-  }
-
-  const DepartmentIcon = department.icon;
-
-  return (
-    <div className="space-y-6" dir="rtl">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60 pb-4">
-        <div>
-          <h2 className="text-xl sm:text-2xl font-black text-foreground flex items-center gap-2">
-            <DepartmentIcon className={department.colorScheme.iconText} size={25} />
-            <span>{department.title}</span>
-          </h2>
-          <p className="text-xs text-muted-foreground mt-1">
-            اختر الشاشة المطلوبة من المربعات التالية.
-          </p>
-        </div>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => navigate({ to: "/admin" as any, search: { tab: "grid" } as any })}
-          className="shrink-0 gap-2 rounded-xl font-bold"
-        >
-          <ArrowLeft size={15} />
-          لوحة الأقسام الرئيسية
-        </Button>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
-        {department.subSections.map((sub, index) => {
-          const Icon = sub.icon;
-          return (
-            <Card
-              key={`${department.id}-sub-${index}`}
-              onClick={() =>
-                navigate({
-                  to: sub.to as any,
-                  ...(sub.search ? { search: sub.search as any } : {}),
-                } as any)
-              }
-              className={cn(
-                "group relative flex min-h-[150px] flex-col justify-between overflow-hidden rounded-2xl border bg-card p-5 sm:p-6 transition-all duration-200 cursor-pointer shadow-xs hover:shadow-md hover:-translate-y-0.5",
-                department.colorScheme.border,
-                department.colorScheme.hoverBorder,
-              )}
-            >
-              <div
-                className={cn(
-                  "absolute top-0 right-0 left-0 h-1 bg-gradient-to-l opacity-70 group-hover:opacity-100 transition",
-                  department.colorScheme.accentGlow,
-                )}
-              />
-              <CardContent className="p-0 flex-1">
-                <div className="flex items-start justify-between gap-3">
-                  <div
-                    className={cn(
-                      "flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-border/50 shadow-2xs transition group-hover:scale-105",
-                      department.colorScheme.iconBg,
-                    )}
-                  >
-                    <Icon size={23} />
-                  </div>
-                  <Badge
-                    variant="outline"
-                    className="rounded-lg text-[10px] font-bold border-border/70 bg-background/70"
-                  >
-                    شاشة فرعية
-                  </Badge>
-                </div>
-                <h3 className="mt-4 text-base font-black text-foreground leading-snug group-hover:text-primary transition">
-                  {sub.title}
-                </h3>
-                <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-                  {sub.desc || "فتح وإدارة هذا القسم."}
-                </p>
-              </CardContent>
-              <div className="mt-4 pt-3 border-t border-border/60 flex items-center justify-between text-xs font-bold">
-                <span className="text-[11px] text-muted-foreground">فتح الشاشة</span>
-                <span className="inline-flex items-center gap-1 text-primary font-black">
-                  فتح
                   <ArrowLeft size={14} />
                 </span>
               </div>

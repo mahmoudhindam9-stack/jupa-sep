@@ -213,10 +213,9 @@ function Index() {
 
   useEffect(() => {
     setMounted(true);
-    const unsub = erpStore.subscribe(() => {
+    return erpStore.subscribe(() => {
       setErpState(erpStore.getState());
     });
-    return () => unsub();
   }, []);
 
   const [cart, setCart] = useState<CartLine[]>([]);
@@ -983,8 +982,15 @@ function Index() {
       style={{ fontFamily: '"Tajawal", "Cairo", system-ui, sans-serif' }}
     >
       <div className="flex-1 flex flex-col min-w-0">
-        <div className="px-6 pt-4">
-          <BackToRestaurantButton />
+        {/* Sticky frozen top back bar with Clear Department Title */}
+        <div className="sticky top-0 z-30 bg-card/95 backdrop-blur px-6 py-2.5 border-b border-border/80 shadow-xs flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <BackToRestaurantButton />
+            <div className="h-5 w-px bg-border/80 hidden sm:block" />
+            <h1 className="text-sm font-black text-foreground">
+              {lang === "ar" ? "نقطة بيع الكاشير (POS)" : "Cashier POS"}
+            </h1>
+          </div>
         </div>
         <header
           className="px-8 py-5 border-b border-border flex items-center justify-between gap-6"

@@ -273,15 +273,17 @@ function OvenPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 font-cairo">
-      <div className="max-w-7xl mx-auto w-full px-4 pt-4">
-        <BackToRestaurantButton />
-      </div>
       <header className="bg-slate-900 text-white p-4 shadow-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <Link to="/" className="p-2 bg-slate-800 rounded-lg hover:bg-slate-700 transition">
+          <div className="flex items-center gap-3">
+            <Link
+              to="/"
+              className="p-2 bg-slate-800 rounded-lg hover:bg-slate-700 transition"
+              title="العودة"
+            >
               <ArrowRight size={20} className="rotate-180" />
             </Link>
+            <BackToRestaurantButton />
             <div>
               <h1 className="text-xl font-black flex items-center gap-2">
                 <Flame className="text-orange-500 fill-orange-500 animate-pulse" />

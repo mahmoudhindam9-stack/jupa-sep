@@ -1,7 +1,6 @@
 // @ts-nocheck
-import { createFileRoute, useNavigate, useBlocker, useLocation } from "@tanstack/react-router";
-import { DepartmentSubpagesGrid } from "@/components/admin/DepartmentsGridHub";
-import { useState, useEffect, useMemo } from "react";
+import { createFileRoute, useNavigate, useBlocker, useLocation, Link } from "@tanstack/react-router";
+import React, { useState, useEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
 import {
   erpStore,
@@ -27,6 +26,10 @@ const getLineBaseValue = (
 };
 import { AccountSearchSelect } from "@/components/AccountSearchSelect";
 import { VouchersLedgerSection } from "@/components/admin/VouchersLedgerSection";
+import { ComprehensiveFinancialPositionCard } from "@/components/admin/ComprehensiveFinancialPositionCard";
+import { AccountsPage } from "./accounts";
+import { ReportsPage } from "./reports";
+import { TreasuryManagementView } from "@/components/admin/TreasuryManagementView";
 import {
   printAccountingDocument,
   printJournalEntryDocument,
@@ -38,6 +41,7 @@ import {
   BookOpen,
   Plus,
   Search,
+  ArrowRight,
   FileSpreadsheet,
   FileText,
   CheckCircle2,
@@ -73,6 +77,12 @@ import {
   Database,
   ShieldCheck,
   CheckCheck,
+  Landmark,
+  Wallet,
+  Building2,
+  Store,
+  BarChart3,
+  Receipt,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -111,7 +121,9 @@ import { Separator } from "@/components/ui/separator";
 import { JournalEntryCurrencyGroups } from "@/components/JournalEntryCurrencyGroups";
 
 export const Route = createFileRoute("/admin/ledger")({
-  head: () => ({ meta: [{ title: "حساب الأستاذ العام والدفاتر المالية" }] }),
+  head: () => ({
+    meta: [{ title: "الإدارة المالية - حساب الأستاذ ودليل الحسابات والخزائن والتقارير" }],
+  }),
   component: LedgerPage,
 });
 
@@ -198,11 +210,10 @@ function LedgerPage() {
   // ERP Store subscription
   const [erpState, setErpState] = useState(() => erpStore.getState());
   useEffect(() => {
-    const unsub = erpStore.subscribe(() => {
+    return erpStore.subscribe(() => {
       const state = erpStore.getState();
       if (state) setErpState({ ...state });
     });
-    return () => unsub();
   }, []);
 
   // Track saved snapshot IDs to detect unsaved entries
@@ -334,16 +345,54 @@ function LedgerPage() {
     }
   };
 
-  // UI state follows the URL so square-grid selections also work on refresh/direct links.
+  // UI state
   const location = useLocation();
-  const tabParam = new URLSearchParams(location.search).get("tab");
-  const validTabs = ["grid", "ledger", "journal", "vouchers", "trial", "statements"];
-  const [selectedTab, setSelectedTab] = useState(() =>
-    validTabs.includes(tabParam || "") ? tabParam! : "journal",
-  );
+  const [selectedTab, setSelectedTab] = useState(() => {
+    if (typeof window !== "undefined") {
+      const tabParam = new URLSearchParams(window.location.search).get("tab");
+      if (
+        tabParam &&
+        [
+          "hub",
+          "financial_position",
+          "ledger",
+          "journal",
+          "vouchers",
+          "trial",
+          "statements",
+          "accounts",
+          "treasury",
+          "reports",
+        ].includes(tabParam)
+      ) {
+        return tabParam;
+      }
+    }
+    return "hub";
+  });
+
   useEffect(() => {
-    if (tabParam && validTabs.includes(tabParam)) setSelectedTab(tabParam);
-  }, [tabParam]);
+    if (typeof window !== "undefined") {
+      const tabParam = new URLSearchParams(location.search).get("tab");
+      if (
+        tabParam &&
+        [
+          "hub",
+          "financial_position",
+          "ledger",
+          "journal",
+          "vouchers",
+          "trial",
+          "statements",
+          "accounts",
+          "treasury",
+          "reports",
+        ].includes(tabParam)
+      ) {
+        setSelectedTab(tabParam);
+      }
+    }
+  }, [location.search]);
 
   const [isImportingOracle, setIsImportingOracle] = useState(false);
   const [isSavingToDb, setIsSavingToDb] = useState(false);
@@ -708,6 +757,87 @@ function LedgerPage() {
     { account_code: "", debit: 0, credit: 0, currency: "SSP", rate: 1 },
   ]);
 
+  // Journal Entry Drafts & Exit Confirmation State
+  const [isExitEntryConfirmOpen, setIsExitEntryConfirmOpen] = useState(false);
+  const [autoOpenVoucherModal, setAutoOpenVoucherModal] = useState(false);
+  const [journalDrafts, setJournalDrafts] = useState<any[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("restocash_journal_drafts") || "[]");
+    } catch {
+      return [];
+    }
+  });
+
+  const handleSaveJournalAsDraft = () => {
+    if (!newEntryDesc.trim() && newEntryLines.every((l) => !l.debit && !l.credit)) {
+      toast({
+        title: "تنبيه المسودة",
+        description: "يرجى كتابة البيان المحاسبي أو إدخال مبالغ على الأقل لحفظ القيد كمسودة.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const newDraft = {
+      id: `draft-je-${Date.now()}`,
+      newEntryDate,
+      newEntryRef,
+      newEntryDesc: newEntryDesc.trim() || "مسودة قيد يومية",
+      newEntryAttachments,
+      newEntryLines,
+      savedAt: new Date().toISOString(),
+    };
+    try {
+      const existing = [newDraft, ...journalDrafts.filter((d) => d.id !== newDraft.id)].slice(0, 15);
+      localStorage.setItem("restocash_journal_drafts", JSON.stringify(existing));
+      setJournalDrafts(existing);
+      toast({
+        title: "💾 تم حفظ القيد كمسودة مؤقتة",
+        description: `تم حفظ المسودة بنجاح (مرجع: ${newEntryRef}). يمكنك استعادتها في أي وقت.`,
+      });
+      setIsNewEntryOpen(false);
+      setIsExitEntryConfirmOpen(false);
+    } catch {
+      toast({ title: "خطأ", description: "تعذر حفظ مسودة القيد.", variant: "destructive" });
+    }
+  };
+
+  const handleLoadJournalDraft = (draft: any) => {
+    setNewEntryDate(draft.newEntryDate || new Date().toISOString().split("T")[0]);
+    setNewEntryRef(draft.newEntryRef || erpStore.generateJournalReference(draft.newEntryDate));
+    setNewEntryDesc(draft.newEntryDesc || "");
+    setNewEntryAttachments(draft.newEntryAttachments || []);
+    setNewEntryLines(
+      draft.newEntryLines || [
+        { account_code: "", debit: 0, credit: 0, currency: "USD", rate: 1 },
+        { account_code: "", debit: 0, credit: 0, currency: "SSP", rate: 1 },
+      ],
+    );
+    setIsNewEntryOpen(true);
+    toast({
+      title: "تم استعادة مسودة القيد",
+      description: `تم تحميل بيانات القيد المسودة بنجاح.`,
+    });
+  };
+
+  const handleDeleteJournalDraft = (draftId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const updated = journalDrafts.filter((d) => d.id !== draftId);
+    setJournalDrafts(updated);
+    localStorage.setItem("restocash_journal_drafts", JSON.stringify(updated));
+    toast({ title: "تم حذف المسودة" });
+  };
+
+  const handleRequestCloseNewEntry = () => {
+    if (
+      newEntryDesc.trim() ||
+      newEntryLines.some((l) => l.debit > 0 || l.credit > 0 || l.account_code)
+    ) {
+      setIsExitEntryConfirmOpen(true);
+    } else {
+      setIsNewEntryOpen(false);
+    }
+  };
+
   // Edit Journal Entry State
   const [isEditEntryOpen, setIsEditEntryOpen] = useState(false);
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
@@ -727,6 +857,7 @@ function LedgerPage() {
   const [closedYearAlertMessage, setClosedYearAlertMessage] = useState("");
 
   const accounts = erpState?.accounts || [];
+  const treasuries = erpState?.treasuries || [];
   const level4Accounts = useMemo(() => {
     return (accounts || []).filter(isLevel4Account);
   }, [accounts]);
@@ -1552,18 +1683,38 @@ function LedgerPage() {
     toast({ title: "تم التصدير بنجاح", description: "تم تحميل ميزان المراجعة بصيغة Excel" });
   };
 
-  if (selectedTab === "grid") return <DepartmentSubpagesGrid departmentId="finance" />;
-
   return (
     <div className="p-3 sm:p-6 space-y-5 sm:space-y-6 max-w-7xl mx-auto w-full min-w-0">
+      {/* Top Bar - Frozen Sticky Header with Clear Department Title */}
+      <div className="sticky top-0 z-20 bg-card/95 backdrop-blur py-3 px-3 sm:px-5 -mx-3 sm:-mx-6 border-b border-border/80 flex items-center justify-between gap-3 shadow-xs">
+        <div className="flex items-center gap-3 flex-wrap">
+          <Link to="/admin">
+            <Button variant="outline" size="sm" className="gap-2 font-bold rounded-xl text-xs">
+              <ArrowRight size={16} />
+              العودة إلى الأقسام الرئيسية
+            </Button>
+          </Link>
+          <div className="h-5 w-px bg-border/80 hidden sm:block" />
+          <div className="flex items-center gap-2">
+            <Landmark size={18} className="text-primary shrink-0" />
+            <h1 className="text-sm sm:text-base font-black text-foreground tracking-tight whitespace-nowrap">
+              الإدارة المالية والمحاسبية الموحدة
+            </h1>
+          </div>
+        </div>
+      </div>
+
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
-            <BookOpen className="h-6 w-6 text-primary shrink-0" />
-            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
-              حساب الأستاذ العام والدفاتر المحاسبية
+            <Landmark className="h-6 w-6 text-primary shrink-0" />
+            <h1 className="text-xl sm:text-2xl font-black tracking-tight text-foreground">
+              الإدارة المالية
             </h1>
+            <Badge className="bg-primary/10 text-primary text-xs font-bold px-2.5 py-0.5 rounded-lg">
+              حساب الأستاذ · دليل الحسابات · الخزائن · التقارير
+            </Badge>
             {hasUnsavedChanges && (
               <Badge className="bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold px-2 py-0.5 animate-pulse">
                 {unsavedEntries.length} قيد بحاجة للحفظ
@@ -1571,8 +1722,8 @@ function LedgerPage() {
             )}
           </div>
           <p className="text-muted-foreground text-xs sm:text-sm mt-1">
-            نظام مالي ومحاسبي متكامل يدير القيود المزدوجة، ميزان المراجعة، كشوف الأستاذ للشركات
-            والمخازن.
+            الإدارة المالية والمحاسبية الموحدة: حساب الأستاذ العام، دفتر اليومية، سندات الصرف
+            والقبض، شجرة الحسابات، إدارة الخزائن، والتقارير والقوائم الختامية.
           </p>
         </div>
 
@@ -1950,21 +2101,77 @@ function LedgerPage() {
                 </div>
               </div>
 
-              <DialogFooter className="gap-2">
-                <Button variant="outline" onClick={() => setIsNewEntryOpen(false)}>
-                  إلغاء
-                </Button>
+              <DialogFooter className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-4 border-t border-border/70">
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleSaveJournalAsDraft}
+                    className="gap-1.5 border-amber-500/40 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-xl font-bold text-xs"
+                  >
+                    <Save size={15} />
+                    <span>حفظ كمسودة مؤقتة</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={handleRequestCloseNewEntry}
+                    className="rounded-xl text-xs font-semibold text-muted-foreground hover:bg-muted"
+                  >
+                    إلغاء وخروج
+                  </Button>
+                </div>
+
                 <Button
-                  onClick={handlePostEntry}
+                  type="button"
+                  onClick={() => setIsConfirmPostOpen(true)}
                   disabled={
                     !newEntryTotals.isBalanced || newEntryTotals.debits <= 0 || !newEntryDesc.trim()
                   }
+                  className="w-full sm:w-auto rounded-xl font-black text-xs sm:text-sm px-6 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground shadow-md gap-2"
                 >
-                  ترحيل القيد المزدوج
+                  <CheckCircle2 size={16} />
+                  <span>مراجعة وتأكيد ترحيل القيد 🚀</span>
                 </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
+
+          {/* Exit Confirmation Dialog for Journal Entry */}
+          <AlertDialog open={isExitEntryConfirmOpen} onOpenChange={setIsExitEntryConfirmOpen}>
+            <AlertDialogContent className="max-w-md text-right rounded-3xl" dir="rtl">
+              <AlertDialogHeader className="text-right space-y-2">
+                <AlertDialogTitle className="text-base font-black flex items-center gap-2 text-amber-600">
+                  <AlertTriangle className="h-5 w-5 text-amber-500" />
+                  خروج بدون حفظ القيد المحاسبي؟
+                </AlertDialogTitle>
+                <AlertDialogDescription className="text-xs text-muted-foreground leading-relaxed">
+                  لديك بيانات تم إدخالها في هذا القيد المحاسبي. هل تريد حفظ القيد كمسودة مؤقتة لاستعادتها لاحقاً أم التجاهل والخروج؟
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter className="gap-2 mt-4 flex-wrap">
+                <AlertDialogCancel onClick={() => setIsExitEntryConfirmOpen(false)}>
+                  متابعة التعديل
+                </AlertDialogCancel>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIsExitEntryConfirmOpen(false);
+                    setIsNewEntryOpen(false);
+                  }}
+                  className="text-rose-600 border-rose-200 hover:bg-rose-50"
+                >
+                  تجاهل والخروج
+                </Button>
+                <Button
+                  onClick={handleSaveJournalAsDraft}
+                  className="bg-amber-600 hover:bg-amber-700 text-white font-bold"
+                >
+                  💾 حفظ كمسودة مؤقتة
+                </Button>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
 
           {/* Confirmation Alert Dialog */}
           <AlertDialog open={isConfirmPostOpen} onOpenChange={setIsConfirmPostOpen}>
@@ -2127,40 +2334,444 @@ function LedgerPage() {
         </Button>
       </div>
 
-      <Tabs value={selectedTab} onValueChange={setSelectedTab} className="space-y-4">
-        <TabsList className="bg-muted/80 p-1 rounded-xl w-full sm:w-auto grid grid-cols-2 sm:grid-cols-5 gap-1 h-auto">
-          <TabsTrigger value="ledger" className="rounded-lg py-2 text-xs md:text-sm font-medium">
-            كشف حساب الأستاذ
-          </TabsTrigger>
-          <TabsTrigger value="journal" className="rounded-lg py-2 text-xs md:text-sm font-medium">
-            دفتر اليومية العامة
-          </TabsTrigger>
-          <TabsTrigger
-            value="vouchers"
-            className="rounded-lg py-2 text-xs md:text-sm font-bold text-emerald-700 dark:text-emerald-400"
-          >
-            سندات الإيراد والمصروف
-          </TabsTrigger>
-          <TabsTrigger value="trial" className="rounded-lg py-2 text-xs md:text-sm font-medium">
-            ميزان المراجعة
-          </TabsTrigger>
-          <TabsTrigger
-            value="statements"
-            className="rounded-lg py-2 text-xs md:text-sm font-medium"
-          >
-            القوائم المالية
-          </TabsTrigger>
-        </TabsList>
+      {/* MAIN FINANCIAL HUB VIEW (When selectedTab === 'hub') */}
+      {selectedTab === "hub" && (
+        <section aria-labelledby="financial-modules-heading" className="space-y-6">
+          <div className="flex items-center justify-between gap-4 border-b border-border/60 pb-3">
+            <div>
+              <h2
+                id="financial-modules-heading"
+                className="flex items-center gap-2 text-lg font-black text-foreground"
+              >
+                <Landmark size={22} className="text-primary" aria-hidden="true" />
+                أقسام ووظائف الإدارة المالية والمحاسبية
+              </h2>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                اضغط على أي قسم مالي لفتحه في صفحة كاملة مستقلة
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={() => handleOpenNewEntry()}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs rounded-xl gap-1.5 shadow-sm"
+              >
+                <Plus size={15} />
+                <span>إضافة قيد يومي</span>
+              </Button>
+              <Button
+                onClick={() => {
+                  setSelectedTab("vouchers");
+                  setAutoOpenVoucherModal(true);
+                }}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl gap-1.5 shadow-sm"
+              >
+                <Receipt size={15} />
+                <span>تسجيل سند مالي</span>
+              </Button>
+            </div>
+          </div>
 
-        {/* Tab 0: Vouchers Entry & Management (سندات الإيراد والمصروف المرحّلة) */}
-        <TabsContent value="vouchers" className="space-y-6">
-          <VouchersLedgerSection
-            onNavigateToJournal={(ref) => {
-              if (ref) setJournalSearch(ref);
-              setSelectedTab("journal");
-            }}
-          />
-        </TabsContent>
+          {/* Square Cards Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card
+              onClick={() => setSelectedTab("financial_position")}
+              className="group cursor-pointer rounded-2xl border border-emerald-500/30 bg-emerald-500/5 hover:border-emerald-500 hover:shadow-xl transition-all duration-200"
+            >
+              <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
+                <div className="rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 text-emerald-600 dark:text-emerald-400 p-2.5 shadow-xs">
+                  <TrendingUp size={22} />
+                </div>
+                <span className="rounded-full border border-emerald-500/40 bg-emerald-100 dark:bg-emerald-950 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
+                  الميزانية ⭐
+                </span>
+              </CardHeader>
+              <CardContent className="space-y-1.5 p-4 pt-0">
+                <h3 className="font-black text-sm text-foreground group-hover:text-emerald-600 transition-colors">
+                  المركز المالي الشامل
+                </h3>
+                <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                  الميزانية الموحدة وقائمة الدخل الحية المتزامنة مع المول، الحديقة، المطعم والسندات
+                </p>
+                <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
+                  <span className="text-emerald-600 dark:text-emerald-400">تقرير الموقف المالي</span>
+                  <span className="text-emerald-600 text-xs transition-transform group-hover:translate-x-[-2px]">
+                    فتح التقرير الشامل ←
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card
+              onClick={() => setSelectedTab("ledger")}
+              className="group cursor-pointer rounded-2xl border border-border/80 bg-card hover:border-primary/50 hover:shadow-xl transition-all duration-200"
+            >
+              <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
+                <div className="rounded-xl bg-gradient-to-br from-blue-500/20 to-indigo-500/20 text-blue-600 dark:text-blue-400 p-2.5 shadow-xs">
+                  <BookOpen size={22} />
+                </div>
+                <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                  الأستاذ
+                </span>
+              </CardHeader>
+              <CardContent className="space-y-1.5 p-4 pt-0">
+                <h3 className="font-black text-sm text-foreground group-hover:text-primary transition-colors">
+                  حساب الأستاذ العام
+                </h3>
+                <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                  كشوفات الحسابات التفصيلية، الأرصدة الافتتاحية والحركات الدائنة والمدينة
+                </p>
+                <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
+                  <span className="text-primary">{accounts.length} حساب مسجل</span>
+                  <span className="text-muted-foreground group-hover:text-primary text-xs transition-transform group-hover:translate-x-[-2px]">
+                    فتح الكشف ←
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card
+              onClick={() => setSelectedTab("journal")}
+              className="group cursor-pointer rounded-2xl border border-border/80 bg-card hover:border-indigo-500/50 hover:shadow-xl transition-all duration-200"
+            >
+              <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
+                <div className="rounded-xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 text-indigo-600 dark:text-indigo-400 p-2.5 shadow-xs">
+                  <FileText size={22} />
+                </div>
+                <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                  اليومية
+                </span>
+              </CardHeader>
+              <CardContent className="space-y-1.5 p-4 pt-0">
+                <h3 className="font-black text-sm text-foreground group-hover:text-indigo-600 transition-colors">
+                  دفتر اليومية والقيود المزدوجة
+                </h3>
+                <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                  متابعة القيود اليومية المرحلة، ترقيم الفترات، وتدقيق التوازن المحاسبي
+                </p>
+                <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
+                  <span className="text-indigo-600 dark:text-indigo-400">
+                    {journalEntries.length} قيد مسجل
+                  </span>
+                  <span className="text-muted-foreground group-hover:text-indigo-600 text-xs transition-transform group-hover:translate-x-[-2px]">
+                    عرض القيود ←
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card
+              onClick={() => {
+                setSelectedTab("vouchers");
+                setAutoOpenVoucherModal(true);
+              }}
+              className="group cursor-pointer rounded-2xl border border-emerald-500/30 bg-emerald-500/5 hover:border-emerald-500 hover:shadow-xl transition-all duration-200"
+            >
+              <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
+                <div className="rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 text-emerald-600 dark:text-emerald-400 p-2.5 shadow-xs">
+                  <Receipt size={22} />
+                </div>
+                <span className="rounded-full border border-emerald-500/40 bg-emerald-100 dark:bg-emerald-950 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
+                  سند منبثق
+                </span>
+              </CardHeader>
+              <CardContent className="space-y-1.5 p-4 pt-0">
+                <h3 className="font-black text-sm text-foreground group-hover:text-emerald-600 transition-colors">
+                  سندات الصرف والقبض
+                </h3>
+                <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                  إصدار سندات القبض والصرف في نافذة منبثقة مع الترحيل الفوري والطباعة
+                </p>
+                <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
+                  <span className="text-emerald-600 dark:text-emerald-400">نافذة منبثقة +</span>
+                  <span className="text-emerald-600 text-xs transition-transform group-hover:translate-x-[-2px]">
+                    تسجيل سند ←
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card
+              onClick={() => setSelectedTab("accounts")}
+              className="group cursor-pointer rounded-2xl border border-border/80 bg-card hover:border-blue-500/50 hover:shadow-xl transition-all duration-200"
+            >
+              <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
+                <div className="rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 text-blue-600 dark:text-blue-400 p-2.5 shadow-xs">
+                  <Layers size={22} />
+                </div>
+                <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                  الشجرة
+                </span>
+              </CardHeader>
+              <CardContent className="space-y-1.5 p-4 pt-0">
+                <h3 className="font-black text-sm text-foreground group-hover:text-blue-600 transition-colors">
+                  دليل وشجرة الحسابات
+                </h3>
+                <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                  شجرة الحسابات الرباعية (أصول، التزامات، حقوق ملكية، إيرادات ومصروفات)
+                </p>
+                <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
+                  <span className="text-blue-600 dark:text-blue-400">4 مستويات</span>
+                  <span className="text-muted-foreground group-hover:text-blue-600 text-xs transition-transform group-hover:translate-x-[-2px]">
+                    شجرة الحسابات ←
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card
+              onClick={() => setSelectedTab("treasury")}
+              className="group cursor-pointer rounded-2xl border border-border/80 bg-card hover:border-amber-500/50 hover:shadow-xl transition-all duration-200"
+            >
+              <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
+                <div className="rounded-xl bg-gradient-to-br from-amber-500/20 to-yellow-500/20 text-amber-600 dark:text-amber-400 p-2.5 shadow-xs">
+                  <Wallet size={22} />
+                </div>
+                <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                  الخزائن
+                </span>
+              </CardHeader>
+              <CardContent className="space-y-1.5 p-4 pt-0">
+                <h3 className="font-black text-sm text-foreground group-hover:text-amber-600 transition-colors">
+                  إدارة الخزائن النقدية
+                </h3>
+                <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                  أرصدة الخزائن، إيداعات وسحوبات النقدية، تحويلات بين الخزائن وكشوف الحساب
+                </p>
+                <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
+                  <span className="text-amber-600 dark:text-amber-400">
+                    {treasuries.length} خزائن نشطة
+                  </span>
+                  <span className="text-muted-foreground group-hover:text-amber-600 text-xs transition-transform group-hover:translate-x-[-2px]">
+                    فتح الخزائن ←
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card
+              onClick={() => setSelectedTab("reports")}
+              className="group cursor-pointer rounded-2xl border border-border/80 bg-card hover:border-emerald-500/50 hover:shadow-xl transition-all duration-200"
+            >
+              <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
+                <div className="rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 text-emerald-600 dark:text-emerald-400 p-2.5 shadow-xs">
+                  <BarChart3 size={22} />
+                </div>
+                <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                  التقارير
+                </span>
+              </CardHeader>
+              <CardContent className="space-y-1.5 p-4 pt-0">
+                <h3 className="font-black text-sm text-foreground group-hover:text-emerald-600 transition-colors">
+                  التقارير المالية والميزانية
+                </h3>
+                <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                  قائمة الدخل، الأرباح والخسائر، الميزانية العمومية والتدفقات النقدية
+                </p>
+                <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
+                  <span className="text-emerald-600 dark:text-emerald-400">تقارير ختامية</span>
+                  <span className="text-muted-foreground group-hover:text-emerald-600 text-xs transition-transform group-hover:translate-x-[-2px]">
+                    عرض التقارير ←
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card
+              onClick={() => setSelectedTab("trial")}
+              className="group cursor-pointer rounded-2xl border border-border/80 bg-card hover:border-purple-500/50 hover:shadow-xl transition-all duration-200"
+            >
+              <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
+                <div className="rounded-xl bg-gradient-to-br from-purple-500/20 to-indigo-500/20 text-purple-600 dark:text-purple-400 p-2.5 shadow-xs">
+                  <Scale size={22} />
+                </div>
+                <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                  الميزان
+                </span>
+              </CardHeader>
+              <CardContent className="space-y-1.5 p-4 pt-0">
+                <h3 className="font-black text-sm text-foreground group-hover:text-purple-600 transition-colors">
+                  ميزان المراجعة بالأرصدة
+                </h3>
+                <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                  فحص اتزان الأرصدة المدينة والدائنة مع خيارات تصدير Excel والطباعة
+                </p>
+                <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
+                  <span className="text-purple-600 dark:text-purple-400">فحص فوري</span>
+                  <span className="text-muted-foreground group-hover:text-purple-600 text-xs transition-transform group-hover:translate-x-[-2px]">
+                    فتح الميزان ←
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card
+              onClick={() => handleOpenNewEntry()}
+              className="group cursor-pointer rounded-2xl border border-primary/30 bg-primary/5 hover:border-primary hover:bg-primary/10 transition-all duration-200 hover:shadow-xl"
+            >
+              <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
+                <div className="rounded-xl bg-primary text-primary-foreground p-2.5 shadow-xs">
+                  <Plus size={22} />
+                </div>
+                <span className="rounded-full border border-primary/30 bg-primary/20 px-2 py-0.5 text-[10px] font-bold text-primary">
+                  قيد منبثق
+                </span>
+              </CardHeader>
+              <CardContent className="space-y-1.5 p-4 pt-0">
+                <h3 className="font-black text-sm text-primary transition-colors">
+                  إضافة قيد مزدوج يدوي
+                </h3>
+                <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                  نافذة إدخال القيود المحاسبية اليدوية مع التحقق الآلي من الاتزان وتأكيد الحفظ
+                </p>
+                <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
+                  <span className="text-primary font-bold">نافذة منبثقة +</span>
+                  <span className="text-primary text-xs transition-transform group-hover:translate-x-[-2px]">
+                    فتح النافذة +
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Saved Journal Drafts Banner if any */}
+          {journalDrafts.length > 0 && (
+            <div className="p-4 rounded-2xl border border-amber-500/30 bg-amber-500/5 flex items-center justify-between gap-4 flex-wrap">
+              <div className="flex items-center gap-2">
+                <Save className="h-5 w-5 text-amber-600" />
+                <div>
+                  <h4 className="text-xs font-black text-foreground">
+                    توجد مسودات قيود يومية محفوظة ({journalDrafts.length})
+                  </h4>
+                  <p className="text-[11px] text-muted-foreground">
+                    يمكنك استعادة أي مسودة واستكمال تسجيلها دون فقدان البيانات
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                {journalDrafts.slice(0, 3).map((draft) => (
+                  <Button
+                    key={draft.id}
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleLoadJournalDraft(draft)}
+                    className="text-xs font-bold border-amber-500/40 text-amber-800 dark:text-amber-300 rounded-xl gap-1.5"
+                  >
+                    <span>{draft.newEntryDesc || draft.newEntryRef}</span>
+                    <span className="text-[10px] text-muted-foreground font-mono">
+                      ({draft.savedAt ? draft.savedAt.slice(0, 10) : ""})
+                    </span>
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* DEDICATED SUBPAGE VIEW HEADER (When selectedTab !== 'hub') */}
+      {selectedTab !== "hub" && (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-card border border-border shadow-sm">
+            <div className="flex items-center gap-3">
+              <Button
+                onClick={() => setSelectedTab("hub")}
+                variant="default"
+                className="gap-2 bg-primary hover:bg-primary/90 text-primary-foreground font-black rounded-xl px-4 py-2 text-xs md:text-sm shadow-md transition-all hover:scale-105"
+              >
+                <ArrowRight size={18} />
+                <span>الرجوع للأقسام المالية الرئيسية</span>
+              </Button>
+              <div className="h-6 w-px bg-border hidden sm:block" />
+              <div>
+                <span className="text-[10px] font-bold text-muted-foreground block">
+                  الرئيسية المالية / صفحة مستقلة
+                </span>
+                <h3 className="text-base font-black text-foreground flex items-center gap-2">
+                  {selectedTab === "vouchers" && "💳 سندات الصرف والقبض الرسمية"}
+                  {selectedTab === "ledger" && "📖 كشف حساب الأستاذ العام"}
+                  {selectedTab === "journal" && "📝 دفتر اليومية والقيود المزدوجة"}
+                  {selectedTab === "accounts" && "🏛️ دليل وشجرة الحسابات الرباعية"}
+                  {selectedTab === "treasury" && "💰 إدارة الخزائن والمحافط النقدية"}
+                  {selectedTab === "reports" && "📊 التقارير المالية والقوائم الختامية"}
+                  {selectedTab === "trial" && "⚖️ ميزان المراجعة بالمجاميع والأرصدة"}
+                  {selectedTab === "statements" && "📑 القوائم المالية الختامية"}
+                </h3>
+              </div>
+            </div>
+
+            {/* Quick Actions Bar */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button
+                size="sm"
+                onClick={() => handleOpenNewEntry()}
+                className="bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 font-bold text-xs rounded-xl gap-1.5"
+              >
+                <Plus size={14} />
+                <span>إضافة قيد يومي</span>
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setSelectedTab("vouchers");
+                  setAutoOpenVoucherModal(true);
+                }}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl gap-1.5 shadow-xs"
+              >
+                <Receipt size={14} />
+                <span>تسجيل سند مالي جديد</span>
+              </Button>
+            </div>
+          </div>
+
+          {/* Subpage Switcher Pills */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 print:hidden">
+            {[
+              { id: "financial_position", label: "المركز المالي الشامل ⭐" },
+              { id: "ledger", label: "كشف الأستاذ" },
+              { id: "journal", label: "اليومية العامة" },
+              { id: "vouchers", label: "سندات الصرف والقبض" },
+              { id: "accounts", label: "دليل الحسابات" },
+              { id: "treasury", label: "إدارة الخزائن" },
+              { id: "reports", label: "التقارير المالية" },
+              { id: "trial", label: "ميزان المراجعة" },
+              { id: "statements", label: "القوائم المالية" },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setSelectedTab(tab.id)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap border ${
+                  selectedTab === tab.id
+                    ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                    : "bg-card border-border/70 text-muted-foreground hover:bg-muted hover:text-foreground"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* SUBPAGE CONTENT RENDERING */}
+      {selectedTab !== "hub" && (
+        <Tabs value={selectedTab} onValueChange={setSelectedTab} className="space-y-4">
+          {/* Tab Standalone: Comprehensive Financial Position */}
+          <TabsContent value="financial_position" className="space-y-6">
+            <ComprehensiveFinancialPositionCard />
+          </TabsContent>
+
+          {/* Tab 0: Vouchers Entry & Management */}
+          <TabsContent value="vouchers" className="space-y-6">
+            <VouchersLedgerSection
+              autoOpenNewModal={autoOpenVoucherModal}
+              onModalClosed={() => setAutoOpenVoucherModal(false)}
+              onNavigateToJournal={(ref) => {
+                if (ref) setJournalSearch(ref);
+                setSelectedTab("journal");
+              }}
+            />
+          </TabsContent>
 
         {/* Tab 1: General Ledger Account Details */}
         <TabsContent value="ledger" className="space-y-6">
@@ -3244,7 +3855,29 @@ function LedgerPage() {
             </Card>
           </div>
         </TabsContent>
+
+        {/* Tab 6: Chart of Accounts (دليل وشجرة الحسابات) */}
+        <TabsContent value="accounts" className="space-y-6">
+          <div className="bg-card rounded-2xl border border-border p-2 sm:p-4">
+            <AccountsPage />
+          </div>
+        </TabsContent>
+
+        {/* Tab 7: Treasury Management (إدارة الخزائن والصناديق) */}
+        <TabsContent value="treasury" className="space-y-6">
+          <div className="bg-card rounded-2xl border border-border p-2 sm:p-4">
+            <TreasuryManagementView />
+          </div>
+        </TabsContent>
+
+        {/* Tab 8: Financial Reports (التقارير المالية) */}
+        <TabsContent value="reports" className="space-y-6">
+          <div className="bg-card rounded-2xl border border-border p-2 sm:p-4">
+            <ReportsPage />
+          </div>
+        </TabsContent>
       </Tabs>
+      )}
 
       {/* Attachment Dialog */}
       <Dialog open={isAttachmentOpen} onOpenChange={setIsAttachmentOpen}>

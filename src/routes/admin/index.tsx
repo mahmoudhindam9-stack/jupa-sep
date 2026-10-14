@@ -3,6 +3,7 @@ import { ORACLE_MIGRATION_ACCOUNTS as oracleAccounts } from "@/shared/data/oracl
 import { OracleAccountsViewer } from "@/components/admin/OracleAccountsViewer";
 import { VouchersLedgerSection } from "@/components/admin/VouchersLedgerSection";
 import { DepartmentsGridHub } from "@/components/admin/DepartmentsGridHub";
+import { ComprehensiveFinancialPositionCard } from "@/components/admin/ComprehensiveFinancialPositionCard";
 import { createFileRoute, Link, useLocation } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useEffect, useMemo, useRef } from "react";
@@ -42,6 +43,7 @@ import {
   FileText,
   CheckCircle,
   Plus,
+  ArrowRight,
   ArrowLeftRight,
   Coins,
   CreditCard,
@@ -100,7 +102,7 @@ function AdminDashboard() {
   const { formatPrice } = useSettings();
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
-  const tabParam = searchParams.get("tab") || "grid";
+  const tabParam = searchParams.get("tab");
 
   const [activeTab, setActiveTab] = useState(tabParam || "grid");
   const [isAuditOperationsOpen, setIsAuditOperationsOpen] = useState(false);
@@ -109,6 +111,8 @@ function AdminDashboard() {
   useEffect(() => {
     if (tabParam) {
       setActiveTab(tabParam);
+    } else {
+      setActiveTab("grid");
     }
   }, [tabParam]);
 
@@ -131,7 +135,7 @@ function AdminDashboard() {
       setErpState(erpStore.getState());
       statsQuery.refetch();
     });
-    return () => unsub();
+    return unsub;
   }, [activeTab]);
 
   // Vouchers form state
@@ -754,30 +758,116 @@ function AdminDashboard() {
     }
   };
 
-  if (activeTab === "grid") {
-    return (
-      <div className="space-y-6 pb-12 text-right">
-        <DepartmentsGridHub />
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6 pb-12 text-right">
-      <div className="flex items-center justify-between gap-3 border-b border-border/60 pb-3">
-        <Button
-          variant="outline"
-          onClick={() => setActiveTab("grid")}
-          className="gap-2 font-black rounded-xl text-xs py-2 px-4 border-primary/30 text-primary hover:bg-primary/10 w-fit cursor-pointer"
-        >
-          <ArrowLeft size={16} />
-          العودة إلى لوحة الأقسام الرئيسية
-        </Button>
-      </div>
+      {/* Top action & back bar when viewing sub-tabs */}
+      {activeTab !== "grid" && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60 pb-3">
+          <Button
+            variant="outline"
+            onClick={() => setActiveTab("grid")}
+            className="gap-2 font-black rounded-xl text-xs py-2 px-4 border-primary/30 text-primary hover:bg-primary/10 w-fit"
+          >
+            <ArrowRight size={16} />
+            العودة إلى شبكة الأقسام الرئيسية
+          </Button>
+
+          <div className="flex items-center gap-2">
+            {erpState.branches.length > 1 && (
+              <div className="flex items-center gap-1.5 bg-muted p-1 rounded-xl border border-border">
+                <span className="text-xs font-bold text-muted-foreground px-2">الفرع:</span>
+                {erpState.branches.map((b) => (
+                  <Button
+                    key={b.id}
+                    size="sm"
+                    variant={currentBranch.id === b.id ? "default" : "ghost"}
+                    onClick={() => handleBranchChange(b.id)}
+                    className="text-xs font-bold rounded-lg h-7 px-2.5"
+                  >
+                    {b.name_ar}
+                  </Button>
+                ))}
+              </div>
+            )}
+            <Link to="/admin/reports">
+              <Button variant="outline" size="sm" className="gap-1.5 rounded-xl text-xs font-bold">
+                <FileBarChart size={14} />
+                التقارير
+              </Button>
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {/* Subtle branch switcher when viewing main grid */}
+      {activeTab === "grid" && erpState.branches.length > 1 && (
+        <div className="flex items-center justify-between gap-3 pb-2">
+          <div className="flex items-center gap-1.5 bg-muted p-1 rounded-xl border border-border">
+            <span className="text-xs font-bold text-muted-foreground px-2">الفرع الحالي:</span>
+            {erpState.branches.map((b) => (
+              <Button
+                key={b.id}
+                size="sm"
+                variant={currentBranch.id === b.id ? "default" : "ghost"}
+                onClick={() => handleBranchChange(b.id)}
+                className="text-xs font-bold rounded-lg h-7 px-2.5"
+              >
+                {b.name_ar}
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
+          <TabsList className="bg-muted p-1 rounded-2xl flex flex-wrap gap-1 h-auto w-full sm:w-auto">
+            <TabsTrigger
+              value="grid"
+              className="rounded-xl font-black py-2 px-4 text-xs sm:text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground shadow-2xs"
+            >
+              <Grid3X3 size={16} className="ml-1.5 inline" />
+              شبكة الأقسام الرئيسية
+            </TabsTrigger>
+            <TabsTrigger
+              value="dashboard"
+              className="rounded-xl font-bold py-2 px-3 text-xs sm:text-sm"
+            >
+              <TrendingUp size={15} className="ml-1.5 inline" />
+              المركز المالي الشامل
+            </TabsTrigger>
+            <TabsTrigger
+              value="treasury"
+              className="rounded-xl font-bold py-2 px-3 text-xs sm:text-sm"
+            >
+              <Wallet size={15} className="ml-1.5 inline" />
+              إدارة الخزائن والحسابات
+            </TabsTrigger>
+            <TabsTrigger
+              value="vouchers_entry"
+              className="rounded-xl font-bold py-2 px-3 text-xs sm:text-sm"
+            >
+              <FileText size={15} className="ml-1.5 inline" />
+              سندات الإيراد والمصروف
+            </TabsTrigger>
+            <TabsTrigger
+              value="chart_of_accounts"
+              className="rounded-xl font-bold py-2 px-3 text-xs sm:text-sm"
+            >
+              <FileBarChart size={15} className="ml-1.5 inline" />
+              دليل الحسابات
+            </TabsTrigger>
+          </TabsList>
+        </div>
+
+        {/* TAB 0: THE DEPARTMENTS GRID (PRIMARY LANDING VIEW AFTER LOGIN) */}
+        <TabsContent value="grid" className="space-y-6 mt-4">
+          <DepartmentsGridHub />
+        </TabsContent>
+
         {/* TAB 1: EXECUTIVE DASHBOARD */}
         <TabsContent value="dashboard" className="space-y-6 mt-4">
+          <ComprehensiveFinancialPositionCard />
           <div data-dashboard-accounting-sync="true" className="space-y-4">
             <div className="rounded-3xl border border-border/70 bg-white p-5 shadow-sm">
               <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">

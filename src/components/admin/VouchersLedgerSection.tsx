@@ -40,6 +40,7 @@ import {
   RefreshCw,
   ExternalLink,
   Landmark,
+  Receipt,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -64,6 +65,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu";
 
 const CURRENCY_OPTIONS = [
   { code: "USD", name: "الدولار الأمريكي (USD)", symbol: "$" },
@@ -129,9 +138,19 @@ const DEFAULT_CATEGORY_LEVEL4_ACCOUNTS: Record<string, string> = {
 
 export interface VouchersLedgerSectionProps {
   onNavigateToJournal?: (reference?: string) => void;
+  autoOpenNewModal?: boolean;
+  onModalClosed?: () => void;
+  defaultCostCenter?: string;
+  departmentTitle?: string;
 }
 
-export function VouchersLedgerSection({ onNavigateToJournal }: VouchersLedgerSectionProps) {
+export function VouchersLedgerSection({
+  onNavigateToJournal,
+  autoOpenNewModal,
+  onModalClosed,
+  defaultCostCenter,
+  departmentTitle,
+}: VouchersLedgerSectionProps) {
   const { toast } = useToast();
   const [erpState, setErpState] = useState(() => erpStore.getState());
 
@@ -141,6 +160,14 @@ export function VouchersLedgerSection({ onNavigateToJournal }: VouchersLedgerSec
       setErpState(erpStore.getState());
     });
   }, []);
+
+  // Auto-open modal if autoOpenNewModal is passed
+  React.useEffect(() => {
+    if (autoOpenNewModal) {
+      setIsNewVoucherDialogOpen(true);
+      onModalClosed?.();
+    }
+  }, [autoOpenNewModal]);
 
   const currentBranch = erpState.branches.find((b) => b.id === erpState.currentBranchId) ||
     erpState.branches[0] || { id: "branch-1", name_ar: "الفرع الرئيسي" };
@@ -153,7 +180,15 @@ export function VouchersLedgerSection({ onNavigateToJournal }: VouchersLedgerSec
   const [accountCode, setAccountCode] = useState<string>("31010110");
   const [categorySelect, setCategorySelect] = useState<string>("رواتب وأجور الموظفين");
   const [customCategory, setCustomCategory] = useState<string>("");
-  const [costCenterSelect, setCostCenterSelect] = useState<string>("الإدارة (Administration)");
+  const [costCenterSelect, setCostCenterSelect] = useState<string>(
+    defaultCostCenter || "الإدارة (Administration)",
+  );
+
+  React.useEffect(() => {
+    if (defaultCostCenter) {
+      setCostCenterSelect(defaultCostCenter);
+    }
+  }, [defaultCostCenter]);
   const [customCostCenter, setCustomCostCenter] = useState<string>("");
   const [treasuryId, setTreasuryId] = useState<string>("");
   const [description, setDescription] = useState<string>("");
@@ -207,7 +242,96 @@ export function VouchersLedgerSection({ onNavigateToJournal }: VouchersLedgerSec
   );
   const [showDeletedAudit, setShowDeletedAudit] = useState(false);
 
-  // Modals
+  // Modals & Drafts State
+  const [isNewVoucherDialogOpen, setIsNewVoucherDialogOpen] = useState(false);
+  const [isExitVoucherConfirmOpen, setIsExitVoucherConfirmOpen] = useState(false);
+  const [voucherDrafts, setVoucherDrafts] = useState<any[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("restocash_voucher_drafts") || "[]");
+    } catch {
+      return [];
+    }
+  });
+
+  const handleSaveVoucherAsDraft = () => {
+    const valAmount = Number(amount) || 0;
+    if (!valAmount || valAmount <= 0) {
+      toast({
+        title: "تنبيه المسودة",
+        description: "يرجى كتابة مبلغ السند على الأقل لحفظه كمسودة.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const newDraft = {
+      id: `draft-vch-${Date.now()}`,
+      voucherType,
+      selectedCurrency,
+      exchangeRate,
+      amount,
+      accountCode,
+      categorySelect,
+      customCategory,
+      costCenterSelect,
+      customCostCenter,
+      treasuryId,
+      description: description.trim() || `مسودة ${voucherType === "payment" ? "صرف" : "قبض"}`,
+      beneficiary: beneficiary.trim(),
+      notes: notes.trim(),
+      savedAt: new Date().toISOString(),
+    };
+    try {
+      const existing = [newDraft, ...voucherDrafts.filter((d) => d.id !== newDraft.id)].slice(0, 15);
+      localStorage.setItem("restocash_voucher_drafts", JSON.stringify(existing));
+      setVoucherDrafts(existing);
+      toast({
+        title: "💾 تم حفظ السند كمسودة مؤقتة",
+        description: `تم حفظ المسودة بنجاح بمبلغ ${Number(valAmount).toLocaleString()} ${selectedCurrency}. يمكنك استعادتها في أي وقت.`,
+      });
+      setIsNewVoucherDialogOpen(false);
+      setIsExitVoucherConfirmOpen(false);
+    } catch {
+      toast({ title: "خطأ", description: "تعذر حفظ المسودة.", variant: "destructive" });
+    }
+  };
+
+  const handleLoadVoucherDraft = (draft: any) => {
+    setVoucherType(draft.voucherType || "payment");
+    setSelectedCurrency(draft.selectedCurrency || "USD");
+    setExchangeRate(String(draft.exchangeRate || "1"));
+    setAmount(String(draft.amount || ""));
+    setAccountCode(draft.accountCode || "");
+    setCategorySelect(draft.categorySelect || "رواتب وأجور الموظفين");
+    setCustomCategory(draft.customCategory || "");
+    setCostCenterSelect(draft.costCenterSelect || "الإدارة (Administration)");
+    setCustomCostCenter(draft.customCostCenter || "");
+    setTreasuryId(draft.treasuryId || "");
+    setDescription(draft.description || "");
+    setBeneficiary(draft.beneficiary || "");
+    setNotes(draft.notes || "");
+    setIsNewVoucherDialogOpen(true);
+    toast({
+      title: "تم استعادة المسودة",
+      description: `تم تحميل بيانات المسودة المحفوظة بنجاح.`,
+    });
+  };
+
+  const handleDeleteVoucherDraft = (draftId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const updated = voucherDrafts.filter((d) => d.id !== draftId);
+    setVoucherDrafts(updated);
+    localStorage.setItem("restocash_voucher_drafts", JSON.stringify(updated));
+    toast({ title: "تم حذف المسودة" });
+  };
+
+  const handleRequestCloseNewVoucher = () => {
+    if (amount.trim() || description.trim() || beneficiary.trim()) {
+      setIsExitVoucherConfirmOpen(true);
+    } else {
+      setIsNewVoucherDialogOpen(false);
+    }
+  };
+
   const [isConfirmPostOpen, setIsConfirmPostOpen] = useState(false);
   const [postedEntryModalData, setPostedEntryModalData] = useState<{
     voucher: Voucher;
@@ -432,6 +556,8 @@ export function VouchersLedgerSection({ onNavigateToJournal }: VouchersLedgerSec
         voucher: result as Voucher,
         journalEntry: createdEntry,
       });
+
+      setIsNewVoucherDialogOpen(false);
 
       // Reset form
       setAmount("");
@@ -718,34 +844,46 @@ export function VouchersLedgerSection({ onNavigateToJournal }: VouchersLedgerSec
         </div>
       </div>
 
-      {/* Main Grid: Form on right, Table on left */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Right Column: Voucher Creation Form (5 Cols) */}
-        <div className="lg:col-span-5 bg-card border border-border shadow-md rounded-3xl p-5 space-y-5">
-          <div className="flex items-center justify-between pb-3 border-b border-border">
-            <div className="flex items-center gap-2">
-              <div className="h-9 w-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-bold">
-                <PlusCircle size={18} />
+      {/* POPUP MODAL 0: Register New Financial Voucher (نافذة تسجيل السند المنبثقة) */}
+      <Dialog
+        open={isNewVoucherDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) handleRequestCloseNewVoucher();
+          else setIsNewVoucherDialogOpen(true);
+        }}
+      >
+        <DialogContent
+          className="max-w-3xl max-h-[92vh] overflow-y-auto text-right rounded-3xl p-6"
+          dir="rtl"
+        >
+          <DialogHeader className="pb-3 border-b border-border/70 text-right">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="h-10 w-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center font-bold shadow-xs">
+                  <Receipt size={22} className="text-primary" />
+                </div>
+                <div>
+                  <DialogTitle className="text-lg font-black text-foreground">
+                    تسجيل سند مالي رسمي (صرف / قبض)
+                  </DialogTitle>
+                  <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+                    ترحيل فوري إلى دفتر اليومية العامة وحساب الأستاذ العام وتحديث الخزائن
+                  </DialogDescription>
+                </div>
               </div>
-              <div>
-                <h3 className="font-black text-base text-foreground">تسجيل سند مالي جديد</h3>
-                <p className="text-[11px] text-muted-foreground font-semibold">
-                  ترحيل فوري إلى دفتر اليومية العامة وحساب الأستاذ
-                </p>
-              </div>
+              <Badge
+                className={
+                  voucherType === "receipt"
+                    ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-bold px-3 py-1 text-xs"
+                    : "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 font-bold px-3 py-1 text-xs"
+                }
+              >
+                {voucherType === "receipt" ? "قبض إيراد (+)" : "صرف مصروف (-)"}
+              </Badge>
             </div>
-            <Badge
-              className={
-                voucherType === "receipt"
-                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
-                  : "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"
-              }
-            >
-              {voucherType === "receipt" ? "قبض إيراد (+)" : "صرف مصروف (-)"}
-            </Badge>
-          </div>
+          </DialogHeader>
 
-          <form onSubmit={handleInitiateSubmit} className="space-y-4">
+          <form onSubmit={handleInitiateSubmit} className="space-y-4 pt-2">
             {/* 1. Voucher Type Toggle */}
             <div className="space-y-1.5">
               <Label className="text-xs font-bold">نوع السند المالي</Label>
@@ -753,52 +891,80 @@ export function VouchersLedgerSection({ onNavigateToJournal }: VouchersLedgerSec
                 <button
                   type="button"
                   onClick={() => setVoucherType("payment")}
-                  className={`py-2 px-3 rounded-xl text-xs font-black transition border flex items-center justify-center gap-1.5 ${
+                  className={`py-2.5 px-3 rounded-xl text-xs font-black transition border flex items-center justify-center gap-2 ${
                     voucherType === "payment"
                       ? "bg-rose-600 text-white border-rose-600 shadow-sm"
                       : "bg-background border-border text-muted-foreground hover:bg-muted"
                   }`}
                 >
-                  <ArrowUpRight size={14} />
+                  <ArrowUpRight size={15} />
                   <span>سند صرف مصروفات (-)</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setVoucherType("receipt")}
-                  className={`py-2 px-3 rounded-xl text-xs font-black transition border flex items-center justify-center gap-1.5 ${
+                  className={`py-2.5 px-3 rounded-xl text-xs font-black transition border flex items-center justify-center gap-2 ${
                     voucherType === "receipt"
                       ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
                       : "bg-background border-border text-muted-foreground hover:bg-muted"
                   }`}
                 >
-                  <ArrowDownLeft size={14} />
+                  <ArrowDownLeft size={15} />
                   <span>سند قبض إيرادات (+)</span>
                 </button>
               </div>
             </div>
 
-            {/* 2. Currency Selector */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold flex items-center justify-between">
-                <span>عملة السند</span>
-                <span className="text-[11px] text-muted-foreground font-normal">
-                  العملة الأساسية: USD ($)
-                </span>
-              </Label>
-              <select
-                className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm text-right font-bold focus:ring-2 focus:ring-primary/20"
-                value={selectedCurrency}
-                onChange={(e) => setSelectedCurrency(e.target.value)}
-              >
-                {CURRENCY_OPTIONS.map((c) => (
-                  <option key={c.code} value={c.code}>
-                    {c.name} ({c.symbol})
-                  </option>
-                ))}
-              </select>
+            {/* Currency & Exchange Rate & Amount Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Currency Selector */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold flex items-center justify-between">
+                  <span>عملة السند</span>
+                  <span className="text-[11px] text-muted-foreground font-normal">
+                    الأساسية: USD ($)
+                  </span>
+                </Label>
+                <select
+                  className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm text-right font-bold focus:ring-2 focus:ring-primary/20"
+                  value={selectedCurrency}
+                  onChange={(e) => setSelectedCurrency(e.target.value)}
+                >
+                  {CURRENCY_OPTIONS.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.name} ({c.symbol})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Amount */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold flex items-center justify-between">
+                  <span>المبلغ المعتمد للسند</span>
+                  <span className="text-[11px] text-muted-foreground font-mono">
+                    {selectedCurrency}
+                  </span>
+                </Label>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    step="any"
+                    min="0.01"
+                    className="h-10 text-sm font-black font-mono pl-14 rounded-xl"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    placeholder="مثال: 1500"
+                    required
+                  />
+                  <span className="absolute left-3 top-2.5 text-xs font-black text-muted-foreground">
+                    {selectedCurrency}
+                  </span>
+                </div>
+              </div>
             </div>
 
-            {/* 3. Conditional Exchange Rate Multiplier (يظهر عند اختيار عملة غير الدولار) */}
+            {/* Conditional Exchange Rate Box */}
             {selectedCurrency !== "USD" && (
               <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 space-y-2 animate-in fade-in duration-300">
                 <div className="flex items-center justify-between">
@@ -814,7 +980,7 @@ export function VouchersLedgerSection({ onNavigateToJournal }: VouchersLedgerSec
                   type="number"
                   step="any"
                   min="0.000001"
-                  className="bg-white dark:bg-slate-900 font-mono font-bold text-sm h-9 border-amber-300 dark:border-amber-800"
+                  className="bg-white dark:bg-slate-900 font-mono font-bold text-sm h-9 border-amber-300 dark:border-amber-800 rounded-xl"
                   value={exchangeRate}
                   onChange={(e) => setExchangeRate(e.target.value)}
                   placeholder="أدخل معامل التحويل / سعر الصرف"
@@ -836,32 +1002,7 @@ export function VouchersLedgerSection({ onNavigateToJournal }: VouchersLedgerSec
               </div>
             )}
 
-            {/* 4. Amount */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold flex items-center justify-between">
-                <span>المبلغ المعتمد للسند</span>
-                <span className="text-[11px] text-muted-foreground font-mono">
-                  {selectedCurrency}
-                </span>
-              </Label>
-              <div className="relative">
-                <Input
-                  type="number"
-                  step="any"
-                  min="0.01"
-                  className="h-10 text-sm font-black font-mono pl-14"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  placeholder="مثال: 1500"
-                  required
-                />
-                <span className="absolute left-3 top-2.5 text-xs font-black text-muted-foreground">
-                  {selectedCurrency}
-                </span>
-              </div>
-            </div>
-
-            {/* 5. Account Number with Smart Search (Level 4 Only) */}
+            {/* Account Search (Level 4 Only) */}
             <div className="space-y-1.5 p-3 rounded-2xl bg-primary/5 border border-primary/20">
               <Label className="text-xs font-bold flex items-center justify-between">
                 <span className="flex items-center gap-1.5 text-foreground">
@@ -878,9 +1019,7 @@ export function VouchersLedgerSection({ onNavigateToJournal }: VouchersLedgerSec
               </Label>
               <AccountSearchSelect
                 value={accountCode}
-                onChange={(code) => {
-                  setAccountCode(code);
-                }}
+                onChange={(code) => setAccountCode(code)}
                 accounts={level4Accounts}
                 level4Only={true}
                 placeholder="ابحث برقم الحساب أو الاسم (مثال: 31010110 أجور ومرتبات)..."
@@ -895,141 +1034,168 @@ export function VouchersLedgerSection({ onNavigateToJournal }: VouchersLedgerSec
               </div>
             </div>
 
-            {/* 6. Category (with "أخرى" text box trigger) */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold">التصنيف والتبويب المالي</Label>
-              <select
-                className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm text-right font-medium"
-                value={categorySelect}
-                onChange={(e) => handleCategoryChange(e.target.value)}
-              >
-                {(voucherType === "payment" ? PAYMENT_CATEGORIES : RECEIPT_CATEGORIES).map(
-                  (cat) => (
-                    <option key={cat} value={cat}>
-                      {cat}
+            {/* Treasury & Category Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Treasury Account */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold">خزينة الصرف / القبض المتأثرة</Label>
+                <select
+                  className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm text-right font-medium"
+                  value={treasuryId}
+                  onChange={(e) => setTreasuryId(e.target.value)}
+                  required
+                >
+                  <option value="">-- اختر الخزينة أو الحساب المالي --</option>
+                  {activeTreasuries.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name_ar} {t.account_code ? `[كود: ${t.account_code}]` : ""} (رصيد:{" "}
+                      {Number(t.balance).toLocaleString()} {t.currency})
                     </option>
-                  ),
+                  ))}
+                </select>
+              </div>
+
+              {/* Category */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold">التصنيف والتبويب المالي</Label>
+                <select
+                  className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm text-right font-medium"
+                  value={categorySelect}
+                  onChange={(e) => handleCategoryChange(e.target.value)}
+                >
+                  {(voucherType === "payment" ? PAYMENT_CATEGORIES : RECEIPT_CATEGORIES).map(
+                    (cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ),
+                  )}
+                </select>
+
+                {categorySelect === "أخرى (تحديد يدوي)" && (
+                  <div className="pt-1 animate-in fade-in duration-200">
+                    <Input
+                      className="h-9 text-xs font-semibold bg-muted/40 border-primary/40 focus:border-primary rounded-xl"
+                      value={customCategory}
+                      onChange={(e) => setCustomCategory(e.target.value)}
+                      placeholder="اكتب اسم التصنيف المالي المخصص هنا..."
+                      required
+                    />
+                  </div>
                 )}
-              </select>
-
-              {/* Conditional text input for Custom Category */}
-              {categorySelect === "أخرى (تحديد يدوي)" && (
-                <div className="pt-1 animate-in fade-in duration-200">
-                  <Input
-                    className="h-9 text-xs font-semibold bg-muted/40 border-primary/40 focus:border-primary"
-                    value={customCategory}
-                    onChange={(e) => setCustomCategory(e.target.value)}
-                    placeholder="اكتب اسم التصنيف المالي المخصص هنا..."
-                    required
-                  />
-                </div>
-              )}
+              </div>
             </div>
 
-            {/* 6. Cost Center (with "أخرى" text box trigger) */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold">مركز التكلفة المسؤول (Cost Center)</Label>
-              <select
-                className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm text-right font-medium"
-                value={costCenterSelect}
-                onChange={(e) => setCostCenterSelect(e.target.value)}
-              >
-                {Array.from(
-                  new Set(["الإدارة (Administration)", ...(erpState.costCenters || [])]),
-                ).map((cc) => (
-                  <option key={cc} value={cc}>
-                    {cc}
-                  </option>
-                ))}
-                <option value="أخرى (تحديد يدوي)">أخرى (تحديد مركز تكلفة مخصص)...</option>
-              </select>
+            {/* Cost Center & Beneficiary Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Cost Center */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold">مركز التكلفة المسؤول (Cost Center)</Label>
+                <select
+                  className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm text-right font-medium"
+                  value={costCenterSelect}
+                  onChange={(e) => setCostCenterSelect(e.target.value)}
+                >
+                  {Array.from(
+                    new Set(["الإدارة (Administration)", ...(erpState.costCenters || [])]),
+                  ).map((cc) => (
+                    <option key={cc} value={cc}>
+                      {cc}
+                    </option>
+                  ))}
+                  <option value="أخرى (تحديد يدوي)">أخرى (تحديد مركز تكلفة مخصص)...</option>
+                </select>
 
-              {/* Conditional text input for Custom Cost Center */}
-              {costCenterSelect === "أخرى (تحديد يدوي)" && (
-                <div className="pt-1 animate-in fade-in duration-200">
-                  <Input
-                    className="h-9 text-xs font-semibold bg-muted/40 border-primary/40 focus:border-primary"
-                    value={customCostCenter}
-                    onChange={(e) => setCustomCostCenter(e.target.value)}
-                    placeholder="اكتب اسم مركز التكلفة المخصص هنا..."
-                    required
-                  />
-                </div>
-              )}
+                {costCenterSelect === "أخرى (تحديد يدوي)" && (
+                  <div className="pt-1 animate-in fade-in duration-200">
+                    <Input
+                      className="h-9 text-xs font-semibold bg-muted/40 border-primary/40 focus:border-primary rounded-xl"
+                      value={customCostCenter}
+                      onChange={(e) => setCustomCostCenter(e.target.value)}
+                      placeholder="اكتب اسم مركز التكلفة المخصص هنا..."
+                      required
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Beneficiary */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold">اسم المستفيد / جهة الصرف أو التحصيل</Label>
+                <Input
+                  className="h-10 text-sm rounded-xl"
+                  value={beneficiary}
+                  onChange={(e) => setBeneficiary(e.target.value)}
+                  placeholder="اسم الشخص أو المورد أو الموظف المستلم"
+                />
+              </div>
             </div>
 
-            {/* 7. Treasury Account */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold">خزينة الصرف / القبض المتأثرة</Label>
-              <select
-                className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm text-right font-medium"
-                value={treasuryId}
-                onChange={(e) => setTreasuryId(e.target.value)}
-                required
-              >
-                <option value="">-- اختر الخزينة أو الحساب المالي --</option>
-                {activeTreasuries.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name_ar} {t.account_code ? `[كود: ${t.account_code}]` : ""} (رصيد:{" "}
-                    {Number(t.balance).toLocaleString()} {t.currency})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* 8. Beneficiary / Receiver */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold">اسم المستفيد / المستلم أو جهة الصرف</Label>
-              <Input
-                className="h-10 text-sm"
-                value={beneficiary}
-                onChange={(e) => setBeneficiary(e.target.value)}
-                placeholder="اسم الشخص أو المورد أو الموظف المستلم"
-              />
-            </div>
-
-            {/* 9. Description / Notes */}
+            {/* Description */}
             <div className="space-y-1.5">
               <Label className="text-xs font-bold">البيان والشرح التفصيلي (شرح القيد)</Label>
               <Input
-                className="h-10 text-sm"
+                className="h-10 text-sm rounded-xl"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="تفاصيل الفاتورة أو سبب السند"
+                placeholder="تفاصيل الفاتورة أو سبب السند المحاسبي..."
                 required
               />
             </div>
 
-            {/* 10. Attachment reference */}
+            {/* Notes */}
             <div className="space-y-1.5">
               <Label className="text-xs font-bold">
-                ملاحظات المستند الورقي أو رقم الإيصال اليدوي
+                ملاحظات المستند الورقي أو رقم الإيصال اليدوي (اختياري)
               </Label>
               <Input
-                className="h-9 text-xs"
+                className="h-9 text-xs rounded-xl"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="رقم الفاتورة الورقية أو مستند الإثبات (اختياري)"
+                placeholder="رقم الفاتورة الورقية أو مستند الإثبات المالي"
               />
             </div>
 
-            {/* Submit Button */}
-            <Button
-              type="submit"
-              className={`w-full h-11 text-sm font-black rounded-xl shadow-md transition ${
-                voucherType === "receipt"
-                  ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-500/20"
-                  : "bg-rose-600 hover:bg-rose-700 text-white shadow-rose-500/20"
-              }`}
-            >
-              <Save size={16} className="ml-2" />
-              حفظ وترحيل السند لحساب الأستاذ 💾
-            </Button>
-          </form>
-        </div>
+            {/* Footer with Save as Draft + Confirm and Post */}
+            <DialogFooter className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-4 border-t border-border/70 mt-6">
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleSaveVoucherAsDraft}
+                  className="gap-1.5 border-amber-500/40 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-xl font-bold text-xs"
+                >
+                  <Save size={15} />
+                  <span>حفظ كمسودة مؤقتة</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={handleRequestCloseNewVoucher}
+                  className="rounded-xl text-xs font-semibold text-muted-foreground hover:bg-muted"
+                >
+                  إلغاء وخروج
+                </Button>
+              </div>
 
-        {/* Left Column: Vouchers Log Table (7 Cols) */}
-        <div className="lg:col-span-7 bg-card border border-border shadow-md rounded-3xl p-5 space-y-4">
+              <Button
+                type="submit"
+                className={`w-full sm:w-auto rounded-xl font-black text-xs sm:text-sm px-6 py-2.5 shadow-md gap-2 ${
+                  voucherType === "receipt"
+                    ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-500/20"
+                    : "bg-rose-600 hover:bg-rose-700 text-white shadow-rose-500/20"
+                }`}
+              >
+                <CheckCircle2 size={16} />
+                <span>مراجعة وتأكيد ترحيل السند 🚀</span>
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+        {/* Vouchers Log Table - Full Width */}
+        <div className="w-full bg-card border border-border shadow-md rounded-3xl p-5 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border">
             <div>
               <h3 className="font-black text-base text-foreground flex items-center gap-2">
@@ -1043,8 +1209,64 @@ export function VouchersLedgerSection({ onNavigateToJournal }: VouchersLedgerSec
               </p>
             </div>
 
-            {/* Filters */}
+            {/* Action buttons: New Voucher + Drafts + Type/Status filters */}
             <div className="flex items-center gap-2 flex-wrap">
+              <Button
+                onClick={() => setIsNewVoucherDialogOpen(true)}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl text-xs sm:text-sm px-4 py-2 gap-2 shadow-md transition"
+              >
+                <PlusCircle size={16} />
+                <span>تسجيل سند مالي جديد</span>
+              </Button>
+
+              {voucherDrafts.length > 0 && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="gap-1.5 rounded-xl text-xs font-bold border-amber-500/40 text-amber-700 dark:text-amber-400 bg-amber-50/50 dark:bg-amber-950/30"
+                    >
+                      <Save size={14} />
+                      <span>المسودات ({voucherDrafts.length})</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-72 p-1.5 rounded-2xl shadow-xl">
+                    <DropdownMenuLabel className="text-right text-[11px] font-black text-muted-foreground">
+                      مسودات السندات غير المكتملة:
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {voucherDrafts.map((draft) => (
+                      <DropdownMenuItem
+                        key={draft.id}
+                        onClick={() => handleLoadVoucherDraft(draft)}
+                        className="flex items-center justify-between gap-2 p-2 rounded-xl cursor-pointer hover:bg-muted text-right"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-foreground truncate">
+                            {draft.description || "مسودة بدون بيان"}
+                          </p>
+                          <p className="text-[10px] text-muted-foreground font-mono">
+                            {Number(draft.amount).toLocaleString()} {draft.selectedCurrency} ·{" "}
+                            {draft.savedAt ? draft.savedAt.slice(0, 10) : ""}
+                          </p>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-muted-foreground hover:text-rose-600"
+                          onClick={(e) => handleDeleteVoucherDraft(draft.id, e)}
+                          title="حذف المسودة"
+                        >
+                          <Trash2 size={12} />
+                        </Button>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+
+              <div className="h-5 w-px bg-border hidden sm:block" />
+
               <select
                 className="h-8 rounded-lg border border-input bg-background px-2 text-xs font-bold"
                 value={typeFilter}
@@ -1296,7 +1518,6 @@ export function VouchersLedgerSection({ onNavigateToJournal }: VouchersLedgerSec
             </div>
           </div>
         </div>
-      </div>
 
       {/* MODAL 1: Confirmation Dialog for Save & Post */}
       <Dialog open={isConfirmPostOpen} onOpenChange={setIsConfirmPostOpen}>
@@ -1836,6 +2057,48 @@ export function VouchersLedgerSection({ onNavigateToJournal }: VouchersLedgerSec
           )}
         </DialogContent>
       </Dialog>
+
+      {/* MODAL 6: Exit Confirmation for Voucher Dialog */}
+      <AlertDialog open={isExitVoucherConfirmOpen} onOpenChange={setIsExitVoucherConfirmOpen}>
+        <AlertDialogContent className="max-w-md text-right rounded-3xl" dir="rtl">
+          <AlertDialogHeader>
+            <div className="flex items-center gap-2 text-amber-600">
+              <AlertTriangle size={22} />
+              <AlertDialogTitle className="text-base font-black">
+                تأكيد الخروج من شاشة السند
+              </AlertDialogTitle>
+            </div>
+            <AlertDialogDescription className="text-xs text-muted-foreground leading-relaxed">
+              توجد بيانات أدخلتها بالسند الحالي. هل تريد حفظها كمسودة مؤقتة لاستعادتها لاحقاً أم الخروج وتجاهل البيانات؟
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex flex-col sm:flex-row gap-2 pt-2">
+            <AlertDialogCancel
+              onClick={() => setIsExitVoucherConfirmOpen(false)}
+              className="rounded-xl font-bold text-xs"
+            >
+              متابعة التعديل
+            </AlertDialogCancel>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setIsExitVoucherConfirmOpen(false);
+                setIsNewVoucherDialogOpen(false);
+              }}
+              className="rounded-xl font-bold text-xs border-rose-500/40 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+            >
+              تجاهل والخروج بدون حفظ
+            </Button>
+            <AlertDialogAction
+              onClick={() => handleSaveVoucherAsDraft()}
+              className="rounded-xl font-black text-xs bg-amber-600 hover:bg-amber-700 text-white"
+            >
+              💾 حفظ كمسودة مؤقتة
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

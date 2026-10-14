@@ -35,13 +35,47 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  // The hosted preview can restart Vite while preserving a browser page with
+  // old optimized-dependency URLs. Force a fresh pre-bundle on each dev-server
+  // start and explicitly include the client-critical React/TanStack modules.
+  optimizeDeps: {
+    include: [
+      "react",
+      "react-dom",
+      "react-dom/client",
+      "@tanstack/react-start",
+      "@tanstack/react-start/client",
+      "@tanstack/react-router",
+      "@tanstack/react-query",
+      "@supabase/supabase-js",
+      "lucide-react",
+      "sonner",
+      "clsx",
+      "tailwind-merge",
+    ],
+    esbuildOptions: {
+      plugins: [
+        {
+          name: "async-hooks-polyfill",
+          setup(build) {
+            build.onResolve({ filter: /^(node:)?async_hooks$/ }, () => ({
+              path: path.resolve(__dirname, "./src/shared/services/asyncHooksPolyfill.ts"),
+            }));
+          },
+        },
+      ],
+    },
+  },
   resolve: {
     tsconfigPaths: true,
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "node:async_hooks": path.resolve(__dirname, "./src/shared/services/asyncHooksPolyfill.ts"),
+      async_hooks: path.resolve(__dirname, "./src/shared/services/asyncHooksPolyfill.ts"),
     },
   },
   server: {
+    host: "0.0.0.0",
     port: 3000,
     allowedHosts: true,
   },

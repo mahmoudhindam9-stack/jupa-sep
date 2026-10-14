@@ -80,7 +80,7 @@ export function RestaurantShiftLauncherModal({
     const unsub = erpStore.subscribe(() => {
       setState(erpStore.getState());
     });
-    return () => unsub();
+    return unsub;
   }, []);
 
   // Initialize auto shift number & default fields when opening

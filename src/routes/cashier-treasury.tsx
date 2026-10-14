@@ -266,10 +266,9 @@ function CashierTreasuryPage() {
   // Hydration safeguard & real-time store subscription
   useEffect(() => {
     setIsMounted(true);
-    const unsub = erpStore.subscribe(() => {
+    return erpStore.subscribe(() => {
       setErpState(erpStore.getState());
     });
-    return () => unsub();
   }, []);
 
   const cashierTreasuryId = erpState.treasuries.find((t) => t.linked_to_restaurant)?.id || "tr-1";
@@ -1053,15 +1052,13 @@ function CashierTreasuryPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans">
-      <div className="px-6 pt-4 max-w-7xl mx-auto w-full">
-        <BackToRestaurantButton />
-      </div>
-      {/* Header - Bright Light Theme */}
-      <header className="px-6 py-5 bg-white border-b border-slate-200/80 sticky top-0 z-50 shadow-sm">
+      {/* Header - Bright Light Theme Sticky frozen */}
+      <header className="px-6 py-4 bg-white/95 backdrop-blur border-b border-slate-200/80 sticky top-0 z-50 shadow-sm">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-xl bg-emerald-100/80 border border-emerald-300 flex items-center justify-center text-emerald-700 shrink-0 shadow-sm">
-              <Wallet size={24} />
+            <BackToRestaurantButton />
+            <div className="w-10 h-10 rounded-xl bg-emerald-100/80 border border-emerald-300 flex items-center justify-center text-emerald-700 shrink-0 shadow-sm">
+              <Wallet size={22} />
             </div>
             <div>
               <h1 className="text-xl font-black tracking-tight text-slate-900 flex items-center gap-2 flex-wrap">
@@ -1439,7 +1436,7 @@ function CashierTreasuryPage() {
                 {lang === "ar" ? "الفرع المالي" : "Branch"}
               </span>
               <span className="font-bold text-slate-800 mt-0.5 block">
-                الفرع الرئيسي (بهجت جروب)
+                {lang === "ar" ? "الفرع الرئيسي" : "Main Branch"}
               </span>
             </div>
           </div>

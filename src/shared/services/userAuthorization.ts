@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { authService } from "@/features/auth/services/authService";
 import { erpStore } from "@/shared/services/erpStore";
+import { isAiStudioPreview } from "@/shared/services/previewAccess";
 
 function isHostedDeployment(): boolean {
   if (typeof window === "undefined") return false;
@@ -14,6 +15,10 @@ function hasAnyRequestedPermission(permissions: Record<string, any>, keys: strin
 }
 
 export async function currentUserHasPermission(keys: string[]): Promise<boolean> {
+  // The owner explicitly requested an open dashboard in the un-deployed AI Studio preview.
+  // This never applies to production builds or deployed hosts.
+  if (isAiStudioPreview()) return true;
+
   if (isHostedDeployment()) {
     try {
       const {

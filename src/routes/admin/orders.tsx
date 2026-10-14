@@ -30,6 +30,7 @@ import {
   CreditCard,
   Pencil,
   ArrowRight,
+  ClipboardList,
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { BackToRestaurantButton } from "@/components/admin/BackToRestaurantButton";
@@ -248,21 +249,36 @@ function OrdersPage() {
 
   return (
     <div className="p-6 space-y-6 font-cairo bg-slate-50 min-h-screen">
-      <BackToRestaurantButton />
-      {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-3xl shadow-xs border border-border/60">
-        <div className="flex items-center gap-4">
-          <Link to="/admin" className="p-2 bg-slate-100 rounded-xl hover:bg-slate-200 transition">
-            <ArrowRight size={20} className="rotate-180" />
+      {/* Top Bar - Frozen Sticky Header with Clear Department Title */}
+      <div className="sticky top-0 z-20 bg-card/95 backdrop-blur py-3 px-4 border-b border-border/80 flex items-center justify-between gap-4 shadow-xs">
+        <div className="flex items-center gap-3 flex-wrap">
+          <Link
+            to="/admin"
+            className="p-2 bg-white dark:bg-slate-800 rounded-xl hover:bg-slate-200 transition border border-border/60 inline-flex items-center justify-center"
+            title="العودة للإدارة"
+          >
+            <ArrowRight size={18} />
           </Link>
-          <div>
-            <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+          <BackToRestaurantButton />
+          <div className="h-5 w-px bg-border/80 hidden sm:block" />
+          <div className="flex items-center gap-2">
+            <ClipboardList size={18} className="text-primary shrink-0" />
+            <h1 className="text-sm sm:text-base font-black text-foreground tracking-tight whitespace-nowrap">
               إدارة ومتابعة الطلبات
             </h1>
-            <p className="text-xs text-muted-foreground font-medium">
-              متابعة حالة الطلبات، التعديل، والحذف لحظياً
-            </p>
           </div>
+        </div>
+      </div>
+
+      {/* Header */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-3xl shadow-xs border border-border/60">
+        <div>
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+            إدارة ومتابعة الطلبات
+          </h1>
+          <p className="text-xs text-muted-foreground font-medium">
+            متابعة حالة الطلبات، التعديل، والحذف لحظياً
+          </p>
         </div>
       </div>
 

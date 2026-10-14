@@ -48,10 +48,9 @@ export function PurchaseManagement() {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    const unsub = erpStore.subscribe(() => {
+    return erpStore.subscribe(() => {
       setErpState(erpStore.getState());
     });
-    return () => unsub();
   }, []);
 
   const [poForm, setPoForm] = useState({

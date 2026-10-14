@@ -45,10 +45,9 @@ export function SupplierManagement() {
 
   // Subscribe to store updates
   useEffect(() => {
-    const unsub = erpStore.subscribe(() => {
+    return erpStore.subscribe(() => {
       setErpState(erpStore.getState());
     });
-    return () => unsub();
   }, []);
 
   // Form State

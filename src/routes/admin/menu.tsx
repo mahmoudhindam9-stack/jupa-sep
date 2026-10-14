@@ -398,7 +398,19 @@ function MenuPage() {
 
   return (
     <div className="space-y-6 text-right">
-      <BackToRestaurantButton />
+      {/* Top Bar - Frozen Sticky Header with Clear Department Title */}
+      <div className="sticky top-0 z-20 bg-card/95 backdrop-blur py-3 px-3 sm:px-5 -mx-2 sm:-mx-4 border-b border-border/80 flex items-center justify-between gap-4 shadow-xs">
+        <div className="flex items-center gap-3 flex-wrap">
+          <BackToRestaurantButton />
+          <div className="h-5 w-px bg-border/80 hidden sm:block" />
+          <div className="flex items-center gap-2">
+            <Utensils size={18} className="text-primary shrink-0" />
+            <h1 className="text-sm sm:text-base font-black text-foreground tracking-tight whitespace-nowrap">
+              إدارة المنيو وقائمة الطعام والتكلفة
+            </h1>
+          </div>
+        </div>
+      </div>
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-black text-foreground">إدارة المنيو والتكلفة</h1>

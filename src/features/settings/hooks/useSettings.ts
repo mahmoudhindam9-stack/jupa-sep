@@ -55,11 +55,8 @@ export function useSettings(overridePageKey?: string) {
 
   const loadSettings = useCallback(() => {
     if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
-      const storedLang = (localStorage.getItem("app_lang") as Language) || "ar";
-      setLang(storedLang);
-      document.documentElement.lang = storedLang;
-      document.documentElement.dir = storedLang === "ar" ? "rtl" : "ltr";
-      translator.setLanguage(storedLang);
+      const storedLang = localStorage.getItem("app_lang") as Language;
+      if (storedLang) setLang(storedLang);
 
       const pageCurrencyKey = `app_currency_${computePageKey(overridePageKey)}`;
       const storedCurrency = localStorage.getItem(pageCurrencyKey) as Currency;

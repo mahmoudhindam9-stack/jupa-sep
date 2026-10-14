@@ -49,6 +49,17 @@ const assertCredentials = (email: string, password: string) => {
 };
 
 export const authService = {
+  async isInitialAdminSetupAvailable(): Promise<boolean> {
+    const { data, error } = await (supabase as any).rpc("is_initial_admin_setup_available");
+    if (error) {
+      throw new Error(
+        "تعذر التحقق من إعداد المدير الأول. تأكد من تطبيق آخر ترحيل Supabase ثم أعد المحاولة.",
+        { cause: error },
+      );
+    }
+    return data === true;
+  },
+
   async signIn(email: string, password: string) {
     const normalizedEmail = assertCredentials(email, password);
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -121,6 +132,13 @@ export const authService = {
       },
     });
     if (error) throw error;
+
+    // Supabase can return an obfuscated "existing user" response instead of an error
+    // when email enumeration protection is enabled. Do not treat that as a new account.
+    if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+      throw new Error("هذا البريد الإلكتروني مسجّل بالفعل في Supabase. استخدم بريدًا آخر.");
+    }
+
     return data;
   },
 };

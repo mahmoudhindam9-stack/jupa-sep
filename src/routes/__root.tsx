@@ -109,6 +109,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "stylesheet", href: appCss },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
     ],
+    scripts: [
+      {
+        // This runs before the client entry is imported, so it can recover if client.tsx itself fails to load.
+        children: `try{const k="restocash:chunk-recovery-attempted";const diagnose=(m)=>{const match=m.match(/https?:\/\/[^\s"'<>]+\/src\/client\.tsx(?:\?[^\s"'<>]*)?/);if(!match){console.error("Client entry load failed; no module URL found.",m);return;}const entry=match[0];const seen=new Set();const visited=[];const failures=[];const scan=async(url,depth)=>{if(seen.has(url)||seen.size>=32||depth>3)return;seen.add(url);try{const response=await fetch(url,{cache:"no-store"});const body=await response.text();const info={url,status:response.status,ok:response.ok,contentType:response.headers.get("content-type")};visited.push(info);if(!response.ok){failures.push({...info,body:body.slice(0,1200)});return;}if(depth>=3||!/(javascript|ecmascript)/i.test(info.contentType||""))return;const re=/\b(?:import|export)\s+(?:[^'";]*?\s+from\s+)?['"]([^'"]+)['"]/g;const deps=[];let hit;while((hit=re.exec(body))!==null){try{const dep=new URL(hit[1],url);if(dep.origin===location.origin&&(dep.pathname.startsWith("/src/")||dep.pathname.includes("/node_modules/")||dep.pathname.startsWith("/@id/")||dep.pathname.startsWith("/@fs/")))deps.push(dep.href);}catch(e){}}await Promise.all(deps.map(dep=>scan(dep,depth+1)));}catch(error){failures.push({url,error:String(error)});}};void scan(entry,0).then(()=>console.error("Client entry import graph diagnostics",{entry,visitedModules:visited.length,failedModules:failures,modules:visited})).catch(error=>console.error("Import graph diagnostics crashed",error));};const recover=(r)=>{const m=String(r||"").toLowerCase();if(!m.includes("failed to fetch dynamically imported module")&&!m.includes("error loading dynamically imported module")&&!m.includes("importing a module script failed")&&!m.includes("loading chunk")&&!m.includes("dynamically imported module"))return;try{if(sessionStorage.getItem(k)==="1"){console.error("Client entry still failed after one recovery reload; collecting the underlying Vite response.",m);diagnose(r);return;}sessionStorage.setItem(k,"1");}catch(e){console.error("Client entry failed; session storage is unavailable.",m);diagnose(r);return;}window.location.reload();};window.addEventListener("error",e=>recover(e.message||""));window.addEventListener("unhandledrejection",e=>recover(e.reason?.message||String(e.reason||"")));}catch(e){console.error("Could not install client entry recovery handler.",e);}`,
+      },
+      {
+        children: `try{const s=localStorage.getItem("restocash-theme");if(s==="dark"||(!s&&window.matchMedia("(prefers-color-scheme: dark)").matches)){document.documentElement.classList.add("dark");}}catch(e){}`,
+      },
+    ],
   }),
   component: RootComponent,
   notFoundComponent: NotFoundComponent,
@@ -118,35 +127,35 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   useEffect(() => {
+    // Only clear the one-reload recovery guard after the app has actually mounted.
+    // Clearing it in client.tsx would allow a persistent route-chunk failure to loop.
+    try {
+      window.sessionStorage.removeItem("restocash:chunk-recovery-attempted");
+    } catch {
+      // Storage can be unavailable in restricted preview iframes.
+    }
+    try {
+      const stored = localStorage.getItem("restocash-theme");
+      if (
+        stored === "dark" ||
+        (!stored && window.matchMedia("(prefers-color-scheme: dark)").matches)
+      ) {
+        document.documentElement.classList.add("dark");
+      }
+    } catch {
+      // Ignored: storage unavailable in restricted environment
+    }
     try {
       translator.start();
     } catch (e) {
       console.error("Failed to start translator:", e);
     }
-    const cleanup = createAppSync(queryClient);
-    return () => {
-      if (typeof cleanup === "function") cleanup();
-    };
+    return createAppSync(queryClient);
   }, [queryClient]);
   return (
     <html lang="ar" translate="no" suppressHydrationWarning>
       <head>
         <meta name="google" content="notranslate" />
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              try {
-                const storedTheme = localStorage.getItem("restocash-theme");
-                if (storedTheme === "dark" || (!storedTheme && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
-                  document.documentElement.classList.add("dark");
-                }
-                const storedLang = localStorage.getItem("app_lang") || "ar";
-                document.documentElement.lang = storedLang;
-                document.documentElement.dir = storedLang === "ar" ? "rtl" : "ltr";
-              } catch (e) {}
-            `,
-          }}
-        />
         <HeadContent />
       </head>
       <body>
