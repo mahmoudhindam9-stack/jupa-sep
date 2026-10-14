@@ -372,9 +372,13 @@ class StudioService {
           createdAt: data.created_at || new Date().toISOString(),
           hasUnpublishedChanges: true,
         };
-        const localIsNewer = !!cached &&
-          Number.isFinite(Date.parse(cached.updatedAt)) &&
-          Date.parse(cached.updatedAt) > Date.parse(remote.updatedAt);
+        // Dirty local drafts always win over the cached server timestamp, including
+        // when the browser clock differs from Supabase or edits have equal timestamps.
+        const localIsNewer = !!cached && (
+          cached.hasUnsavedLocalChanges === true ||
+          (Number.isFinite(Date.parse(cached.updatedAt)) &&
+            Date.parse(cached.updatedAt) > Date.parse(remote.updatedAt))
+        );
         const chosen = localIsNewer
           ? { ...cached!, hasUnsavedLocalChanges: true }
           : { ...remote, hasUnsavedLocalChanges: false };
