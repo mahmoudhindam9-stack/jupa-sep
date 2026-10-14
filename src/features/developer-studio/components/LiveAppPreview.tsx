@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, Check, Copy, Eye, EyeOff, Monitor, RefreshCw, Smartphone, Tablet, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, Copy, Eye, EyeOff, Layers, Monitor, RefreshCw, Settings2, Smartphone, Tablet, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { StudioDomEdit } from "../models/studio.types";
 
@@ -9,6 +9,8 @@ type SelectedDomElement = {
   fill: string; stroke: string; strokeWidth: string; opacity: string;
   borderRadius: string; rotate: string; textAlign: string;
 };
+type LiveTreeNode = { selector: string; tag: string; label: string; children: LiveTreeNode[] };
+type LiveRoute = { href: string; label: string };
 type Props = {
   route: string;
   initialEdits: Record<string, StudioDomEdit>;
@@ -41,14 +43,24 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange }: Props) {
   const [frameKey, setFrameKey] = useState(0);
   const [ready, setReady] = useState(false);
   const [status, setStatus] = useState("جاري تحميل معاينة التطبيق…");
+  const [currentRoute, setCurrentRoute] = useState(route);
+  const [treeNodes, setTreeNodes] = useState<LiveTreeNode[]>([]);
+  const [pageLinks, setPageLinks] = useState<LiveRoute[]>([]);
+  const [showExplorer, setShowExplorer] = useState(true);
+  const [showProperties, setShowProperties] = useState(true);
+  const [treeFilter, setTreeFilter] = useState("");
   const [edits, setEdits] = useState<Record<string, StudioDomEdit>>(initialEdits || {});
   editsRef.current = edits;
   changeCallbackRef.current = onEditsChange;
 
-  const safeRoute = useMemo(() => {
-    const value = (route || "/admin").trim();
-    return value.startsWith("/") && !value.startsWith("//") ? value : "/admin";
+  useEffect(() => {
+    setCurrentRoute(route);
   }, [route]);
+
+  const safeRoute = useMemo(() => {
+    const value = (currentRoute || "/admin").trim();
+    return value.startsWith("/") && !value.startsWith("//") ? value : "/admin";
+  }, [currentRoute]);
   const origin = typeof window !== "undefined" ? window.location.origin : "";
 
   const send = useCallback((data: Record<string, unknown>) => {
@@ -67,7 +79,15 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange }: Props) {
 
   const onMessage = useCallback((event: MessageEvent) => {
     if (event.origin !== window.location.origin || event.source !== iframeRef.current?.contentWindow || !event.data) return;
-    if (event.data.type === "STUDIO_SELECTED") {
+    if (event.data.type === "STUDIO_TREE") {
+      setTreeNodes(Array.isArray(event.data.nodes) ? event.data.nodes as LiveTreeNode[] : []);
+    } else if (event.data.type === "STUDIO_ROUTES") {
+      const routes = Array.isArray(event.data.routes)
+        ? event.data.routes.filter((item: any) => item && typeof item.href === "string" && item.href.startsWith("/") && !item.href.startsWith("//"))
+            .map((item: any) => ({ href: String(item.href), label: String(item.label || item.href) }))
+        : [];
+      setPageLinks(routes);
+    } else if (event.data.type === "STUDIO_SELECTED") {
       const item = event.data.element as SelectedDomElement;
       setSelected(item);
       setTextValue(item.text || "");
@@ -104,7 +124,9 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange }: Props) {
   useEffect(() => {
     setReady(false);
     setSelected(null);
-    setStatus("جاري تحميل الصفحة: " + safeRoute);
+    setTreeNodes([]);
+    setPageLinks([]);
+    setStatus("جاري تحميل الصفحة الفعلية: " + safeRoute);
   }, [safeRoute, frameKey]);
 
   useEffect(() => {
@@ -297,8 +319,14 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange }: Props) {
           Object.entries(data.edits || {}).forEach(([selector, edit]) => applyEdit(selector, edit));
           return;
         }
-        const el = selected || (data.selector ? find(data.selector) : null);
+        const el = data.action === "select" && data.selector
+          ? find(data.selector)
+          : (selected || (data.selector ? find(data.selector) : null));
         if (!el) return;
+        if (data.action === "select") {
+          selectElement(el);
+          return;
+        }
         const selector = selectorFor(el);
         const notify = (patch) => send("STUDIO_CHANGE", { selector, patch });
         if (data.action === "style") {
@@ -338,6 +366,63 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange }: Props) {
           }
         }
       });
+      const meaningfulTags = new Set(["main", "header", "nav", "aside", "footer", "section", "article", "form", "button", "a", "input", "select", "textarea", "table", "thead", "tbody", "tr", "td", "th", "h1", "h2", "h3", "h4", "h5", "h6", "p", "img", "svg", "ul", "ol", "li", "label", "details", "summary"]);
+      let scanTimer = null;
+      const collectTreeAndRoutes = () => {
+        let count = 0;
+        const buildNode = (element, depth) => {
+          if (!(element instanceof Element) || count >= 180 || depth > 5) return null;
+          const tag = element.tagName.toLowerCase();
+          if (["script", "style", "link", "meta", "noscript", "iframe"].includes(tag)) return null;
+          count += 1;
+          const childElements = Array.from(element.children).filter((child) =>
+            !["script", "style", "link", "meta", "noscript", "iframe"].includes(child.tagName.toLowerCase()));
+          const children = [];
+          for (const child of childElements) {
+            if (count >= 180) break;
+            const node = buildNode(child, depth + 1);
+            if (node) children.push(node);
+          }
+          const directText = Array.from(element.childNodes)
+            .filter((node) => node.nodeType === Node.TEXT_NODE)
+            .map((node) => node.textContent || "").join(" ").trim();
+          const accessible = element.getAttribute("aria-label") || element.getAttribute("title") || element.getAttribute("alt") || "";
+          const interactiveText = ["button", "a", "label", "h1", "h2", "h3", "h4", "h5", "h6", "p", "li"].includes(tag)
+            ? (element.innerText || "") : "";
+          const rawText = directText || accessible || interactiveText;
+          const label = String(rawText || (element.hasAttribute("data-testid") ? element.getAttribute("data-testid") : tag.toUpperCase()))
+            .replace(/\s+/g, " ").trim().slice(0, 84);
+          const meaningful = depth < 2 || meaningfulTags.has(tag) || element.hasAttribute("role") ||
+            element.hasAttribute("data-testid") || children.length > 0 || rawText.length > 0;
+          if (!meaningful) return null;
+          return { selector: selectorFor(element), tag, label: label || tag.toUpperCase(), children };
+        };
+        const nodes = Array.from(document.body.children).map((element) => buildNode(element, 0)).filter(Boolean);
+        send("STUDIO_TREE", { nodes: nodes.slice(0, 80) });
+
+        const routeMap = new Map();
+        const currentHref = location.pathname + location.search;
+        routeMap.set(currentHref, document.title || currentHref || "الصفحة الحالية");
+        document.querySelectorAll("a[href]").forEach((anchor) => {
+          try {
+            const url = new URL(anchor.href, location.href);
+            if (url.origin !== location.origin || !url.pathname.startsWith("/") || url.pathname.startsWith("//")) return;
+            const href = url.pathname + url.search;
+            const labelText = String(anchor.innerText || anchor.getAttribute("aria-label") || anchor.getAttribute("title") || href)
+              .replace(/\s+/g, " ").trim().slice(0, 72);
+            if (!routeMap.has(href) || routeMap.get(href) === href) routeMap.set(href, labelText || href);
+          } catch (_) { /* ignore malformed links */ }
+        });
+        send("STUDIO_ROUTES", { routes: Array.from(routeMap.entries()).map(([href, label]) => ({ href, label })).slice(0, 100) });
+      };
+      const scheduleCollect = () => {
+        if (scanTimer) clearTimeout(scanTimer);
+        scanTimer = setTimeout(collectTreeAndRoutes, 180);
+      };
+      const liveObserver = new MutationObserver(scheduleCollect);
+      liveObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
+      scheduleCollect();
+      window.addEventListener("load", scheduleCollect, { once: true });
       send("STUDIO_BRIDGE_READY", {});
     })();`;
     doc.body.appendChild(script);
@@ -361,6 +446,36 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange }: Props) {
   };
   const frameWidth = previewSize === "mobile" ? "390px" : previewSize === "tablet" ? "820px" : "100%";
   const selectedIsVector = !!selected && ["svg", "path", "circle", "rect", "line", "polyline", "polygon"].includes(selected.tag);
+  const visibleTreeNodes = useMemo(() => {
+    const query = treeFilter.trim().toLocaleLowerCase();
+    if (!query) return treeNodes;
+    const filterNodes = (nodes: LiveTreeNode[]): LiveTreeNode[] => nodes
+      .map((node) => ({ ...node, children: filterNodes(node.children || []) }))
+      .filter((node) => node.label.toLocaleLowerCase().includes(query) || node.tag.toLocaleLowerCase().includes(query) || node.children.length > 0);
+    return filterNodes(treeNodes);
+  }, [treeNodes, treeFilter]);
+  const renderTreeNodes = (nodes: LiveTreeNode[], depth = 0): React.ReactNode => nodes.map((node) => (
+    <div key={node.selector} className="min-w-0">
+      <button
+        type="button"
+        title={node.selector}
+        onClick={() => send({ action: "select", selector: node.selector })}
+        className={"flex min-h-7 w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-right text-[11px] hover:bg-accent " + (selected?.selector === node.selector ? "bg-primary/10 font-black text-primary" : "text-foreground")}
+        style={{ paddingRight: Math.min(18, depth * 7 + 6) + "px" }}
+      >
+        <span className="shrink-0 rounded bg-muted px-1 font-mono text-[9px] text-muted-foreground">{node.tag}</span>
+        <span className="min-w-0 flex-1 truncate">{node.label}</span>
+      </button>
+      {node.children.length > 0 && <div className="mr-2 border-r border-border/70 pr-1">{renderTreeNodes(node.children, depth + 1)}</div>}
+    </div>
+  ));
+
+  const navigatePreview = (href: string) => {
+    if (!href.startsWith("/") || href.startsWith("//")) return;
+    setCurrentRoute(href);
+    setSelected(null);
+    setFrameKey((value) => value + 1);
+  };
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-background" dir="rtl">
@@ -381,17 +496,55 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange }: Props) {
           <Button type="button" size="sm" variant={editMode ? "default" : "outline"} className="h-7 gap-1 px-2 text-xs" onClick={() => setEditMode(v => !v)}>
             {editMode ? <EyeOff size={14} /> : <Eye size={14} />}{editMode ? "وضع التحرير" : "وضع التفاعل"}
           </Button>
+          <Button type="button" size="sm" variant={showExplorer ? "default" : "outline"} className="h-7 gap-1 px-2 text-xs" onClick={() => setShowExplorer(v => !v)}><Layers size={14} /> {showExplorer ? "إخفاء الشجرة" : "الصفحات والشجرة"}</Button>
+          <Button type="button" size="sm" variant={showProperties ? "default" : "outline"} className="h-7 gap-1 px-2 text-xs" onClick={() => setShowProperties(v => !v)}><Settings2 size={14} /> {showProperties ? "إخفاء الخصائص" : "الخصائص"}</Button>
           <Button type="button" size="sm" variant="outline" className="h-7 gap-1 px-2 text-xs" onClick={() => setFrameKey(v => v + 1)}><RefreshCw size={14} /> تحديث</Button>
         </div>
       </div>
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <div className="flex min-w-0 flex-1 items-stretch justify-center overflow-auto bg-slate-100 p-2 dark:bg-slate-950 sm:p-4">
-          <div className="h-full min-h-[420px] max-w-full overflow-hidden rounded-xl border bg-background shadow-xl transition-[width] duration-200" style={{ width: frameWidth, flex: previewSize === "desktop" ? "1 1 auto" : "0 0 " + frameWidth }}>
-            <iframe key={frameKey} ref={iframeRef} src={safeRoute} onLoad={installBridge} title="معاينة حية للتطبيق" className="h-full min-h-[420px] w-full border-0 bg-background" />
+        {showExplorer && (
+          <aside className="flex w-[230px] max-w-[28vw] min-w-[190px] shrink-0 flex-col overflow-hidden border-l bg-card">
+            <div className="shrink-0 border-b p-3">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-sm font-black">صفحات ومكونات التطبيق</h3>
+                <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{treeNodes.length}</span>
+              </div>
+              <p className="mt-1 text-[10px] leading-5 text-muted-foreground">الصفحات من روابط التطبيق الحقيقي، والشجرة من عناصر الصفحة المفتوحة.</p>
+            </div>
+            <section className="max-h-[34%] shrink-0 overflow-y-auto border-b p-2">
+              <h4 className="mb-1.5 text-[11px] font-black">الصفحات المكتشفة</h4>
+              <div className="space-y-1">
+                {(pageLinks.length ? pageLinks : [{ href: safeRoute, label: "الصفحة الحالية" }]).map((page) => (
+                  <button
+                    key={page.href}
+                    type="button"
+                    title={page.href}
+                    onClick={() => navigatePreview(page.href)}
+                    className={"flex min-h-8 w-full items-center gap-2 rounded-lg px-2 py-1.5 text-right text-[11px] " + (page.href === safeRoute ? "bg-primary/10 font-black text-primary" : "hover:bg-accent")}
+                  >
+                    <span className="min-w-0 flex-1 truncate">{page.label || page.href}</span>
+                    <span className="max-w-[92px] truncate font-mono text-[9px] text-muted-foreground">{page.href}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+            <section className="flex min-h-0 flex-1 flex-col p-2">
+              <h4 className="mb-1.5 shrink-0 text-[11px] font-black">شجرة المكونات الفعلية</h4>
+              <input aria-label="بحث في شجرة المكونات" value={treeFilter} onChange={(event) => setTreeFilter(event.target.value)} placeholder="ابحث عن عنصر أو وسم..." className="mb-2 h-8 shrink-0 rounded-lg border bg-background px-2 text-[11px] outline-none focus:ring-2 focus:ring-primary" />
+              <div className="min-h-0 flex-1 overflow-auto">
+                {visibleTreeNodes.length ? renderTreeNodes(visibleTreeNodes) : <p className="p-2 text-[11px] leading-5 text-muted-foreground">جاري استخراج شجرة عناصر الصفحة…</p>}
+              </div>
+            </section>
+          </aside>
+        )}
+        <div className="flex min-h-0 min-w-0 flex-1 items-stretch justify-center overflow-auto bg-slate-100 p-2 dark:bg-slate-950 sm:p-4">
+          <div className="h-full min-h-0 overflow-hidden rounded-xl border bg-background shadow-xl transition-[width] duration-200" style={{ width: frameWidth, minWidth: previewSize === "desktop" ? 0 : frameWidth, flex: previewSize === "desktop" ? "1 1 auto" : "0 0 " + frameWidth }}>
+            <iframe key={frameKey} ref={iframeRef} src={safeRoute} onLoad={installBridge} title="معاينة حية للتطبيق" className="h-full min-h-0 w-full border-0 bg-background" />
           </div>
         </div>
-        <aside className="flex w-[270px] shrink-0 flex-col gap-3 overflow-y-auto border-r bg-card p-3 sm:w-[320px]">
+        {showProperties && (
+        <aside className="flex w-[280px] max-w-[32vw] min-w-[230px] shrink-0 flex-col gap-3 overflow-y-auto border-r bg-card p-3 2xl:w-[320px]">
           <div>
             <h3 className="text-sm font-black">خصائص عنصر التطبيق</h3>
             <p className="mt-1 break-all text-[10px] text-muted-foreground">{selected ? "<" + selected.tag + "> · " + selected.selector : "انقر على عنصر داخل المعاينة"}</p>
@@ -452,6 +605,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange }: Props) {
           )}
           <div className="mt-auto rounded-lg bg-muted p-2 text-[10px] leading-5 text-muted-foreground">إذا ظهر خطأ مزامنة، تبقى النسخة المحلية موجودة لكن لا تعتبر محفوظة سحابيًا حتى نجاح التأكيد.</div>
         </aside>
+        )}
       </div>
     </div>
   );
