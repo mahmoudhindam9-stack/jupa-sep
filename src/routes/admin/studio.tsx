@@ -68,6 +68,8 @@ export function DeveloperStudioProPage() {
   const draftRef = useRef<StudioDraft | null>(null);
   draftRef.current = draft;
   const savingToCloudRef = useRef(false);
+  const syncWorkflowInFlightRef = useRef(false);
+  const [isSyncWorkflowInProgress, setIsSyncWorkflowInProgress] = useState(false);
   const pendingRealtimeDraftRef = useRef<Record<string, any> | null>(null);
   const remoteConflictWarnedRef = useRef(false);
   const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
@@ -319,7 +321,7 @@ export function DeveloperStudioProPage() {
       draftVersionRef.current += 1;
       setDraft(newDraft);
       setSaveError(local.success ? null : local.error || "تعذر حفظ النسخة المحلية.");
-      setSaveStatus(local.success ? "unsaved" : "error");
+      setSaveStatus(syncWorkflowInFlightRef.current ? "saving" : (local.success ? "unsaved" : "error"));
       if (!local.success) {
         saveErrorRef.current = local.error || "local-save-failed";
       } else {
@@ -344,7 +346,7 @@ export function DeveloperStudioProPage() {
     draftVersionRef.current += 1;
     setHistoryPointer(historyPointer - 1);
     setDraft(restored);
-    setSaveStatus(local.success ? "unsaved" : "error");
+    setSaveStatus(syncWorkflowInFlightRef.current ? "saving" : (local.success ? "unsaved" : "error"));
     setSaveError(local.success ? null : local.error || "تعذر حفظ التراجع محليًا.");
   }, [historyPointer, historyStack]);
 
@@ -356,88 +358,95 @@ export function DeveloperStudioProPage() {
     draftVersionRef.current += 1;
     setHistoryPointer(historyPointer + 1);
     setDraft(restored);
-    setSaveStatus(local.success ? "unsaved" : "error");
+    setSaveStatus(syncWorkflowInFlightRef.current ? "saving" : (local.success ? "unsaved" : "error"));
     setSaveError(local.success ? null : local.error || "تعذر حفظ الإعادة محليًا.");
   }, [historyPointer, historyStack]);
 
   const handleSaveDraft = useCallback(async () => {
-    if (!draft || !draft.hasUnsavedLocalChanges) return;
-
-    // Stage the exact current snapshot locally before compatibility checks.
-    const local = studioService.saveLocalDraft({ ...draft, hasUnsavedLocalChanges: true });
-    if (!local.success) {
-      setSaveStatus("error");
-      setSaveError(local.error || "تعذر حفظ النسخة المحلية.");
-      toast({ title: "فشل الحفظ المحلي", description: local.error, variant: "destructive" });
-      return;
-    }
-    const snapshot: StudioDraft = { ...draft, updatedAt: local.updatedAt, hasUnsavedLocalChanges: true };
-    setDraft(snapshot);
-    setSaveStatus("saving");
-
-    // Validate structural compatibility before the single explicit cloud sync.
-    const validation = validateDraftHierarchy(snapshot);
-    if (!validation.valid) {
-      const message = "تم الاحتفاظ بالتعديلات محليًا، لكن لم تتم المزامنة لوجود مشكلات توافق: " + validation.errors.slice(0, 5).join(" • ");
-      setSaveStatus("error");
-      setSaveError(message);
-      toast({ title: "المسودة تحتاج إلى تصحيح", description: message, variant: "destructive" });
-      return;
-    }
-
-    setSaveStatus("saving");
-    const compatibility = await studioService.checkConflicts(snapshot);
-    if (compatibility.error) {
-      setSaveStatus("error");
-      setSaveError(compatibility.error);
-      toast({ title: "تعذر التحقق من توافق Supabase", description: compatibility.error + " التعديلات محفوظة محليًا ويمكنك إعادة المحاولة.", variant: "destructive" });
-      return;
-    }
-    if (compatibility.hasConflict) {
-      setDetectedConflicts(compatibility.conflicts);
-      setConflictServerRevision(compatibility.serverRevision);
-      setShowConflictModal(true);
-      setSaveStatus("unsaved");
-      setSaveError("توجد نسخة منشورة أحدث؛ عالج التعارض قبل مزامنة المسودة.");
-      setRemoteChangesDetected(true);
-      toast({ title: "التعديلات محفوظة محليًا — توجد نسخة أحدث", description: "لم نكتب فوق المسودة البعيدة. افتح حل التعارض ثم احفظ مرة أخرى.", variant: "destructive" });
-      return;
-    }
-
-    savingToCloudRef.current = true;
+    if (!draft || !draft.hasUnsavedLocalChanges || syncWorkflowInFlightRef.current) return;
+    syncWorkflowInFlightRef.current = true;
+    setIsSyncWorkflowInProgress(true);
     try {
-      const syncResult = await persistDraft(snapshot);
-      const pendingRemote = pendingRealtimeDraftRef.current;
-      pendingRealtimeDraftRef.current = null;
-      if (pendingRemote) {
-        const remoteTime = Date.parse(String(pendingRemote.updated_at || ""));
-        const savedTime = Date.parse(String((syncResult as any)?.updatedAt || ""));
-        if (pendingRemote.__eventType === "DELETE" || (syncResult?.success && Number.isFinite(remoteTime) && remoteTime > savedTime)) {
-          // A second browser changed the same row during our write. Do not silently
-          // replace our current draft; keep it locally and require another compatibility check.
-          const current = draftRef.current || snapshot;
-          const preserved = { ...current, hasUnsavedLocalChanges: true };
-          const localAgain = studioService.saveLocalDraft(preserved);
-          setDraft({ ...preserved, updatedAt: localAgain.updatedAt });
-          setSaveStatus(localAgain.success ? "unsaved" : "error");
-          setSaveError("تغيّرت المسودة من جلسة أخرى أثناء المزامنة. احتفظنا بتعديلاتك محليًا؛ أعد فحص التوافق قبل المزامنة التالية.");
-          setRemoteChangesDetected(true);
-          remoteConflictWarnedRef.current = true;
-          toast({
-            title: "تعارض مزامنة متزامنة",
-            description: "تم رصد كتابة أخرى أثناء الحفظ. لم نستبدل تعديلاتك المحلية؛ راجع التوافق ثم أعد المزامنة.",
-            variant: "destructive",
-          });
+      // Stage the exact current snapshot locally before compatibility checks.
+      const local = studioService.saveLocalDraft({ ...draft, hasUnsavedLocalChanges: true });
+      if (!local.success) {
+        setSaveStatus("error");
+        setSaveError(local.error || "تعذر حفظ النسخة المحلية.");
+        toast({ title: "فشل الحفظ المحلي", description: local.error, variant: "destructive" });
+        return;
+      }
+      const snapshot: StudioDraft = { ...draft, updatedAt: local.updatedAt, hasUnsavedLocalChanges: true };
+      setDraft(snapshot);
+      setSaveStatus("saving");
+
+      // Validate structural compatibility before the single explicit cloud sync.
+      const validation = validateDraftHierarchy(snapshot);
+      if (!validation.valid) {
+        const message = "تم الاحتفاظ بالتعديلات محليًا، لكن لم تتم المزامنة لوجود مشكلات توافق: " + validation.errors.slice(0, 5).join(" • ");
+        setSaveStatus("error");
+        setSaveError(message);
+        toast({ title: "المسودة تحتاج إلى تصحيح", description: message, variant: "destructive" });
+        return;
+      }
+
+      const compatibility = await studioService.checkConflicts(snapshot);
+      if (compatibility.error) {
+        setSaveStatus("error");
+        setSaveError(compatibility.error);
+        toast({ title: "تعذر التحقق من توافق Supabase", description: compatibility.error + " التعديلات محفوظة محليًا ويمكنك إعادة المحاولة.", variant: "destructive" });
+        return;
+      }
+      if (compatibility.hasConflict) {
+        setDetectedConflicts(compatibility.conflicts);
+        setConflictServerRevision(compatibility.serverRevision);
+        setShowConflictModal(true);
+        setSaveStatus("unsaved");
+        setSaveError("توجد نسخة منشورة أحدث؛ عالج التعارض قبل مزامنة المسودة.");
+        setRemoteChangesDetected(true);
+        toast({ title: "التعديلات محفوظة محليًا — توجد نسخة أحدث", description: "لم نكتب فوق المسودة البعيدة. افتح حل التعارض ثم احفظ مرة أخرى.", variant: "destructive" });
+        return;
+      }
+
+      savingToCloudRef.current = true;
+      try {
+        const syncResult = await persistDraft(snapshot);
+        const pendingRemote = pendingRealtimeDraftRef.current;
+        pendingRealtimeDraftRef.current = null;
+        if (pendingRemote) {
+          const remoteTime = Date.parse(String(pendingRemote.updated_at || ""));
+          const savedTime = Date.parse(String((syncResult as any)?.updatedAt || ""));
+          if (pendingRemote.__eventType === "DELETE" || (syncResult?.success && Number.isFinite(remoteTime) && remoteTime > savedTime)) {
+            // A second browser changed the same row during our write. Do not silently
+            // replace our current draft; keep it locally and require another compatibility check.
+            const current = draftRef.current || snapshot;
+            const preserved = { ...current, hasUnsavedLocalChanges: true };
+            const localAgain = studioService.saveLocalDraft(preserved);
+            setDraft({ ...preserved, updatedAt: localAgain.updatedAt });
+            setSaveStatus(localAgain.success ? "unsaved" : "error");
+            setSaveError("تغيّرت المسودة من جلسة أخرى أثناء المزامنة. احتفظنا بتعديلاتك محليًا؛ أعد فحص التوافق قبل المزامنة التالية.");
+            setRemoteChangesDetected(true);
+            remoteConflictWarnedRef.current = true;
+            toast({
+              title: "تعارض مزامنة متزامنة",
+              description: "تم رصد كتابة أخرى أثناء الحفظ. لم نستبدل تعديلاتك المحلية؛ راجع التوافق ثم أعد المزامنة.",
+              variant: "destructive",
+            });
+          } else if (syncResult?.success) {
+            setRemoteChangesDetected(false);
+            remoteConflictWarnedRef.current = false;
+          } else if (pendingRemote.__eventType !== "DELETE") {
+            setRemoteChangesDetected(true);
+          }
         } else if (syncResult?.success) {
           setRemoteChangesDetected(false);
           remoteConflictWarnedRef.current = false;
         }
-      } else if (syncResult?.success) {
-        setRemoteChangesDetected(false);
-        remoteConflictWarnedRef.current = false;
+      } finally {
+        savingToCloudRef.current = false;
       }
     } finally {
-      savingToCloudRef.current = false;
+      syncWorkflowInFlightRef.current = false;
+      setIsSyncWorkflowInProgress(false);
     }
   }, [draft, persistDraft, toast]);
 
@@ -995,7 +1004,7 @@ export function DeveloperStudioProPage() {
             variant="outline"
             size="sm"
             onClick={() => void handleSaveDraft()}
-            disabled={saveStatus === "saving" || !draft.hasUnsavedLocalChanges}
+            disabled={saveStatus === "saving" || isSyncWorkflowInProgress || !draft.hasUnsavedLocalChanges}
             className="h-8 px-2.5 text-xs gap-1.5 cursor-pointer font-bold"
             title={saveError || "حفظ محلي أولًا، فحص التوافق، ثم مزامنة Supabase (Ctrl+S)"}
           >
