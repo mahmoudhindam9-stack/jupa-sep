@@ -877,7 +877,22 @@ export function DeveloperStudioProPage() {
             {saveStatus === "error" && (
               <Badge variant="outline" className="gap-1 text-[11px] bg-destructive/10 text-destructive border-destructive/30">
                 <AlertCircle className="w-3 h-3" />
-                <span title={saveError || "تعذر حفظ المسودة على Supabase"}>فشل الحفظ — اضغط «حفظ المسودة» لعرض التفاصيل</span>
+                <span title={saveError || "تعذر حفظ المسودة على Supabase"}>فشل الحفظ — اضغط «حفظ ومزامنة» لعرض التفاصيل</span>
+              </Badge>
+            )}
+            <Badge
+              variant="outline"
+              className={"gap-1 text-[10px] " + (isRealtimeConnected
+                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700"
+                : "border-amber-500/30 bg-amber-500/10 text-amber-700")}
+              title="اتصال Supabase Realtime لتلقي تغييرات المسودات والإصدارات من الجلسات الأخرى"
+            >
+              <span className={"h-1.5 w-1.5 rounded-full " + (isRealtimeConnected ? "bg-emerald-500" : "bg-amber-500")} />
+              {isRealtimeConnected ? "Realtime متصل" : "Realtime غير متصل"}
+            </Badge>
+            {remoteChangesDetected && (
+              <Badge variant="destructive" className="gap-1 text-[10px]" title="تم رصد تغيير بعيد؛ ستُعاد مراجعة التوافق قبل المزامنة">
+                <AlertCircle className="h-3 w-3" /> تغييرات بعيدة
               </Badge>
             )}
           </div>
@@ -938,10 +953,10 @@ export function DeveloperStudioProPage() {
             onClick={() => void handleSaveDraft()}
             disabled={saveStatus === "saving" || !draft.hasUnsavedLocalChanges}
             className="h-8 px-2.5 text-xs gap-1.5 cursor-pointer font-bold"
-            title={saveError || "حفظ المسودة (Ctrl+S)"}
+            title={saveError || "حفظ محلي أولًا، فحص التوافق، ثم مزامنة Supabase (Ctrl+S)"}
           >
             {saveStatus === "saving" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-            <span>{saveStatus === "saving" ? "جاري الحفظ" : "حفظ المسودة"}</span>
+            <span>{saveStatus === "saving" ? "جاري المزامنة" : "حفظ ومزامنة"}</span>
           </Button>
         </div>
 
