@@ -375,7 +375,9 @@ class StudioService {
         const localIsNewer = !!cached &&
           Number.isFinite(Date.parse(cached.updatedAt)) &&
           Date.parse(cached.updatedAt) > Date.parse(remote.updatedAt);
-        const chosen = localIsNewer ? cached! : remote;
+        const chosen = localIsNewer
+          ? { ...cached!, hasUnsavedLocalChanges: true }
+          : { ...remote, hasUnsavedLocalChanges: false };
         this.inMemoryDraft = chosen;
         this.persistLocalDraft(chosen);
         return chosen;
@@ -392,7 +394,7 @@ class StudioService {
     if (cached) {
       // No server row was returned: keep the local copy, but do not label it
       // as a server-confirmed clean draft.
-      const pending = { ...cached, hasUnpublishedChanges: true };
+      const pending = { ...cached, hasUnpublishedChanges: true, hasUnsavedLocalChanges: true };
       this.inMemoryDraft = pending;
       return pending;
     }
@@ -409,6 +411,7 @@ class StudioService {
       updatedAt: new Date().toISOString(),
       createdAt: new Date().toISOString(),
       hasUnpublishedChanges: false,
+      hasUnsavedLocalChanges: false,
     };
 
     this.inMemoryDraft = newDraft;
@@ -428,9 +431,11 @@ class StudioService {
       domEdits: draft.domEdits || {},
       updatedAt,
       hasUnpublishedChanges: true,
+      hasUnsavedLocalChanges: true,
     };
 
-    // Preserve local work if the cloud is unavailable, but never report it as cloud-saved.
+    // Retain an explicitly marked recovery copy while the manual save is in flight.
+    // This method is called only by the user-triggered Save Draft action.
     this.inMemoryDraft = updatedDraft;
     this.persistLocalDraft(updatedDraft);
 
@@ -467,7 +472,12 @@ class StudioService {
         throw new Error("لم يؤكد Supabase حفظ المسودة؛ بقيت نسخة محلية غير متزامنة.");
       }
 
-      const confirmedDraft = { ...updatedDraft, id: data.id || updatedDraft.id, updatedAt: data.updated_at || updatedAt };
+      const confirmedDraft = {
+        ...updatedDraft,
+        id: data.id || updatedDraft.id,
+        updatedAt: data.updated_at || updatedAt,
+        hasUnsavedLocalChanges: false,
+      };
       this.inMemoryDraft = confirmedDraft;
       this.persistLocalDraft(confirmedDraft);
       return { success: true, updatedAt: confirmedDraft.updatedAt };
@@ -507,29 +517,51 @@ class StudioService {
    * Discard all draft changes and reset back to the latest published config
    */
   async discardDraft(owner = "admin"): Promise<StudioDraft> {
-    const published = await this.fetchRemotePublishedConfig();
-
-    // Refuse to report a successful discard if the server still retains the old draft.
-    const { error } = await supabase
+    // Discard only the in-memory edits: restore the last manually saved server draft.
+    // If no saved draft exists, restore the latest published configuration.
+    const { data, error } = (await supabase
       .from("studio_drafts" as any)
-      .delete()
-      .eq("owner", owner);
+      .select("*")
+      .eq("owner", owner)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()) as any;
+
     if (error) {
-      throw new Error("تعذر حذف المسودة من Supabase؛ لم يتم تأكيد التراجع: " + error.message);
+      throw new Error("تعذر تحميل آخر مسودة محفوظة من Supabase؛ لم يتم إلغاء التعديلات: " + error.message);
     }
 
-    const freshDraft: StudioDraft = {
-      id: "draft_" + owner,
-      owner,
-      baseRevision: published.revision,
-      schemaVersion: published.schemaVersion || published.schema_version || CURRENT_SCHEMA_VERSION,
-      pages: JSON.parse(JSON.stringify(published.pages)),
-      elements: JSON.parse(JSON.stringify(published.elements)),
-      domEdits: JSON.parse(JSON.stringify(published.domEdits || {})),
-      updatedAt: new Date().toISOString(),
-      createdAt: new Date().toISOString(),
-      hasUnpublishedChanges: false,
-    };
+    let freshDraft: StudioDraft;
+    if (data?.pages && data?.elements) {
+      freshDraft = {
+        id: data.id || "draft_" + owner,
+        owner: data.owner || owner,
+        baseRevision: Number(data.base_revision || 1),
+        schemaVersion: Number(data.schema_version || CURRENT_SCHEMA_VERSION),
+        pages: data.pages || {},
+        elements: data.elements || {},
+        domEdits: data.dom_edits || {},
+        updatedAt: data.updated_at || new Date().toISOString(),
+        createdAt: data.created_at || data.updated_at || new Date().toISOString(),
+        hasUnpublishedChanges: true,
+        hasUnsavedLocalChanges: false,
+      };
+    } else {
+      const published = await this.fetchRemotePublishedConfig();
+      freshDraft = {
+        id: "draft_" + owner,
+        owner,
+        baseRevision: published.revision,
+        schemaVersion: published.schemaVersion || published.schema_version || CURRENT_SCHEMA_VERSION,
+        pages: JSON.parse(JSON.stringify(published.pages || {})),
+        elements: JSON.parse(JSON.stringify(published.elements || {})),
+        domEdits: JSON.parse(JSON.stringify(published.domEdits || {})),
+        updatedAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        hasUnpublishedChanges: false,
+        hasUnsavedLocalChanges: false,
+      };
+    }
 
     this.inMemoryDraft = freshDraft;
     this.persistLocalDraft(freshDraft);
