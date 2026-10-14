@@ -80,12 +80,10 @@ export function DeveloperStudioProPage() {
   const saveErrorRef = useRef<string | null>(null);
   const draftVersionRef = useRef(0);
   const saveQueueRef = useRef<Promise<unknown>>(Promise.resolve());
-  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Undo / Redo History Stack
   const [historyStack, setHistoryStack] = useState<StudioDraft[]>([]);
   const [historyPointer, setHistoryPointer] = useState<number>(-1);
-  const isUndoRedoActionRef = useRef<boolean>(false);
 
   // Open on the real application by default; the component builder is available separately.
   const [workspaceMode, setWorkspaceMode] = useState<"builder" | "live">("live");
@@ -111,8 +109,8 @@ export function DeveloperStudioProPage() {
           setActivePageId(firstPageId);
           setHistoryStack([JSON.parse(JSON.stringify(loadedDraft))]);
           setHistoryPointer(0);
-          setLastSavedAt(loadedDraft.updatedAt);
-          setSaveStatus(loadedDraft.hasUnpublishedChanges ? "unsaved" : "saved");
+          setLastSavedAt(loadedDraft.hasUnsavedLocalChanges ? "" : loadedDraft.updatedAt);
+          setSaveStatus(loadedDraft.hasUnsavedLocalChanges ? "unsaved" : "saved");
         }
       } catch (err: any) {
         toast({
@@ -128,7 +126,6 @@ export function DeveloperStudioProPage() {
     init();
     return () => {
       mounted = false;
-      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
   }, []);
 
@@ -146,6 +143,9 @@ export function DeveloperStudioProPage() {
             setLastSavedAt(result.updatedAt);
             setSaveError(null);
             saveErrorRef.current = null;
+            setDraft((current) => current && versionAtSave === draftVersionRef.current
+              ? { ...current, hasUnsavedLocalChanges: false }
+              : current);
           }
           if (manual && versionAtSave === draftVersionRef.current) {
             toast({ title: "تم حفظ المسودة على Supabase", description: "تم تأكيد حفظ التغييرات على الخادم." });
@@ -181,63 +181,49 @@ export function DeveloperStudioProPage() {
     return queued;
   }, [toast]);
 
-  // Push draft to undo stack & trigger a serialized autosave.
+  // Every edit stays in memory. Cloud persistence happens only through Save Draft.
   const commitDraftChange = useCallback(
-    (newDraft: StudioDraft) => {
+    (changedDraft: StudioDraft) => {
+      const newDraft = { ...changedDraft, hasUnsavedLocalChanges: true };
       draftVersionRef.current += 1;
       setDraft(newDraft);
       setSaveError(null);
       setSaveStatus("unsaved");
 
-      if (!isUndoRedoActionRef.current) {
-        setHistoryStack((prev) => {
-          const truncated = prev.slice(0, historyPointer + 1);
-          return [...truncated, JSON.parse(JSON.stringify(newDraft))].slice(-25);
-        });
-        setHistoryPointer((prev) => Math.min(prev + 1, 24));
-      }
-      isUndoRedoActionRef.current = false;
-
-      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-      setSaveStatus("saving");
-      autoSaveTimerRef.current = setTimeout(() => {
-        void persistDraft(newDraft, false);
-      }, 800);
+      setHistoryStack((prev) => {
+        const truncated = prev.slice(0, historyPointer + 1);
+        return [...truncated, JSON.parse(JSON.stringify(newDraft))].slice(-25);
+      });
+      setHistoryPointer((prev) => Math.min(prev + 1, 24));
     },
-    [historyPointer, persistDraft],
+    [historyPointer],
   );
 
-  // Undo Handler  // Undo Handler
+  // Undo and redo are local editing operations, never cloud writes.
   const handleUndo = useCallback(() => {
-    if (historyPointer > 0) {
-      isUndoRedoActionRef.current = true;
-      const targetState = historyStack[historyPointer - 1];
-      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-      setHistoryPointer(historyPointer - 1);
-      draftVersionRef.current += 1;
-      setDraft(JSON.parse(JSON.stringify(targetState)));
-      void persistDraft(targetState, false);
-    }
-  }, [historyPointer, historyStack, persistDraft]);
+    if (historyPointer <= 0) return;
+    const targetState = historyStack[historyPointer - 1];
+    draftVersionRef.current += 1;
+    setHistoryPointer(historyPointer - 1);
+    setDraft({ ...JSON.parse(JSON.stringify(targetState)), hasUnsavedLocalChanges: true });
+    setSaveStatus("unsaved");
+    setSaveError(null);
+  }, [historyPointer, historyStack]);
 
-  // Redo Handler
   const handleRedo = useCallback(() => {
-    if (historyPointer < historyStack.length - 1) {
-      isUndoRedoActionRef.current = true;
-      const targetState = historyStack[historyPointer + 1];
-      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-      setHistoryPointer(historyPointer + 1);
-      draftVersionRef.current += 1;
-      setDraft(JSON.parse(JSON.stringify(targetState)));
-      void persistDraft(targetState, false);
-    }
-  }, [historyPointer, historyStack, persistDraft]);
+    if (historyPointer >= historyStack.length - 1) return;
+    const targetState = historyStack[historyPointer + 1];
+    draftVersionRef.current += 1;
+    setHistoryPointer(historyPointer + 1);
+    setDraft({ ...JSON.parse(JSON.stringify(targetState)), hasUnsavedLocalChanges: true });
+    setSaveStatus("unsaved");
+    setSaveError(null);
+  }, [historyPointer, historyStack]);
 
   const handleSaveDraft = useCallback(async () => {
-    if (!draft) return;
-    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    if (!draft || !draft.hasUnsavedLocalChanges) return;
     setSaveStatus("saving");
-    await persistDraft(draft, true);
+    await persistDraft({ ...draft, hasUnsavedLocalChanges: true }, true);
   }, [draft, persistDraft]);
 
   // Keyboard shortcut listener (Ctrl+Z, Ctrl+Y, Ctrl+S)
@@ -576,20 +562,27 @@ export function DeveloperStudioProPage() {
 
   // Discard draft completely (reset to latest published)
   const handleDiscardDraft = async () => {
-    if (!window.confirm("هل أنت متأكد من إلغاء كافة التعديلات غير المنشورة واستعادة آخر نسخة منشورة؟")) {
+    if (!draft?.hasUnsavedLocalChanges) return;
+    if (!window.confirm("سيتم تجاهل التعديلات التي لم تحفظها يدويًا واسترجاع آخر مسودة أكد Supabase حفظها. هل تريد المتابعة؟")) {
       return;
     }
 
     try {
       setIsLoading(true);
       const fresh = await studioService.discardDraft("admin");
+      draftVersionRef.current += 1;
       setDraft(fresh);
+      setActivePageId(Object.keys(fresh.pages || {})[0] || "page_dashboard");
+      setSelectedElementId(null);
       setHistoryStack([JSON.parse(JSON.stringify(fresh))]);
       setHistoryPointer(0);
       setSaveStatus("saved");
-      toast({ title: "تم التراجع عن جميع التعديلات غير المنشورة" });
+      setSaveError(null);
+      saveErrorRef.current = null;
+      setLastSavedAt(fresh.updatedAt);
+      toast({ title: "تم استرجاع آخر مسودة محفوظة", description: "التعديلات غير المحفوظة تم تجاهلها." });
     } catch (e: any) {
-      toast({ title: "خطأ في التراجع", description: e.message, variant: "destructive" });
+      toast({ title: "تعذر إلغاء التعديلات", description: e.message, variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
@@ -598,6 +591,14 @@ export function DeveloperStudioProPage() {
   // Pre-flight check before opening Publish Modal
   const handleTriggerPublish = async () => {
     if (!draft) return;
+    if (draft.hasUnsavedLocalChanges) {
+      toast({
+        title: "احفظ المسودة أولًا",
+        description: "اضغط «حفظ المسودة» وانتظر تأكيد Supabase قبل نشر التغييرات.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     // Check conflict first
     const conflictCheck = await studioService.checkConflicts(draft);
@@ -781,7 +782,7 @@ export function DeveloperStudioProPage() {
             variant="ghost"
             size="sm"
             onClick={handleDiscardDraft}
-            disabled={!draft.hasUnpublishedChanges}
+            disabled={!draft.hasUnsavedLocalChanges}
             className="h-8 px-2 text-xs gap-1 text-muted-foreground hover:text-destructive cursor-pointer disabled:opacity-40"
             title="إلغاء التعديلات غير المنشورة"
           >
@@ -888,16 +889,18 @@ export function DeveloperStudioProPage() {
           onClose={() => setShowPublishModal(false)}
           draft={draft}
           onPublishSuccess={(newRevision) => {
-            setDraft((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    baseRevision: newRevision,
-                    hasUnpublishedChanges: false,
-                  }
-                : null,
-            );
+            const publishedDraft: StudioDraft = {
+              ...draft,
+              baseRevision: newRevision,
+              hasUnpublishedChanges: false,
+              hasUnsavedLocalChanges: false,
+            };
+            setDraft(publishedDraft);
+            setHistoryStack([JSON.parse(JSON.stringify(publishedDraft))]);
+            setHistoryPointer(0);
+            setLastSavedAt(publishedDraft.updatedAt);
             setSaveStatus("saved");
+            setSaveError(null);
           }}
           onConflictDetected={({ serverRevision }) => {
             studioService.checkConflicts(draft).then((res) => {
