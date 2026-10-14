@@ -395,7 +395,7 @@ class StudioService {
           ? {
               ...cached!,
               // Unknown legacy baselines must not overwrite an existing cloud row.
-              serverUpdatedAt: cached!.serverUpdatedAt || (cached!.hasUnsavedLocalChanges ? "__unknown_server_version__" : remote.serverUpdatedAt),
+              serverUpdatedAt: cached!.serverUpdatedAt || "__unknown_server_version__",
               hasUnsavedLocalChanges: true,
             }
           : { ...remote, hasUnsavedLocalChanges: false };
