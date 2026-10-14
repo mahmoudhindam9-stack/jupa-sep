@@ -329,6 +329,17 @@ class StudioService {
   }
 
   /**
+   * Accept a server-confirmed Realtime publication event without generating another write.
+   */
+  acceptRealtimePublishedConfig(config: StudioPublishedConfig): void {
+    this.inMemoryPublished = config;
+    if (typeof window !== "undefined") {
+      try { localStorage.setItem(LOCAL_PUBLISHED_KEY, JSON.stringify(config)); } catch { /* quota/private mode */ }
+      window.dispatchEvent(new CustomEvent("studio_published_updated", { detail: config }));
+    }
+  }
+
+  /**
    * Load or create a draft for the current editor session.
    * If no draft exists, clones from the latest published revision.
    */
