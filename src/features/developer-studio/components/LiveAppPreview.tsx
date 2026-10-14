@@ -221,8 +221,9 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange }: Props) {
         if (!enabled || document.body.dataset.codingStudio !== "on" || event.button !== 0) return;
         const target = event.target instanceof Element ? event.target : null;
         if (!target) return;
-        const el = target.closest(editableSelector);
+        let el = target.closest(editableSelector);
         if (!el || el === document.body || el === document.documentElement) return;
+        if (["PATH", "CIRCLE", "RECT", "LINE", "POLYLINE", "POLYGON"].includes(el.tagName)) el = el.closest("svg") || el;
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
@@ -231,7 +232,8 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange }: Props) {
         const values = existingTranslate === "none" ? [] : existingTranslate.match(/-?\d+(?:\.\d+)?/g) || [];
         const baseX = Number(values[0] || 0);
         const baseY = Number(values[1] || 0);
-        dragState = { el, selector: selectorFor(el), startX: event.clientX, startY: event.clientY, baseX, baseY, x: baseX, y: baseY, moved: false };
+        dragState = { el, selector: selectorFor(el), pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, baseX, baseY, x: baseX, y: baseY, moved: false };
+        try { el.setPointerCapture(event.pointerId); } catch { /* pointer capture is optional */ }
       }, true);
       document.addEventListener("pointermove", (event) => {
         if (!enabled || !dragState) return;
@@ -263,8 +265,9 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange }: Props) {
         if (!enabled || document.body.dataset.codingStudio !== "on") return;
         const target = event.target instanceof Element ? event.target : null;
         if (!target) return;
-        const el = target.closest(editableSelector);
+        let el = target.closest(editableSelector);
         if (!el || el === document.body || el === document.documentElement) return;
+        if (["PATH", "CIRCLE", "RECT", "LINE", "POLYLINE", "POLYGON"].includes(el.tagName)) el = el.closest("svg") || el;
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
@@ -433,6 +436,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange }: Props) {
               </div>
               <Button type="button" size="sm" variant="ghost" onClick={() => setSelected(null)}><Check size={14} /> إنهاء التحديد</Button>
             </>
+          ) : (
             <div className="rounded-xl border border-dashed p-4 text-xs leading-6 text-muted-foreground">انقر على نص أو زر أو بطاقة من التطبيق نفسه. التعديلات تُحفظ داخل المسودة، ولا تصبح معتمدة لبقية المستخدمين إلا بعد تأكيد النشر من الخادم.</div>
           )}
           <div className="mt-auto rounded-lg bg-muted p-2 text-[10px] leading-5 text-muted-foreground">إذا ظهر خطأ مزامنة، تبقى النسخة المحلية موجودة لكن لا تعتبر محفوظة سحابيًا حتى نجاح التأكيد.</div>
