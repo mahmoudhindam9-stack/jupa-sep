@@ -281,7 +281,12 @@ export function DeveloperStudioProPage() {
             setSaveError(null);
             saveErrorRef.current = null;
             setDraft((current) => current && versionAtSave === draftVersionRef.current
-              ? { ...current, updatedAt: result.updatedAt, hasUnsavedLocalChanges: false }
+              ? {
+                  ...current,
+                  updatedAt: result.updatedAt,
+                  serverUpdatedAt: result.updatedAt,
+                  hasUnsavedLocalChanges: false,
+                }
               : current);
             toast({ title: "تم حفظ المسودة على Supabase", description: "تم تأكيد حفظ التغييرات على الخادم." });
           } else {
