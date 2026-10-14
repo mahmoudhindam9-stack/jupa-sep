@@ -281,7 +281,7 @@ export function DeveloperStudioProPage() {
             setSaveStatus("unsaved");
             toast({
               title: "تم حفظ النسخة السابقة",
-              description: "أجريت تعديلات جديدة أثناء الحفظ؛ ما زالت هناك تغييرات غير محفوظة. اضغط «حفظ المسودة» مرة أخرى.",
+              description: "أجريت تعديلات جديدة أثناء الحفظ؛ ما زالت هناك تغييرات غير محفوظة. اضغط «حفظ ومزامنة» مرة أخرى.",
             });
           }
         } else {
@@ -411,7 +411,7 @@ export function DeveloperStudioProPage() {
       pendingRealtimeDraftRef.current = null;
       if (pendingRemote) {
         const remoteTime = Date.parse(String(pendingRemote.updated_at || ""));
-        const savedTime = Date.parse(String(syncResult?.updatedAt || ""));
+        const savedTime = Date.parse(String((syncResult as any)?.updatedAt || ""));
         if (pendingRemote.__eventType === "DELETE" || (syncResult?.success && Number.isFinite(remoteTime) && remoteTime > savedTime)) {
           // A second browser changed the same row during our write. Do not silently
           // replace our current draft; keep it locally and require another compatibility check.
@@ -820,7 +820,7 @@ export function DeveloperStudioProPage() {
     if (draft.hasUnsavedLocalChanges) {
       toast({
         title: "احفظ المسودة أولًا",
-        description: "اضغط «حفظ المسودة» وانتظر تأكيد Supabase قبل نشر التغييرات.",
+        description: "اضغط «حفظ ومزامنة» وانتظر تأكيد Supabase قبل نشر التغييرات.",
         variant: "destructive",
       });
       return;
@@ -899,7 +899,7 @@ export function DeveloperStudioProPage() {
             </select>
           </div>
 
-          {/* Auto-save Status Indicator */}
+          {/* Local-first save and Supabase synchronization status */}
           <div className="items-center gap-1.5 hidden md:flex">
             {saveStatus === "saving" && (
               <Badge variant="outline" className="gap-1 text-[11px] bg-amber-500/10 text-amber-700 border-amber-500/30">
