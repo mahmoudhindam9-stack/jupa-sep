@@ -202,7 +202,9 @@ export interface StudioDraft {
   domEdits: Record<string, StudioDomEdit>;
   updatedAt: string;
   createdAt: string;
-  /** True only when the current browser has edits that were not manually confirmed by the server. */
+  /** Last server-confirmed draft row timestamp; used to detect writes from other sessions. */
+  serverUpdatedAt?: string;
+  /** True only when the current browser has edits that were not confirmed by Supabase. */
   hasUnsavedLocalChanges?: boolean;
   hasUnpublishedChanges: boolean;
 }
