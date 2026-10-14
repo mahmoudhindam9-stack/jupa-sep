@@ -109,7 +109,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
       setStatus("تم تحديد العنصر: " + item.tag);
     } else if (event.data.type === "STUDIO_CHANGE") {
       commitEdits(String(event.data.selector), event.data.patch || {});
-      setStatus("تم تعديل المعاينة — الحفظ التلقائي للمسودة جارٍ");
+      setStatus("تم تعديل المعاينة — التغيير غير محفوظ؛ اضغط «حفظ المسودة»");
     } else if (event.data.type === "STUDIO_BRIDGE_READY") {
       setReady(true);
       setStatus("المعاينة الحقيقية جاهزة");
@@ -138,6 +138,14 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
   useEffect(() => {
     if (ready) send({ action: "setMode", enabled: editMode });
   }, [editMode, ready, send]);
+
+  // Keep the real iframe in sync with undo/redo and any restored draft snapshot.
+  useEffect(() => {
+    const snapshot = initialEdits || {};
+    editsRef.current = snapshot;
+    setEdits(snapshot);
+    if (ready) send({ action: "restore", edits: snapshot });
+  }, [initialEdits, ready, send]);
 
   const installBridge = useCallback(() => {
     const doc = iframeRef.current?.contentDocument;
@@ -597,7 +605,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
                 <label className="text-xs">استدارة الحواف<input value={borderRadius} placeholder="12px أو 50%" onChange={e => { setBorderRadius(e.target.value); applyStyle({ borderRadius: e.target.value }); }} className="mt-1 w-full rounded-lg border bg-background p-2" /></label>
                 <label className="text-xs">الظل<select value={shadowStyle} onChange={e => { setShadowStyle(e.target.value); applyStyle({ boxShadow: e.target.value }); }} className="mt-1 w-full rounded-lg border bg-background p-2"><option value="none">بدون</option><option value="0 1px 3px rgba(0,0,0,.12)">خفيف</option><option value="0 4px 12px rgba(0,0,0,.16)">متوسط</option><option value="0 12px 32px rgba(0,0,0,.22)">قوي</option><option value="0 0 0 2px rgba(99,102,241,.35)">إطار مضيء</option></select></label>
               </div>
-              <div className="rounded-lg bg-muted/60 p-2 text-[10px] leading-5 text-muted-foreground">حرّك العنصر بالسحب المباشر داخل المعاينة. يتم حفظ الموقع والتنسيقات في المسودة تلقائيًا.</div>
+              <div className="rounded-lg bg-muted/60 p-2 text-[10px] leading-5 text-muted-foreground">حرّك العنصر بالسحب المباشر داخل المعاينة. التغييرات تبقى غير محفوظة حتى تضغط «حفظ المسودة».</div>
               <div className="grid grid-cols-2 gap-2">
                 <Button type="button" size="sm" variant="outline" onClick={() => action("moveUp")}><ArrowUp size={14} /> ترتيب لأعلى</Button>
                 <Button type="button" size="sm" variant="outline" onClick={() => action("moveDown")}><ArrowDown size={14} /> ترتيب لأسفل</Button>
