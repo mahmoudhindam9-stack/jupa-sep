@@ -570,6 +570,39 @@ class StudioService {
   }
 
   /**
+   * Explicitly discard the saved draft and load the latest published version.
+   * Used only by the conflict-resolution action whose meaning is "Reload Latest".
+   */
+  async reloadLatestPublishedDraft(owner = "admin"): Promise<StudioDraft> {
+    const published = await this.fetchRemotePublishedConfig();
+    const { error } = await supabase
+      .from("studio_drafts" as any)
+      .delete()
+      .eq("owner", owner);
+    if (error) {
+      throw new Error("تعذر حذف المسودة القديمة من Supabase؛ لم يتم تحميل أحدث نسخة: " + error.message);
+    }
+
+    const freshDraft: StudioDraft = {
+      id: "draft_" + owner,
+      owner,
+      baseRevision: published.revision,
+      schemaVersion: published.schemaVersion || published.schema_version || CURRENT_SCHEMA_VERSION,
+      pages: JSON.parse(JSON.stringify(published.pages || {})),
+      elements: JSON.parse(JSON.stringify(published.elements || {})),
+      domEdits: JSON.parse(JSON.stringify(published.domEdits || {})),
+      updatedAt: published.publishedAt || new Date().toISOString(),
+      createdAt: published.publishedAt || new Date().toISOString(),
+      hasUnpublishedChanges: false,
+      hasUnsavedLocalChanges: false,
+    };
+
+    this.inMemoryDraft = freshDraft;
+    this.persistLocalDraft(freshDraft);
+    return freshDraft;
+  }
+
+  /**
    * Check for optimistic concurrency conflicts before publishing
    */
   async checkConflicts(draft: StudioDraft): Promise<{
