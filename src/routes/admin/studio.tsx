@@ -16,6 +16,7 @@ import {
   ConflictDetail,
 } from "@/features/developer-studio/models/studio.types";
 import { studioService } from "@/features/developer-studio/services/studioService";
+import { supabase } from "@/integrations/supabase/client";
 import { ElementTreePanel } from "@/features/developer-studio/components/ElementTreePanel";
 import { VisualEditorCanvas } from "@/features/developer-studio/components/VisualEditorCanvas";
 import { PropertiesPanel } from "@/features/developer-studio/components/PropertiesPanel";
@@ -64,6 +65,12 @@ export function DeveloperStudioProPage() {
 
   // Core Draft State
   const [draft, setDraft] = useState<StudioDraft | null>(null);
+  const draftRef = useRef<StudioDraft | null>(null);
+  draftRef.current = draft;
+  const savingToCloudRef = useRef(false);
+  const remoteConflictWarnedRef = useRef(false);
+  const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
+  const [remoteChangesDetected, setRemoteChangesDetected] = useState(false);
   const [activePageId, setActivePageId] = useState<string>("page_dashboard");
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -129,6 +136,114 @@ export function DeveloperStudioProPage() {
     };
   }, []);
 
+  // Keep Studio connected to Supabase Realtime. Clean local state may accept remote drafts;
+  // dirty local edits are never overwritten by another browser/session.
+  useEffect(() => {
+    const channel = supabase
+      .channel("developer_studio_realtime_sync")
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "studio_drafts",
+        filter: "owner=eq.admin",
+      }, (payload) => {
+        if (savingToCloudRef.current) return;
+        const current = draftRef.current;
+        if (payload.eventType === "DELETE") {
+          if (current?.hasUnsavedLocalChanges) {
+            setRemoteChangesDetected(true);
+            return;
+          }
+          return;
+        }
+
+        const row = payload.new as Record<string, any>;
+        if (!row?.pages || !row?.elements) return;
+        const incoming: StudioDraft = {
+          id: String(row.id || "draft_admin"),
+          owner: String(row.owner || "admin"),
+          baseRevision: Number(row.base_revision || 1),
+          schemaVersion: Number(row.schema_version || CURRENT_SCHEMA_VERSION),
+          pages: row.pages || {},
+          elements: row.elements || {},
+          domEdits: row.dom_edits || {},
+          updatedAt: String(row.updated_at || new Date().toISOString()),
+          createdAt: String(row.created_at || row.updated_at || new Date().toISOString()),
+          hasUnpublishedChanges: true,
+          hasUnsavedLocalChanges: false,
+        };
+
+        if (current?.hasUnsavedLocalChanges) {
+          setRemoteChangesDetected(true);
+          if (!remoteConflictWarnedRef.current) {
+            remoteConflictWarnedRef.current = true;
+            toast({
+              title: "وصل تحديث آخر للمسودة",
+              description: "احتفظنا بتعديلاتك المحلية. قبل المزامنة، احفظ محليًا ثم عالج تعارض الإصدار إذا لزم.",
+              variant: "destructive",
+            });
+          }
+          return;
+        }
+        if (current?.updatedAt && Date.parse(current.updatedAt) >= Date.parse(incoming.updatedAt)) return;
+
+        studioService.acceptRealtimeDraft(incoming);
+        setDraft(incoming);
+        setLastSavedAt(incoming.updatedAt);
+        setSaveStatus("saved");
+        setSaveError(null);
+        setHistoryStack([JSON.parse(JSON.stringify(incoming))]);
+        setHistoryPointer(0);
+        setRemoteChangesDetected(false);
+        remoteConflictWarnedRef.current = false;
+        const firstPageId = Object.keys(incoming.pages || {})[0] || "page_dashboard";
+        setActivePageId(firstPageId);
+        setSelectedElementId(null);
+      })
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "studio_published_configs",
+        filter: "id=eq.active",
+      }, async (payload) => {
+        if (payload.eventType === "DELETE") return;
+        try {
+          const published = await studioService.getPublishedConfig();
+          window.dispatchEvent(new CustomEvent("studio_published_updated", { detail: published }));
+          const current = draftRef.current;
+          if (current && published.revision > current.baseRevision) {
+            setRemoteChangesDetected(true);
+            if (!remoteConflictWarnedRef.current) {
+              remoteConflictWarnedRef.current = true;
+              toast({
+                title: "تم نشر إصدار أحدث",
+                description: `الإصدار المنشور الآن #${published.revision}. ستُفحص التوافقات قبل مزامنة مسودتك؛ لم نستبدل تعديلاتك المحلية.`,
+                variant: "destructive",
+              });
+            }
+          }
+        } catch {
+          // The channel event is advisory; the explicit compatibility check remains authoritative.
+        }
+      })
+      .subscribe((status) => {
+        setIsRealtimeConnected(status === "SUBSCRIBED");
+      });
+
+    const handleOnline = () => {
+      // A channel may have reconnected after a network change; refresh its connection state.
+      setIsRealtimeConnected(false);
+    };
+    window.addEventListener("offline", handleOnline);
+    window.addEventListener("online", handleOnline);
+    return () => {
+      supabase.removeChannel(channel);
+      window.removeEventListener("offline", handleOnline);
+      window.removeEventListener("online", handleOnline);
+      setIsRealtimeConnected(false);
+    };
+  }, [toast]);
+
   // This queue is invoked exclusively by the explicit Save Draft action (or Ctrl+S).
   const persistDraft = useCallback((snapshot: StudioDraft) => {
     const versionAtSave = draftVersionRef.current;
@@ -179,14 +294,21 @@ export function DeveloperStudioProPage() {
     return queued;
   }, [toast]);
 
-  // Every edit stays in memory. Cloud persistence happens only through Save Draft.
+  // First persist each change locally for recovery; do not write to Supabase while editing.
   const commitDraftChange = useCallback(
     (changedDraft: StudioDraft) => {
-      const newDraft = { ...changedDraft, hasUnsavedLocalChanges: true };
+      const changed = { ...changedDraft, hasUnsavedLocalChanges: true };
+      const local = studioService.saveLocalDraft(changed);
+      const newDraft = { ...changed, updatedAt: local.updatedAt };
       draftVersionRef.current += 1;
       setDraft(newDraft);
-      setSaveError(null);
-      setSaveStatus("unsaved");
+      setSaveError(local.success ? null : local.error || "تعذر حفظ النسخة المحلية.");
+      setSaveStatus(local.success ? "unsaved" : "error");
+      if (!local.success) {
+        saveErrorRef.current = local.error || "local-save-failed";
+      } else {
+        saveErrorRef.current = null;
+      }
 
       setHistoryStack((prev) => {
         const truncated = prev.slice(0, historyPointer + 1);
@@ -197,32 +319,83 @@ export function DeveloperStudioProPage() {
     [historyPointer],
   );
 
-  // Undo and redo are local editing operations, never cloud writes.
+  // Undo and redo update the local recovery copy; neither writes to Supabase.
   const handleUndo = useCallback(() => {
     if (historyPointer <= 0) return;
-    const targetState = historyStack[historyPointer - 1];
+    const targetState = { ...JSON.parse(JSON.stringify(historyStack[historyPointer - 1])), hasUnsavedLocalChanges: true };
+    const local = studioService.saveLocalDraft(targetState);
+    const restored = { ...targetState, updatedAt: local.updatedAt };
     draftVersionRef.current += 1;
     setHistoryPointer(historyPointer - 1);
-    setDraft({ ...JSON.parse(JSON.stringify(targetState)), hasUnsavedLocalChanges: true });
-    setSaveStatus("unsaved");
-    setSaveError(null);
+    setDraft(restored);
+    setSaveStatus(local.success ? "unsaved" : "error");
+    setSaveError(local.success ? null : local.error || "تعذر حفظ التراجع محليًا.");
   }, [historyPointer, historyStack]);
 
   const handleRedo = useCallback(() => {
     if (historyPointer >= historyStack.length - 1) return;
-    const targetState = historyStack[historyPointer + 1];
+    const targetState = { ...JSON.parse(JSON.stringify(historyStack[historyPointer + 1])), hasUnsavedLocalChanges: true };
+    const local = studioService.saveLocalDraft(targetState);
+    const restored = { ...targetState, updatedAt: local.updatedAt };
     draftVersionRef.current += 1;
     setHistoryPointer(historyPointer + 1);
-    setDraft({ ...JSON.parse(JSON.stringify(targetState)), hasUnsavedLocalChanges: true });
-    setSaveStatus("unsaved");
-    setSaveError(null);
+    setDraft(restored);
+    setSaveStatus(local.success ? "unsaved" : "error");
+    setSaveError(local.success ? null : local.error || "تعذر حفظ الإعادة محليًا.");
   }, [historyPointer, historyStack]);
 
   const handleSaveDraft = useCallback(async () => {
     if (!draft || !draft.hasUnsavedLocalChanges) return;
+
+    // Stage the exact current snapshot locally before compatibility checks.
+    const local = studioService.saveLocalDraft({ ...draft, hasUnsavedLocalChanges: true });
+    if (!local.success) {
+      setSaveStatus("error");
+      setSaveError(local.error || "تعذر حفظ النسخة المحلية.");
+      toast({ title: "فشل الحفظ المحلي", description: local.error, variant: "destructive" });
+      return;
+    }
+    const snapshot: StudioDraft = { ...draft, updatedAt: local.updatedAt, hasUnsavedLocalChanges: true };
+    setDraft(snapshot);
+
+    // Validate structural compatibility before the single explicit cloud sync.
+    const validation = validateDraftHierarchy(snapshot);
+    if (!validation.valid) {
+      const message = "تم الاحتفاظ بالتعديلات محليًا، لكن لم تتم المزامنة لوجود مشكلات توافق: " + validation.errors.slice(0, 5).join(" • ");
+      setSaveStatus("error");
+      setSaveError(message);
+      toast({ title: "المسودة تحتاج إلى تصحيح", description: message, variant: "destructive" });
+      return;
+    }
+
     setSaveStatus("saving");
-    await persistDraft({ ...draft, hasUnsavedLocalChanges: true });
-  }, [draft, persistDraft]);
+    const compatibility = await studioService.checkConflicts(snapshot);
+    if (compatibility.error) {
+      setSaveStatus("error");
+      setSaveError(compatibility.error);
+      toast({ title: "تعذر التحقق من توافق Supabase", description: compatibility.error + " التعديلات محفوظة محليًا ويمكنك إعادة المحاولة.", variant: "destructive" });
+      return;
+    }
+    if (compatibility.hasConflict) {
+      setDetectedConflicts(compatibility.conflicts);
+      setConflictServerRevision(compatibility.serverRevision);
+      setShowConflictModal(true);
+      setSaveStatus("unsaved");
+      setSaveError("توجد نسخة منشورة أحدث؛ عالج التعارض قبل مزامنة المسودة.");
+      setRemoteChangesDetected(true);
+      toast({ title: "التعديلات محفوظة محليًا — توجد نسخة أحدث", description: "لم نكتب فوق المسودة البعيدة. افتح حل التعارض ثم احفظ مرة أخرى.", variant: "destructive" });
+      return;
+    }
+
+    savingToCloudRef.current = true;
+    try {
+      await persistDraft(snapshot);
+    } finally {
+      savingToCloudRef.current = false;
+      setRemoteChangesDetected(false);
+      remoteConflictWarnedRef.current = false;
+    }
+  }, [draft, persistDraft, toast]);
 
   // Keyboard shortcut listener (Ctrl+Z, Ctrl+Y, Ctrl+S)
   useEffect(() => {
