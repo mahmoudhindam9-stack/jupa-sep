@@ -136,11 +136,13 @@ CREATE POLICY studio_history_admin_read
   FOR SELECT TO authenticated
   USING (public.can_manage_developer_studio());
 
+REVOKE ALL ON public.studio_published_configs FROM anon, authenticated;
 GRANT SELECT ON public.studio_published_configs TO anon, authenticated;
-REVOKE INSERT, UPDATE, DELETE ON public.studio_published_configs FROM anon, authenticated;
+
+REVOKE ALL ON public.studio_drafts FROM anon, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.studio_drafts TO authenticated;
-REVOKE ALL ON public.studio_drafts FROM anon;
+
+REVOKE ALL ON public.studio_history FROM anon, authenticated;
 GRANT SELECT ON public.studio_history TO authenticated;
-REVOKE INSERT, UPDATE, DELETE ON public.studio_history FROM anon, authenticated;
 
 COMMIT;
