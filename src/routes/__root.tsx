@@ -170,6 +170,14 @@ function RootComponent() {
             if (typeof value === "string" && key in html.style) (html.style as any)[key] = value;
           }
           if (edit.deleted) html.style.display = "none";
+          if (typeof edit.order === "number" && html.parentElement) {
+            const siblings = Array.from(html.parentElement.children).filter((el) => el !== html && !(el as HTMLElement).dataset.studioCloneOf);
+            const currentIndex = Array.from(html.parentElement.children).indexOf(html);
+            const targetIndex = Math.max(0, Math.min(edit.order, siblings.length));
+            if (targetIndex < currentIndex && siblings[targetIndex]) html.parentElement.insertBefore(html, siblings[targetIndex]);
+            else if (targetIndex > currentIndex && siblings[targetIndex]) html.parentElement.insertBefore(html, siblings[targetIndex].nextSibling);
+            else if (targetIndex > currentIndex && !siblings[targetIndex]) html.parentElement.appendChild(html);
+          }
           const wanted = Math.min(5, Math.max(0, Number(edit.duplicateCount) || 0));
           const present = html.parentElement ? Array.from(html.parentElement.children).filter((el) => (el as HTMLElement).dataset.studioCloneOf === selector).length : 0;
           for (let n = present; n < wanted; n++) {
@@ -180,13 +188,40 @@ function RootComponent() {
         }
       } catch (error) { console.error("Developer Studio edits could not be applied:", error); }
     };
+    const applyPublishedStudioEdits = (config: any) => {
+      const remoteEdits = config?.domEdits;
+      if (!remoteEdits || typeof remoteEdits !== "object" || !Object.keys(remoteEdits).length) return;
+      try {
+        const local = JSON.parse(localStorage.getItem("custom_text_map") || "{}");
+        localStorage.setItem("custom_text_map", JSON.stringify({ ...local, ...remoteEdits }));
+        applySavedStudioEdits();
+      } catch (error) {
+        console.error("Could not apply published Studio edits:", error);
+      }
+    };
+    const publishedHandler = (event: Event) => applyPublishedStudioEdits((event as CustomEvent).detail);
+    const storageHandler = (event: StorageEvent) => {
+      if (event.key === "custom_text_map") applySavedStudioEdits();
+    };
+    window.addEventListener("studio_published_updated", publishedHandler);
+    window.addEventListener("storage", storageHandler);
+    void import("@/features/developer-studio/services/studioService")
+      .then(({ studioService }) => studioService.getPublishedConfig())
+      .then(applyPublishedStudioEdits)
+      .catch((error) => console.warn("Published Studio config could not be loaded:", error));
+
     applySavedStudioEdits();
     const studioObserver = new MutationObserver(() => {
       studioObserver.disconnect(); applySavedStudioEdits(); studioObserver.observe(document.body, { childList: true, subtree: true });
     });
     studioObserver.observe(document.body, { childList: true, subtree: true });
     const stopAppSync = createAppSync(queryClient);
-    return () => { studioObserver.disconnect(); stopAppSync?.(); };
+    return () => {
+      studioObserver.disconnect();
+      window.removeEventListener("studio_published_updated", publishedHandler);
+      window.removeEventListener("storage", storageHandler);
+      stopAppSync?.();
+    };
   }, [queryClient]);
   return (
     <html lang="ar" dir="rtl" translate="no" suppressHydrationWarning>

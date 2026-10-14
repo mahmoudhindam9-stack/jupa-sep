@@ -23,6 +23,7 @@ import { PublishModal } from "@/features/developer-studio/components/PublishModa
 import { ConflictResolutionModal } from "@/features/developer-studio/components/ConflictResolutionModal";
 import { HistoryRollbackModal } from "@/features/developer-studio/components/HistoryRollbackModal";
 import { StudioElementRenderer } from "@/features/developer-studio/components/StudioElementRenderer";
+import { LiveAppPreview } from "@/features/developer-studio/components/LiveAppPreview";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
@@ -84,6 +85,7 @@ export function DeveloperStudioProPage() {
 
   // Preview Mode
   const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [workspaceMode, setWorkspaceMode] = useState<"builder" | "live">("builder");
 
   // Modals
   const [showPublishModal, setShowPublishModal] = useState(false);
@@ -201,9 +203,14 @@ export function DeveloperStudioProPage() {
       } else if ((e.metaKey || e.ctrlKey) && e.key === "s") {
         e.preventDefault();
         if (draft) {
-          studioService.saveDraft(draft).then(() => {
-            setSaveStatus("saved");
-            toast({ title: "تم حفظ المسودة بنجاح", description: "تم تحديث التخزين المحلي ومزامنة التعديلات." });
+          studioService.saveDraft(draft).then((result) => {
+            setSaveStatus(result.success ? "saved" : "error");
+            toast(result.success
+              ? { title: "تم حفظ المسودة على الخادم", description: "أكد Supabase حفظ التغييرات." }
+              : { title: "لم يتم تأكيد الحفظ السحابي", description: result.error || "التعديلات محفوظة محليًا فقط.", variant: "destructive" });
+          }).catch((error) => {
+            setSaveStatus("error");
+            toast({ title: "فشل حفظ المسودة", description: error?.message || "تعذر الاتصال بالخادم.", variant: "destructive" });
           });
         }
       }
@@ -551,6 +558,10 @@ export function DeveloperStudioProPage() {
 
     // Check conflict first
     const conflictCheck = await studioService.checkConflicts(draft);
+    if (conflictCheck.error) {
+      toast({ title: "تعذر التحقق من الإصدار الحالي", description: conflictCheck.error, variant: "destructive" });
+      return;
+    }
     if (conflictCheck.hasConflict) {
       setDetectedConflicts(conflictCheck.conflicts);
       setConflictServerRevision(conflictCheck.serverRevision);
@@ -676,13 +687,33 @@ export function DeveloperStudioProPage() {
 
           <Button
             type="button"
+            variant={workspaceMode === "builder" ? "default" : "outline"}
+            size="sm"
+            onClick={() => { setWorkspaceMode("builder"); setIsPreviewMode(false); }}
+            className="h-8 px-2.5 text-xs gap-1.5 cursor-pointer font-bold"
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>مصمم العناصر</span>
+          </Button>
+          <Button
+            type="button"
+            variant={workspaceMode === "live" ? "default" : "outline"}
+            size="sm"
+            onClick={() => { setWorkspaceMode("live"); setIsPreviewMode(false); }}
+            className="h-8 px-2.5 text-xs gap-1.5 cursor-pointer font-bold"
+          >
+            <Eye className="w-3.5 h-3.5" />
+            <span>التطبيق الحقيقي</span>
+          </Button>
+          <Button
+            type="button"
             variant={isPreviewMode ? "default" : "outline"}
             size="sm"
-            onClick={() => setIsPreviewMode(!isPreviewMode)}
+            onClick={() => { setWorkspaceMode("builder"); setIsPreviewMode(!isPreviewMode); }}
             className="h-8 px-2.5 text-xs gap-1.5 cursor-pointer font-bold"
           >
             {isPreviewMode ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-            <span>{isPreviewMode ? "إنهاء المعاينة" : "معاينة المسودة"}</span>
+            <span>{isPreviewMode ? "إنهاء معاينة المسودة" : "معاينة المسودة"}</span>
           </Button>
         </div>
 
@@ -732,8 +763,17 @@ export function DeveloperStudioProPage() {
       {/* ========================================================= */}
       {/* MAIN WORKSPACE BODY                                       */}
       {/* ========================================================= */}
-      {isPreviewMode ? (
-        /* Full Live Preview Mode */
+      {workspaceMode === "live" ? (
+        <LiveAppPreview
+          route={activePage.route}
+          initialEdits={draft.domEdits || {}}
+          onEditsChange={(domEdits) => {
+            if (!draft) return;
+            commitDraftChange({ ...draft, domEdits, hasUnpublishedChanges: true });
+          }}
+        />
+      ) : isPreviewMode ? (
+        /* Structured page preview mode */
         <div className="flex-1 overflow-y-auto p-6 bg-slate-950/5 dark:bg-black/40">
           <div className="max-w-4xl mx-auto space-y-4">
             <div className="bg-card border border-border p-4 rounded-2xl flex items-center justify-between">
