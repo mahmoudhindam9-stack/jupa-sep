@@ -68,6 +68,7 @@ export function DeveloperStudioProPage() {
   const draftRef = useRef<StudioDraft | null>(null);
   draftRef.current = draft;
   const savingToCloudRef = useRef(false);
+  const pendingRealtimeDraftRef = useRef<Record<string, any> | null>(null);
   const remoteConflictWarnedRef = useRef(false);
   const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
   const [remoteChangesDetected, setRemoteChangesDetected] = useState(false);
@@ -147,7 +148,13 @@ export function DeveloperStudioProPage() {
         table: "studio_drafts",
         filter: "owner=eq.admin",
       }, (payload) => {
-        if (savingToCloudRef.current) return;
+        if (savingToCloudRef.current) {
+          pendingRealtimeDraftRef.current = {
+            ...(payload.eventType === "DELETE" ? (payload.old as Record<string, any> || {}) : (payload.new as Record<string, any> || {})),
+            __eventType: payload.eventType,
+          };
+          return;
+        }
         const current = draftRef.current;
         if (payload.eventType === "DELETE") {
           if (current?.hasUnsavedLocalChanges) {
@@ -399,11 +406,38 @@ export function DeveloperStudioProPage() {
 
     savingToCloudRef.current = true;
     try {
-      await persistDraft(snapshot);
+      const syncResult = await persistDraft(snapshot);
+      const pendingRemote = pendingRealtimeDraftRef.current;
+      pendingRealtimeDraftRef.current = null;
+      if (pendingRemote) {
+        const remoteTime = Date.parse(String(pendingRemote.updated_at || ""));
+        const savedTime = Date.parse(String(syncResult?.updatedAt || ""));
+        if (pendingRemote.__eventType === "DELETE" || (syncResult?.success && Number.isFinite(remoteTime) && remoteTime > savedTime)) {
+          // A second browser changed the same row during our write. Do not silently
+          // replace our current draft; keep it locally and require another compatibility check.
+          const current = draftRef.current || snapshot;
+          const preserved = { ...current, hasUnsavedLocalChanges: true };
+          const localAgain = studioService.saveLocalDraft(preserved);
+          setDraft({ ...preserved, updatedAt: localAgain.updatedAt });
+          setSaveStatus(localAgain.success ? "unsaved" : "error");
+          setSaveError("تغيّرت المسودة من جلسة أخرى أثناء المزامنة. احتفظنا بتعديلاتك محليًا؛ أعد فحص التوافق قبل المزامنة التالية.");
+          setRemoteChangesDetected(true);
+          remoteConflictWarnedRef.current = true;
+          toast({
+            title: "تعارض مزامنة متزامنة",
+            description: "تم رصد كتابة أخرى أثناء الحفظ. لم نستبدل تعديلاتك المحلية؛ راجع التوافق ثم أعد المزامنة.",
+            variant: "destructive",
+          });
+        } else if (syncResult?.success) {
+          setRemoteChangesDetected(false);
+          remoteConflictWarnedRef.current = false;
+        }
+      } else if (syncResult?.success) {
+        setRemoteChangesDetected(false);
+        remoteConflictWarnedRef.current = false;
+      }
     } finally {
       savingToCloudRef.current = false;
-      setRemoteChangesDetected(false);
-      remoteConflictWarnedRef.current = false;
     }
   }, [draft, persistDraft, toast]);
 
@@ -1077,7 +1111,22 @@ export function DeveloperStudioProPage() {
           conflicts={detectedConflicts}
           serverRevision={conflictServerRevision}
           onResolved={(updatedDraft) => {
-            commitDraftChange(updatedDraft);
+            if (updatedDraft.hasUnsavedLocalChanges) {
+              commitDraftChange(updatedDraft);
+              return;
+            }
+            // "Reload latest" returns a clean server-confirmed snapshot; don't mark it dirty.
+            draftVersionRef.current += 1;
+            studioService.acceptRealtimeDraft(updatedDraft);
+            setDraft(updatedDraft);
+            setActivePageId(Object.keys(updatedDraft.pages || {})[0] || "page_dashboard");
+            setSelectedElementId(null);
+            setHistoryStack([JSON.parse(JSON.stringify(updatedDraft))]);
+            setHistoryPointer(0);
+            setSaveStatus("saved");
+            setSaveError(null);
+            setRemoteChangesDetected(false);
+            remoteConflictWarnedRef.current = false;
           }}
         />
       )}
