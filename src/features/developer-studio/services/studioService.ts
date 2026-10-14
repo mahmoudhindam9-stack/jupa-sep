@@ -448,7 +448,9 @@ class StudioService {
   async saveDraft(
     draft: StudioDraft,
   ): Promise<{ success: boolean; updatedAt: string; error?: string }> {
-    const updatedAt = new Date().toISOString();
+    // Preserve the locally generated timestamp so a request can be distinguished from
+    // subsequent local edits made while its network request is in flight.
+    const updatedAt = draft.updatedAt || new Date().toISOString();
     const updatedDraft: StudioDraft = {
       ...draft,
       domEdits: draft.domEdits || {},
@@ -457,10 +459,24 @@ class StudioService {
       hasUnsavedLocalChanges: true,
     };
 
-    // Retain an explicitly marked recovery copy while the manual save is in flight.
-    // This method is called only by the user-triggered Save Draft action.
-    this.inMemoryDraft = updatedDraft;
-    this.persistLocalDraft(updatedDraft);
+    const contentKey = (value: StudioDraft) => JSON.stringify([
+      value.baseRevision,
+      value.schemaVersion,
+      value.pages || {},
+      value.elements || {},
+      value.domEdits || {},
+    ]);
+    const hasNewerLocalChanges = (current: StudioDraft | null): boolean =>
+      !!current &&
+      current.hasUnsavedLocalChanges === true &&
+      contentKey(current) !== contentKey(updatedDraft);
+
+    // The editor already saved locally before starting sync. Only refresh that recovery
+    // copy here if it still matches the submitted snapshot; never replace a newer edit.
+    if (!hasNewerLocalChanges(this.inMemoryDraft)) {
+      this.inMemoryDraft = updatedDraft;
+      this.persistLocalDraft(updatedDraft);
+    }
 
     try {
       // Select the existing row ID first. This works even on installations where
@@ -502,8 +518,13 @@ class StudioService {
         serverUpdatedAt: data.updated_at || updatedAt,
         hasUnsavedLocalChanges: false,
       };
-      this.inMemoryDraft = confirmedDraft;
-      this.persistLocalDraft(confirmedDraft);
+      // An earlier save can succeed after the user has already made newer changes.
+      // The remote row confirms this submitted snapshot only; do not overwrite the newer
+      // recovery copy in memory/localStorage with this older confirmed response.
+      if (!hasNewerLocalChanges(this.inMemoryDraft)) {
+        this.inMemoryDraft = confirmedDraft;
+        this.persistLocalDraft(confirmedDraft);
+      }
       return { success: true, updatedAt: confirmedDraft.updatedAt };
     } catch (e: any) {
       const raw = String(e?.message || e?.details || "تعذر تأكيد حفظ المسودة على الخادم.");
