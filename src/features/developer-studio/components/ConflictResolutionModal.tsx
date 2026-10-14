@@ -60,7 +60,7 @@ export function ConflictResolutionModal({
   const handleReloadLatest = async () => {
     setIsProcessing(true);
     try {
-      const freshDraft = await studioService.discardDraft(draft.owner);
+      const freshDraft = await studioService.reloadLatestPublishedDraft(draft.owner);
       toast({
         title: "تم استرجاع أحدث إصدار من الخادم",
         description: `تم تحديث مساحة العمل لتطابق الإصدار الحالي #${freshDraft.baseRevision}.`,
@@ -110,13 +110,15 @@ export function ConflictResolutionModal({
         ...draft,
         baseRevision: serverRevision,
         updatedAt: new Date().toISOString(),
+        hasUnsavedLocalChanges: true,
+        hasUnpublishedChanges: true,
       };
-      await studioService.saveDraft(updatedDraft);
-      toast({
-        title: "تم توحيد رقم الإصدار المرجعي",
-        description: `يمكنك الآن نشر المسودة فوق الإصدار #${serverRevision}.`,
-      });
+      // Conflict resolution changes only the in-memory draft. The user must click Save Draft.
       onResolved(updatedDraft);
+      toast({
+        title: "تم تحديث مرجع المسودة محليًا",
+        description: `لم يتم حفظ التعديلات تلقائيًا. اضغط «حفظ المسودة» لتأكيد الإصدار المرجعي #${serverRevision} على Supabase.`,
+      });
       onClose();
     } catch (e: any) {
       toast({
