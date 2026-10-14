@@ -421,7 +421,7 @@ class StudioService {
   }
 
   /**
-   * Save draft (autosave / manual save) with timestamp and change detection
+   * Persist a draft only when explicitly requested by the user (manual Save Draft).
    */
   async saveDraft(
     draft: StudioDraft,
