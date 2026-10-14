@@ -288,11 +288,11 @@ class StudioService {
    * Get the active published configuration (from Supabase or local cache)
    */
   private async fetchRemotePublishedConfig(): Promise<StudioPublishedConfig> {
-    const { data, error } = await supabase
+    const { data, error } = (await supabase
       .from("studio_published_configs" as any)
       .select("*")
       .eq("id", "active")
-      .maybeSingle();
+      .maybeSingle()) as any;
 
     if (error) throw new Error("تعذر تحميل النسخة المنشورة من Supabase: " + error.message);
     if (!data || !data.pages) {
@@ -350,11 +350,11 @@ class StudioService {
     }
 
     try {
-      const { data, error } = await supabase
+      const { data, error } = (await supabase
         .from("studio_drafts" as any)
         .select("*")
         .eq("owner", owner)
-        .maybeSingle();
+        .maybeSingle()) as any;
 
       if (error) throw error;
       if (data && data.pages) {
@@ -433,7 +433,7 @@ class StudioService {
     this.persistLocalDraft(updatedDraft);
 
     try {
-      const { data, error } = await supabase
+      const { data, error } = (await supabase
         .from("studio_drafts" as any)
         .upsert({
           id: updatedDraft.id || "draft_" + updatedDraft.owner,
@@ -446,7 +446,7 @@ class StudioService {
           updated_at: updatedAt,
         }, { onConflict: "owner" })
         .select("id, owner, updated_at")
-        .maybeSingle();
+        .maybeSingle()) as any;
 
       if (error) throw error;
       if (!data || data.owner !== updatedDraft.owner) {
@@ -759,11 +759,11 @@ class StudioService {
 
       if (!snapshotToRestore) {
         // Query Supabase directly
-        const { data } = await supabase
+        const { data } = (await supabase
           .from("studio_history" as any)
           .select("*")
           .eq("revision", targetRevision)
-          .maybeSingle();
+          .maybeSingle()) as any;
 
         if (data && data.snapshot) {
           snapshotToRestore = data.snapshot;
@@ -809,11 +809,11 @@ class StudioService {
    */
   async getHistory(): Promise<StudioHistoryRecord[]> {
     try {
-      const { data, error } = await supabase
+      const { data, error } = (await supabase
         .from("studio_history" as any)
         .select("*")
         .order("revision", { ascending: false })
-        .limit(30);
+        .limit(30)) as any;
 
       if (!error && Array.isArray(data) && data.length > 0) {
         const history: StudioHistoryRecord[] = data.map((item) => ({

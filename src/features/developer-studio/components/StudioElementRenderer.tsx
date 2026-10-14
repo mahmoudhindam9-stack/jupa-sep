@@ -127,7 +127,7 @@ export function StudioElementRenderer({
       case "heading": {
         const level = c.level || "h2";
         const text = c.text || "عنوان جديد";
-        const Tag = level as keyof JSX.IntrinsicElements;
+        const Tag = (["h1", "h2", "h3", "h4", "h5", "h6"].includes(level) ? level : "h2") as "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
         return (
           <Tag
             style={elementStyle}

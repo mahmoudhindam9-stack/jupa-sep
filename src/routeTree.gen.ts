@@ -31,6 +31,8 @@ import { Route as AdminParkRouteImport } from './routes/admin/park'
 import { Route as AdminReceiptsRouteImport } from './routes/admin/receipts'
 import { Route as AdminReportsRouteImport } from './routes/admin/reports'
 import { Route as AdminRestaurantRouteImport } from './routes/admin/restaurant'
+import { Route as AdminDeveloperStudioRouteImport } from './routes/admin/developer-studio'
+import { Route as AdminStudioRouteImport } from './routes/admin/studio'
 import { Route as AdminSystemUpdateRouteImport } from './routes/admin/system-update'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
 
@@ -144,6 +146,16 @@ const AdminRestaurantRoute = AdminRestaurantRouteImport.update({
   path: '/restaurant',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminDeveloperStudioRoute = AdminDeveloperStudioRouteImport.update({
+  id: '/developer-studio',
+  path: '/developer-studio',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminStudioRoute = AdminStudioRouteImport.update({
+  id: '/studio',
+  path: '/studio',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminSystemUpdateRoute = AdminSystemUpdateRouteImport.update({
   id: '/system-update',
   path: '/system-update',
@@ -177,6 +189,8 @@ export interface FileRoutesByFullPath {
   '/admin/receipts': typeof AdminReceiptsRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/restaurant': typeof AdminRestaurantRoute
+  '/admin/developer-studio': typeof AdminDeveloperStudioRoute
+  '/admin/studio': typeof AdminStudioRoute
   '/admin/system-update': typeof AdminSystemUpdateRoute
   '/admin/users': typeof AdminUsersRoute
   '/admin/': typeof AdminIndexRoute
@@ -202,6 +216,8 @@ export interface FileRoutesByTo {
   '/admin/receipts': typeof AdminReceiptsRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/restaurant': typeof AdminRestaurantRoute
+  '/admin/developer-studio': typeof AdminDeveloperStudioRoute
+  '/admin/studio': typeof AdminStudioRoute
   '/admin/system-update': typeof AdminSystemUpdateRoute
   '/admin/users': typeof AdminUsersRoute
   '/admin': typeof AdminIndexRoute
@@ -229,6 +245,8 @@ export interface FileRoutesById {
   '/admin/receipts': typeof AdminReceiptsRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/restaurant': typeof AdminRestaurantRoute
+  '/admin/developer-studio': typeof AdminDeveloperStudioRoute
+  '/admin/studio': typeof AdminStudioRoute
   '/admin/system-update': typeof AdminSystemUpdateRoute
   '/admin/users': typeof AdminUsersRoute
   '/admin/': typeof AdminIndexRoute
@@ -257,6 +275,8 @@ export interface FileRouteTypes {
     | '/admin/receipts'
     | '/admin/reports'
     | '/admin/restaurant'
+    | '/admin/developer-studio'
+    | '/admin/studio'
     | '/admin/system-update'
     | '/admin/users'
     | '/admin/'
@@ -282,6 +302,8 @@ export interface FileRouteTypes {
     | '/admin/receipts'
     | '/admin/reports'
     | '/admin/restaurant'
+    | '/admin/developer-studio'
+    | '/admin/studio'
     | '/admin/system-update'
     | '/admin/users'
     | '/admin'
@@ -308,6 +330,8 @@ export interface FileRouteTypes {
     | '/admin/receipts'
     | '/admin/reports'
     | '/admin/restaurant'
+    | '/admin/developer-studio'
+    | '/admin/studio'
     | '/admin/system-update'
     | '/admin/users'
     | '/admin/'
@@ -482,6 +506,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminRestaurantRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/developer-studio': {
+      id: '/admin/developer-studio'
+      path: '/developer-studio'
+      fullPath: '/admin/developer-studio'
+      preLoaderRoute: typeof AdminDeveloperStudioRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/studio': {
+      id: '/admin/studio'
+      path: '/studio'
+      fullPath: '/admin/studio'
+      preLoaderRoute: typeof AdminStudioRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/system-update': {
       id: '/admin/system-update'
       path: '/system-update'
@@ -511,6 +549,8 @@ interface AdminRouteChildren {
   AdminReceiptsRoute: typeof AdminReceiptsRoute
   AdminReportsRoute: typeof AdminReportsRoute
   AdminRestaurantRoute: typeof AdminRestaurantRoute
+  AdminDeveloperStudioRoute: typeof AdminDeveloperStudioRoute
+  AdminStudioRoute: typeof AdminStudioRoute
   AdminSystemUpdateRoute: typeof AdminSystemUpdateRoute
   AdminUsersRoute: typeof AdminUsersRoute
   AdminIndexRoute: typeof AdminIndexRoute
@@ -528,6 +568,8 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminReceiptsRoute: AdminReceiptsRoute,
   AdminReportsRoute: AdminReportsRoute,
   AdminRestaurantRoute: AdminRestaurantRoute,
+  AdminDeveloperStudioRoute: AdminDeveloperStudioRoute,
+  AdminStudioRoute: AdminStudioRoute,
   AdminSystemUpdateRoute: AdminSystemUpdateRoute,
   AdminUsersRoute: AdminUsersRoute,
   AdminIndexRoute: AdminIndexRoute,
