@@ -281,7 +281,10 @@ export function VouchersLedgerSection({
       savedAt: new Date().toISOString(),
     };
     try {
-      const existing = [newDraft, ...voucherDrafts.filter((d) => d.id !== newDraft.id)].slice(0, 15);
+      const existing = [newDraft, ...voucherDrafts.filter((d) => d.id !== newDraft.id)].slice(
+        0,
+        15,
+      );
       localStorage.setItem("restocash_voucher_drafts", JSON.stringify(existing));
       setVoucherDrafts(existing);
       toast({
@@ -1194,330 +1197,330 @@ export function VouchersLedgerSection({
         </DialogContent>
       </Dialog>
 
-        {/* Vouchers Log Table - Full Width */}
-        <div className="w-full bg-card border border-border shadow-md rounded-3xl p-5 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border">
-            <div>
-              <h3 className="font-black text-base text-foreground flex items-center gap-2">
-                <span>سجل السندات والقيود المرحلة</span>
-                <Badge variant="outline" className="text-xs font-mono">
-                  {filteredVouchers.length} سند
-                </Badge>
-              </h3>
-              <p className="text-[11px] text-muted-foreground font-semibold">
-                عرض السندات المحاسبية المعتمدة والمعكوسة وسجل العمليات المحذوفة
-              </p>
-            </div>
+      {/* Vouchers Log Table - Full Width */}
+      <div className="w-full bg-card border border-border shadow-md rounded-3xl p-5 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border">
+          <div>
+            <h3 className="font-black text-base text-foreground flex items-center gap-2">
+              <span>سجل السندات والقيود المرحلة</span>
+              <Badge variant="outline" className="text-xs font-mono">
+                {filteredVouchers.length} سند
+              </Badge>
+            </h3>
+            <p className="text-[11px] text-muted-foreground font-semibold">
+              عرض السندات المحاسبية المعتمدة والمعكوسة وسجل العمليات المحذوفة
+            </p>
+          </div>
 
-            {/* Action buttons: New Voucher + Drafts + Type/Status filters */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <Button
-                onClick={() => setIsNewVoucherDialogOpen(true)}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl text-xs sm:text-sm px-4 py-2 gap-2 shadow-md transition"
-              >
-                <PlusCircle size={16} />
-                <span>تسجيل سند مالي جديد</span>
-              </Button>
+          {/* Action buttons: New Voucher + Drafts + Type/Status filters */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              onClick={() => setIsNewVoucherDialogOpen(true)}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl text-xs sm:text-sm px-4 py-2 gap-2 shadow-md transition"
+            >
+              <PlusCircle size={16} />
+              <span>تسجيل سند مالي جديد</span>
+            </Button>
 
-              {voucherDrafts.length > 0 && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className="gap-1.5 rounded-xl text-xs font-bold border-amber-500/40 text-amber-700 dark:text-amber-400 bg-amber-50/50 dark:bg-amber-950/30"
+            {voucherDrafts.length > 0 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="gap-1.5 rounded-xl text-xs font-bold border-amber-500/40 text-amber-700 dark:text-amber-400 bg-amber-50/50 dark:bg-amber-950/30"
+                  >
+                    <Save size={14} />
+                    <span>المسودات ({voucherDrafts.length})</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-72 p-1.5 rounded-2xl shadow-xl">
+                  <DropdownMenuLabel className="text-right text-[11px] font-black text-muted-foreground">
+                    مسودات السندات غير المكتملة:
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {voucherDrafts.map((draft) => (
+                    <DropdownMenuItem
+                      key={draft.id}
+                      onClick={() => handleLoadVoucherDraft(draft)}
+                      className="flex items-center justify-between gap-2 p-2 rounded-xl cursor-pointer hover:bg-muted text-right"
                     >
-                      <Save size={14} />
-                      <span>المسودات ({voucherDrafts.length})</span>
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-72 p-1.5 rounded-2xl shadow-xl">
-                    <DropdownMenuLabel className="text-right text-[11px] font-black text-muted-foreground">
-                      مسودات السندات غير المكتملة:
-                    </DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    {voucherDrafts.map((draft) => (
-                      <DropdownMenuItem
-                        key={draft.id}
-                        onClick={() => handleLoadVoucherDraft(draft)}
-                        className="flex items-center justify-between gap-2 p-2 rounded-xl cursor-pointer hover:bg-muted text-right"
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold text-foreground truncate">
+                          {draft.description || "مسودة بدون بيان"}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground font-mono">
+                          {Number(draft.amount).toLocaleString()} {draft.selectedCurrency} ·{" "}
+                          {draft.savedAt ? draft.savedAt.slice(0, 10) : ""}
+                        </p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 text-muted-foreground hover:text-rose-600"
+                        onClick={(e) => handleDeleteVoucherDraft(draft.id, e)}
+                        title="حذف المسودة"
                       >
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs font-bold text-foreground truncate">
-                            {draft.description || "مسودة بدون بيان"}
-                          </p>
-                          <p className="text-[10px] text-muted-foreground font-mono">
-                            {Number(draft.amount).toLocaleString()} {draft.selectedCurrency} ·{" "}
-                            {draft.savedAt ? draft.savedAt.slice(0, 10) : ""}
-                          </p>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 text-muted-foreground hover:text-rose-600"
-                          onClick={(e) => handleDeleteVoucherDraft(draft.id, e)}
-                          title="حذف المسودة"
-                        >
-                          <Trash2 size={12} />
-                        </Button>
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
+                        <Trash2 size={12} />
+                      </Button>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
 
-              <div className="h-5 w-px bg-border hidden sm:block" />
+            <div className="h-5 w-px bg-border hidden sm:block" />
 
-              <select
-                className="h-8 rounded-lg border border-input bg-background px-2 text-xs font-bold"
-                value={typeFilter}
-                onChange={(e) => setTypeFilter(e.target.value as any)}
-              >
-                <option value="all">كل الأنواع</option>
-                <option value="receipt">سندات قبض (+)</option>
-                <option value="payment">سندات صرف (-)</option>
-              </select>
+            <select
+              className="h-8 rounded-lg border border-input bg-background px-2 text-xs font-bold"
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value as any)}
+            >
+              <option value="all">كل الأنواع</option>
+              <option value="receipt">سندات قبض (+)</option>
+              <option value="payment">سندات صرف (-)</option>
+            </select>
 
-              <select
-                className="h-8 rounded-lg border border-input bg-background px-2 text-xs font-bold"
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as any)}
-              >
-                <option value="all">كل الحالات</option>
-                <option value="active">النشطة المعتمدة</option>
-                <option value="reverted">المعكوسة (تسوية)</option>
-                {showDeletedAudit && <option value="deleted">المحذوفة فقط</option>}
-              </select>
-            </div>
-          </div>
-
-          {/* Search bar */}
-          <div className="relative">
-            <Search size={16} className="absolute right-3 top-2.5 text-muted-foreground" />
-            <Input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="البحث برقم السند، رقم القيد، التصنيف، مركز التكلفة، أو البيان..."
-              className="h-9 pr-9 text-xs"
-            />
-          </div>
-
-          {/* Vouchers Table */}
-          <div className="rounded-2xl border border-border overflow-hidden">
-            <div className="overflow-x-auto max-h-[600px]">
-              <table className="w-full text-xs">
-                <thead className="bg-muted/80 text-muted-foreground sticky top-0 z-10 backdrop-blur-sm">
-                  <tr className="border-b border-border text-right font-bold">
-                    <th className="p-3">رقم السند</th>
-                    <th className="p-3">النوع</th>
-                    <th className="p-3">التصنيف & المركز</th>
-                    <th className="p-3">المبلغ المعتمد</th>
-                    <th className="p-3">القيد المرحل</th>
-                    <th className="p-3">البيان والتفاصيل</th>
-                    <th className="p-3 text-center">الإجراءات</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {filteredVouchers.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="text-center py-12 text-muted-foreground">
-                        <div className="flex flex-col items-center justify-center space-y-2">
-                          <FileText size={32} className="text-muted-foreground/40" />
-                          <span className="font-bold text-sm">
-                            لا توجد سندات مطابقة لمعايير البحث
-                          </span>
-                          <span className="text-xs">
-                            سجل سنداً جديداً باستخدام النموذج أعلاه للبدء بالترحيل
-                          </span>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredVouchers.map((v) => {
-                      const isPayment = v.type === "payment";
-                      const isReverted = v.reverted === true;
-                      const isDeleted = v.deleted === true;
-
-                      return (
-                        <tr
-                          key={v.id}
-                          className={`hover:bg-muted/40 transition ${
-                            isDeleted
-                              ? "bg-rose-50/40 dark:bg-rose-950/20 line-through opacity-70"
-                              : isReverted
-                                ? "bg-amber-50/30 dark:bg-amber-950/20"
-                                : ""
-                          }`}
-                        >
-                          {/* Voucher ID */}
-                          <td className="p-3 font-mono font-bold text-[11px] text-primary">
-                            <div>{v.id.substring(4, 9).toUpperCase()}</div>
-                            <div className="text-[10px] text-muted-foreground font-normal">
-                              {v.created_at ? v.created_at.slice(0, 10) : "-"}
-                            </div>
-                          </td>
-
-                          {/* Type */}
-                          <td className="p-3">
-                            <Badge
-                              className={`text-[10px] font-bold ${
-                                isDeleted
-                                  ? "bg-rose-200 text-rose-900 dark:bg-rose-900 dark:text-rose-200"
-                                  : isReverted
-                                    ? "bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300"
-                                    : isPayment
-                                      ? "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"
-                                      : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
-                              }`}
-                            >
-                              {isDeleted
-                                ? "محذوف"
-                                : isReverted
-                                  ? "معكوس"
-                                  : isPayment
-                                    ? "صرف (-)"
-                                    : "قبض (+)"}
-                            </Badge>
-                          </td>
-
-                          {/* Category & Cost Center & Account */}
-                          <td className="p-3">
-                            <div className="font-bold text-foreground">{v.category}</div>
-                            <div className="text-[10px] text-muted-foreground">
-                              {v.cost_center || "الإدارة العامة"}
-                            </div>
-                            {v.account_code && (
-                              <div className="text-[10px] font-mono text-primary font-bold flex items-center gap-1 mt-0.5">
-                                <Landmark size={11} className="text-primary/70 shrink-0" />
-                                <span>{v.account_code}</span>
-                                <span className="font-sans font-normal text-muted-foreground truncate max-w-[110px]">
-                                  {erpStore.getAccountName(v.account_code)}
-                                </span>
-                              </div>
-                            )}
-                          </td>
-
-                          {/* Amount & Currency */}
-                          <td className="p-3 font-mono font-black">
-                            <div
-                              className={
-                                isPayment
-                                  ? "text-rose-600 dark:text-rose-400"
-                                  : "text-emerald-600 dark:text-emerald-400"
-                              }
-                            >
-                              {Number(v.amount).toLocaleString(undefined, {
-                                minimumFractionDigits: 2,
-                              })}{" "}
-                              {v.currency}
-                            </div>
-                            {v.currency !== "USD" && v.exchange_rate && (
-                              <div className="text-[10px] text-muted-foreground font-normal">
-                                المعامل: {v.exchange_rate} (≈ $
-                                {Number(v.base_amount || v.amount / v.exchange_rate).toFixed(2)})
-                              </div>
-                            )}
-                          </td>
-
-                          {/* Journal Ref */}
-                          <td className="p-3 font-mono text-[10px]">
-                            {v.journal_reference ? (
-                              <button
-                                onClick={() => handleViewJournalEntry(v)}
-                                className="text-primary hover:underline font-bold flex items-center gap-1"
-                              >
-                                <span>{v.journal_reference}</span>
-                                <Eye size={12} />
-                              </button>
-                            ) : (
-                              <span className="text-muted-foreground">مرحل آلياً</span>
-                            )}
-                          </td>
-
-                          {/* Description */}
-                          <td
-                            className="p-3 text-muted-foreground max-w-[180px] truncate"
-                            title={v.description}
-                          >
-                            {v.description}
-                            {isReverted && v.reverted_reason && (
-                              <div className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold truncate">
-                                سبب العكس: {v.reverted_reason}
-                              </div>
-                            )}
-                            {isDeleted && v.deleted_reason && (
-                              <div className="text-[10px] text-rose-600 dark:text-rose-400 font-semibold truncate">
-                                سبب الحذف: {v.deleted_reason}
-                              </div>
-                            )}
-                          </td>
-
-                          {/* Actions */}
-                          <td className="p-3 text-center">
-                            <div className="flex items-center justify-center gap-1">
-                              {/* View Journal Entry */}
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7 rounded-lg text-slate-600 hover:text-primary hover:bg-primary/10"
-                                title="عرض القيد المحاسبي المتولد"
-                                onClick={() => handleViewJournalEntry(v)}
-                              >
-                                <Eye size={14} />
-                              </Button>
-
-                              {/* Print Voucher */}
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7 rounded-lg text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
-                                title="طباعة السند الرسمي"
-                                onClick={() => handlePrintVoucher(v)}
-                              >
-                                <Printer size={14} />
-                              </Button>
-
-                              {/* Revert Voucher (if not reverted & not deleted) */}
-                              {!isReverted && !isDeleted && (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7 rounded-lg text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/30"
-                                  title="إرجاع أو عكس السند المالي"
-                                  onClick={() => {
-                                    setVoucherToRevert(v);
-                                    setRevertReason("");
-                                  }}
-                                >
-                                  <RotateCcw size={14} />
-                                </Button>
-                              )}
-
-                              {/* Delete Voucher (if not deleted) */}
-                              {!isDeleted && (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/30"
-                                  title="حذف السند (مع التوثيق بالرقابة)"
-                                  onClick={() => {
-                                    setVoucherToDelete(v);
-                                    setDeleteReason("");
-                                  }}
-                                >
-                                  <Trash2 size={14} />
-                                </Button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
+            <select
+              className="h-8 rounded-lg border border-input bg-background px-2 text-xs font-bold"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as any)}
+            >
+              <option value="all">كل الحالات</option>
+              <option value="active">النشطة المعتمدة</option>
+              <option value="reverted">المعكوسة (تسوية)</option>
+              {showDeletedAudit && <option value="deleted">المحذوفة فقط</option>}
+            </select>
           </div>
         </div>
+
+        {/* Search bar */}
+        <div className="relative">
+          <Search size={16} className="absolute right-3 top-2.5 text-muted-foreground" />
+          <Input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="البحث برقم السند، رقم القيد، التصنيف، مركز التكلفة، أو البيان..."
+            className="h-9 pr-9 text-xs"
+          />
+        </div>
+
+        {/* Vouchers Table */}
+        <div className="rounded-2xl border border-border overflow-hidden">
+          <div className="overflow-x-auto max-h-[600px]">
+            <table className="w-full text-xs">
+              <thead className="bg-muted/80 text-muted-foreground sticky top-0 z-10 backdrop-blur-sm">
+                <tr className="border-b border-border text-right font-bold">
+                  <th className="p-3">رقم السند</th>
+                  <th className="p-3">النوع</th>
+                  <th className="p-3">التصنيف & المركز</th>
+                  <th className="p-3">المبلغ المعتمد</th>
+                  <th className="p-3">القيد المرحل</th>
+                  <th className="p-3">البيان والتفاصيل</th>
+                  <th className="p-3 text-center">الإجراءات</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {filteredVouchers.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="text-center py-12 text-muted-foreground">
+                      <div className="flex flex-col items-center justify-center space-y-2">
+                        <FileText size={32} className="text-muted-foreground/40" />
+                        <span className="font-bold text-sm">
+                          لا توجد سندات مطابقة لمعايير البحث
+                        </span>
+                        <span className="text-xs">
+                          سجل سنداً جديداً باستخدام النموذج أعلاه للبدء بالترحيل
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredVouchers.map((v) => {
+                    const isPayment = v.type === "payment";
+                    const isReverted = v.reverted === true;
+                    const isDeleted = v.deleted === true;
+
+                    return (
+                      <tr
+                        key={v.id}
+                        className={`hover:bg-muted/40 transition ${
+                          isDeleted
+                            ? "bg-rose-50/40 dark:bg-rose-950/20 line-through opacity-70"
+                            : isReverted
+                              ? "bg-amber-50/30 dark:bg-amber-950/20"
+                              : ""
+                        }`}
+                      >
+                        {/* Voucher ID */}
+                        <td className="p-3 font-mono font-bold text-[11px] text-primary">
+                          <div>{v.id.substring(4, 9).toUpperCase()}</div>
+                          <div className="text-[10px] text-muted-foreground font-normal">
+                            {v.created_at ? v.created_at.slice(0, 10) : "-"}
+                          </div>
+                        </td>
+
+                        {/* Type */}
+                        <td className="p-3">
+                          <Badge
+                            className={`text-[10px] font-bold ${
+                              isDeleted
+                                ? "bg-rose-200 text-rose-900 dark:bg-rose-900 dark:text-rose-200"
+                                : isReverted
+                                  ? "bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300"
+                                  : isPayment
+                                    ? "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"
+                                    : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                            }`}
+                          >
+                            {isDeleted
+                              ? "محذوف"
+                              : isReverted
+                                ? "معكوس"
+                                : isPayment
+                                  ? "صرف (-)"
+                                  : "قبض (+)"}
+                          </Badge>
+                        </td>
+
+                        {/* Category & Cost Center & Account */}
+                        <td className="p-3">
+                          <div className="font-bold text-foreground">{v.category}</div>
+                          <div className="text-[10px] text-muted-foreground">
+                            {v.cost_center || "الإدارة العامة"}
+                          </div>
+                          {v.account_code && (
+                            <div className="text-[10px] font-mono text-primary font-bold flex items-center gap-1 mt-0.5">
+                              <Landmark size={11} className="text-primary/70 shrink-0" />
+                              <span>{v.account_code}</span>
+                              <span className="font-sans font-normal text-muted-foreground truncate max-w-[110px]">
+                                {erpStore.getAccountName(v.account_code)}
+                              </span>
+                            </div>
+                          )}
+                        </td>
+
+                        {/* Amount & Currency */}
+                        <td className="p-3 font-mono font-black">
+                          <div
+                            className={
+                              isPayment
+                                ? "text-rose-600 dark:text-rose-400"
+                                : "text-emerald-600 dark:text-emerald-400"
+                            }
+                          >
+                            {Number(v.amount).toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                            })}{" "}
+                            {v.currency}
+                          </div>
+                          {v.currency !== "USD" && v.exchange_rate && (
+                            <div className="text-[10px] text-muted-foreground font-normal">
+                              المعامل: {v.exchange_rate} (≈ $
+                              {Number(v.base_amount || v.amount / v.exchange_rate).toFixed(2)})
+                            </div>
+                          )}
+                        </td>
+
+                        {/* Journal Ref */}
+                        <td className="p-3 font-mono text-[10px]">
+                          {v.journal_reference ? (
+                            <button
+                              onClick={() => handleViewJournalEntry(v)}
+                              className="text-primary hover:underline font-bold flex items-center gap-1"
+                            >
+                              <span>{v.journal_reference}</span>
+                              <Eye size={12} />
+                            </button>
+                          ) : (
+                            <span className="text-muted-foreground">مرحل آلياً</span>
+                          )}
+                        </td>
+
+                        {/* Description */}
+                        <td
+                          className="p-3 text-muted-foreground max-w-[180px] truncate"
+                          title={v.description}
+                        >
+                          {v.description}
+                          {isReverted && v.reverted_reason && (
+                            <div className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold truncate">
+                              سبب العكس: {v.reverted_reason}
+                            </div>
+                          )}
+                          {isDeleted && v.deleted_reason && (
+                            <div className="text-[10px] text-rose-600 dark:text-rose-400 font-semibold truncate">
+                              سبب الحذف: {v.deleted_reason}
+                            </div>
+                          )}
+                        </td>
+
+                        {/* Actions */}
+                        <td className="p-3 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            {/* View Journal Entry */}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 rounded-lg text-slate-600 hover:text-primary hover:bg-primary/10"
+                              title="عرض القيد المحاسبي المتولد"
+                              onClick={() => handleViewJournalEntry(v)}
+                            >
+                              <Eye size={14} />
+                            </Button>
+
+                            {/* Print Voucher */}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 rounded-lg text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+                              title="طباعة السند الرسمي"
+                              onClick={() => handlePrintVoucher(v)}
+                            >
+                              <Printer size={14} />
+                            </Button>
+
+                            {/* Revert Voucher (if not reverted & not deleted) */}
+                            {!isReverted && !isDeleted && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 rounded-lg text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                                title="إرجاع أو عكس السند المالي"
+                                onClick={() => {
+                                  setVoucherToRevert(v);
+                                  setRevertReason("");
+                                }}
+                              >
+                                <RotateCcw size={14} />
+                              </Button>
+                            )}
+
+                            {/* Delete Voucher (if not deleted) */}
+                            {!isDeleted && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                                title="حذف السند (مع التوثيق بالرقابة)"
+                                onClick={() => {
+                                  setVoucherToDelete(v);
+                                  setDeleteReason("");
+                                }}
+                              >
+                                <Trash2 size={14} />
+                              </Button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
 
       {/* MODAL 1: Confirmation Dialog for Save & Post */}
       <Dialog open={isConfirmPostOpen} onOpenChange={setIsConfirmPostOpen}>
@@ -2069,7 +2072,8 @@ export function VouchersLedgerSection({
               </AlertDialogTitle>
             </div>
             <AlertDialogDescription className="text-xs text-muted-foreground leading-relaxed">
-              توجد بيانات أدخلتها بالسند الحالي. هل تريد حفظها كمسودة مؤقتة لاستعادتها لاحقاً أم الخروج وتجاهل البيانات؟
+              توجد بيانات أدخلتها بالسند الحالي. هل تريد حفظها كمسودة مؤقتة لاستعادتها لاحقاً أم
+              الخروج وتجاهل البيانات؟
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex flex-col sm:flex-row gap-2 pt-2">

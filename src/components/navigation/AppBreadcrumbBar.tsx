@@ -39,6 +39,7 @@ import {
   History,
   LayoutDashboard,
   Utensils,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -74,19 +75,13 @@ export function AppBreadcrumbBar({
   const location = useLocation();
   const navigate = useNavigate();
   const pathname = location.pathname;
-  const searchParams = useMemo(
-    () => new URLSearchParams(location.search),
-    [location.search],
-  );
+  const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const activeTab = searchParams.get("tab") || "";
 
   // Compute breadcrumb trail based on current path and search params
   const breadcrumbs = useMemo<BreadcrumbNode[] | null>(() => {
     // If we're at the root /admin and have no tab, do NOT show the breadcrumb bar
-    if (
-      (pathname === "/admin" || pathname === "/admin/" || pathname === "/") &&
-      !activeTab
-    ) {
+    if ((pathname === "/admin" || pathname === "/admin/" || pathname === "/") && !activeTab) {
       return null;
     }
 
@@ -191,9 +186,7 @@ export function AppBreadcrumbBar({
 
       return [
         { label: "لوحة الأقسام", to: "/admin", icon: Grid3X3 },
-        subNode
-          ? { ...baseNode, isLeaf: false }
-          : { ...baseNode, to: undefined, isLeaf: true },
+        subNode ? { ...baseNode, isLeaf: false } : { ...baseNode, to: undefined, isLeaf: true },
         ...(subNode ? [subNode] : []),
       ];
     }
@@ -241,9 +234,7 @@ export function AppBreadcrumbBar({
 
       return [
         { label: "لوحة الأقسام", to: "/admin", icon: Grid3X3 },
-        subNode
-          ? { ...baseNode, isLeaf: false }
-          : { ...baseNode, to: undefined, isLeaf: true },
+        subNode ? { ...baseNode, isLeaf: false } : { ...baseNode, to: undefined, isLeaf: true },
         ...(subNode ? [subNode] : []),
       ];
     }
@@ -303,9 +294,7 @@ export function AppBreadcrumbBar({
 
       return [
         { label: "لوحة الأقسام", to: "/admin", icon: Grid3X3 },
-        subNode
-          ? { ...baseNode, isLeaf: false }
-          : { ...baseNode, to: undefined, isLeaf: true },
+        subNode ? { ...baseNode, isLeaf: false } : { ...baseNode, to: undefined, isLeaf: true },
         ...(subNode ? [subNode] : []),
       ];
     }
@@ -376,9 +365,7 @@ export function AppBreadcrumbBar({
 
       return [
         { label: "لوحة الأقسام", to: "/admin", icon: Grid3X3 },
-        subNode
-          ? { ...baseNode, isLeaf: false }
-          : { ...baseNode, to: undefined, isLeaf: true },
+        subNode ? { ...baseNode, isLeaf: false } : { ...baseNode, to: undefined, isLeaf: true },
         ...(subNode ? [subNode] : []),
       ];
     }
@@ -426,9 +413,7 @@ export function AppBreadcrumbBar({
 
       return [
         { label: "لوحة الأقسام", to: "/admin", icon: Grid3X3 },
-        subNode
-          ? { ...baseNode, isLeaf: false }
-          : { ...baseNode, to: undefined, isLeaf: true },
+        subNode ? { ...baseNode, isLeaf: false } : { ...baseNode, to: undefined, isLeaf: true },
         ...(subNode ? [subNode] : []),
       ];
     }
@@ -476,9 +461,7 @@ export function AppBreadcrumbBar({
 
       return [
         { label: "لوحة الأقسام", to: "/admin", icon: Grid3X3 },
-        subNode
-          ? { ...baseNode, isLeaf: false }
-          : { ...baseNode, to: undefined, isLeaf: true },
+        subNode ? { ...baseNode, isLeaf: false } : { ...baseNode, to: undefined, isLeaf: true },
         ...(subNode ? [subNode] : []),
       ];
     }
@@ -514,10 +497,17 @@ export function AppBreadcrumbBar({
 
       return [
         { label: "لوحة الأقسام", to: "/admin", icon: Grid3X3 },
-        subNode
-          ? { ...baseNode, isLeaf: false }
-          : { ...baseNode, to: undefined, isLeaf: true },
+        subNode ? { ...baseNode, isLeaf: false } : { ...baseNode, to: undefined, isLeaf: true },
         ...(subNode ? [subNode] : []),
+      ];
+    }
+
+    // Developer Studio Pro (/admin/studio)
+    if (pathname.startsWith("/admin/studio")) {
+      return [
+        { label: "لوحة الأقسام", to: "/admin", icon: Grid3X3 },
+        { label: "خيارات النظام والمطور", to: "/admin/system-update", icon: Settings },
+        { label: "استوديو المطور Pro (المحرر البصري)", isLeaf: true, icon: Sparkles },
       ];
     }
 
@@ -636,10 +626,10 @@ export function AppBreadcrumbBar({
             }
           >
             <ArrowRight size={14} className="shrink-0" />
-            <span className="hidden xs:inline">
+            <span className="hidden sm:inline">
               {breadcrumbs.length >= 3 ? "العودة للقسم" : "العودة للرئيسية"}
             </span>
-            <span className="xs:hidden">رجوع</span>
+            <span className="sm:hidden">رجوع</span>
           </button>
         </div>
       </div>

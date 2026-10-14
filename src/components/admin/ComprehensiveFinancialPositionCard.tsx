@@ -92,16 +92,18 @@ export function ComprehensiveFinancialPositionCard() {
   // 2. Calculate Mall Sector Metrics
   const mallSector = useMemo(() => {
     const shops = erpState.mallShops || [];
-    const activeShops = shops.filter((s) => s.status === "active" || s.contract_status === "active");
+    const activeShops = shops.filter(
+      (s) => s.status === "active" || s.contract_status === "active",
+    );
     const payments = erpState.mallPayments || [];
     const totalPaymentsCollected = payments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
     const gardenRevenues = (erpState.mallGardenRevenues || []).reduce(
       (sum, r) => sum + Number(r.amount || 0),
-      0
+      0,
     );
     const gardenExpenses = (erpState.mallGardenExpenses || []).reduce(
       (sum, e) => sum + Number(e.amount || 0),
-      0
+      0,
     );
 
     return {
@@ -122,11 +124,14 @@ export function ComprehensiveFinancialPositionCard() {
   // 3. Calculate Park Sector Metrics
   const parkSector = useMemo(() => {
     const txs = erpState.parkTicketTransactions || [];
-    const totalSalesUSD = txs.reduce((sum, t) => sum + Number(t.totalPrice || t.total_amount || 0), 0);
+    const totalSalesUSD = txs.reduce(
+      (sum, t) => sum + Number(t.totalPrice || t.total_amount || 0),
+      0,
+    );
     const shifts = erpState.parkShifts || [];
     const totalShiftHandoverUSD = shifts.reduce(
       (sum, s) => sum + Number(s.actual_cash_collected || s.total_revenue || 0),
-      0
+      0,
     );
 
     return {
@@ -141,7 +146,7 @@ export function ComprehensiveFinancialPositionCard() {
   const restaurantSector = useMemo(() => {
     const orders = erpState.orders || [];
     const completedOrders = orders.filter(
-      (o) => o.status === "completed" || o.payment_status === "paid" || o.total > 0
+      (o) => o.status === "completed" || o.payment_status === "paid" || o.total > 0,
     );
     const totalSalesUSD = completedOrders.reduce((sum, o) => sum + Number(o.total || 0), 0);
     const cashSales = completedOrders
@@ -160,7 +165,9 @@ export function ComprehensiveFinancialPositionCard() {
   // 5. Calculate Vouchers Sector Metrics
   const vouchersSector = useMemo(() => {
     const vouchers = erpState.vouchers || [];
-    const activeVouchers = vouchers.filter((v) => v.status !== "deleted" && v.status !== "reverted");
+    const activeVouchers = vouchers.filter(
+      (v) => v.status !== "deleted" && v.status !== "reverted",
+    );
 
     let totalReceiptsUSD = 0;
     let totalPaymentsUSD = 0;
@@ -243,13 +250,39 @@ export function ComprehensiveFinancialPositionCard() {
       type: "المركز المالي",
       reference: `FIN-POS-${Date.now().toString().slice(-6)}`,
       date: new Date().toLocaleDateString("ar-EG"),
-      notes: "تقرير متزامن لحظياً يشمل كافة الإيرادات والمصروفات والأصول والالتزامات للقطاعات المختلفة.",
+      notes:
+        "تقرير متزامن لحظياً يشمل كافة الإيرادات والمصروفات والأصول والالتزامات للقطاعات المختلفة.",
       entries: [
-        { account_code: "1000", description: "إجمالي الأصول (Assets)", amount: accountingSummary.totalAssets, currency: "USD" },
-        { account_code: "2000", description: "إجمالي الالتزامات (Liabilities)", amount: accountingSummary.totalLiabilities, currency: "USD" },
-        { account_code: "3000", description: "إجمالي حقوق الملكية (Equity)", amount: accountingSummary.totalEquity, currency: "USD" },
-        { account_code: "4000", description: "إجمالي إيرادات المبيعات والقطاعات", amount: accountingSummary.totalRevenues, currency: "USD" },
-        { account_code: "5000", description: "إجمالي المصروفات والمدفوعات", amount: accountingSummary.totalExpenses, currency: "USD" },
+        {
+          account_code: "1000",
+          description: "إجمالي الأصول (Assets)",
+          amount: accountingSummary.totalAssets,
+          currency: "USD",
+        },
+        {
+          account_code: "2000",
+          description: "إجمالي الالتزامات (Liabilities)",
+          amount: accountingSummary.totalLiabilities,
+          currency: "USD",
+        },
+        {
+          account_code: "3000",
+          description: "إجمالي حقوق الملكية (Equity)",
+          amount: accountingSummary.totalEquity,
+          currency: "USD",
+        },
+        {
+          account_code: "4000",
+          description: "إجمالي إيرادات المبيعات والقطاعات",
+          amount: accountingSummary.totalRevenues,
+          currency: "USD",
+        },
+        {
+          account_code: "5000",
+          description: "إجمالي المصروفات والمدفوعات",
+          amount: accountingSummary.totalExpenses,
+          currency: "USD",
+        },
       ],
     });
   };
@@ -259,7 +292,7 @@ export function ComprehensiveFinancialPositionCard() {
       {/* Decorative Gradient Background Header */}
       <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-6 sm:p-8 relative overflow-hidden">
         <div className="absolute -left-12 -top-12 w-48 h-48 bg-primary/20 rounded-full blur-3xl pointer-events-none" />
-        
+
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-2">
@@ -287,8 +320,8 @@ export function ComprehensiveFinancialPositionCard() {
               المركز المالي الشامل (الميزانية وقائمة الدخل الموحدة)
             </h2>
             <p className="text-slate-300 text-xs sm:text-sm font-medium leading-relaxed max-w-3xl">
-              تجميع وتزامن لحظي لكافة المستجدات المالية في المول التجاري، حديقة الألعاب، المطعم ونقاط البيع،
-              سندات المقبوضات والمدفوعات، ودفتر اليومية العامة ودليل الحسابات.
+              تجميع وتزامن لحظي لكافة المستجدات المالية في المول التجاري، حديقة الألعاب، المطعم
+              ونقاط البيع، سندات المقبوضات والمدفوعات، ودفتر اليومية العامة ودليل الحسابات.
             </p>
           </div>
 
@@ -334,11 +367,16 @@ export function ComprehensiveFinancialPositionCard() {
                   <TrendingUp size={16} />
                   صافي الأرباح / النتيجة
                 </span>
-                <Badge variant="outline" className="border-emerald-300 text-emerald-800 text-[10px] font-bold">
+                <Badge
+                  variant="outline"
+                  className="border-emerald-300 text-emerald-800 text-[10px] font-bold"
+                >
                   الإيرادات − المصروفات
                 </Badge>
               </div>
-              <h3 className={`text-2xl font-black font-mono ${accountingSummary.netIncome >= 0 ? "text-emerald-700 dark:text-emerald-300" : "text-rose-600"}`}>
+              <h3
+                className={`text-2xl font-black font-mono ${accountingSummary.netIncome >= 0 ? "text-emerald-700 dark:text-emerald-300" : "text-rose-600"}`}
+              >
                 {formatPrice(accountingSummary.netIncome)}
               </h3>
               <p className="text-[11px] text-muted-foreground font-semibold">
@@ -354,7 +392,10 @@ export function ComprehensiveFinancialPositionCard() {
                   <Wallet size={16} />
                   إجمالي الأصول والموجودات
                 </span>
-                <Badge variant="outline" className="border-primary/30 text-primary text-[10px] font-bold">
+                <Badge
+                  variant="outline"
+                  className="border-primary/30 text-primary text-[10px] font-bold"
+                >
                   Assets
                 </Badge>
               </div>
@@ -374,7 +415,10 @@ export function ComprehensiveFinancialPositionCard() {
                   <ShieldCheck size={16} />
                   الالتزامات والخصوم
                 </span>
-                <Badge variant="outline" className="border-rose-300 text-rose-800 text-[10px] font-bold">
+                <Badge
+                  variant="outline"
+                  className="border-rose-300 text-rose-800 text-[10px] font-bold"
+                >
                   Liabilities
                 </Badge>
               </div>
@@ -394,7 +438,10 @@ export function ComprehensiveFinancialPositionCard() {
                   <Layers size={16} />
                   حقوق الملكية ورأس المال
                 </span>
-                <Badge variant="outline" className="border-blue-300 text-blue-800 text-[10px] font-bold">
+                <Badge
+                  variant="outline"
+                  className="border-blue-300 text-blue-800 text-[10px] font-bold"
+                >
                   Equity
                 </Badge>
               </div>
@@ -433,7 +480,9 @@ export function ComprehensiveFinancialPositionCard() {
                     </div>
                     <div>
                       <CardTitle className="text-sm font-black">قطاع المول التجاري</CardTitle>
-                      <CardDescription className="text-[10px]">إيجارات ومحلات والمرافق</CardDescription>
+                      <CardDescription className="text-[10px]">
+                        إيجارات ومحلات والمرافق
+                      </CardDescription>
                     </div>
                   </div>
                   <Badge variant="secondary" className="text-[10px] font-mono font-bold">
@@ -479,7 +528,9 @@ export function ComprehensiveFinancialPositionCard() {
                     </div>
                     <div>
                       <CardTitle className="text-sm font-black">الحديقة والألعاب</CardTitle>
-                      <CardDescription className="text-[10px]">تذاكر وورديات ترفيهية</CardDescription>
+                      <CardDescription className="text-[10px]">
+                        تذاكر وورديات ترفيهية
+                      </CardDescription>
                     </div>
                   </div>
                   <Badge variant="secondary" className="text-[10px] font-mono font-bold">
@@ -523,7 +574,9 @@ export function ComprehensiveFinancialPositionCard() {
                     </div>
                     <div>
                       <CardTitle className="text-sm font-black">المطعم ونقطة البيع</CardTitle>
-                      <CardDescription className="text-[10px]">طلبات الصالة والفرن والدليفري</CardDescription>
+                      <CardDescription className="text-[10px]">
+                        طلبات الصالة والفرن والدليفري
+                      </CardDescription>
                     </div>
                   </div>
                   <Badge variant="secondary" className="text-[10px] font-mono font-bold">
@@ -546,7 +599,9 @@ export function ComprehensiveFinancialPositionCard() {
                 </div>
                 <div className="flex justify-between py-1 border-b border-border/50">
                   <span className="text-muted-foreground">إجمالي الطلبات المسجلة:</span>
-                  <span className="font-bold font-mono">{restaurantSector.totalOrdersCount} طلب محصل</span>
+                  <span className="font-bold font-mono">
+                    {restaurantSector.totalOrdersCount} طلب محصل
+                  </span>
                 </div>
                 <div className="flex justify-between pt-1 font-black text-sm text-foreground">
                   <span>مبيعات المطعم الموحدة:</span>
@@ -567,7 +622,9 @@ export function ComprehensiveFinancialPositionCard() {
                     </div>
                     <div>
                       <CardTitle className="text-sm font-black">سندات الصرف والقبض</CardTitle>
-                      <CardDescription className="text-[10px]">المقبوضات والمدفوعات المباشرة</CardDescription>
+                      <CardDescription className="text-[10px]">
+                        المقبوضات والمدفوعات المباشرة
+                      </CardDescription>
                     </div>
                   </div>
                   <Badge variant="secondary" className="text-[10px] font-mono font-bold">
@@ -590,11 +647,15 @@ export function ComprehensiveFinancialPositionCard() {
                 </div>
                 <div className="flex justify-between py-1 border-b border-border/50">
                   <span className="text-muted-foreground">إجمالي السندات النشطة:</span>
-                  <span className="font-bold font-mono">{vouchersSector.vouchersCount} سند رسمي</span>
+                  <span className="font-bold font-mono">
+                    {vouchersSector.vouchersCount} سند رسمي
+                  </span>
                 </div>
                 <div className="flex justify-between pt-1 font-black text-sm text-foreground">
                   <span>صافي تدفق السندات:</span>
-                  <span className={`font-mono ${vouchersSector.netVouchersFlowUSD >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                  <span
+                    className={`font-mono ${vouchersSector.netVouchersFlowUSD >= 0 ? "text-emerald-600" : "text-rose-600"}`}
+                  >
                     {formatPrice(vouchersSector.netVouchersFlowUSD)}
                   </span>
                 </div>
@@ -608,7 +669,14 @@ export function ComprehensiveFinancialPositionCard() {
           <div className="flex items-center gap-2">
             <ShieldCheck size={18} className="text-emerald-600 shrink-0" />
             <span className="font-bold text-foreground">
-              معادلة الميزانية الموحدة: الأصول ({formatPrice(accountingSummary.totalAssets)}) = الخصوم والملكية ({formatPrice(accountingSummary.totalLiabilities + accountingSummary.totalEquity + accountingSummary.netIncome)})
+              معادلة الميزانية الموحدة: الأصول ({formatPrice(accountingSummary.totalAssets)}) =
+              الخصوم والملكية (
+              {formatPrice(
+                accountingSummary.totalLiabilities +
+                  accountingSummary.totalEquity +
+                  accountingSummary.netIncome,
+              )}
+              )
             </span>
           </div>
           <Badge className="bg-emerald-600 text-white font-bold shrink-0">

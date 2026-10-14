@@ -97,8 +97,6 @@ function SystemUpdatePage() {
   const accessPackageInputRef = useRef<HTMLInputElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  const location = useLocation();
-  const navigate = useNavigate();
   const searchParams = new URLSearchParams(location.search);
   const tabParam = searchParams.get("tab");
 

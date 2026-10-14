@@ -52,6 +52,8 @@ import {
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { useStudioPublishedPage } from "@/features/developer-studio/hooks/useStudio";
+import { StudioElementRenderer } from "@/features/developer-studio/components/StudioElementRenderer";
 
 interface DepartmentCardItem {
   id: string;
@@ -570,6 +572,12 @@ const DEPARTMENTS: DepartmentCardItem[] = [
     badgeText: "تحديث وتطوير",
     subSections: [
       {
+        title: "استوديو المطور Pro (المحرر البصري)",
+        to: "/admin/studio",
+        icon: Sparkles,
+        desc: "تصميم الواجهات والمسودات والنشر الآمن",
+      },
+      {
         title: "تحديثات النظام ومزامنة GitHub",
         to: "/admin/system-update",
         icon: RefreshCw,
@@ -587,9 +595,24 @@ const DEPARTMENTS: DepartmentCardItem[] = [
 
 export function DepartmentsGridHub() {
   const navigate = useNavigate();
+  const { elements, allElements } = useStudioPublishedPage("/admin");
 
   return (
     <div className="space-y-6">
+      {/* Live Published Elements from Developer Studio Pro */}
+      {elements && elements.length > 0 && (
+        <div className="space-y-4">
+          {elements.map((el) => (
+            <StudioElementRenderer
+              key={el.id}
+              element={el}
+              allElements={allElements}
+              isEditorMode={false}
+            />
+          ))}
+        </div>
+      )}
+
       {/* Grid of Department Squares */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-5 sm:gap-6">
         {DEPARTMENTS.map((dept) => {

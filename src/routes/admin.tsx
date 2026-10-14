@@ -358,6 +358,11 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
   } | null>(null);
   const [authChecking, setAuthChecking] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -549,7 +554,7 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
     navigate({ to: "/login" });
   };
 
-  if (authChecking) {
+  if (!isMounted || authChecking) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-6">
         <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 text-center shadow-sm">

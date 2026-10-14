@@ -194,7 +194,7 @@ function RootComponent() {
         <meta name="google" content="notranslate" />
         <HeadContent />
       </head>
-      <body>
+      <body suppressHydrationWarning>
         <QueryClientProvider client={queryClient}>
           <Outlet />
           <Toaster />

@@ -16,7 +16,8 @@ startTransition(() => {
 
 if (typeof window !== "undefined") {
   try {
-    const originalPrint = typeof window.print === "function" ? window.print.bind(window) : undefined;
+    const originalPrint =
+      typeof window.print === "function" ? window.print.bind(window) : undefined;
 
     window.print = function () {
       try {
@@ -33,7 +34,10 @@ if (typeof window !== "undefined") {
       void import("./shared/utils/printPage")
         .then(({ printCurrentPage }) => printCurrentPage())
         .catch((error) => {
-          console.error("Print fallback could not be loaded; using the browser print dialog.", error);
+          console.error(
+            "Print fallback could not be loaded; using the browser print dialog.",
+            error,
+          );
           if (originalPrint) originalPrint();
         });
     };

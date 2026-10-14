@@ -39,6 +39,7 @@ import {
   RefreshCw,
   History,
   LayoutGrid,
+  Sparkles,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -470,6 +471,12 @@ export const ADMIN_SECTIONS: SectionItem[] = [
     },
     permissionKeys: ["system_backup_update", "developer_options", "super_admin_full_access"],
     subsections: [
+      {
+        title: "استوديو المطور Pro (المحرر البصري)",
+        description: "محرر بصري متقدم لتصميم الواجهات وإدارة المسودات والنشر الآمن",
+        icon: Sparkles,
+        to: "/admin/studio",
+      },
       {
         title: "تحديثات ومزامنة GitHub",
         description: "رفع التعديلات واستلام التحديثات البرمجية",
