@@ -3,7 +3,7 @@ import { ArrowDown, ArrowRight, Plus, Route, Trash2, Workflow } from "lucide-rea
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import type { StudioActionConfig, StudioAddedButton, StudioDomEdit } from "../models/studio.types";
+import type { StudioActionConfig, StudioActionStep, StudioAddedButton, StudioDomEdit } from "../models/studio.types";
 
 export interface WorkflowTreeNode {
   selector: string;
@@ -37,6 +37,7 @@ const ACTION_OPTIONS: Array<{ value: StudioActionConfig["type"]; label: string }
   { value: "toggle", label: "إظهار أو إخفاء عنصر" },
   { value: "set_value", label: "تغيير قيمة عنصر" },
   { value: "calculate", label: "حساب معادلة وعرض النتيجة" },
+  { value: "sequence", label: "مسار من عدة خطوات" },
 ];
 const TAG_NAMES: Record<string, string> = {
   button: "زر", a: "رابط", input: "حقل إدخال", textarea: "مربع كتابة", select: "قائمة اختيار",
@@ -116,6 +117,23 @@ export function StudioWorkflowPanel({ selected, treeNodes, pageLinks, edits, onU
     }
   };
 
+  const updateStep = (stepId: string, patch: Partial<StudioActionStep>) => {
+    updateAction({
+      steps: (action.steps || []).map((step) => step.id === stepId ? { ...step, ...patch } : step),
+    });
+  };
+  const addStep = () => {
+    const next: StudioActionStep = {
+      id: "studio_step_" + Date.now().toString(36),
+      type: "message",
+      message: "اكتب الرسالة هنا",
+    };
+    updateAction({ type: "sequence", steps: [...(action.steps || []), next] });
+  };
+  const removeStep = (stepId: string) => {
+    updateAction({ steps: (action.steps || []).filter((step) => step.id !== stepId) });
+  };
+
   const updateAddedButton = (patch: Partial<StudioAddedButton>) => {
     if (!addedButton) return;
     onUpdateEdit(hostSelector, {
@@ -149,7 +167,8 @@ export function StudioWorkflowPanel({ selected, treeNodes, pageLinks, edits, onU
       : action.type === "toggle" ? (targetList.find((node) => node.selector === action.targetSelector)?.label || "العنصر المختار")
         : action.type === "set_value" ? (targetList.find((node) => node.selector === action.targetSelector)?.label || "العنصر المختار")
           : action.type === "calculate" ? (targetList.find((node) => node.selector === action.resultSelector)?.label || "مكان النتيجة")
-            : "لا توجد نتيجة محددة";
+            : action.type === "sequence" ? ((action.steps || []).length ? "مسار يحتوي على " + action.steps!.length + " خطوات" : "أضف الخطوة الأولى")
+              : "لا توجد نتيجة محددة";
 
   const linkTarget = selected ? (selectedEdit.href ?? selected.href ?? "") : "";
   const saveLink = (href: string) => {
@@ -317,25 +336,104 @@ export function StudioWorkflowPanel({ selected, treeNodes, pageLinks, edits, onU
                 </label>
               </div>
             )}
+            {action.type === "sequence" && (
+              <div className="space-y-2">
+                <p className="text-[10px] leading-5 text-muted-foreground">أضف الخطوات بالترتيب. سينفذ الزر كل خطوة من الأعلى إلى الأسفل، ويمكنك تعديلها أو حذفها في أي وقت.</p>
+                <Button type="button" size="sm" variant="outline" className="w-full gap-1" onClick={addStep}><Plus size={13} /> إضافة خطوة تالية</Button>
+                {(action.steps || []).map((step, index) => (
+                  <div key={step.id} className="space-y-2 rounded-lg border border-primary/20 bg-primary/5 p-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-black">الخطوة {index + 1}</p>
+                      <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-destructive" onClick={() => removeStep(step.id)}><Trash2 size={13} /> حذف</Button>
+                    </div>
+                    <label className="block text-xs font-semibold">ما الذي يحدث في هذه الخطوة؟
+                      <select value={step.type} onChange={(event) => updateStep(step.id, { type: event.target.value as StudioActionStep["type"] })} className="mt-1 w-full rounded-lg border bg-background p-2 text-xs">
+                        {ACTION_OPTIONS.filter((option) => option.value !== "none" && option.value !== "sequence").map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                    </label>
+                    {step.type === "navigate" && (
+                      <>
+                        <label className="block text-xs font-semibold">الصفحة المقصودة
+                          <select value={step.destination || ""} onChange={(event) => updateStep(step.id, { destination: event.target.value })} className="mt-1 w-full rounded-lg border bg-background p-2 text-xs">
+                            <option value="">اختر صفحة</option>
+                            {pageLinks.map((page) => <option key={page.href} value={page.href}>{friendlyRoute(page.href, page.label)}</option>)}
+                          </select>
+                        </label>
+                        <Input value={step.destination || ""} onChange={(event) => updateStep(step.id, { destination: event.target.value })} placeholder="مسار داخلي مثل /admin/ledger" dir="ltr" className="text-left" />
+                      </>
+                    )}
+                    {step.type === "message" && <Textarea rows={2} value={step.message || ""} onChange={(event) => updateStep(step.id, { message: event.target.value })} placeholder="اكتب الرسالة..." className="text-right" />}
+                    {(step.type === "toggle" || step.type === "set_value") && (
+                      <label className="block text-xs font-semibold">العنصر المرتبط
+                        <select value={step.targetSelector || ""} onChange={(event) => updateStep(step.id, { targetSelector: event.target.value })} className="mt-1 w-full rounded-lg border bg-background p-2 text-xs">
+                          <option value="">اختر عنصرًا</option>
+                          {targetList.map((node) => <option key={node.selector} value={node.selector}>{node.label} — {friendlyTag(node.tag)}</option>)}
+                        </select>
+                      </label>
+                    )}
+                    {step.type === "set_value" && <Input value={step.value || ""} onChange={(event) => updateStep(step.id, { value: event.target.value })} placeholder="القيمة الجديدة" />}
+                    {step.type === "calculate" && (
+                      <>
+                        <label className="block text-xs font-semibold">المعادلة
+                          <Input value={step.formula || ""} onChange={(event) => updateStep(step.id, { formula: event.target.value })} placeholder="a + b أو a * 1.14" dir="ltr" className="mt-1 text-left" />
+                        </label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <label className="block text-xs">القيمة الأولى
+                            <select value={step.leftSelector || ""} onChange={(event) => updateStep(step.id, { leftSelector: event.target.value })} className="mt-1 w-full rounded-lg border bg-background p-2 text-xs">
+                              <option value="">صفر</option>{targetList.map((node) => <option key={node.selector} value={node.selector}>{node.label}</option>)}
+                            </select>
+                          </label>
+                          <label className="block text-xs">القيمة الثانية
+                            <select value={step.rightSelector || ""} onChange={(event) => updateStep(step.id, { rightSelector: event.target.value })} className="mt-1 w-full rounded-lg border bg-background p-2 text-xs">
+                              <option value="">صفر</option>{targetList.map((node) => <option key={node.selector} value={node.selector}>{node.label}</option>)}
+                            </select>
+                          </label>
+                        </div>
+                        <label className="block text-xs font-semibold">مكان النتيجة
+                          <select value={step.resultSelector || ""} onChange={(event) => updateStep(step.id, { resultSelector: event.target.value })} className="mt-1 w-full rounded-lg border bg-background p-2 text-xs">
+                            <option value="">اختر عنصرًا</option>{targetList.map((node) => <option key={node.selector} value={node.selector}>{node.label}</option>)}
+                          </select>
+                        </label>
+                      </>
+                    )}
+                  </div>
+                ))}
+                {!(action.steps || []).length && <p className="rounded-lg border border-dashed p-3 text-center text-[11px] text-muted-foreground">ابدأ بإضافة أول خطوة إلى المسار.</p>}
+              </div>
+            )}
           </div>
 
           <div className="space-y-1 rounded-lg border border-primary/20 bg-primary/5 p-2">
-            <div className="flex items-center gap-2 text-[11px] font-black"><Route size={14} /> شكل المسار</div>
+            <div className="flex items-center gap-2 text-[11px] font-black"><Route size={14} /> مسار الوظيفة</div>
             <div className="rounded-lg border bg-background p-2 text-center">
-              <p className="text-[10px] text-muted-foreground">{addedButton ? "زر جديد" : "البداية"}</p>
+              <p className="text-[10px] text-muted-foreground">{addedButton ? "بداية المسار: الزر الجديد" : "بداية المسار: العنصر المحدد"}</p>
               <p className="text-xs font-bold">{addedButton?.label || selectedLabel}</p>
             </div>
-            <div className="flex justify-center text-primary"><ArrowDown size={16} /></div>
-            <div className="rounded-lg border bg-background p-2 text-center">
-              <p className="text-[10px] text-muted-foreground">الوظيفة</p>
-              <p className="text-xs font-bold">{activeActionLabel}</p>
-            </div>
+            {action.type === "sequence" ? (
+              (action.steps || []).map((step, index) => (
+                <React.Fragment key={step.id}>
+                  <div className="flex justify-center text-primary"><ArrowDown size={16} /></div>
+                  <div className="rounded-lg border bg-background p-2 text-center">
+                    <p className="text-[10px] text-muted-foreground">الخطوة {index + 1}</p>
+                    <p className="text-xs font-bold">{ACTION_OPTIONS.find((option) => option.value === step.type)?.label || "إجراء"}</p>
+                  </div>
+                </React.Fragment>
+              ))
+            ) : (
+              <>
+                <div className="flex justify-center text-primary"><ArrowDown size={16} /></div>
+                <div className="rounded-lg border bg-background p-2 text-center">
+                  <p className="text-[10px] text-muted-foreground">الوظيفة</p>
+                  <p className="text-xs font-bold">{activeActionLabel}</p>
+                </div>
+              </>
+            )}
             <div className="flex justify-center text-primary"><ArrowDown size={16} /></div>
             <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-2 text-center">
               <p className="text-[10px] text-muted-foreground">النتيجة النهائية</p>
               <p className="text-xs font-bold">{destinationLabel}</p>
             </div>
-            <p className="text-[10px] leading-5 text-muted-foreground">كل خطوة مرتبطة بما قبلها. جرّب المسار في المعاينة قبل حفظه ثم نشره.</p>
+            <p className="text-[10px] leading-5 text-muted-foreground">يمكنك إضافة الخطوات أو تغيير ترتيبها أو تعديل كل ربط، ثم تجربة المسار قبل اعتماده.</p>
           </div>
         </>
       )}
