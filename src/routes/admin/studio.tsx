@@ -1044,7 +1044,7 @@ export function DeveloperStudioProPage() {
             )}
             {saveStatus === "unsaved" && (
               <Badge variant="outline" className="gap-1 text-[11px] bg-blue-500/10 text-blue-700 border-blue-500/30">
-                <span>محفوظ محليًا — بانتظار المزامنة</span>
+                <span>تعديلات غير محفوظة — في المعاينة</span>
               </Badge>
             )}
             {saveStatus === "error" && (
