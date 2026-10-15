@@ -293,6 +293,7 @@ function LoginPage() {
             full_name: fullName,
             phone: "",
             role: "admin",
+            bootstrap_first_admin: true,
           },
           emailRedirectTo: `${window.location.origin}/login`,
         },
