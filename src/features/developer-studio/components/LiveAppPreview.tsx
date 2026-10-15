@@ -1,13 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Check, Copy, Eye, EyeOff, Layers, Monitor, RefreshCw, Settings2, Smartphone, Tablet, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { StudioDomEdit } from "../models/studio.types";
+import type { StudioActionConfig, StudioDomEdit } from "../models/studio.types";
+import { StudioWorkflowPanel } from "./StudioWorkflowPanel";
 
 type SelectedDomElement = {
   selector: string; tag: string; text: string; color: string; backgroundColor: string;
   fontSize: string; fontWeight: string; width: string; height: string;
   fill: string; stroke: string; strokeWidth: string; opacity: string;
-  borderRadius: string; rotate: string; textAlign: string;
+  borderRadius: string; rotate: string; textAlign: string; href?: string; containerSelector?: string;
 };
 type LiveTreeNode = { selector: string; tag: string; label: string; children: LiveTreeNode[] };
 type LiveRoute = { href: string; label: string };
@@ -50,7 +51,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
   const [pageLinks, setPageLinks] = useState<LiveRoute[]>([]);
   // Keep the real app at its natural width by default; side panels are optional overlays.
   const [showExplorer, setShowExplorer] = useState(false);
-  const [showProperties, setShowProperties] = useState(false);
+  const [showProperties, setShowProperties] = useState(true);
   const [treeFilter, setTreeFilter] = useState("");
   const [edits, setEdits] = useState<Record<string, StudioDomEdit>>(initialEdits || {});
   editsRef.current = edits;
@@ -249,8 +250,13 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
       };
       const describe = (el) => {
         const css = getComputedStyle(el);
+        const anchor = el.closest("a[href]") || (el.matches("a[href]") ? el : null);
+        const containerTags = new Set(["MAIN", "SECTION", "NAV", "ASIDE", "FOOTER", "HEADER", "ARTICLE", "FORM", "DIV", "UL", "OL"]);
+        const container = containerTags.has(el.tagName) ? el : (el.parentElement || el);
         return { selector: selectorFor(el), tag: el.tagName.toLowerCase(),
           text: (el.innerText || el.textContent || "").trim().slice(0, 1000),
+          href: anchor ? anchor.getAttribute("href") || "" : "",
+          containerSelector: selectorFor(container),
           color: css.color, backgroundColor: css.backgroundColor, fontSize: css.fontSize,
           width: el.style.width || "auto", height: el.style.height || "auto", fontWeight: css.fontWeight,
           fill: css.fill || el.getAttribute("fill") || "", stroke: css.stroke || el.getAttribute("stroke") || "",
@@ -456,6 +462,12 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         }
       });
       const meaningfulTags = new Set(["main", "header", "nav", "aside", "footer", "section", "article", "form", "button", "a", "input", "select", "textarea", "table", "thead", "tbody", "tr", "td", "th", "h1", "h2", "h3", "h4", "h5", "h6", "p", "img", "svg", "ul", "ol", "li", "label", "details", "summary"]);
+      const roleNames = { main: "المحتوى الرئيسي", header: "رأس الصفحة", nav: "قائمة التنقل", aside: "لوحة جانبية", footer: "تذييل الصفحة", section: "قسم", article: "بطاقة محتوى", form: "نموذج", button: "زر", a: "رابط", input: "حقل إدخال", select: "قائمة اختيار", textarea: "مربع كتابة", table: "جدول", tr: "صف", td: "خلية", th: "عنوان جدول", h1: "عنوان رئيسي", h2: "عنوان", h3: "عنوان فرعي", p: "فقرة نصية", img: "صورة", svg: "أيقونة", ul: "قائمة", ol: "قائمة مرقمة", li: "عنصر قائمة", label: "عنوان حقل", div: "منطقة" };
+      const friendlyRoute = (href, fallback) => {
+        const pathname = String(href || "").split("?")[0];
+        const known = { "/admin": "لوحة الإدارة الرئيسية", "/admin/ledger": "الإدارة المالية", "/admin/hr": "الموارد البشرية", "/admin/inventory": "المخزون والمستودعات", "/admin/restaurant": "إدارة المطعم", "/admin/mall": "إدارة المول", "/admin/park": "إدارة الحديقة", "/admin/system-update": "خيارات المطوّر", "/admin/orders": "الطلبات", "/admin/menu": "قائمة الطعام", "/login": "تسجيل الدخول" };
+        return known[pathname] || fallback || pathname.split("/").filter(Boolean).pop()?.replace(/[-_]/g, " ") || "صفحة";
+      };
       let scanTimer = null;
       const collectTreeAndRoutes = () => {
         let count = 0;
@@ -479,7 +491,9 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
           const interactiveText = ["button", "a", "label", "h1", "h2", "h3", "h4", "h5", "h6", "p", "li"].includes(tag)
             ? (element.innerText || "") : "";
           const rawText = directText || accessible || interactiveText;
-          const label = String(rawText || (element.hasAttribute("data-testid") ? element.getAttribute("data-testid") : tag.toUpperCase()))
+          const testLabel = element.hasAttribute("data-testid") ? String(element.getAttribute("data-testid") || "").replace(/[-_]/g, " ") : "";
+          const fallbackLabel = testLabel && !/^[a-z0-9_-]+$/i.test(testLabel) ? testLabel : (roleNames[tag] || "عنصر");
+          const label = String(rawText || fallbackLabel)
             .replace(/\s+/g, " ").trim().slice(0, 84);
           const meaningful = depth < 2 || meaningfulTags.has(tag) || element.hasAttribute("role") ||
             element.hasAttribute("data-testid") || children.length > 0 || rawText.length > 0;
@@ -491,15 +505,15 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
 
         const routeMap = new Map();
         const currentHref = location.pathname + location.search;
-        routeMap.set(currentHref, document.title || currentHref || "الصفحة الحالية");
+        routeMap.set(currentHref, friendlyRoute(currentHref, document.title || "الصفحة الحالية"));
         document.querySelectorAll("a[href]").forEach((anchor) => {
           try {
             const url = new URL(anchor.href, location.href);
             if (url.origin !== location.origin || !url.pathname.startsWith("/") || url.pathname.startsWith("//")) return;
             const href = url.pathname + url.search;
-            const labelText = String(anchor.innerText || anchor.getAttribute("aria-label") || anchor.getAttribute("title") || href)
+            const labelText = String(anchor.innerText || anchor.getAttribute("aria-label") || anchor.getAttribute("title") || "")
               .replace(/\s+/g, " ").trim().slice(0, 72);
-            if (!routeMap.has(href) || routeMap.get(href) === href) routeMap.set(href, labelText || href);
+            if (!routeMap.has(href) || routeMap.get(href) === friendlyRoute(href, "")) routeMap.set(href, friendlyRoute(href, labelText));
           } catch (_) { /* ignore malformed links */ }
         });
         send("STUDIO_ROUTES", { routes: Array.from(routeMap.entries()).map(([href, label]) => ({ href, label })).slice(0, 100) });
