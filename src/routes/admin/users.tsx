@@ -23,6 +23,11 @@ import {
 } from "lucide-react";
 import { erpStore, UserPermission, SystemUser } from "@/shared/services/erpStore";
 import { authService } from "@/features/auth/services/authService";
+import {
+  normalizeManagedUsername,
+  userValidationErrorMessage,
+  validateManagedUserForm,
+} from "@/features/auth/services/managedUserValidation";
 import { supabase } from "@/integrations/supabase/client";
 import {
   AlertDialog,
@@ -771,6 +776,7 @@ export function UsersPage() {
   const [form, setForm] = useState({
     full_name: "",
     username: "",
+    email: "",
     phone: "",
     password: "",
     role: "cashier",
@@ -911,7 +917,7 @@ export function UsersPage() {
 
   const upsert = async () => {
     const username = form.username.trim();
-    const normalizedUsername = username.toLowerCase();
+    const normalizedUsername = normalizeManagedUsername(username);
     const hosted = isHostedDeployment();
     const actorPermissions = currentActorPermissions(erpState, actorProfile);
     let createdAuthUserId: string | null = null;
@@ -936,13 +942,23 @@ export function UsersPage() {
     }
 
     try {
+      const validatedForm = validateManagedUserForm({
+        fullName: form.full_name,
+        username: form.username,
+        email: form.email,
+        phone: form.phone,
+        password: form.password,
+        role: form.role,
+        hosted,
+        requirePassword: !editing || (!hosted && Boolean(form.password)),
+      });
       if (editing) {
-        const permissions = form.role !== editing.role
-          ? limitPermissionsToActor(defaultPermissionsForRole(form.role), actorPermissions)
+        const permissions = validatedForm.role !== editing.role
+          ? limitPermissionsToActor(defaultPermissionsForRole(validatedForm.role), actorPermissions)
           : editing.permissions ||
             erpState.userPermissions[editing.username] ||
             defaultPermissionsForRole(form.role);
-        assertNoPrivilegeEscalation(permissions as any, form.role, actorPermissions);
+        assertNoPrivilegeEscalation(permissions as any, validatedForm.role, actorPermissions);
 
         if (hosted && form.password.trim()) {
           throw new Error("تغيير كلمة مرور مستخدم آخر يحتاج إلى عملية Auth إدارية آمنة؛ لم تُحفظ كلمة المرور محليًا أو سحابيًا.");
@@ -965,10 +981,11 @@ export function UsersPage() {
         } else {
           updated = {
             ...editing,
-            full_name: form.full_name.trim(),
-            username,
-            phone: form.phone.trim(),
-            role: form.role,
+            full_name: validatedForm.fullName,
+            username: validatedForm.username,
+            email: validatedForm.email || editing.email || "",
+            phone: validatedForm.phone,
+            role: validatedForm.role,
             permissions,
             ...(form.password.trim() ? { password: form.password.trim() } : {}),
           };
@@ -986,7 +1003,7 @@ export function UsersPage() {
         setLocalUsers(nextUsers);
         setErpState(erpStore.getState());
         setEditing(null);
-        setForm({ full_name: "", username: "", phone: "", password: "", role: "cashier" });
+        setForm({ full_name: "", username: "", email: "", phone: "", password: "", role: "cashier" });
         setIsConfirmUpsertOpen(false);
         toast({
           title: hosted ? "تم تحديث المستخدم في Supabase" : "تم تحديث المستخدم بنجاح",
@@ -1010,20 +1027,19 @@ export function UsersPage() {
       if (duplicate) throw new Error("اسم المستخدم موجود بالفعل. اختر اسم دخول مختلفًا.");
 
       const permissions = limitPermissionsToActor(
-        defaultPermissionsForRole(form.role),
+        defaultPermissionsForRole(validatedForm.role),
         actorPermissions,
       );
 
       if (hosted) {
-        const emailToUse = normalizedUsername.includes("@")
-          ? normalizedUsername
-          : `${normalizedUsername}@restocash.com`;
+        const emailToUse = validatedForm.email;
 
         const created = await authService.signUpNewUser(emailToUse, form.password, {
-          username: normalizedUsername,
-          full_name: form.full_name.trim(),
-          phone: form.phone.trim(),
-          role: form.role,
+          username: validatedForm.username,
+          email: emailToUse,
+          full_name: validatedForm.fullName,
+          phone: validatedForm.phone,
+          role: validatedForm.role,
         });
         if (!created?.user?.id) {
           throw new Error("لم تؤكد Supabase إنشاء حساب المستخدم؛ لم يُضف إلى قائمة المستخدمين.");
@@ -1032,10 +1048,10 @@ export function UsersPage() {
         createdAuthUserId = created.user.id;
         const savedProfile = await authService.saveManagedProfile({
           id: created.user.id,
-          username: normalizedUsername,
-          full_name: form.full_name.trim(),
-          phone: form.phone.trim(),
-          role: form.role as any,
+          username: validatedForm.username,
+          full_name: validatedForm.fullName,
+          phone: validatedForm.phone,
+          role: validatedForm.role as any,
           permissions,
         });
         const savedUser = profileToSystemUser(savedProfile);
@@ -1060,9 +1076,10 @@ export function UsersPage() {
       const localUser: SystemUser = {
         id: `u-${Date.now()}`,
         full_name: form.full_name.trim(),
-        username,
-        phone: form.phone.trim(),
-        role: form.role,
+        username: validatedForm.username,
+        email: validatedForm.email || undefined,
+        phone: validatedForm.phone,
+        role: validatedForm.role,
         password: form.password,
         permissions,
         created_at: new Date().toISOString(),
@@ -1086,7 +1103,7 @@ export function UsersPage() {
       }
       toast({
         title: editing ? "تعذر تحديث المستخدم" : "تعذر إنشاء المستخدم",
-        description: error?.message || "حدث خطأ أثناء حفظ حساب المستخدم وصلاحياته.",
+        description: userValidationErrorMessage(error),
         variant: "destructive",
       });
     }
@@ -1146,6 +1163,7 @@ export function UsersPage() {
     setForm({
       full_name: p.full_name ?? "",
       username: p.username ?? "",
+      email: p.email ?? "",
       phone: p.phone ?? "",
       password: "",
       role: p.role,
@@ -1399,14 +1417,34 @@ export function UsersPage() {
             />
           </div>
           <div className="md:col-span-2 lg:col-span-1">
-            <Label className="text-xs font-bold">اسم المستخدم / البريد (للدخول)</Label>
+            <Label className="text-xs font-bold">اسم المستخدم</Label>
             <Input
               className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1"
-              placeholder="مثال: admin"
+              placeholder="مثال: mahmoud.admin"
+              minLength={3}
+              maxLength={32}
+              autoComplete="username"
               disabled={!!editing && isHostedDeployment()}
               value={form.username}
               onChange={(e) => setForm((s) => ({ ...s, username: e.target.value }))}
             />
+          </div>
+          <div className="md:col-span-2 lg:col-span-1">
+            <Label className="text-xs font-bold">البريد الإلكتروني لحساب الدخول</Label>
+            <Input
+              type="email"
+              className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1"
+              placeholder="name@example.com"
+              autoComplete="email"
+              required={isHostedDeployment() && !editing}
+              disabled={!!editing && isHostedDeployment()}
+              value={form.email}
+              onChange={(e) => setForm((s) => ({ ...s, email: e.target.value }))}
+              dir="ltr"
+            />
+            {!!editing && isHostedDeployment() && (
+              <p className="text-[10px] text-muted-foreground mt-1">تغيير البريد يتطلب عملية Auth إدارية مستقلة.</p>
+            )}
           </div>
           <div className="md:col-span-2 lg:col-span-1">
             <Label className="text-xs font-bold">رقم الهاتف</Label>
@@ -1452,6 +1490,7 @@ export function UsersPage() {
                   setForm({
                     full_name: "",
                     username: "",
+                    email: "",
                     phone: "",
                     password: "",
                     role: "cashier",
@@ -1465,6 +1504,7 @@ export function UsersPage() {
               className="h-9 px-6 rounded-xl font-bold gap-2"
               onClick={() => setIsConfirmUpsertOpen(true)}
               disabled={!form.full_name || !form.username || (!editing && !form.password) ||
+                (isHostedDeployment() && !form.email && !editing) ||
                 (isHostedDeployment() && userDirectoryStatus !== "ready")}
             >
               <Save size={16} />
