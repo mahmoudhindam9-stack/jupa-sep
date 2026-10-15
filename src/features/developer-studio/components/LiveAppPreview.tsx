@@ -111,6 +111,8 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
     } else if (event.data.type === "STUDIO_CHANGE") {
       commitEdits(String(event.data.selector), event.data.patch || {});
       setStatus("تم تعديل المعاينة — التغيير غير محفوظ؛ اضغط «حفظ المسودة»");
+    } else if (event.data.type === "STUDIO_PROTECTED_ELEMENT") {
+      setStatus(String(event.data.message || "هذا العنصر محمي من التعديل لضمان بقاء وظائفه الأصلية."));
     } else if (event.data.type === "STUDIO_BRIDGE_READY") {
       setReady(true);
       setStatus("المعاينة الحقيقية جاهزة");
@@ -194,6 +196,44 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
       };
       const send = (type, data) => window.parent.postMessage({ type, ...data }, parentOrigin);
       const find = (selector) => { try { return document.querySelector(selector); } catch (_) { return null; } };
+      const preservedSelector = '[data-studio-preserve="currency-switcher-tools"], [data-studio-preserve="currency-switcher"]';
+      const isProtected = (el) => !!(el && (el.closest(preservedSelector) || el.querySelector(preservedSelector)));
+      const originalStates = new Map();
+      const rememberOriginal = (selector, el) => {
+        const existing = originalStates.get(selector);
+        if (existing?.el === el) return;
+        originalStates.set(selector, {
+          el,
+          styleAttribute: el.getAttribute("style"),
+          leafText: el.children.length === 0 ? (el.textContent || "") : null,
+          directTextNodes: el.children.length === 0 ? [] : Array.from(el.childNodes)
+            .filter((node) => node.nodeType === Node.TEXT_NODE)
+            .map((node) => ({ node, text: node.textContent })),
+          parent: el.parentNode,
+          nextSibling: el.nextSibling,
+        });
+      };
+      const resetPreviewEdits = () => {
+        document.querySelectorAll("[data-coding-studio-clone-of]").forEach((el) => el.remove());
+        for (const state of Array.from(originalStates.values()).reverse()) {
+          const el = state.el;
+          if (!el.isConnected) continue;
+          if (state.leafText !== null) {
+            el.textContent = state.leafText;
+          } else {
+            for (const item of state.directTextNodes) {
+              if (item.node.parentNode === el) item.node.textContent = item.text;
+            }
+          }
+          if (state.styleAttribute === null) el.removeAttribute("style");
+          else el.setAttribute("style", state.styleAttribute);
+          if (state.parent && el.parentNode === state.parent) {
+            if (state.nextSibling && state.nextSibling.parentNode === state.parent) state.parent.insertBefore(el, state.nextSibling);
+            else state.parent.appendChild(el);
+          }
+        }
+        originalStates.clear();
+      };
       const describe = (el) => {
         const css = getComputedStyle(el);
         return { selector: selectorFor(el), tag: el.tagName.toLowerCase(),
@@ -225,7 +265,8 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
       };
       const applyEdit = (selector, edit) => {
         const el = find(selector);
-        if (!el || !edit) return;
+        if (!el || !edit || isProtected(el)) return;
+        rememberOriginal(selector, el);
         if (edit.text !== undefined && el.dataset.codingStudioTextApplied !== String(edit.text)) applyText(el, edit.text);
         if (edit.styles && typeof edit.styles === "object") applyStyles(el, edit.styles);
         if (edit.deleted) el.style.display = "none";
@@ -260,6 +301,11 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
       const editableSelector = "button,a,input,textarea,select,label,h1,h2,h3,h4,h5,h6,p,span,div,section,article,li,td,th,svg,path,circle,rect,line,polyline,polygon";
       const selectElement = (el) => {
         if (selected) selected.removeAttribute("data-coding-studio-selected");
+        selected = null;
+        if (isProtected(el)) {
+          send("STUDIO_PROTECTED_ELEMENT", { message: "مربع تغيير العملات محمي للحفاظ على وظائفه الأصلية." });
+          return;
+        }
         selected = el;
         selected.setAttribute("data-coding-studio-selected", "true");
         send("STUDIO_SELECTED", { element: describe(selected) });
@@ -331,6 +377,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
           return;
         }
         if (data.action === "restore") {
+          resetPreviewEdits();
           Object.entries(data.edits || {}).forEach(([selector, edit]) => applyEdit(selector, edit));
           // Refresh the selected element's property controls after undo/redo restores styles or text.
           if (selected && selected.isConnected) send("STUDIO_SELECTED", { element: describe(selected) });
@@ -344,7 +391,12 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
           selectElement(el);
           return;
         }
+        if (isProtected(el)) {
+          send("STUDIO_PROTECTED_ELEMENT", { message: "مربع تغيير العملات محمي للحفاظ على وظائفه الأصلية." });
+          return;
+        }
         const selector = selectorFor(el);
+        rememberOriginal(selector, el);
         const notify = (patch) => send("STUDIO_CHANGE", { selector, patch });
         if (data.action === "style") {
           applyStyles(el, data.styles || {});
