@@ -10,6 +10,7 @@ import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { erpStore, SystemUser, ROOT_DEFAULT_ADMIN } from "@/shared/services/erpStore";
 import { authService } from "@/features/auth/services/authService";
 import {
+  normalizeManagedDigits,
   validateManagedUserForm,
   userValidationErrorMessage,
 } from "@/features/auth/services/managedUserValidation";
@@ -24,17 +25,7 @@ export const Route = createFileRoute("/login")({
 
 // Helper to normalize eastern Arabic/Persian digits to western ASCII digits
 function normalizeDigits(str: string): string {
-  return str
-    .replace(/[٠۰]/g, "0")
-    .replace(/[١۱]/g, "1")
-    .replace(/[٢۲]/g, "2")
-    .replace(/[٣۳]/g, "3")
-    .replace(/[٤۴]/g, "4")
-    .replace(/[٥۵]/g, "5")
-    .replace(/[٦۶]/g, "6")
-    .replace(/[٧۷]/g, "7")
-    .replace(/[٨۸]/g, "8")
-    .replace(/[٩۹]/g, "9");
+  return normalizeManagedDigits(str);
 }
 
 function isHostedDeployment(mounted = true): boolean {
