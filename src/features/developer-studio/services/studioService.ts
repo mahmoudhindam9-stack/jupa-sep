@@ -603,9 +603,11 @@ class StudioService {
       };
     } catch (error: any) {
       const raw = String(error?.message || error?.details || "تعذر فحص توافق المسودة.");
-      const migrationHint = /developer_studio_check_draft_sync|function .* does not exist|schema cache/i.test(raw)
-        ? "نفّذ supabase/migrations/20261015100000_studio_local_first_sync_rpcs.sql في Supabase SQL Editor ثم أعد المحاولة."
-        : "";
+      const migrationHint = /permission denied for function developer_studio_check_draft_sync/i.test(raw)
+        ? "صلاحيات تنفيذ دالة مزامنة الاستوديو غير مكتملة. نفّذ supabase/migrations/20261015170000_repair_developer_studio_sync_function_grants.sql في Supabase SQL Editor ثم أعد المحاولة."
+        : /developer_studio_check_draft_sync|function .* does not exist|schema cache/i.test(raw)
+          ? "دالة فحص مزامنة المسودة غير موجودة أو لم تُحدّث. نفّذ supabase/migrations/20261015100000_studio_local_first_sync_rpcs.sql في Supabase SQL Editor ثم أعد المحاولة."
+          : "";
       return {
         compatible: false,
         error: "تعذر تأكيد توافق نسخة المسودة مع Supabase؛ احتفظنا بالتعديلات محليًا ولم تتم المزامنة. " + migrationHint + " " + raw,
