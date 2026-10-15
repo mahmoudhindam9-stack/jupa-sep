@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  normalizeManagedDigits,
   normalizeManagedUsername,
   validateManagedProfilePayload,
   validateManagedUserForm,
@@ -9,6 +10,24 @@ import {
 describe("managed user validation contract", () => {
   it("normalizes usernames and Arabic numerals consistently", () => {
     expect(normalizeManagedUsername("  ADMIN_١٢  ")).toBe("admin_12");
+  });
+
+
+  it("normalizes Arabic numerals in passwords the same way at creation and login", () => {
+    expect(normalizeManagedDigits("Pass١٢٣٤٥٦٧٨!")).toBe("Pass12345678!");
+    expect(
+      validateManagedUserForm({
+        fullName: "A User",
+        username: "a.user",
+        email: "a.user@example.com",
+        password: "Pass١٢٣٤٥٦٧٨!",
+        passwordConfirmation: "Pass12345678!",
+        role: "cashier",
+        hosted: true,
+        requirePassword: true,
+        requirePasswordConfirmation: true,
+      }).password,
+    ).toBe("Pass12345678!");
   });
 
   it("accepts a valid hosted account and returns normalized fields", () => {
