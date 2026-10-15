@@ -77,6 +77,9 @@ export function validateManagedUserForm(input: ManagedUserFormInput): {
   if (input.hosted && !EMAIL_PATTERN.test(email)) {
     throw new Error("أدخل بريدًا إلكترونيًا حقيقيًا وصالحًا لحساب Supabase.");
   }
+  if (input.hosted && email.length > 254) {
+    throw new Error("البريد الإلكتروني لا يمكن أن يتجاوز 254 حرفًا.");
+  }
 
   if (input.requirePassword && password.length < 8) {
     throw new Error(
@@ -109,7 +112,11 @@ export function validateManagedProfilePayload(profile: {
   role?: string | null;
   permissions?: unknown;
 }): void {
-  if (!String(profile.id ?? "").trim()) throw new Error("معرّف حساب Supabase مطلوب.");
+  const id = String(profile.id ?? "").trim();
+  if (!id) throw new Error("معرّف حساب Supabase مطلوب.");
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    throw new Error("معرّف الحساب غير صالح؛ يجب أن يكون UUID صادرًا من Supabase Auth.");
+  }
 
   validateManagedUserForm({
     fullName: String(profile.full_name ?? ""),
@@ -124,7 +131,10 @@ export function validateManagedProfilePayload(profile: {
     throw new Error("الصلاحيات يجب أن تكون كائنًا يحتوي قيمًا منطقية فقط.");
   }
   for (const [key, value] of Object.entries(permissions as Record<string, unknown>)) {
-    if (!key.trim() || typeof value !== "boolean") {
+    if (!MANAGED_PERMISSION_KEYS.has(key)) {
+      throw new Error(`اسم الصلاحية غير معتمد في النظام: ${key}. حدّث التطبيق قبل حفظ هذه الصلاحية.`);
+    }
+    if (typeof value !== "boolean") {
       throw new Error("الصلاحيات غير صالحة: كل صلاحية يجب أن تحتوي قيمة true أو false.");
     }
   }
@@ -146,6 +156,21 @@ export function userValidationErrorMessage(error: unknown): string {
   if (message.includes("not_authorized") || message.includes("insufficient permission") || message.includes("cannot grant permission") || message.includes("only a super administrator")) {
     return "تم رفض العملية: حسابك لا يملك صلاحية منح هذا الدور أو الصلاحيات المطلوبة.";
   }
+  if (message.includes("initial_admin_setup_closed")) {
+    return "تم إنشاء المدير الأول بالفعل أو توجد حسابات سابقة؛ أوقف التسجيل الأولي وسجّل الدخول بالحساب الموجود."; 
+  }
+  if (message.includes("email_already_exists") || message.includes("profiles_email_lower_uidx")) {
+    return "البريد الإلكتروني مرتبط بحساب آخر. استخدم بريدًا مختلفًا.";
+  }
+  if (message.includes("username_already_exists") || message.includes("profiles_username_lower_uidx") || (message.includes("duplicate key") && message.includes("username"))) {
+    return "اسم المستخدم مستخدم بالفعل. اختر اسمًا آخر.";
+  }
+  if (message.includes("invalid_permission_key")) {
+    return "تم رفض الحفظ لأن النموذج يحتوي على صلاحية غير معتمدة في النظام. حدّث قائمة الصلاحيات ثم أعد المحاولة.";
+  }
+  if (message.includes("email_invalid") || message.includes("invalid_email")) {
+    return "البريد الإلكتروني المرتبط بحساب Supabase غير صالح. صحّح البريد من إعدادات Auth قبل حفظ الملف.";
+  }
   if (message.includes("invalid_username")) {
     return "اسم المستخدم غير صالح. استخدم 3–32 حرفًا إنجليزيًا صغيرًا أو رقمًا، مع النقطة أو الشرطة أو الشرطة السفلية فقط.";
   }
@@ -164,6 +189,9 @@ export function userValidationErrorMessage(error: unknown): string {
   if (message.includes("invalid_role")) {
     return "الدور الوظيفي غير معتمد في قاعدة البيانات. اختر دورًا من القائمة.";
   }
+  if (message.includes("user_id_invalid")) {
+    return "معرّف المستخدم ليس UUID صالحًا من Supabase Auth؛ لم يتم الحفظ.";
+  }
   if (message.includes("invalid_permissions")) {
     return "صيغة الصلاحيات غير مطابقة لقاعدة البيانات. يجب أن تكون كل صلاحية true أو false.";
   }
@@ -175,6 +203,9 @@ export function userValidationErrorMessage(error: unknown): string {
     message.includes("database error updating user")
   ) {
     return "رفضت قاعدة البيانات تسجيل الحساب أثناء التحقق النهائي. تأكد من الاسم الكامل والبريد الصحيح واسم المستخدم المسموح والدور المحدد. إذا كانت البيانات صحيحة، راجع Supabase Auth Logs لمعرفة سبب الرفض التفصيلي.";
+  }
+  if (message.includes("email address") && (message.includes("invalid") || message.includes("valid"))) {
+    return "صيغة البريد الإلكتروني غير صحيحة. أدخل بريدًا صالحًا مثل name@example.com.";
   }
   if (message.includes("weak_password") || message.includes("password should") || message.includes("password is")) {
     return "رفض Supabase كلمة المرور. استخدم كلمة مرور أطول وأقوى وتوافق مع سياسة المشروع.";
