@@ -266,9 +266,13 @@ function RootComponent() {
             });
           }
         }
-        if (typeof edit.href === "string" && edit.href.startsWith("/") && !edit.href.startsWith("//")) {
+        if (typeof edit.href === "string") {
           const anchor = html.matches("a") ? html : html.closest("a[href]") || html.querySelector("a[href]");
-          if (anchor) anchor.setAttribute("href", edit.href);
+          if (anchor) {
+            if (anchor !== html) rememberStudioOriginal(selector + "::studio-link", anchor as HTMLElement);
+            if (edit.href === "") anchor.removeAttribute("href");
+            else if (edit.href.startsWith("/") && !edit.href.startsWith("//")) anchor.setAttribute("href", edit.href);
+          }
         }
         if (edit.action && edit.action.type && edit.action.type !== "none") {
           html.setAttribute("data-studio-flow-action", JSON.stringify(edit.action));
