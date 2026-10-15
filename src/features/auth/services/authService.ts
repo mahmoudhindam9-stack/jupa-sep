@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { createClient } from "@supabase/supabase-js";
 import { Profile } from "@/shared/types";
 import {
+  normalizeManagedDigits,
   normalizeManagedEmail,
   normalizeManagedUsername,
   validateManagedProfilePayload,
@@ -71,7 +72,7 @@ export const authService = {
     const normalizedEmail = assertCredentials(email, password);
     const { data, error } = await supabase.auth.signInWithPassword({
       email: normalizedEmail,
-      password,
+      password: normalizeManagedDigits(password),
     });
     if (error) throw error;
     return data;
@@ -145,7 +146,7 @@ export const authService = {
 
   async signUpNewUser(email: string, password: string, profileData: any) {
     const normalizedEmail = normalizeEmail(email);
-    validateManagedUserForm({
+    const validated = validateManagedUserForm({
       fullName: String(profileData?.full_name ?? ""),
       username: String(profileData?.username ?? ""),
       email: normalizedEmail,
@@ -157,10 +158,16 @@ export const authService = {
     });
     const secondaryClient = getSecondaryClient();
     const { data, error } = await secondaryClient.auth.signUp({
-      email: normalizedEmail,
-      password,
+      email: validated.email,
+      password: validated.password,
       options: {
-        data: profileData,
+        data: {
+          ...profileData,
+          username: validated.username,
+          full_name: validated.fullName,
+          phone: validated.phone,
+          role: validated.role,
+        },
       },
     });
     if (error) throw new Error(userValidationErrorMessage(error), { cause: error });
