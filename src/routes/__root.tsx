@@ -3,7 +3,6 @@ import {
   Outlet,
   Link,
   createRootRouteWithContext,
-  useRouter,
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
@@ -43,8 +42,9 @@ function NotFoundComponent() {
 }
 
 function ErrorComponent({ error, reset }: { error: any; reset: () => void }) {
-  const router = useRouter();
   useEffect(() => {
+    // Keep the original route failure visible; error boundaries must not require
+    // router context, because router initialization itself can be the failing step.
     console.error("Restocash route error:", error);
   }, [error]);
   return (
@@ -61,7 +61,8 @@ function ErrorComponent({ error, reset }: { error: any; reset: () => void }) {
           <button
             type="button"
             onClick={() => {
-              router.invalidate();
+              // A full reload is safe even when router context is unavailable.
+              window.location.reload();
               reset();
             }}
             className="inline-flex min-h-10 items-center justify-center rounded-lg bg-primary px-5 py-2.5 text-sm font-bold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
