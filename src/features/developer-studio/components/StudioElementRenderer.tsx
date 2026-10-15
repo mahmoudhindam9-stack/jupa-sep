@@ -68,7 +68,8 @@ function runStudioWorkflow(raw: unknown, event: React.MouseEvent<HTMLButtonEleme
     link && typeof link.id === "string" && ids.has(link.from) && ids.has(link.to) && link.from !== link.to,
   );
   if (!nodes.length) return false;
-  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const nodeById = new Map<string, RuntimeFlowNode>();
+  nodes.forEach((node) => nodeById.set(node.id, node));
   const incoming = new Set(connections.map((link) => link.to));
   const start = nodes.find((node) => node.kind === "trigger") || nodes.find((node) => !incoming.has(node.id)) || nodes[0];
   const queue = [start.id];
