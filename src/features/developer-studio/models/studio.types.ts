@@ -208,7 +208,17 @@ export interface StudioActionStep {
   resultSelector?: string;
 }
 
-export interface StudioActionConfig extends Omit<StudioActionStep, "id"> {
+export interface StudioActionConfig {
+  type: StudioActionType;
+  destination?: string;
+  message?: string;
+  targetSelector?: string;
+  value?: string;
+  formula?: string;
+  leftSelector?: string;
+  rightSelector?: string;
+  operator?: "+" | "-" | "*" | "/" | "%";
+  resultSelector?: string;
   steps?: StudioActionStep[];
 }
 
