@@ -214,12 +214,27 @@ export function getElementDisplayName(element: Pick<ElementModel, "type" | "cont
   return ELEMENT_TYPE_LABELS[element.type] || "عنصر";
 }
 
+export interface StudioDomAddedItem {
+  id: string;
+  type: "text" | "button" | "input" | "card" | "divider" | "link";
+  name: string;
+  text: string;
+  placement: "inside" | "after";
+  action?: "none" | "message" | "navigate" | "external";
+  url?: string;
+  message?: string;
+}
+
 export interface StudioDomEdit {
   text?: string;
   styles?: Record<string, string>;
   deleted?: boolean;
   duplicateCount?: number;
   order?: number;
+  /** An editable existing link destination, limited to relative paths or HTTP(S). */
+  href?: string;
+  /** User-created preview elements anchored to an existing real DOM element. */
+  additions?: StudioDomAddedItem[];
 }
 
 export interface StudioDraft {
