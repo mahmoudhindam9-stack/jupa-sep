@@ -66,6 +66,7 @@ function DeveloperStudioPage() {
       const old = JSON.parse(localStorage.getItem("custom_text_map") || "{}");
       const merged = { ...old, ...edits };
       localStorage.setItem("custom_text_map", JSON.stringify(merged));
+      window.dispatchEvent(new CustomEvent("studio_legacy_edits_updated"));
       const check = JSON.parse(localStorage.getItem("custom_text_map") || "{}");
       if (Object.keys(edits).some((key) => JSON.stringify(check[key]) !== JSON.stringify(merged[key]))) throw new Error("تعذر التحقق من حفظ الإعدادات");
       setStatus(apply ? "تم الحفظ والتحقق — يجري تحديث المعاينة" : "تم الحفظ والتحقق محليًا");
