@@ -149,7 +149,8 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
 
   useEffect(() => {
     setEditMode(designerMode);
-    setShowExplorer(designerMode);
+    // Keep the application canvas unobstructed until the user opens the explorer.
+    setShowExplorer(false);
     if (!designerMode) {
       setShowProperties(false);
       setShowAddItem(false);
@@ -774,7 +775,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
           </form>
         )}
         {showExplorer && (
-          <aside className="absolute right-0 top-[112px] bottom-0 z-20 flex w-[230px] max-w-[28vw] min-w-[190px] flex-col overflow-hidden rounded-tl-xl border-l border-t bg-card/95 shadow-2xl backdrop-blur">
+          <aside className="absolute right-0 top-0 bottom-0 z-20 flex w-[min(300px,30vw)] min-w-[220px] flex-col overflow-hidden rounded-tl-xl border-l border-t bg-card/95 shadow-2xl backdrop-blur">
             <div className="shrink-0 border-b p-3">
               <div className="flex items-center justify-between gap-2">
                 <h3 className="text-sm font-black">صفحات ومكونات التطبيق</h3>
@@ -808,13 +809,13 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
             </section>
           </aside>
         )}
-        <div className="absolute inset-0 flex min-h-0 min-w-0 items-stretch justify-center overflow-auto bg-slate-100 p-2 dark:bg-slate-950 sm:p-4">
-          <div className="h-full min-h-0 overflow-hidden rounded-xl border bg-background shadow-xl transition-[width] duration-200" style={{ width: frameWidth, minWidth: previewSize === "desktop" ? 0 : frameWidth, flex: previewSize === "desktop" ? "1 1 auto" : "0 0 " + frameWidth }}>
+        <div className="absolute inset-0 flex min-h-0 min-w-0 items-stretch justify-center overflow-auto bg-slate-100 p-0 dark:bg-slate-950 sm:p-0">
+          <div className={"h-full min-h-0 overflow-hidden bg-background transition-[width] duration-200 " + (previewSize === "desktop" ? "w-full rounded-none border-0 shadow-none" : "rounded-xl border shadow-xl")} style={{ width: frameWidth, minWidth: previewSize === "desktop" ? 0 : frameWidth, flex: previewSize === "desktop" ? "1 1 auto" : "0 0 " + frameWidth }}>
             <iframe key={frameKey} ref={iframeRef} src={safeRoute} onLoad={installBridge} title="معاينة حية للتطبيق" className="h-full min-h-0 w-full border-0 bg-background" />
           </div>
         </div>
         {showProperties && (
-        <aside className="absolute left-0 top-[112px] bottom-0 z-20 flex w-[280px] max-w-[32vw] min-w-[230px] flex-col gap-3 overflow-y-auto rounded-tr-xl border-r border-t bg-card/95 p-3 shadow-2xl backdrop-blur 2xl:w-[320px]">
+        <aside className="absolute left-0 top-0 bottom-0 z-20 flex w-[min(340px,34vw)] min-w-[240px] flex-col gap-3 overflow-y-auto rounded-tr-xl border-r border-t bg-card/95 p-3 shadow-2xl backdrop-blur">
           <div>
             <h3 className="text-sm font-black">خصائص عنصر التطبيق</h3>
             <p className="mt-1 text-[10px] text-muted-foreground">{selected ? "نوع العنصر: " + ({a: "رابط", button: "زر", input: "حقل إدخال", textarea: "حقل نصي", select: "قائمة اختيار", img: "صورة", h1: "عنوان", h2: "عنوان", h3: "عنوان", p: "نص", div: "حاوية", section: "قسم"}[selected.tag] || "عنصر") : "انقر على عنصر داخل المعاينة"}</p>
