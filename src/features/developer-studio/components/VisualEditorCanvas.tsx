@@ -9,6 +9,7 @@ import {
   ElementModel,
   PageModel,
   ElementType,
+  getElementDisplayName,
 } from "../models/studio.types";
 import { StudioElementRenderer } from "./StudioElementRenderer";
 import { cn } from "@/lib/utils";
@@ -98,7 +99,7 @@ export function VisualEditorCanvas({
                 ? "bg-card text-foreground shadow-2xs border border-border"
                 : "text-muted-foreground hover:text-foreground",
             )}
-            title="معاينة سطح المكتب (Desktop)"
+            title="معاينة على شاشة الحاسوب"
           >
             <Monitor size={14} />
             <span className="hidden sm:inline">شاشة كاملة</span>
@@ -112,7 +113,7 @@ export function VisualEditorCanvas({
                 ? "bg-card text-foreground shadow-2xs border border-border"
                 : "text-muted-foreground hover:text-foreground",
             )}
-            title="معاينة التابلت (Tablet 768px)"
+            title="معاينة على الجهاز اللوحي"
           >
             <Tablet size={14} />
             <span className="hidden sm:inline">تابلت</span>
@@ -126,7 +127,7 @@ export function VisualEditorCanvas({
                 ? "bg-card text-foreground shadow-2xs border border-border"
                 : "text-muted-foreground hover:text-foreground",
             )}
-            title="معاينة الهاتف (Mobile 390px)"
+            title="معاينة على الهاتف"
           >
             <Smartphone size={14} />
             <span className="hidden sm:inline">هاتف</span>
@@ -138,7 +139,7 @@ export function VisualEditorCanvas({
           <div className="hidden md:flex items-center gap-1 bg-card border border-primary/40 px-3 py-1 rounded-xl shadow-sm text-xs animate-in fade-in duration-150">
             <span className="font-black text-primary ml-2 flex items-center gap-1">
               <Sparkles size={13} />
-              {selectedElement.type}
+              {getElementDisplayName(selectedElement)}
             </span>
 
             <Button
@@ -268,10 +269,10 @@ export function VisualEditorCanvas({
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
                 <h2 className="text-base font-black text-foreground">{page.name}</h2>
               </div>
-              <p className="text-xs font-mono text-muted-foreground mt-0.5">{page.route}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">معاينة ترتيب ومظهر عناصر الصفحة</p>
             </div>
             <span className="text-[11px] font-bold text-muted-foreground bg-muted px-2.5 py-1 rounded-full border border-border">
-              {rootElements.length} عناصر معروضة
+              {rootElements.length} مكوّنات رئيسية
             </span>
           </div>
 
