@@ -115,13 +115,7 @@ const nav = [
     to: "/admin/hr",
     label: "الموارد البشرية والمستخدمين",
     icon: UserCheck,
-    permissionKeys: [
-      "hr",
-      "hr_view_attendance",
-      "hr_manage_payroll_loans",
-      "users_roles",
-      "system_manage_users",
-    ],
+    permissionKeys: ["hr", "hr_view_attendance", "hr_manage_payroll_loans", "super_admin_full_access"],
   },
   {
     to: "/admin/inventory",
