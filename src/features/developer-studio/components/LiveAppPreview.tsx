@@ -1144,7 +1144,7 @@ export function LiveAppPreview({
             </div>
           )}
           </div>
-          <div className="mt-auto shrink-0 border-t bg-muted/40 p-2 text-[10px] leading-5 text-muted-foreground">التغييرات تظهر فورًا في المعاينة وتُحفظ مع المسودة. اضغط «حفظ ومزامنة» لتأكيد الحفظ على Supabase ثم «نشر» لتطبيقها على المستخدمين.</div>إذا ظهر خطأ مزامنة، تبقى النسخة المحلية موجودة لكن لا تعتبر محفوظة سحابيًا حتى نجاح التأكيد.</div>
+          <div className="mt-auto shrink-0 border-t bg-muted/40 p-2 text-[10px] leading-5 text-muted-foreground">التغييرات تظهر فورًا في المعاينة وتُحفظ مع المسودة. اضغط «حفظ ومزامنة» لتأكيد الحفظ على Supabase ثم «نشر» لتطبيقها على المستخدمين.</div>
         </aside>
         )}
       </div>
