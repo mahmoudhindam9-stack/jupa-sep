@@ -17,18 +17,18 @@ BEGIN
   END IF;
 
   IF to_regprocedure('public.process_order_inventory(uuid,boolean)') IS NOT NULL THEN
-    EXECUTE 'REVOKE ALL ON FUNCTION public.process_order_inventory(uuid, boolean) FROM PUBLIC, anon';
-    EXECUTE 'GRANT EXECUTE ON FUNCTION public.process_order_inventory(uuid, boolean) TO authenticated';
+    -- Internal inventory RPC: invoke only through authorized server-side workflows.
+    EXECUTE 'REVOKE ALL ON FUNCTION public.process_order_inventory(uuid, boolean) FROM PUBLIC, anon, authenticated';
   END IF;
 
   IF to_regprocedure('public.process_order_inventory(uuid,boolean,uuid)') IS NOT NULL THEN
-    EXECUTE 'REVOKE ALL ON FUNCTION public.process_order_inventory(uuid, boolean, uuid) FROM PUBLIC, anon';
-    EXECUTE 'GRANT EXECUTE ON FUNCTION public.process_order_inventory(uuid, boolean, uuid) TO authenticated';
+    -- Internal inventory RPC: invoke only through authorized server-side workflows.
+    EXECUTE 'REVOKE ALL ON FUNCTION public.process_order_inventory(uuid, boolean, uuid) FROM PUBLIC, anon, authenticated';
   END IF;
 
   IF to_regprocedure('public.reverse_order_inventory(uuid)') IS NOT NULL THEN
-    EXECUTE 'REVOKE ALL ON FUNCTION public.reverse_order_inventory(uuid) FROM PUBLIC, anon';
-    EXECUTE 'GRANT EXECUTE ON FUNCTION public.reverse_order_inventory(uuid) TO authenticated';
+    -- Internal inventory RPC: direct client execution is not needed.
+    EXECUTE 'REVOKE ALL ON FUNCTION public.reverse_order_inventory(uuid) FROM PUBLIC, anon, authenticated';
   END IF;
 
   IF to_regprocedure('public.transfer_inventory(uuid,uuid,uuid,numeric,text,uuid)') IS NOT NULL THEN
@@ -42,8 +42,8 @@ BEGIN
   END IF;
 
   IF to_regprocedure('public.populate_warehouse_default_ingredients(uuid)') IS NOT NULL THEN
-    EXECUTE 'REVOKE ALL ON FUNCTION public.populate_warehouse_default_ingredients(uuid) FROM PUBLIC, anon';
-    EXECUTE 'GRANT EXECUTE ON FUNCTION public.populate_warehouse_default_ingredients(uuid) TO authenticated';
+    -- Internal helper used by create_warehouse_with_options, not a browser RPC.
+    EXECUTE 'REVOKE ALL ON FUNCTION public.populate_warehouse_default_ingredients(uuid) FROM PUBLIC, anon, authenticated';
   END IF;
 END;
 $restrict_mutating_rpc_grants$;
