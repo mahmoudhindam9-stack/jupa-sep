@@ -1086,9 +1086,9 @@ export function DeveloperStudioProPage() {
       {/* ========================================================= */}
       {/* TOP WORKSPACE NAVIGATION & CONTROL BAR                    */}
       {/* ========================================================= */}
-      <header className="shrink-0 z-30 bg-card border-b border-border px-3 sm:px-5 py-2.5 flex items-center justify-between gap-3 shadow-2xs">
+      <header className="shrink-0 z-30 bg-card border-b border-border px-3 sm:px-5 py-3 flex flex-wrap items-center justify-between gap-3 shadow-sm">
         {/* Right side (RTL): Brand, Page Selector, Revision */}
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
             <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary border border-primary/20 flex items-center justify-center shrink-0">
               <Sparkles className="w-4 h-4" />
@@ -1109,7 +1109,7 @@ export function DeveloperStudioProPage() {
           <div className="h-5 w-px bg-border/80 hidden sm:block" />
 
           {/* Page Selector dropdown */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center justify-center gap-2 rounded-xl border border-border/70 bg-muted/20 p-1.5">
             <select
               value={activePageId}
               onChange={(e) => {
@@ -1171,14 +1171,14 @@ export function DeveloperStudioProPage() {
         </div>
 
         {/* Center: Undo / Redo & Preview Toggle */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={handleUndo}
             disabled={historyPointer <= 0}
-            className="h-8 px-2 text-xs gap-1 cursor-pointer"
+            className="h-9 px-3 text-xs gap-1.5 cursor-pointer"
             title="تراجع (Ctrl+Z)"
           >
             <Undo2 className="w-3.5 h-3.5" />
@@ -1230,7 +1230,7 @@ export function DeveloperStudioProPage() {
             size="sm"
             onClick={() => void handleSaveDraft()}
             disabled={saveStatus === "saving" || isSyncWorkflowInProgress || !draft.hasUnsavedLocalChanges}
-            className="h-8 px-2.5 text-xs gap-1.5 cursor-pointer font-bold"
+            className="h-9 px-3 text-xs gap-1.5 cursor-pointer font-bold"
             title={saveError || "حفظ محلي أولًا، فحص التوافق، ثم مزامنة Supabase (Ctrl+S)"}
           >
             {saveStatus === "saving" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
@@ -1251,7 +1251,7 @@ export function DeveloperStudioProPage() {
               }
               setShowHistoryModal(true);
             }}
-            className="h-8 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground cursor-pointer"
+            className="h-9 px-3 text-xs gap-1.5 text-muted-foreground hover:text-foreground cursor-pointer"
             title={draft.hasUnsavedLocalChanges ? "احفظ المسودة أولًا قبل فتح سجل الإصدارات" : "سجل الإصدارات والاسترجاع"}
           >
             <History className="w-3.5 h-3.5" />
@@ -1264,7 +1264,7 @@ export function DeveloperStudioProPage() {
             size="sm"
             onClick={handleDiscardDraft}
             disabled={!draft.hasUnsavedLocalChanges}
-            className="h-8 px-2 text-xs gap-1 text-muted-foreground hover:text-destructive cursor-pointer disabled:opacity-40"
+            className="h-9 px-3 text-xs gap-1.5 text-muted-foreground hover:text-destructive cursor-pointer disabled:opacity-40"
             title="إلغاء التعديلات غير المنشورة"
           >
             <RotateCcw className="w-3.5 h-3.5" />
@@ -1276,7 +1276,7 @@ export function DeveloperStudioProPage() {
             variant="default"
             size="sm"
             onClick={handleTriggerPublish}
-            className="h-8 px-3 text-xs font-black gap-1.5 cursor-pointer bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
+            className="h-9 px-4 text-xs font-black gap-1.5 cursor-pointer bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
           >
             <UploadCloud className="w-3.5 h-3.5" />
             <span>نشر التغييرات</span>
