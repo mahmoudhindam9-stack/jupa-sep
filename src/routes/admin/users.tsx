@@ -538,10 +538,12 @@ function isHostedDeployment(): boolean {
 }
 
 function profileToSystemUser(profile: any): SystemUser {
+  const email = String(profile.email || "").trim().toLowerCase();
   return {
-    id: profile.id,
+    id: String(profile.id || ""),
     full_name: profile.full_name || profile.username || "",
-    username: profile.username || String(profile.email || "").split("@")[0],
+    username: String(profile.username || email.split("@")[0] || "").trim().toLowerCase(),
+    email,
     phone: profile.phone || "",
     role: profile.role || "cashier",
     permissions: (profile.permissions || {}) as UserPermission,
@@ -565,11 +567,14 @@ function isActiveUserRecord(user: SystemUser | null | undefined, activeAuthUser?
             sessionStorage.getItem("restocash_auth_user"))) ||
         "";
   const active = activeValue.trim().toLowerCase();
-  const storedUsername = String(user.username || "")
-    .trim()
-    .toLowerCase();
-  if (!active || !storedUsername) return false;
-  return active === storedUsername || active.split("@")[0] === storedUsername.split("@")[0];
+  const storedUsername = String(user.username || "").trim().toLowerCase();
+  const storedEmail = String(user.email || "").trim().toLowerCase();
+  if (!active || (!storedUsername && !storedEmail)) return false;
+  return (
+    (!!storedEmail && active === storedEmail) ||
+    (!!storedUsername && active === storedUsername) ||
+    (!!storedUsername && active.split("@")[0] === storedUsername.split("@")[0])
+  );
 }
 
 function hasDetailedAcl(value: Record<string, any> | null | undefined): boolean {
@@ -595,60 +600,44 @@ function samePermissionMap(
   return [...keys].every((key) => a[key] === b[key]);
 }
 
-function currentActorPermissions(state: any): Record<string, boolean> {
+function currentActorPermissions(
+  state: any,
+  authoritativeProfile?: { permissions?: Record<string, any> } | null,
+): Record<string, boolean> {
+  // On hosted deployments, the profile fetched for the authenticated Supabase UID is
+  // authoritative. Never infer administrator privileges from editable browser storage.
+  if (isHostedDeployment()) {
+    return (authoritativeProfile?.permissions || {}) as Record<string, boolean>;
+  }
+
   const activeStored = (
     typeof window !== "undefined"
       ? localStorage.getItem("restocash_auth_user") ||
         sessionStorage.getItem("restocash_auth_user") ||
         ""
       : ""
-  )
-    .trim()
-    .toLowerCase();
-  const activeRole = (
-    typeof window !== "undefined"
-      ? localStorage.getItem("restocash_user_role") ||
-        sessionStorage.getItem("restocash_user_role") ||
-        ""
-      : ""
-  )
+  ).trim().toLowerCase();
+  const username = String(state?.currentUser || activeStored.split("@")[0] || "")
     .trim()
     .toLowerCase();
 
-  const username = String(state?.currentUser || activeStored.split("@")[0] || "admin")
-    .trim()
-    .toLowerCase();
-
-  // If operating as admin or super_admin, grant full elevated permissions
-  if (
-    activeRole === "admin" ||
-    activeRole === "super_admin" ||
-    !activeRole ||
-    username === "admin" ||
-    activeStored.includes("admin") ||
-    activeStored.includes("mahmoud")
-  ) {
-    return {
-      super_admin_full_access: true,
-      users_roles: true,
-      system_manage_users: true,
-      system_backup_update: true,
-    };
+  const record = (state?.users || []).find((user: any) => {
+    const candidateUsername = String(user.username || "").trim().toLowerCase();
+    const candidateEmail = String(user.email || "").trim().toLowerCase();
+    return candidateUsername === username || (!!activeStored && candidateEmail === activeStored);
+  });
+  const permissions = record?.permissions;
+  if (permissions && Object.keys(permissions).length > 0) {
+    return permissions as Record<string, boolean>;
   }
-
-  const record = (state?.users || []).find(
-    (user: any) =>
-      String(user.username || "")
-        .trim()
-        .toLowerCase() === username,
-  );
-  const userPermissions = record?.permissions;
-  if (userPermissions && Object.keys(userPermissions).length > 0) return userPermissions;
-  return state?.userPermissions?.[username] || { super_admin_full_access: true };
+  return (state?.userPermissions?.[username] || {}) as Record<string, boolean>;
 }
 
-function canGrantElevatedPermissions(state: any): boolean {
-  return currentActorPermissions(state).super_admin_full_access === true;
+function canGrantElevatedPermissions(
+  state: any,
+  authoritativeProfile?: { permissions?: Record<string, any> } | null,
+): boolean {
+  return currentActorPermissions(state, authoritativeProfile).super_admin_full_access === true;
 }
 
 function limitPermissionsToActor(
@@ -670,9 +659,15 @@ function assertNoPrivilegeEscalation(
   actorPermissions: Record<string, any>,
 ): void {
   if (actorPermissions.super_admin_full_access === true) return;
-  // If not super admin, check if trying to grant super_admin
-  if (proposed.super_admin_full_access === true && !actorPermissions.super_admin_full_access) {
-    throw new Error("لا يمكن منح صلاحيات مدير أعلى من صلاحيات حسابك الحالي.");
+
+  if (role === "admin" || role === "super_admin") {
+    throw new Error("لا يمكن إلا للمدير الأعلى منح دور المدير أو المدير العام.");
+  }
+
+  for (const [key, value] of Object.entries(proposed)) {
+    if (value === true && actorPermissions[key] !== true) {
+      throw new Error(`لا يمكنك منح صلاحية لا يمتلكها حسابك: ${key}`);
+    }
   }
 }
 
@@ -746,6 +741,11 @@ export function UsersPage() {
   const [erpState, setErpState] = useState(erpStore.getState());
   const [localUsers, setLocalUsers] = useState<SystemUser[]>([]);
   const [activeAuthUser, setActiveAuthUser] = useState("");
+  const [actorProfile, setActorProfile] = useState<any>(null);
+  const [userDirectoryStatus, setUserDirectoryStatus] = useState<"loading" | "ready" | "error">(
+    isHostedDeployment() ? "loading" : "ready",
+  );
+  const [userDirectoryError, setUserDirectoryError] = useState("");
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -825,28 +825,57 @@ export function UsersPage() {
 
   useEffect(() => {
     let mounted = true;
+    const hosted = isHostedDeployment();
+
     const unsubscribe = erpStore.subscribe(() => {
       if (!mounted) return;
       setErpState(erpStore.getState());
-      setLocalUsers(localLoginUsers());
+      // On the hosted app Supabase is the directory of record. Local-store events
+      // must not replace the remote directory with a password-filtered local list.
+      if (!hosted) setLocalUsers(localLoginUsers());
     });
 
     const loadUsersDirectory = async () => {
-      if (mounted) setLocalUsers(localLoginUsers());
-      if (isHostedDeployment()) {
-        try {
-          const profiles = (await authService.getUsers()) as any[];
-          if (profiles && profiles.length > 0 && mounted) {
-            for (const profile of profiles) {
-              if (profile && profile.username) {
-                erpStore.upsertUser(profileToSystemUser(profile));
-              }
-            }
-            setLocalUsers(localLoginUsers());
-          }
-        } catch (err) {
-          console.warn("Hosted profiles directory load notice:", err);
+      if (!hosted) {
+        if (mounted) {
+          setLocalUsers(localLoginUsers());
+          setUserDirectoryStatus("ready");
         }
+        return;
+      }
+
+      setUserDirectoryStatus("loading");
+      setUserDirectoryError("");
+      try {
+        const authUser = await authService.getCurrentUser();
+        if (!authUser?.id) throw new Error("انتهت جلسة Supabase؛ سجّل الدخول مرة أخرى.");
+        const actor = await authService.getProfile(authUser.id);
+        if (!actor?.id) throw new Error("لا يوجد ملف public.profiles مرتبط بحساب الدخول الحالي.");
+        const profiles = (await authService.getUsers()) as any[];
+        if (!mounted) return;
+
+        setActorProfile(actor);
+        const cloudUsers = (profiles || [])
+          .filter((profile) => Boolean(profile?.id))
+          .map(profileToSystemUser);
+
+        // Keep the ERP compatibility cache in sync, but never use it as the hosted
+        // user directory or as proof that a cloud write succeeded.
+        for (const user of cloudUsers) {
+          erpStore.upsertUser(user);
+          erpStore.updateUserPermission(user.username, user.permissions || {});
+        }
+
+        setLocalUsers(cloudUsers);
+        setUserDirectoryStatus("ready");
+      } catch (err: any) {
+        if (!mounted) return;
+        const message = String(err?.message || "تعذر تحميل دليل المستخدمين من Supabase.");
+        setActorProfile(null);
+        setLocalUsers([]);
+        setUserDirectoryError(message);
+        setUserDirectoryStatus("error");
+        console.error("Hosted users directory load failed:", err);
       }
     };
 
@@ -861,12 +890,21 @@ export function UsersPage() {
   const upsert = async () => {
     const username = form.username.trim();
     const normalizedUsername = username.toLowerCase();
-    const actorPermissions = currentActorPermissions(erpState);
+    const hosted = isHostedDeployment();
+    const actorPermissions = currentActorPermissions(erpState, actorProfile);
+    let createdAuthUserId: string | null = null;
 
-    if (
-      !canGrantElevatedPermissions(erpState) &&
-      (form.role === "admin" || form.role === "super_admin")
-    ) {
+    if (hosted && userDirectoryStatus !== "ready") {
+      toast({
+        title: "دليل المستخدمين غير جاهز",
+        description: userDirectoryError || "انتظر تحميل بيانات Supabase ثم أعد المحاولة.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!canGrantElevatedPermissions(erpState, actorProfile) &&
+        (form.role === "admin" || form.role === "super_admin")) {
       toast({
         title: "لا يمكن منح دور مدير",
         description: "لا يمكن إلا للمدير الأعلى إنشاء حساب مدير أو منحه صلاحيات كاملة.",
@@ -883,55 +921,118 @@ export function UsersPage() {
           defaultPermissionsForRole(form.role);
         assertNoPrivilegeEscalation(permissions as any, form.role, actorPermissions);
 
-        const updated: SystemUser = {
-          ...editing,
-          full_name: form.full_name.trim(),
-          username,
-          phone: form.phone.trim(),
-          role: form.role,
-          permissions,
-          ...(form.password.trim() ? { password: form.password.trim() } : {}),
-        };
+        if (hosted && form.password.trim()) {
+          throw new Error("تغيير كلمة مرور مستخدم آخر يحتاج إلى عملية Auth إدارية آمنة؛ لم تُحفظ كلمة المرور محليًا أو سحابيًا.");
+        }
+        if (hosted && normalizedUsername !== String(editing.username || "").toLowerCase()) {
+          throw new Error("لا يمكن تغيير اسم الدخول من هذه الشاشة لأنه مرتبط ببريد Supabase Auth. غيّر الاسم الظاهر والهاتف فقط.");
+        }
+
+        let updated: SystemUser;
+        if (hosted) {
+          const savedProfile = await authService.saveManagedProfile({
+            id: editing.id,
+            username: editing.username,
+            full_name: form.full_name.trim(),
+            phone: form.phone.trim(),
+            role: form.role as any,
+            permissions,
+          });
+          updated = profileToSystemUser(savedProfile);
+        } else {
+          updated = {
+            ...editing,
+            full_name: form.full_name.trim(),
+            username,
+            phone: form.phone.trim(),
+            role: form.role,
+            permissions,
+            ...(form.password.trim() ? { password: form.password.trim() } : {}),
+          };
+        }
+
+        // Update the local compatibility cache only after the hosted write is confirmed.
         erpStore.upsertUser(updated);
-        erpStore.updateUserPermission(username, permissions);
-        setLocalUsers(localLoginUsers());
+        erpStore.updateUserPermission(updated.username, updated.permissions || {});
+        setLocalUsers((current) => {
+          const next = current.filter((user) => user.id !== updated.id);
+          return [...next, updated].sort((a, b) => a.username.localeCompare(b.username));
+        });
+        setErpState(erpStore.getState());
         setEditing(null);
         setForm({ full_name: "", username: "", phone: "", password: "", role: "cashier" });
         setIsConfirmUpsertOpen(false);
-        toast({ title: "تم تحديث المستخدم بنجاح" });
-
-        // Background cloud sync attempt (non-blocking)
-        if (isHostedDeployment()) {
-          authService
-            .upsertProfile({
-              id: editing.id,
-              username: normalizedUsername,
-              full_name: form.full_name.trim(),
-              phone: form.phone.trim(),
-              role: form.role,
-              permissions,
-              updated_at: new Date().toISOString(),
-            })
-            .catch(() => undefined);
-        }
+        toast({
+          title: hosted ? "تم تحديث المستخدم في Supabase" : "تم تحديث المستخدم بنجاح",
+          description: "تم تأكيد حفظ بيانات المستخدم ودوره وصلاحياته.",
+        });
         return;
       }
 
-      // Creating new user
-      if (!form.password || form.password.length < 4) {
-        throw new Error("أدخل كلمة مرور للحساب الجديد (لا تقل عن 4 خانات).");
+      if (hosted && actorProfile?.id == null) {
+        throw new Error("تعذر التحقق من صلاحيات حسابك من Supabase. أعد تحميل الصفحة وسجّل الدخول مجددًا.");
       }
-      const duplicate = localLoginUsers().some(
+      if (!form.password || form.password.length < (hosted ? 8 : 4)) {
+        throw new Error(hosted
+          ? "كلمة مرور حساب Supabase يجب ألا تقل عن 8 أحرف."
+          : "أدخل كلمة مرور للحساب الجديد (لا تقل عن 4 خانات).");
+      }
+
+      const duplicate = localUsers.some(
         (user) => String(user.username).trim().toLowerCase() === normalizedUsername,
       );
-      if (duplicate) {
-        throw new Error("اسم المستخدم موجود بالفعل. اختر اسم دخول مختلفاً.");
-      }
+      if (duplicate) throw new Error("اسم المستخدم موجود بالفعل. اختر اسم دخول مختلفًا.");
 
       const permissions = limitPermissionsToActor(
         defaultPermissionsForRole(form.role),
         actorPermissions,
       );
+
+      if (hosted) {
+        const emailToUse = normalizedUsername.includes("@")
+          ? normalizedUsername
+          : `${normalizedUsername}@restocash.com`;
+
+        const created = await authService.signUpNewUser(emailToUse, form.password, {
+          username: normalizedUsername,
+          full_name: form.full_name.trim(),
+          phone: form.phone.trim(),
+          role: form.role,
+        });
+        if (!created?.user?.id) {
+          throw new Error("لم تؤكد Supabase إنشاء حساب المستخدم؛ لم يُضف إلى قائمة المستخدمين.");
+        }
+
+        createdAuthUserId = created.user.id;
+        const savedProfile = await authService.saveManagedProfile({
+          id: created.user.id,
+          username: normalizedUsername,
+          full_name: form.full_name.trim(),
+          phone: form.phone.trim(),
+          role: form.role as any,
+          permissions,
+        });
+        const savedUser = profileToSystemUser(savedProfile);
+        createdAuthUserId = null;
+
+        erpStore.upsertUser(savedUser);
+        erpStore.updateUserPermission(savedUser.username, savedUser.permissions || {});
+        setLocalUsers((current) =>
+          [...current.filter((user) => user.id !== savedUser.id), savedUser]
+            .sort((a, b) => a.username.localeCompare(b.username)),
+        );
+        setErpState(erpStore.getState());
+        setForm({ full_name: "", username: "", phone: "", password: "", role: "cashier" });
+        setIsConfirmUpsertOpen(false);
+        toast({
+          title: "تم إنشاء المستخدم وتأكيد حفظه في Supabase",
+          description: created.session
+            ? `تم إنشاء الحساب ${savedUser.username} وحفظ صلاحياته.`
+            : `تم إنشاء الحساب ${savedUser.username} وحفظ ملفه. قد يحتاج المستخدم إلى تأكيد البريد قبل تسجيل الدخول.`,
+        });
+        return;
+      }
+
       const localUser: SystemUser = {
         id: `u-${Date.now()}`,
         full_name: form.full_name.trim(),
@@ -949,38 +1050,16 @@ export function UsersPage() {
       setIsConfirmUpsertOpen(false);
       toast({
         title: "تم إنشاء المستخدم بنجاح",
-        description: `تم حفظ الحساب (${username}) بنجاح ويمكنه تسجيل الدخول فوراً.`,
+        description: `تم حفظ الحساب (${username}) في التخزين المحلي.`,
       });
-
-      // Background cloud sync attempt (non-blocking)
-      if (isHostedDeployment()) {
-        const emailToUse = username.includes("@")
-          ? normalizedUsername
-          : `${normalizedUsername}@restocash.com`;
-        authService
-          .signUpNewUser(emailToUse, form.password, {
-            username: normalizedUsername,
-            full_name: form.full_name.trim(),
-            phone: form.phone.trim(),
-            role: form.role,
-          })
-          .then(async (created) => {
-            if (created?.user?.id) {
-              await authService
-                .upsertProfile({
-                  id: created.user.id,
-                  username: normalizedUsername,
-                  full_name: form.full_name.trim(),
-                  phone: form.phone.trim(),
-                  role: form.role,
-                  permissions,
-                })
-                .catch(() => undefined);
-            }
-          })
-          .catch((err) => console.warn("Cloud signup sync notice:", err));
-      }
     } catch (error: any) {
+      if (createdAuthUserId) {
+        try {
+          await authService.deleteUser(createdAuthUserId);
+        } catch (cleanupError) {
+          console.warn("New Auth user cleanup failed after profile sync error:", cleanupError);
+        }
+      }
       toast({
         title: editing ? "تعذر تحديث المستخدم" : "تعذر إنشاء المستخدم",
         description: error?.message || "حدث خطأ أثناء حفظ حساب المستخدم وصلاحياته.",
@@ -992,7 +1071,9 @@ export function UsersPage() {
   const deleteUser = async () => {
     if (!userToDelete) return;
     const target = localUsers.find((user) => user.id === userToDelete);
-    if (isActiveUserRecord(target)) {
+    const hosted = isHostedDeployment();
+
+    if (isActiveUserRecord(target, activeAuthUser)) {
       toast({
         title: "لا يمكن حذف الحساب المستخدم حاليًا",
         description: "سجّل الدخول بحساب آخر لديه صلاحية إدارة المستخدمين أولًا.",
@@ -1002,18 +1083,27 @@ export function UsersPage() {
       setIsConfirmDeleteOpen(false);
       return;
     }
-    try {
-      erpStore.deleteUser(userToDelete);
-      setLocalUsers(localLoginUsers());
-      toast({ title: "تم حذف المستخدم بنجاح" });
 
-      if (isHostedDeployment()) {
-        authService.deleteUser(userToDelete).catch(() => undefined);
+    try {
+      if (hosted) {
+        if (userDirectoryStatus !== "ready") {
+          throw new Error(userDirectoryError || "دليل المستخدمين غير جاهز من Supabase.");
+        }
+        // Delete both profile and Auth identity through the server-side RPC first.
+        await authService.deleteUser(userToDelete);
       }
+
+      erpStore.deleteUser(userToDelete);
+      setLocalUsers((current) => current.filter((user) => user.id !== userToDelete));
+      setErpState(erpStore.getState());
+      toast({
+        title: hosted ? "تم حذف المستخدم من Supabase" : "تم حذف المستخدم بنجاح",
+        description: "تم تأكيد حذف الحساب والصلاحيات.",
+      });
     } catch (error: any) {
       toast({
         title: "تعذر حذف المستخدم",
-        description: error?.message || "حدث خطأ أثناء محاولة حذف المستخدم.",
+        description: error?.message || "لم يؤكد Supabase حذف الحساب؛ لم يتم تحديث القائمة محليًا.",
         variant: "destructive",
       });
     } finally {
@@ -1052,41 +1142,51 @@ export function UsersPage() {
 
   const handleSavePermissions = async () => {
     if (!permissionsUser || !editedPermissions) return;
+    const hosted = isHostedDeployment();
     try {
+      if (hosted && userDirectoryStatus !== "ready") {
+        throw new Error(userDirectoryError || "دليل المستخدمين غير جاهز من Supabase.");
+      }
+
       assertNoPrivilegeEscalation(
         editedPermissions as any,
         permissionsUser.role,
-        currentActorPermissions(erpStore.getState()),
+        currentActorPermissions(erpStore.getState(), actorProfile),
       );
-      erpStore.updateUserPermission(permissionsUser.username, editedPermissions);
-      erpStore.upsertUser({ ...permissionsUser, permissions: editedPermissions });
-      setLocalUsers(localLoginUsers());
+
+      let updatedUser: SystemUser;
+      if (hosted) {
+        const savedProfile = await authService.saveManagedProfile({
+          id: permissionsUser.id,
+          username: permissionsUser.username,
+          full_name: permissionsUser.full_name,
+          phone: permissionsUser.phone,
+          role: permissionsUser.role as any,
+          permissions: editedPermissions,
+        });
+        updatedUser = profileToSystemUser(savedProfile);
+      } else {
+        updatedUser = { ...permissionsUser, permissions: editedPermissions };
+      }
+
+      // Only update the UI and local mirror after Supabase has confirmed the write.
+      erpStore.updateUserPermission(updatedUser.username, updatedUser.permissions || {});
+      erpStore.upsertUser(updatedUser);
+      setLocalUsers((current) =>
+        current.map((user) => user.id === updatedUser.id ? updatedUser : user),
+      );
       setErpState(erpStore.getState());
       setIsConfirmSavePermsOpen(false);
       setPermissionsUser(null);
       setEditedPermissions(null);
       toast({
-        title: "تم حفظ الصلاحيات بنجاح",
-        description: "تم تحديث وحفظ صلاحيات المستخدم في النظام.",
+        title: hosted ? "تم حفظ الصلاحيات في Supabase" : "تم حفظ الصلاحيات بنجاح",
+        description: "أكد الخادم حفظ الدور والصلاحيات؛ القائمة المحلية أصبحت متوافقة.",
       });
-
-      if (isHostedDeployment()) {
-        authService
-          .upsertProfile({
-            id: permissionsUser.id,
-            username: permissionsUser.username,
-            full_name: permissionsUser.full_name,
-            phone: permissionsUser.phone,
-            role: permissionsUser.role,
-            permissions: editedPermissions,
-            updated_at: new Date().toISOString(),
-          })
-          .catch((err) => console.warn("Cloud permissions sync notice:", err));
-      }
     } catch (error: any) {
       toast({
         title: "تعذر حفظ الصلاحيات",
-        description: error?.message || "لم يتم حفظ تغييرات الصلاحيات؛ تحقق من صلاحيتك.",
+        description: error?.message || "لم يؤكد Supabase حفظ تغييرات الصلاحيات؛ لم يتم اعتمادها محليًا.",
         variant: "destructive",
       });
     }
@@ -1230,6 +1330,24 @@ export function UsersPage() {
           إضافة وتعديل حسابات المستخدمين والأنظمة، تخصيص جدول الصلاحيات (ACL)، وقفل الفترات والدفاتر
           المالية
         </p>
+        {isHostedDeployment() && (
+          <div
+            className={`mt-3 rounded-xl border px-3 py-2 text-xs font-semibold ${
+              userDirectoryStatus === "error"
+                ? "border-destructive/30 bg-destructive/5 text-destructive"
+                : userDirectoryStatus === "ready"
+                  ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300"
+                  : "border-border bg-muted/40 text-muted-foreground"
+            }`}
+            role="status"
+          >
+            {userDirectoryStatus === "loading"
+              ? "جارٍ تحميل المستخدمين والصلاحيات من Supabase…"
+              : userDirectoryStatus === "error"
+                ? `تعذر تحميل دليل Supabase: ${userDirectoryError} — أعد تحميل الصفحة بعد إصلاح الخطأ.`
+                : `المصدر الأساسي للمستخدمين والصلاحيات: Supabase. عدد الحسابات المحمّلة: ${localUsers.length}.`}
+          </div>
+        )}
       </div>
 
       {/* User Registration & List */}
@@ -1314,7 +1432,8 @@ export function UsersPage() {
             <Button
               className="h-9 px-6 rounded-xl font-bold gap-2"
               onClick={() => setIsConfirmUpsertOpen(true)}
-              disabled={!form.full_name || !form.username || (!editing && !form.password)}
+              disabled={!form.full_name || !form.username || (!editing && !form.password) ||
+                (isHostedDeployment() && userDirectoryStatus !== "ready")}
             >
               <Save size={16} />
               {editing ? "حفظ التعديلات" : "إضافة مستخدم جديد"}
@@ -1350,6 +1469,7 @@ export function UsersPage() {
                       variant="outline"
                       className="h-8 px-2.5 rounded-lg gap-1.5 text-primary border-primary/30 hover:bg-primary/10 font-bold"
                       onClick={() => openPermissionsForUser(u)}
+                      disabled={isHostedDeployment() && userDirectoryStatus !== "ready"}
                     >
                       <ShieldCheck size={14} />
                       الصلاحيات
@@ -1359,6 +1479,7 @@ export function UsersPage() {
                       variant="outline"
                       className="h-8 w-8 rounded-lg"
                       onClick={() => startEdit(u)}
+                      disabled={isHostedDeployment() && userDirectoryStatus !== "ready"}
                     >
                       <Pencil size={14} />
                     </Button>
@@ -1370,7 +1491,8 @@ export function UsersPage() {
                         setUserToDelete(u.id);
                         setIsConfirmDeleteOpen(true);
                       }}
-                      disabled={isActiveUserRecord(u, activeAuthUser)}
+                      disabled={isActiveUserRecord(u, activeAuthUser) ||
+                        (isHostedDeployment() && userDirectoryStatus !== "ready")}
                     >
                       <Trash2 size={14} />
                     </Button>
