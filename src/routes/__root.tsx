@@ -163,6 +163,7 @@ function RootComponent() {
     };
     const studioSnapshots = new Map<string, StudioRuntimeSnapshot>();
     const publishedStudioClones = new Set<HTMLElement>();
+    const publishedStudioAdditions = new Set<HTMLElement>();
     let activePublishedStudioEdits: Record<string, any> = {};
     let activeLegacyStudioEdits: Record<string, any> = {};
     let studioObserver: MutationObserver | null = null;
@@ -200,6 +201,8 @@ function RootComponent() {
     const resetPublishedStudioEdits = () => {
       for (const clone of publishedStudioClones) clone.remove();
       publishedStudioClones.clear();
+      for (const addition of publishedStudioAdditions) addition.remove();
+      publishedStudioAdditions.clear();
 
       for (const snapshot of Array.from(studioSnapshots.values()).reverse()) {
         const element = snapshot.element;
@@ -221,6 +224,67 @@ function RootComponent() {
         }
       }
       studioSnapshots.clear();
+    };
+
+    const safeStudioAdditionUrl = (value: unknown): string => {
+      const url = String(value || "").trim();
+      return (url.startsWith("/") && !url.startsWith("//")) || /^https?:\/\//i.test(url) ? url : "";
+    };
+
+    const renderPublishedStudioAddition = (item: any, selector: string): HTMLElement | null => {
+      const types: Record<string, string> = {
+        text: "p",
+        button: "button",
+        input: "input",
+        card: "div",
+        divider: "hr",
+        link: "a",
+      };
+      if (!item || typeof item.id !== "string" ||
+          !["text", "button", "input", "card", "divider", "link"].includes(item.type)) return null;
+
+      const node = document.createElement(types[item.type]) as HTMLElement;
+      node.dataset.studioAddedFor = selector;
+      node.dataset.studioAddedId = item.id;
+      node.dataset.studioAddedName = String(item.name || "عنصر جديد").slice(0, 120);
+      node.setAttribute("aria-label", node.dataset.studioAddedName);
+
+      const text = String(item.text || item.name || "عنصر جديد").slice(0, 1000);
+      if (item.type === "input") {
+        const input = node as HTMLInputElement;
+        input.type = "text";
+        input.placeholder = text;
+        input.style.cssText = "display:block;max-width:100%;padding:8px 10px;margin:6px 0;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#111827";
+      } else if (item.type === "divider") {
+        node.style.cssText = "display:block;width:100%;margin:10px 0;border:0;border-top:1px solid #cbd5e1";
+      } else {
+        node.textContent = text;
+        node.style.cssText = item.type === "button"
+          ? "display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 12px;margin:6px 4px;border:1px solid #cbd5e1;border-radius:8px;background:#4f46e5;color:#fff;font-weight:700;cursor:pointer"
+          : item.type === "card"
+            ? "display:block;padding:12px;margin:8px 0;border:1px solid #cbd5e1;border-radius:12px;background:#fff;color:#111827"
+            : item.type === "link"
+              ? "display:inline-block;margin:6px 4px;color:#2563eb;text-decoration:underline;cursor:pointer"
+              : "display:block;margin:6px 0;color:inherit";
+      }
+
+      const safeUrl = safeStudioAdditionUrl(item.url);
+      if (item.type === "link" && safeUrl) node.setAttribute("href", safeUrl);
+      if (item.type === "button") (node as HTMLButtonElement).type = "button";
+
+      if (item.type === "button" || item.type === "link") {
+        node.addEventListener("click", (event) => {
+          const action = ["message", "navigate", "external"].includes(item.action) ? item.action : "none";
+          if (action !== "none") event.preventDefault();
+          if (action === "message") window.alert(String(item.message || "تم تنفيذ الإجراء.").slice(0, 1000));
+          else if (action === "navigate" && safeUrl.startsWith("/") && !safeUrl.startsWith("//")) {
+            window.location.assign(safeUrl);
+          } else if (action === "external" && /^https?:\/\//i.test(safeUrl)) {
+            window.open(safeUrl, "_blank", "noopener,noreferrer");
+          }
+        });
+      }
+      return node;
     };
 
     const applyStudioEdits = (edits: Record<string, any>) => {
@@ -271,6 +335,30 @@ function RootComponent() {
             clone.dataset.studioCloneOf = selector;
             publishedStudioClones.add(clone);
             parent.insertBefore(clone, html.nextSibling);
+          }
+        }
+
+        // Materialize saved additions on the published app, not only inside the editor iframe.
+        // Check by stable draft ID so mutation-observer passes never duplicate an item.
+        if (!edit.deleted && Array.isArray(edit.additions)) {
+          let afterAnchor: Node | null = html.nextSibling;
+          for (const item of edit.additions.slice(0, 100)) {
+            if (!item || typeof item.id !== "string") continue;
+            const exists = Array.from(publishedStudioAdditions).some((addition) =>
+              addition.isConnected &&
+              addition.dataset.studioAddedFor === selector &&
+              addition.dataset.studioAddedId === item.id
+            );
+            if (exists) continue;
+            const added = renderPublishedStudioAddition(item, selector);
+            if (!added) continue;
+            if (item.placement === "inside") {
+              html.appendChild(added);
+            } else if (html.parentElement) {
+              html.parentElement.insertBefore(added, afterAnchor);
+              afterAnchor = added.nextSibling;
+            }
+            publishedStudioAdditions.add(added);
           }
         }
       }
