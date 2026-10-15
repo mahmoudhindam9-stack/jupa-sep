@@ -153,7 +153,9 @@ function RootComponent() {
     // Persist visual editor changes across all routes in this browser.
     const applySavedStudioEdits = () => {
       try {
-        const saved = JSON.parse(localStorage.getItem("custom_text_map") || "{}");
+        const legacySaved = JSON.parse(localStorage.getItem("custom_text_map") || "{}");
+        const localStudioSaved = JSON.parse(localStorage.getItem("restocash_studio_local_dom_edits_v1") || "{}");
+        const saved = { ...legacySaved, ...localStudioSaved };
         for (const [selector, edit] of Object.entries(saved) as Array<[string, any]>) {
           if (!edit || typeof edit !== "object") continue;
           let element: Element | null = null;
@@ -208,10 +210,12 @@ function RootComponent() {
       }
     };
     const publishedHandler = (event: Event) => applyPublishedStudioEdits((event as CustomEvent).detail);
+    const localStudioHandler = () => applySavedStudioEdits();
     const storageHandler = (event: StorageEvent) => {
-      if (event.key === "custom_text_map") applySavedStudioEdits();
+      if (event.key === "custom_text_map" || event.key === "restocash_studio_local_dom_edits_v1") applySavedStudioEdits();
     };
     window.addEventListener("studio_published_updated", publishedHandler);
+    window.addEventListener("studio_local_edits_updated", localStudioHandler);
     window.addEventListener("storage", storageHandler);
     void import("@/features/developer-studio/services/studioService")
       .then(({ studioService }) => studioService.getPublishedConfig())
@@ -227,6 +231,7 @@ function RootComponent() {
     return () => {
       studioObserver.disconnect();
       window.removeEventListener("studio_published_updated", publishedHandler);
+      window.removeEventListener("studio_local_edits_updated", localStudioHandler);
       window.removeEventListener("storage", storageHandler);
       stopAppSync?.();
     };
