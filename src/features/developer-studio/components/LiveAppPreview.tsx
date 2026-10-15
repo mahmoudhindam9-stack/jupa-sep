@@ -1,13 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Check, Copy, Eye, EyeOff, Layers, Monitor, RefreshCw, Settings2, Smartphone, Tablet, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { StudioDomEdit } from "../models/studio.types";
+import type { StudioActionConfig, StudioDomEdit } from "../models/studio.types";
+import { StudioWorkflowPanel } from "./StudioWorkflowPanel";
 
 type SelectedDomElement = {
   selector: string; tag: string; text: string; color: string; backgroundColor: string;
   fontSize: string; fontWeight: string; width: string; height: string;
   fill: string; stroke: string; strokeWidth: string; opacity: string;
-  borderRadius: string; rotate: string; textAlign: string;
+  borderRadius: string; rotate: string; textAlign: string; href?: string; containerSelector?: string;
 };
 type LiveTreeNode = { selector: string; tag: string; label: string; children: LiveTreeNode[] };
 type LiveRoute = { href: string; label: string };
@@ -19,6 +20,37 @@ type Props = {
   designerMode?: boolean;
 };
 type PreviewSize = "desktop" | "tablet" | "mobile";
+
+const ELEMENT_NAMES: Record<string, string> = {
+  button: "زر", a: "رابط", input: "حقل إدخال", textarea: "مربع كتابة", select: "قائمة اختيار",
+  label: "عنوان حقل", h1: "عنوان رئيسي", h2: "عنوان", h3: "عنوان فرعي", h4: "عنوان فرعي",
+  h5: "عنوان فرعي", h6: "عنوان فرعي", p: "فقرة نصية", span: "نص", div: "منطقة",
+  section: "قسم", article: "بطاقة محتوى", main: "المحتوى الرئيسي", nav: "قائمة التنقل",
+  aside: "لوحة جانبية", header: "رأس الصفحة", footer: "تذييل الصفحة", li: "عنصر قائمة",
+  ul: "قائمة", ol: "قائمة مرقمة", td: "خلية جدول", th: "عنوان جدول", table: "جدول",
+  img: "صورة", svg: "أيقونة", form: "نموذج", strong: "نص بارز", small: "نص صغير",
+};
+const readableElementKind = (tag: string) => ELEMENT_NAMES[String(tag || "").toLowerCase()] || "عنصر";
+const readablePageName = (href: string, label: string) => {
+  const path = String(href || "").split("?")[0];
+  const known: Record<string, string> = {
+    "/admin": "لوحة الإدارة الرئيسية", "/admin/ledger": "الإدارة المالية",
+    "/admin/hr": "الموارد البشرية", "/admin/inventory": "المخزون والمستودعات",
+    "/admin/restaurant": "إدارة المطعم", "/admin/mall": "إدارة المول",
+    "/admin/park": "إدارة الحديقة", "/admin/system-update": "خيارات المطوّر",
+    "/admin/orders": "الطلبات", "/admin/menu": "قائمة الطعام", "/login": "تسجيل الدخول",
+  };
+  if (known[path]) return known[path];
+  const friendlyLabel = String(label || "").trim();
+  if (friendlyLabel && friendlyLabel !== href && !friendlyLabel.startsWith("/")) return friendlyLabel;
+  return path.split("/").filter(Boolean).pop()?.replace(/[-_]/g, " ") || "الصفحة الحالية";
+};
+const readableTreeLabel = (node: LiveTreeNode) => {
+  const label = String(node.label || "").trim();
+  const tag = String(node.tag || "").toLowerCase();
+  if (label && label.toLowerCase() !== tag && !/^[A-Z][A-Z0-9-]*$/.test(label)) return label;
+  return readableElementKind(tag);
+};
 
 export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMode = false }: Props) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -50,7 +82,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
   const [pageLinks, setPageLinks] = useState<LiveRoute[]>([]);
   // Keep the real app at its natural width by default; side panels are optional overlays.
   const [showExplorer, setShowExplorer] = useState(false);
-  const [showProperties, setShowProperties] = useState(false);
+  const [showProperties, setShowProperties] = useState(true);
   const [treeFilter, setTreeFilter] = useState("");
   const [edits, setEdits] = useState<Record<string, StudioDomEdit>>(initialEdits || {});
   editsRef.current = edits;
@@ -107,7 +139,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
       setBorderRadius(item.borderRadius || "8px");
       setIconRotation(item.rotate || "0deg");
       setTextAlign(item.textAlign || "right");
-      setStatus("تم تحديد العنصر: " + item.tag);
+      setStatus("تم تحديد: " + readableElementKind(item.tag));
     } else if (event.data.type === "STUDIO_CHANGE") {
       commitEdits(String(event.data.selector), event.data.patch || {});
       setStatus("تم تعديل المعاينة فقط — اضغط «حفظ ومزامنة» لاعتماد المسودة على الخادم.");
@@ -158,7 +190,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
       return;
     }
     if (win.location.origin !== window.location.origin) {
-      setStatus("المعاينة على نطاق مختلف. ثبّت Coding Studio Bridge داخل المشروع المستهدف.");
+      setStatus("تعذر فتح صفحة التطبيق في المعاينة. افتح الاستوديو من داخل نفس الموقع الذي تريد تعديله.");
       return;
     }
     if (!doc.getElementById("coding-studio-overlay")) {
@@ -217,6 +249,8 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         originalStates.set(selector, {
           el,
           styleAttribute: el.getAttribute("style"),
+          hrefAttribute: el.getAttribute("href"),
+          flowActionAttribute: el.getAttribute("data-studio-flow-action"),
           leafText: el.children.length === 0 ? (el.textContent || "") : null,
           directTextNodes: el.children.length === 0 ? [] : Array.from(el.childNodes)
             .filter((node) => node.nodeType === Node.TEXT_NODE)
@@ -226,7 +260,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         });
       };
       const resetPreviewEdits = () => {
-        document.querySelectorAll("[data-coding-studio-clone-of]").forEach((el) => el.remove());
+        document.querySelectorAll("[data-coding-studio-clone-of], [data-studio-added-button]").forEach((el) => el.remove());
         for (const state of Array.from(originalStates.values()).reverse()) {
           const el = state.el;
           if (!el.isConnected) continue;
@@ -240,6 +274,10 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
           delete el.dataset.codingStudioTextApplied;
           if (state.styleAttribute === null) el.removeAttribute("style");
           else el.setAttribute("style", state.styleAttribute);
+          if (state.hrefAttribute === null) el.removeAttribute("href");
+          else if (state.hrefAttribute !== undefined) el.setAttribute("href", state.hrefAttribute);
+          if (state.flowActionAttribute === null) el.removeAttribute("data-studio-flow-action");
+          else if (state.flowActionAttribute !== undefined) el.setAttribute("data-studio-flow-action", state.flowActionAttribute);
           if (state.parent && el.parentNode === state.parent) {
             if (state.nextSibling && state.nextSibling.parentNode === state.parent) state.parent.insertBefore(el, state.nextSibling);
             else state.parent.appendChild(el);
@@ -249,8 +287,13 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
       };
       const describe = (el) => {
         const css = getComputedStyle(el);
+        const anchor = el.closest("a[href]") || (el.matches("a[href]") ? el : null);
+        const containerTags = new Set(["MAIN", "SECTION", "NAV", "ASIDE", "FOOTER", "HEADER", "ARTICLE", "FORM", "DIV", "UL", "OL"]);
+        const container = containerTags.has(el.tagName) ? el : (el.parentElement || el);
         return { selector: selectorFor(el), tag: el.tagName.toLowerCase(),
           text: (el.innerText || el.textContent || "").trim().slice(0, 1000),
+          href: anchor ? anchor.getAttribute("href") || "" : "",
+          containerSelector: selectorFor(container),
           color: css.color, backgroundColor: css.backgroundColor, fontSize: css.fontSize,
           width: el.style.width || "auto", height: el.style.height || "auto", fontWeight: css.fontWeight,
           fill: css.fill || el.getAttribute("fill") || "", stroke: css.stroke || el.getAttribute("stroke") || "",
@@ -283,6 +326,16 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         rememberOriginal(selector, el);
         if (edit.text !== undefined && el.dataset.codingStudioTextApplied !== String(edit.text)) applyText(el, edit.text);
         if (edit.styles && typeof edit.styles === "object") applyStyles(el, edit.styles);
+        if (typeof edit.href === "string") {
+          const anchor = el.matches("a") ? el : el.closest("a[href]") || el.querySelector("a[href]");
+          if (anchor) {
+            if (anchor !== el) rememberOriginal(selector + "__studio_link", anchor);
+            if (edit.href === "") anchor.removeAttribute("href");
+            else if (edit.href.startsWith("/") && !edit.href.startsWith("//")) anchor.setAttribute("href", edit.href);
+          }
+        }
+        if (edit.action && edit.action.type && edit.action.type !== "none") el.setAttribute("data-studio-flow-action", JSON.stringify(edit.action));
+        else el.removeAttribute("data-studio-flow-action");
         if (edit.deleted) el.style.display = "none";
         if (typeof edit.order === "number" && el.parentElement) {
           const siblings = Array.from(el.parentElement.children).filter((item) =>
@@ -308,6 +361,41 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
             parent.insertBefore(clone, el.nextSibling);
           }
         }
+        const desiredButtons = Array.isArray(edit.addedButtons) ? edit.addedButtons : [];
+        const wantedButtonIds = new Set(desiredButtons.map((item) => String(item.id)));
+        Array.from(el.querySelectorAll("[data-studio-added-button]"))
+          .filter((button) => !wantedButtonIds.has(button.getAttribute("data-studio-added-button") || ""))
+          .forEach((button) => button.remove());
+        desiredButtons.forEach((item) => {
+          if (!item || !item.id) return;
+          let button = el.querySelector('[data-studio-added-button="' + CSS.escape(String(item.id)) + '"]');
+          if (!(button instanceof HTMLButtonElement)) {
+            button = document.createElement("button");
+            button.type = "button";
+            button.dataset.studioAddedButton = String(item.id);
+            button.style.margin = "4px";
+            button.style.padding = "8px 14px";
+            button.style.borderRadius = "9px";
+            button.style.fontWeight = "700";
+            button.style.cursor = "pointer";
+            button.style.display = "inline-flex";
+            button.style.alignItems = "center";
+            button.style.justifyContent = "center";
+            button.style.gap = "6px";
+            el.appendChild(button);
+          }
+          button.textContent = String(item.label || "زر جديد");
+          const variants = {
+            primary: { background: "#3730a3", color: "#ffffff", border: "1px solid #3730a3" },
+            secondary: { background: "#e2e8f0", color: "#0f172a", border: "1px solid #cbd5e1" },
+            outline: { background: "transparent", color: "inherit", border: "1px solid currentColor" },
+            danger: { background: "#be123c", color: "#ffffff", border: "1px solid #be123c" },
+          };
+          Object.assign(button.style, variants[item.variant] || variants.primary);
+          const action = item.action || { type: "none" };
+          if (action.type && action.type !== "none") button.setAttribute("data-studio-flow-action", JSON.stringify(action));
+          else button.removeAttribute("data-studio-flow-action");
+        });
       };
       let selected = null;
       let enabled = true;
@@ -329,7 +417,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         if (!enabled || document.body.dataset.codingStudio !== "on" || event.button !== 0) return;
         const target = event.target instanceof Element ? event.target : null;
         if (!target) return;
-        let el = target.closest(editableSelector);
+        let el = target.closest("button,a,input,textarea,select,label") || target.closest(editableSelector);
         if (!el || el === document.body || el === document.documentElement) return;
         if (["PATH", "CIRCLE", "RECT", "LINE", "POLYLINE", "POLYGON"].includes(el.tagName)) el = el.closest("svg") || el;
         if (isProtected(el)) return;
@@ -375,7 +463,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         if (!enabled || document.body.dataset.codingStudio !== "on") return;
         const target = event.target instanceof Element ? event.target : null;
         if (!target) return;
-        let el = target.closest(editableSelector);
+        let el = target.closest("button,a,input,textarea,select,label") || target.closest(editableSelector);
         if (!el || el === document.body || el === document.documentElement) return;
         if (["PATH", "CIRCLE", "RECT", "LINE", "POLYLINE", "POLYGON"].includes(el.tagName)) el = el.closest("svg") || el;
         if (isProtected(el)) return;
@@ -384,6 +472,115 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         event.stopImmediatePropagation();
         selectElement(el);
       }, true);
+      const readNumber = (selector) => {
+        const target = find(String(selector || ""));
+        if (!target) return 0;
+        const raw = "value" in target ? String(target.value || "") : String(target.textContent || "");
+        const number = Number(raw.replace(/[^0-9.,-]/g, "").replace(/,/g, ""));
+        return Number.isFinite(number) ? number : 0;
+      };
+      const evaluateFormula = (formula, variables) => {
+        const source = String(formula || "").replace(/\s/g, "");
+        if (!source || source.length > 240) throw new Error("اكتب معادلة قصيرة وصحيحة.");
+        const tokens = source.match(/\d+(?:\.\d*)?|\.\d+|[a-zA-Z_][a-zA-Z0-9_]*|[()+\-*/%]/g) || [];
+        if (tokens.join("") !== source) throw new Error("المعادلة تحتوي على رمز غير مدعوم.");
+        let index = 0;
+        const peek = () => tokens[index];
+        const take = () => tokens[index++];
+        const factor = () => {
+          const token = peek();
+          if (token === "+" || token === "-") { take(); const value = factor(); return token === "-" ? -value : value; }
+          if (token === "(") { take(); const value = expression(); if (take() !== ")") throw new Error("أغلق القوس في المعادلة."); return value; }
+          if (!token) throw new Error("المعادلة غير مكتملة.");
+          take();
+          if (/^(?:\\d+(?:\\.\\d*)?|\\.\\d+)$/.test(token)) return Number(token);
+          if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(token)) {
+            const value = variables[token.toLowerCase()];
+            if (typeof value !== "number" || !Number.isFinite(value)) throw new Error("لم يتم تحديد قيمة المتغير " + token + ".");
+            return value;
+          }
+          throw new Error("جزء غير صالح في المعادلة.");
+        };
+        const term = () => {
+          let value = factor();
+          while (peek() === "*" || peek() === "/" || peek() === "%") {
+            const op = take(), right = factor();
+            if ((op === "/" || op === "%") && right === 0) throw new Error("لا يمكن القسمة على صفر.");
+            value = op === "*" ? value * right : op === "/" ? value / right : value % right;
+          }
+          return value;
+        };
+        const expression = () => {
+          let value = term();
+          while (peek() === "+" || peek() === "-") { const op = take(), right = term(); value = op === "+" ? value + right : value - right; }
+          return value;
+        };
+        const result = expression();
+        if (index !== tokens.length || !Number.isFinite(result)) throw new Error("تعذر حساب المعادلة.");
+        return result;
+      };
+      const runFlowAction = (action) => {
+        if (!action || typeof action !== "object") return;
+        if (action.type === "sequence" && Array.isArray(action.steps)) {
+          action.steps.forEach((step) => runFlowAction(step));
+          return;
+        }
+        if (action.type === "navigate") {
+          const path = String(action.destination || "");
+          if (path.startsWith("/") && !path.startsWith("//")) window.location.assign(path);
+        } else if (action.type === "message") {
+          window.alert(String(action.message || "تم تنفيذ الإجراء."));
+        } else if (action.type === "toggle") {
+          const target = find(action.targetSelector);
+          if (!target) throw new Error("العنصر المرتبط غير موجود في هذه الصفحة.");
+          if (target.dataset.studioFlowHidden === "true") {
+            target.style.display = target.dataset.studioFlowPreviousDisplay || "";
+            delete target.dataset.studioFlowHidden;
+            delete target.dataset.studioFlowPreviousDisplay;
+          } else {
+            target.dataset.studioFlowPreviousDisplay = target.style.display;
+            target.style.display = "none";
+            target.dataset.studioFlowHidden = "true";
+          }
+        } else if (action.type === "set_value") {
+          const target = find(action.targetSelector);
+          if (!target) throw new Error("العنصر المرتبط غير موجود في هذه الصفحة.");
+          if ("value" in target) {
+            target.value = String(action.value ?? "");
+            target.dispatchEvent(new Event("input", { bubbles: true }));
+            target.dispatchEvent(new Event("change", { bubbles: true }));
+          } else target.textContent = String(action.value ?? "");
+        } else if (action.type === "calculate") {
+          const a = readNumber(action.leftSelector), b = readNumber(action.rightSelector);
+          let result;
+          if (action.formula) result = evaluateFormula(action.formula, { a, b });
+          else {
+            const op = ["+", "-", "*", "/", "%"].includes(action.operator) ? action.operator : "+";
+            if ((op === "/" || op === "%") && b === 0) throw new Error("لا يمكن القسمة على صفر.");
+            result = op === "+" ? a + b : op === "-" ? a - b : op === "*" ? a * b : op === "/" ? a / b : a % b;
+          }
+          const target = find(action.resultSelector);
+          if (!target) throw new Error("اختر مكان ظهور النتيجة من شجرة العناصر.");
+          const output = String(Number(result.toFixed(6)));
+          if ("value" in target) {
+            target.value = output;
+            target.dispatchEvent(new Event("input", { bubbles: true }));
+            target.dispatchEvent(new Event("change", { bubbles: true }));
+          } else target.textContent = output;
+        }
+      };
+      document.addEventListener("click", (event) => {
+        const target = event.target instanceof Element ? event.target.closest("[data-studio-flow-action]") : null;
+        if (!target) return;
+        let action;
+        try { action = JSON.parse(target.getAttribute("data-studio-flow-action") || "{}"); } catch (_) { return; }
+        if (!action.type || action.type === "none") return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        try { runFlowAction(action); } catch (error) { window.alert(String(error?.message || error)); }
+      }, true);
+
       window.addEventListener("message", (event) => {
         if (event.origin !== parentOrigin || event.source !== window.parent || event.data?.type !== "STUDIO_COMMAND") return;
         const data = event.data;
@@ -456,6 +653,12 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         }
       });
       const meaningfulTags = new Set(["main", "header", "nav", "aside", "footer", "section", "article", "form", "button", "a", "input", "select", "textarea", "table", "thead", "tbody", "tr", "td", "th", "h1", "h2", "h3", "h4", "h5", "h6", "p", "img", "svg", "ul", "ol", "li", "label", "details", "summary"]);
+      const roleNames = { main: "المحتوى الرئيسي", header: "رأس الصفحة", nav: "قائمة التنقل", aside: "لوحة جانبية", footer: "تذييل الصفحة", section: "قسم", article: "بطاقة محتوى", form: "نموذج", button: "زر", a: "رابط", input: "حقل إدخال", select: "قائمة اختيار", textarea: "مربع كتابة", table: "جدول", tr: "صف", td: "خلية", th: "عنوان جدول", h1: "عنوان رئيسي", h2: "عنوان", h3: "عنوان فرعي", p: "فقرة نصية", img: "صورة", svg: "أيقونة", ul: "قائمة", ol: "قائمة مرقمة", li: "عنصر قائمة", label: "عنوان حقل", div: "منطقة" };
+      const friendlyRoute = (href, fallback) => {
+        const pathname = String(href || "").split("?")[0];
+        const known = { "/admin": "لوحة الإدارة الرئيسية", "/admin/ledger": "الإدارة المالية", "/admin/hr": "الموارد البشرية", "/admin/inventory": "المخزون والمستودعات", "/admin/restaurant": "إدارة المطعم", "/admin/mall": "إدارة المول", "/admin/park": "إدارة الحديقة", "/admin/system-update": "خيارات المطوّر", "/admin/orders": "الطلبات", "/admin/menu": "قائمة الطعام", "/login": "تسجيل الدخول" };
+        return known[pathname] || fallback || pathname.split("/").filter(Boolean).pop()?.replace(/[-_]/g, " ") || "صفحة";
+      };
       let scanTimer = null;
       const collectTreeAndRoutes = () => {
         let count = 0;
@@ -479,7 +682,9 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
           const interactiveText = ["button", "a", "label", "h1", "h2", "h3", "h4", "h5", "h6", "p", "li"].includes(tag)
             ? (element.innerText || "") : "";
           const rawText = directText || accessible || interactiveText;
-          const label = String(rawText || (element.hasAttribute("data-testid") ? element.getAttribute("data-testid") : tag.toUpperCase()))
+          const testLabel = element.hasAttribute("data-testid") ? String(element.getAttribute("data-testid") || "").replace(/[-_]/g, " ") : "";
+          const fallbackLabel = testLabel && !/^[a-z0-9_-]+$/i.test(testLabel) ? testLabel : (roleNames[tag] || "عنصر");
+          const label = String(rawText || fallbackLabel)
             .replace(/\s+/g, " ").trim().slice(0, 84);
           const meaningful = depth < 2 || meaningfulTags.has(tag) || element.hasAttribute("role") ||
             element.hasAttribute("data-testid") || children.length > 0 || rawText.length > 0;
@@ -491,15 +696,15 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
 
         const routeMap = new Map();
         const currentHref = location.pathname + location.search;
-        routeMap.set(currentHref, document.title || currentHref || "الصفحة الحالية");
+        routeMap.set(currentHref, friendlyRoute(currentHref, document.title || "الصفحة الحالية"));
         document.querySelectorAll("a[href]").forEach((anchor) => {
           try {
             const url = new URL(anchor.href, location.href);
             if (url.origin !== location.origin || !url.pathname.startsWith("/") || url.pathname.startsWith("//")) return;
             const href = url.pathname + url.search;
-            const labelText = String(anchor.innerText || anchor.getAttribute("aria-label") || anchor.getAttribute("title") || href)
+            const labelText = String(anchor.innerText || anchor.getAttribute("aria-label") || anchor.getAttribute("title") || "")
               .replace(/\s+/g, " ").trim().slice(0, 72);
-            if (!routeMap.has(href) || routeMap.get(href) === href) routeMap.set(href, labelText || href);
+            if (!routeMap.has(href) || routeMap.get(href) === friendlyRoute(href, "")) routeMap.set(href, friendlyRoute(href, labelText));
           } catch (_) { /* ignore malformed links */ }
         });
         send("STUDIO_ROUTES", { routes: Array.from(routeMap.entries()).map(([href, label]) => ({ href, label })).slice(0, 100) });
@@ -544,13 +749,13 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
     <div key={node.selector} className="min-w-0">
       <button
         type="button"
-        title={node.selector}
+        aria-label={"تحديد " + readableTreeLabel(node)}
         onClick={() => send({ action: "select", selector: node.selector })}
-        className={"flex min-h-7 w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-right text-[11px] hover:bg-accent " + (selected?.selector === node.selector ? "bg-primary/10 font-black text-primary" : "text-foreground")}
-        style={{ paddingRight: Math.min(18, depth * 7 + 6) + "px" }}
+        className={"flex min-h-8 w-full items-center gap-1.5 rounded-md px-1.5 py-1.5 text-right text-[11px] hover:bg-accent " + (selected?.selector === node.selector ? "bg-primary/10 font-black text-primary" : "text-foreground")}
+        style={{ paddingRight: Math.min(22, depth * 8 + 6) + "px" }}
       >
-        <span className="shrink-0 rounded bg-muted px-1 font-mono text-[9px] text-muted-foreground">{node.tag}</span>
-        <span className="min-w-0 flex-1 truncate">{node.label}</span>
+        <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[9px] text-muted-foreground">{readableElementKind(node.tag)}</span>
+        <span className="min-w-0 flex-1 truncate">{readableTreeLabel(node)}</span>
       </button>
       {node.children.length > 0 && <div className="mr-2 border-r border-border/70 pr-1">{renderTreeNodes(node.children, depth + 1)}</div>}
     </div>
@@ -569,8 +774,8 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         <div className="flex min-w-0 items-center gap-2">
           <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><Monitor size={16} /></span>
           <div className="min-w-0">
-            <p className="truncate text-sm font-black">{designerMode ? "مصمم العناصر — معاينة التطبيق الفعلية" : "معاينة التطبيق الحقيقية"}</p>
-            <p className="truncate text-[10px] text-muted-foreground" title={safeRoute}>{safeRoute} · {designerMode ? "تعديلات محلية — الحفظ يدوي" : "وضع العرض الفعلي"} · {status}</p>
+            <p className="truncate text-sm font-black">{designerMode ? "تعديل عناصر التطبيق" : "معاينة التطبيق"}</p>
+            <p className="truncate text-[10px] text-muted-foreground" title={readablePageName(safeRoute, "الصفحة الحالية")}>{readablePageName(safeRoute, "الصفحة الحالية")} · {designerMode ? "التغييرات تظهر هنا فقط حتى اعتمادها" : "وضع العرض"} · {status}</p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
@@ -582,8 +787,8 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
           <Button type="button" size="sm" variant={editMode ? "default" : "outline"} className="h-7 gap-1 px-2 text-xs" onClick={() => setEditMode(v => !v)}>
             {editMode ? <EyeOff size={14} /> : <Eye size={14} />}{editMode ? "وضع التحرير" : "وضع التفاعل"}
           </Button>
-          <Button type="button" size="sm" variant={showExplorer ? "default" : "outline"} className="h-7 gap-1 px-2 text-xs" onClick={() => setShowExplorer(v => !v)}><Layers size={14} /> {showExplorer ? "إخفاء الشجرة" : "الصفحات والشجرة"}</Button>
-          <Button type="button" size="sm" variant={showProperties ? "default" : "outline"} className="h-7 gap-1 px-2 text-xs" onClick={() => setShowProperties(v => !v)}><Settings2 size={14} /> {showProperties ? "إخفاء الخصائص" : "الخصائص"}</Button>
+          <Button type="button" size="sm" variant={showExplorer ? "default" : "outline"} className="h-7 gap-1 px-2 text-xs" onClick={() => setShowExplorer(v => !v)}><Layers size={14} /> {showExplorer ? "إخفاء العناصر" : "الصفحات والعناصر"}</Button>
+          <Button type="button" size="sm" variant={showProperties ? "default" : "outline"} className="h-7 gap-1 px-2 text-xs" onClick={() => setShowProperties(v => !v)}><Settings2 size={14} /> {showProperties ? "إخفاء لوحة التحرير" : "التصميم والوظائف"}</Button>
           <Button type="button" size="sm" variant="outline" className="h-7 gap-1 px-2 text-xs" onClick={() => setFrameKey(v => v + 1)}><RefreshCw size={14} /> تحديث</Button>
         </div>
       </div>
@@ -605,19 +810,18 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
                   <button
                     key={page.href}
                     type="button"
-                    title={page.href}
+                    aria-label={"فتح " + readablePageName(page.href, page.label)}
                     onClick={() => navigatePreview(page.href)}
                     className={"flex min-h-8 w-full items-center gap-2 rounded-lg px-2 py-1.5 text-right text-[11px] " + (page.href === safeRoute ? "bg-primary/10 font-black text-primary" : "hover:bg-accent")}
                   >
-                    <span className="min-w-0 flex-1 truncate">{page.label || page.href}</span>
-                    <span className="max-w-[92px] truncate font-mono text-[9px] text-muted-foreground">{page.href}</span>
+                    <span className="min-w-0 flex-1 truncate">{readablePageName(page.href, page.label)}</span>
                   </button>
                 ))}
               </div>
             </section>
             <section className="flex min-h-0 flex-1 flex-col p-2">
-              <h4 className="mb-1.5 shrink-0 text-[11px] font-black">شجرة المكونات الفعلية</h4>
-              <input aria-label="بحث في شجرة المكونات" value={treeFilter} onChange={(event) => setTreeFilter(event.target.value)} placeholder="ابحث عن عنصر أو وسم..." className="mb-2 h-8 shrink-0 rounded-lg border bg-background px-2 text-[11px] outline-none focus:ring-2 focus:ring-primary" />
+              <h4 className="mb-1.5 shrink-0 text-[11px] font-black">عناصر الصفحة وترتيبها</h4>
+              <input aria-label="بحث في شجرة المكونات" value={treeFilter} onChange={(event) => setTreeFilter(event.target.value)} placeholder="ابحث باسم العنصر أو النص الظاهر..." className="mb-2 h-8 shrink-0 rounded-lg border bg-background px-2 text-[11px] outline-none focus:ring-2 focus:ring-primary" />
               <div className="min-h-0 flex-1 overflow-auto">
                 {visibleTreeNodes.length ? renderTreeNodes(visibleTreeNodes) : <p className="p-2 text-[11px] leading-5 text-muted-foreground">جاري استخراج شجرة عناصر الصفحة…</p>}
               </div>
@@ -632,9 +836,16 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         {showProperties && (
         <aside className="absolute left-0 top-[112px] bottom-0 z-20 flex w-[280px] max-w-[32vw] min-w-[230px] flex-col gap-3 overflow-y-auto rounded-tr-xl border-r border-t bg-card/95 p-3 shadow-2xl backdrop-blur 2xl:w-[320px]">
           <div>
-            <h3 className="text-sm font-black">خصائص عنصر التطبيق</h3>
-            <p className="mt-1 break-all text-[10px] text-muted-foreground">{selected ? "<" + selected.tag + "> · " + selected.selector : "انقر على عنصر داخل المعاينة"}</p>
+            <h3 className="text-sm font-black">تعديل العنصر المحدد</h3>
+            <p className="mt-1 text-[10px] text-muted-foreground">{selected ? (selected.text?.trim() || readableElementKind(selected.tag)) + " · " + readableElementKind(selected.tag) : "اختر عنصرًا من المعاينة"}</p>
           </div>
+          <StudioWorkflowPanel
+            selected={selected}
+            treeNodes={treeNodes}
+            pageLinks={pageLinks}
+            edits={edits}
+            onUpdateEdit={(selector, patch) => commitEdits(selector, patch)}
+          />
           {selected ? (
             <>
               {!selectedIsVector && <label className="block text-xs font-bold">النص<textarea value={textValue} onChange={e => editText(e.target.value)} className="mt-1 min-h-16 w-full rounded-lg border bg-background p-2 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>}
@@ -645,7 +856,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
 
               {selectedIsVector && (
                 <div className="rounded-xl border p-3 space-y-3">
-                  <h4 className="text-xs font-black">تصميم الأيقونة / SVG</h4>
+                  <h4 className="text-xs font-black">تصميم الأيقونة</h4>
                   <div className="grid grid-cols-2 gap-2">
                     <label className="text-xs">لون التعبئة<input aria-label="لون تعبئة الأيقونة" type="color" value={fillColor} onChange={e => { setFillColor(e.target.value); applyStyle({ fill: e.target.value }); }} className="mt-1 h-9 w-full rounded border bg-background p-1" /></label>
                     <label className="text-xs">لون الخط<input aria-label="لون حد الأيقونة" type="color" value={strokeColor} onChange={e => { setStrokeColor(e.target.value); applyStyle({ stroke: e.target.value }); }} className="mt-1 h-9 w-full rounded border bg-background p-1" /></label>
@@ -677,7 +888,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
                 <label className="text-xs">استدارة الحواف<input value={borderRadius} placeholder="12px أو 50%" onChange={e => { setBorderRadius(e.target.value); applyStyle({ borderRadius: e.target.value }); }} className="mt-1 w-full rounded-lg border bg-background p-2" /></label>
                 <label className="text-xs">الظل<select value={shadowStyle} onChange={e => { setShadowStyle(e.target.value); applyStyle({ boxShadow: e.target.value }); }} className="mt-1 w-full rounded-lg border bg-background p-2"><option value="none">بدون</option><option value="0 1px 3px rgba(0,0,0,.12)">خفيف</option><option value="0 4px 12px rgba(0,0,0,.16)">متوسط</option><option value="0 12px 32px rgba(0,0,0,.22)">قوي</option><option value="0 0 0 2px rgba(99,102,241,.35)">إطار مضيء</option></select></label>
               </div>
-              <div className="rounded-lg bg-muted/60 p-2 text-[10px] leading-5 text-muted-foreground">حرّك العنصر بالسحب المباشر داخل المعاينة. تُحفظ التغييرات محليًا فورًا وتُزامن مع Supabase عند الضغط على «حفظ ومزامنة».</div>
+              <div className="rounded-lg bg-muted/60 p-2 text-[10px] leading-5 text-muted-foreground">حرّك العنصر بالسحب داخل المعاينة. التغييرات تبقى في المسودة إلى أن تضغط «حفظ ومزامنة».</div>
               <div className="grid grid-cols-2 gap-2">
                 <Button type="button" size="sm" variant="outline" onClick={() => action("moveUp")}><ArrowUp size={14} /> ترتيب لأعلى</Button>
                 <Button type="button" size="sm" variant="outline" onClick={() => action("moveDown")}><ArrowDown size={14} /> ترتيب لأسفل</Button>
@@ -687,7 +898,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
               <Button type="button" size="sm" variant="ghost" onClick={() => setSelected(null)}><Check size={14} /> إنهاء التحديد</Button>
             </>
           ) : (
-            <div className="rounded-xl border border-dashed p-4 text-xs leading-6 text-muted-foreground">انقر على نص أو زر أو بطاقة من التطبيق نفسه. التعديلات تُحفظ محليًا وتظهر على صفحات هذا المتصفح؛ مزامنة Supabase من «حفظ ومزامنة»، والنشر لبقية المستخدمين خطوة منفصلة.</div>
+            <div className="rounded-xl border border-dashed p-4 text-xs leading-6 text-muted-foreground">اختر نصًا أو زرًا أو منطقة من التطبيق. جرّب الشكل والوظيفة هنا، ثم احفظ المسودة أو انشرها عند الانتهاء.</div>
           )}
           <div className="mt-auto rounded-lg bg-muted p-2 text-[10px] leading-5 text-muted-foreground">إذا ظهر خطأ مزامنة، تبقى النسخة المحلية موجودة لكن لا تعتبر محفوظة سحابيًا حتى نجاح التأكيد.</div>
         </aside>

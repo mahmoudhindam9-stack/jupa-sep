@@ -28,6 +28,7 @@ export interface ButtonContent {
   label: string;
   action?: "link" | "submit" | "alert" | "none";
   url?: string;
+  message?: string;
   variant?: "default" | "secondary" | "outline" | "destructive" | "ghost";
 }
 
@@ -184,12 +185,62 @@ export interface PageModel {
   updatedBy: string;
 }
 
+export type StudioActionType =
+  | "none"
+  | "navigate"
+  | "message"
+  | "toggle"
+  | "set_value"
+  | "calculate"
+  | "sequence";
+
+export interface StudioActionStep {
+  id: string;
+  type: Exclude<StudioActionType, "sequence">;
+  destination?: string;
+  message?: string;
+  targetSelector?: string;
+  value?: string;
+  formula?: string;
+  leftSelector?: string;
+  rightSelector?: string;
+  operator?: "+" | "-" | "*" | "/" | "%";
+  resultSelector?: string;
+}
+
+export interface StudioActionConfig {
+  type: StudioActionType;
+  destination?: string;
+  message?: string;
+  targetSelector?: string;
+  value?: string;
+  formula?: string;
+  leftSelector?: string;
+  rightSelector?: string;
+  operator?: "+" | "-" | "*" | "/" | "%";
+  resultSelector?: string;
+  steps?: StudioActionStep[];
+}
+
+export interface StudioAddedButton {
+  id: string;
+  label: string;
+  variant?: "primary" | "secondary" | "outline" | "danger";
+  action: StudioActionConfig;
+}
+
 export interface StudioDomEdit {
   text?: string;
   styles?: Record<string, string>;
   deleted?: boolean;
   duplicateCount?: number;
   order?: number;
+  /** Existing link target, kept as an internal app route whenever possible. */
+  href?: string;
+  /** A safe, user-configured action performed when the selected control is clicked. */
+  action?: StudioActionConfig;
+  /** New buttons to add to this visual container. */
+  addedButtons?: StudioAddedButton[];
 }
 
 export interface StudioDraft {
