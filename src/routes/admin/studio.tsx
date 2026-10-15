@@ -25,6 +25,7 @@ import { ConflictResolutionModal } from "@/features/developer-studio/components/
 import { HistoryRollbackModal } from "@/features/developer-studio/components/HistoryRollbackModal";
 import { StudioElementRenderer } from "@/features/developer-studio/components/StudioElementRenderer";
 import { LiveAppPreview } from "@/features/developer-studio/components/LiveAppPreview";
+import { WorkflowEditorPanel } from "@/features/developer-studio/components/WorkflowEditorPanel";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
@@ -42,6 +43,7 @@ import {
   AlertCircle,
   Loader2,
   Layers,
+  GitBranch,
   Settings2,
   Maximize2,
   ArrowRight,
@@ -97,7 +99,7 @@ export function DeveloperStudioProPage() {
   const [historyPointer, setHistoryPointer] = useState<number>(-1);
 
   // Open on the real application by default; the component builder is available separately.
-  const [workspaceMode, setWorkspaceMode] = useState<"builder" | "live">("live");
+  const [workspaceMode, setWorkspaceMode] = useState<"builder" | "live" | "workflow">("live");
 
   // Modals
   const [showPublishModal, setShowPublishModal] = useState(false);
@@ -998,8 +1000,8 @@ export function DeveloperStudioProPage() {
             <div className="hidden sm:block">
               <h1 className="text-sm font-black text-foreground leading-tight flex items-center gap-1.5">
                 <span>استوديو المطور Pro</span>
-                <Badge variant="outline" className="text-[10px] font-mono px-1.5 py-0">
-                  Visual Editor
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                  تصميم بصري
                 </Badge>
               </h1>
               <p className="text-[10px] text-muted-foreground">
@@ -1022,7 +1024,7 @@ export function DeveloperStudioProPage() {
             >
               {Object.values(draft.pages || {}).map((p) => (
                 <option key={p.id} value={p.id}>
-                  📄 {p.name} ({p.route})
+                  📄 {p.name}
                 </option>
               ))}
             </select>
@@ -1111,6 +1113,17 @@ export function DeveloperStudioProPage() {
           </Button>
           <Button
             type="button"
+            variant={workspaceMode === "workflow" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setWorkspaceMode("workflow")}
+            className="h-8 px-2.5 text-xs gap-1.5 cursor-pointer font-bold"
+            title="إضافة خطوات وربطها ومعاينة النتيجة"
+          >
+            <GitBranch className="w-3.5 h-3.5" />
+            <span>مسارات العمل</span>
+          </Button>
+          <Button
+            type="button"
             variant={workspaceMode === "live" ? "default" : "outline"}
             size="sm"
             onClick={() => setWorkspaceMode("live")}
@@ -1186,15 +1199,101 @@ export function DeveloperStudioProPage() {
       {/* MAIN WORKSPACE BODY                                       */}
       {/* ========================================================= */}
       <div className="min-h-0 flex-1 overflow-hidden">
-        <LiveAppPreview
-          route={activePage?.route || "/admin"}
-          designerMode={workspaceMode === "builder"}
-          initialEdits={draft.domEdits || {}}
-          onEditsChange={(domEdits) => {
-            if (!draft) return;
-            commitDraftChange({ ...draft, domEdits, hasUnpublishedChanges: true });
-          }}
-        />
+        {workspaceMode === "live" ? (
+          <LiveAppPreview
+            route={activePage?.route || "/admin"}
+            designerMode={false}
+            initialEdits={draft.domEdits || {}}
+            onEditsChange={(domEdits) => {
+              if (!draft) return;
+              commitDraftChange({ ...draft, domEdits, hasUnpublishedChanges: true });
+            }}
+          />
+        ) : workspaceMode === "builder" ? (
+          <div className="h-full min-w-0 flex overflow-hidden">
+            <ElementTreePanel
+              pages={draft.pages}
+              activePageId={activePageId}
+              elements={draft.elements}
+              selectedElementId={selectedElementId}
+              onSelectPage={(pageId) => { setActivePageId(pageId); setSelectedElementId(null); }}
+              onAddPage={handleAddPage}
+              onSelectElement={setSelectedElementId}
+              onAddElement={handleAddElement}
+              onDeleteElement={handleDeleteElement}
+              onDuplicateElement={handleDuplicateElement}
+              onToggleVisibility={(elementId) => {
+                const target = draft.elements[elementId];
+                if (target) handleUpdateElement(elementId, { layout: { ...target.layout, visibility: !target.layout.visibility } });
+              }}
+              onToggleLock={(elementId) => {
+                const target = draft.elements[elementId];
+                if (target) handleUpdateElement(elementId, { locked: !target.locked });
+              }}
+            />
+            {activePage ? (
+              <VisualEditorCanvas
+                page={activePage}
+                elements={draft.elements}
+                selectedElementId={selectedElementId}
+                onSelectElement={setSelectedElementId}
+                onUpdateElement={handleUpdateElement}
+                onDeleteElement={handleDeleteElement}
+                onDuplicateElement={handleDuplicateElement}
+                onMoveElement={handleMoveElement}
+                onAddElement={handleAddElement}
+                className="min-w-0"
+              />
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">لا توجد صفحة محددة للتصميم.</div>
+            )}
+            <PropertiesPanel
+              element={selectedElement}
+              pages={draft.pages}
+              elements={draft.elements}
+              onUpdateElement={handleUpdateElement}
+              onDeleteElement={handleDeleteElement}
+              onDuplicateElement={handleDuplicateElement}
+            />
+          </div>
+        ) : (
+          <div className="h-full min-w-0 flex overflow-hidden">
+            <ElementTreePanel
+              pages={draft.pages}
+              activePageId={activePageId}
+              elements={draft.elements}
+              selectedElementId={selectedElementId}
+              onSelectPage={(pageId) => { setActivePageId(pageId); setSelectedElementId(null); }}
+              onAddPage={handleAddPage}
+              onSelectElement={setSelectedElementId}
+              onAddElement={handleAddElement}
+              onDeleteElement={handleDeleteElement}
+              onDuplicateElement={handleDuplicateElement}
+              onToggleVisibility={(elementId) => {
+                const target = draft.elements[elementId];
+                if (target) handleUpdateElement(elementId, { layout: { ...target.layout, visibility: !target.layout.visibility } });
+              }}
+              onToggleLock={(elementId) => {
+                const target = draft.elements[elementId];
+                if (target) handleUpdateElement(elementId, { locked: !target.locked });
+              }}
+            />
+            <WorkflowEditorPanel
+              element={selectedElement}
+              elements={draft.elements}
+              onUpdateElement={handleUpdateElement}
+              onAddButton={() => handleAddElement("button")}
+            />
+            <PropertiesPanel
+              element={selectedElement}
+              pages={draft.pages}
+              elements={draft.elements}
+              onUpdateElement={handleUpdateElement}
+              onDeleteElement={handleDeleteElement}
+              onDuplicateElement={handleDuplicateElement}
+            />
+          </div>
+        )}
       </div>
 
       {/* ========================================================= */}
