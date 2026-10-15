@@ -990,7 +990,7 @@ export function UsersPage() {
             phone: validatedForm.phone,
             role: validatedForm.role,
             permissions,
-            ...(form.password.trim() ? { password: form.password.trim() } : {}),
+            ...(form.password.trim() ? { password: validatedForm.password } : {}),
           };
         }
 
@@ -1033,7 +1033,7 @@ export function UsersPage() {
       if (hosted) {
         const emailToUse = validatedForm.email;
 
-        const created = await authService.signUpNewUser(emailToUse, form.password, {
+        const created = await authService.signUpNewUser(emailToUse, validatedForm.password, {
           username: validatedForm.username,
           email: emailToUse,
           full_name: validatedForm.fullName,
@@ -1079,7 +1079,7 @@ export function UsersPage() {
         email: validatedForm.email || undefined,
         phone: validatedForm.phone,
         role: validatedForm.role,
-        password: form.password,
+        password: validatedForm.password,
         permissions,
         created_at: new Date().toISOString(),
       };
