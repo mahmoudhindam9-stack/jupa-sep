@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, Check, Copy, Eye, EyeOff, Layers, Monitor, RefreshCw, Settings2, Smartphone, Tablet, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, Copy, Eye, EyeOff, Layers, Monitor, Plus, RefreshCw, Settings2, Smartphone, Tablet, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { StudioDomAddedItem, StudioDomEdit } from "../models/studio.types";
 
@@ -122,6 +122,8 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
     } else if (event.data.type === "STUDIO_CHANGE") {
       commitEdits(String(event.data.selector), event.data.patch || {});
       setStatus("تم تعديل المعاينة فقط — اضغط «حفظ ومزامنة» لاعتماد المسودة على الخادم.");
+    } else if (event.data.type === "STUDIO_LINK_UNAVAILABLE") {
+      setStatus(String(event.data.message || "تعذر تحديث الرابط."));
     } else if (event.data.type === "STUDIO_PROTECTED_ELEMENT") {
       setStatus(String(event.data.message || "هذا العنصر محمي من التعديل لضمان بقاء وظائفه الأصلية."));
     } else if (event.data.type === "STUDIO_BRIDGE_READY") {
@@ -239,10 +241,13 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
             .map((node) => ({ node, text: node.textContent })),
           parent: el.parentNode,
           nextSibling: el.nextSibling,
+          linkEl: el.matches("a[href]") ? el : el.closest("a[href]"),
+          hrefAttribute: (el.matches("a") ? el : el.closest("a"))?.getAttribute("href") ?? null,
         });
       };
       const resetPreviewEdits = () => {
         document.querySelectorAll("[data-coding-studio-clone-of]").forEach((el) => el.remove());
+        document.querySelectorAll("[data-coding-studio-added-for]").forEach((el) => el.remove());
         for (const state of Array.from(originalStates.values()).reverse()) {
           const el = state.el;
           if (!el.isConnected) continue;
@@ -256,6 +261,10 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
           delete el.dataset.codingStudioTextApplied;
           if (state.styleAttribute === null) el.removeAttribute("style");
           else el.setAttribute("style", state.styleAttribute);
+          if (state.linkEl?.isConnected) {
+            if (state.hrefAttribute === null) state.linkEl.removeAttribute("href");
+            else state.linkEl.setAttribute("href", state.hrefAttribute);
+          }
           if (state.parent && el.parentNode === state.parent) {
             if (state.nextSibling && state.nextSibling.parentNode === state.parent) state.parent.insertBefore(el, state.nextSibling);
             else state.parent.appendChild(el);
@@ -271,7 +280,9 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
           width: el.style.width || "auto", height: el.style.height || "auto", fontWeight: css.fontWeight,
           fill: css.fill || el.getAttribute("fill") || "", stroke: css.stroke || el.getAttribute("stroke") || "",
           strokeWidth: css.strokeWidth || el.getAttribute("stroke-width") || "2", opacity: css.opacity || "1",
-          borderRadius: css.borderRadius || "0px", rotate: css.rotate || "0deg", textAlign: css.textAlign || "right" };
+          borderRadius: css.borderRadius || "0px", rotate: css.rotate || "0deg", textAlign: css.textAlign || "right",
+          href: (el.matches("a[href]") ? el : el.closest("a[href]"))?.getAttribute("href") || "",
+          isLink: !!(el.matches("a") || el.closest("a")) };
       };
       const applyStyles = (el, styles) => {
         const applyTo = [el];
@@ -292,6 +303,49 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         else if (!el.children.length) el.textContent = String(value);
         el.dataset.codingStudioTextApplied = String(value);
       };
+      const safeLinkUrl = (value) => {
+        const url = String(value || "").trim();
+        return (url.startsWith("/") && !url.startsWith("//")) || /^https?:\/\//i.test(url) ? url : "";
+      };
+      const renderAddedItem = (item, selector) => {
+        const types = { text: "p", button: "button", input: "input", card: "div", divider: "hr", link: "a" };
+        const node = document.createElement(types[item?.type] || "p");
+        node.dataset.codingStudioAddedFor = selector;
+        node.id = String(item?.id || "");
+        node.dataset.studioAddedName = String(item?.name || "عنصر جديد");
+        node.setAttribute("aria-label", node.dataset.studioAddedName);
+        if (item?.type === "input") {
+          node.setAttribute("placeholder", String(item?.text || ""));
+          node.setAttribute("type", "text");
+          node.style.cssText = "display:block;max-width:100%;padding:8px 10px;margin:6px 0;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#111827";
+        } else if (item?.type === "divider") {
+          node.style.cssText = "display:block;width:100%;margin:10px 0;border:0;border-top:1px solid #cbd5e1";
+        } else {
+          node.textContent = String(item?.text || item?.name || "عنصر جديد");
+          node.style.cssText = item?.type === "button"
+            ? "display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 12px;margin:6px 4px;border:1px solid #cbd5e1;border-radius:8px;background:#4f46e5;color:#fff;font-weight:700;cursor:pointer"
+            : item?.type === "card"
+              ? "display:block;padding:12px;margin:8px 0;border:1px solid #cbd5e1;border-radius:12px;background:#fff;color:#111827"
+              : item?.type === "link"
+                ? "display:inline-block;margin:6px 4px;color:#2563eb;text-decoration:underline;cursor:pointer"
+                : "display:block;margin:6px 0;color:inherit";
+        }
+        if (item?.type === "link") {
+          const safe = safeLinkUrl(item.url);
+          if (safe) node.setAttribute("href", safe);
+        }
+        if (item?.type === "button" || item?.type === "link") {
+          node.addEventListener("click", (event) => {
+            const action = item?.action || "none";
+            const safe = safeLinkUrl(item?.url);
+            if (action !== "none") event.preventDefault();
+            if (action === "message") window.alert(String(item?.message || "تم تنفيذ الإجراء."));
+            else if (action === "navigate" && safe.startsWith("/") && !safe.startsWith("//")) location.assign(safe);
+            else if (action === "external" && /^https?:\/\//i.test(safe)) window.open(safe, "_blank", "noopener,noreferrer");
+          });
+        }
+        return node;
+      };
       const applyEdit = (selector, edit) => {
         const el = find(selector);
         if (!el || !edit || isProtected(el)) return;
@@ -299,6 +353,14 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         rememberOriginal(selector, el);
         if (edit.text !== undefined && el.dataset.codingStudioTextApplied !== String(edit.text)) applyText(el, edit.text);
         if (edit.styles && typeof edit.styles === "object") applyStyles(el, edit.styles);
+        if (typeof edit.href === "string") {
+          const anchor = el.matches("a") ? el : el.closest("a");
+          if (anchor) {
+            const safeHref = safeLinkUrl(edit.href);
+            if (safeHref) anchor.setAttribute("href", safeHref);
+            else if (!edit.href.trim()) anchor.removeAttribute("href");
+          }
+        }
         if (edit.deleted) el.style.display = "none";
         if (typeof edit.order === "number" && el.parentElement) {
           const siblings = Array.from(el.parentElement.children).filter((item) =>
@@ -323,6 +385,14 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
             clone.setAttribute("data-coding-studio-clone-of", selector);
             parent.insertBefore(clone, el.nextSibling);
           }
+        }
+        if (!edit.deleted && Array.isArray(edit.additions)) {
+          edit.additions.slice(0, 100).forEach((item) => {
+            if (!item || !item.id || !["text", "button", "input", "card", "divider", "link"].includes(item.type)) return;
+            const added = renderAddedItem(item, selector);
+            if (item.placement === "inside") el.appendChild(added);
+            else if (el.parentElement) el.parentElement.insertBefore(added, el.nextSibling);
+          });
         }
       };
       let selected = null;
@@ -440,6 +510,22 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         } else if (data.action === "text") {
           applyText(el, data.text);
           notify({ text: data.text });
+        } else if (data.action === "href") {
+          const anchor = el.matches("a") ? el : el.closest("a");
+          if (!anchor) {
+            send("STUDIO_LINK_UNAVAILABLE", { message: "العنصر المحدد لا يحتوي على رابط قابل للتعديل." });
+            return;
+          }
+          const requested = String(data.url || "").trim();
+          const safe = safeLinkUrl(requested);
+          if (requested && !safe) {
+            send("STUDIO_LINK_UNAVAILABLE", { message: "الرابط يجب أن يكون مسارًا داخليًا أو HTTP/HTTPS." });
+            return;
+          }
+          if (safe) anchor.setAttribute("href", safe);
+          else anchor.removeAttribute("href");
+          notify({ href: requested });
+          send("STUDIO_SELECTED", { element: describe(el) });
         } else if (data.action === "delete") {
           el.style.display = "none";
           notify({ deleted: true });
