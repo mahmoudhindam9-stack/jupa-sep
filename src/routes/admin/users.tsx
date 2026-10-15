@@ -1086,7 +1086,7 @@ export function UsersPage() {
       erpStore.upsertUser(localUser);
       erpStore.updateUserPermission(validatedForm.username, permissions);
       setLocalUsers(localLoginUsers());
-      setForm({ full_name: "", username: "", phone: "", password: "", role: "cashier" });
+      setForm({ full_name: "", username: "", email: "", phone: "", password: "", confirmPassword: "", role: "cashier" });
       setIsConfirmUpsertOpen(false);
       toast({
         title: "تم إنشاء المستخدم بنجاح",
@@ -1165,6 +1165,7 @@ export function UsersPage() {
       email: p.email ?? "",
       phone: p.phone ?? "",
       password: "",
+      confirmPassword: "",
       role: p.role,
     });
   };
