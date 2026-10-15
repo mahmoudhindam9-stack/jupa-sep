@@ -99,7 +99,7 @@ export function DeveloperStudioProPage() {
   const [historyPointer, setHistoryPointer] = useState<number>(-1);
 
   // Open on the real application by default; the component builder is available separately.
-  const [workspaceMode, setWorkspaceMode] = useState<"builder" | "live" | "workflow">("live");
+  const [workspaceMode, setWorkspaceMode] = useState<"builder" | "live" | "workflow" | "app-editor">("live");
 
   // Modals
   const [showPublishModal, setShowPublishModal] = useState(false);
@@ -1124,6 +1124,17 @@ export function DeveloperStudioProPage() {
           </Button>
           <Button
             type="button"
+            variant={workspaceMode === "app-editor" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setWorkspaceMode("app-editor")}
+            className="h-8 px-2.5 text-xs gap-1.5 cursor-pointer font-bold"
+            title="تعديل عناصر الشاشة الحقيقية في معاينة معزولة"
+          >
+            <Settings2 className="w-3.5 h-3.5" />
+            <span>تعديل الواجهة</span>
+          </Button>
+          <Button
+            type="button"
             variant={workspaceMode === "live" ? "default" : "outline"}
             size="sm"
             onClick={() => setWorkspaceMode("live")}
@@ -1199,10 +1210,10 @@ export function DeveloperStudioProPage() {
       {/* MAIN WORKSPACE BODY                                       */}
       {/* ========================================================= */}
       <div className="min-h-0 flex-1 overflow-hidden">
-        {workspaceMode === "live" ? (
+        {workspaceMode === "live" || workspaceMode === "app-editor" ? (
           <LiveAppPreview
             route={activePage?.route || "/admin"}
-            designerMode={false}
+            designerMode={workspaceMode === "app-editor"}
             initialEdits={draft.domEdits || {}}
             onEditsChange={(domEdits) => {
               if (!draft) return;
