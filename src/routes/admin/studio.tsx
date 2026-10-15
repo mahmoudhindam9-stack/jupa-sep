@@ -766,55 +766,62 @@ export function DeveloperStudioProPage() {
     [draft, activePageId, commitDraftChange],
   );
 
-  // Delete element safely
+  // Delete an element while preserving any children in the same parent scope.
   const handleDeleteElement = useCallback(
     (elementId: string) => {
       if (!draft) return;
-      const el = draft.elements[elementId];
-      if (!el) return;
+      const element = draft.elements[elementId];
+      if (!element) return;
 
-      if (el.locked) {
+      if (element.locked) {
         toast({ title: "لا يمكن حذف عنصر مقفل", variant: "destructive" });
         return;
       }
 
-      // Remove from page elementIds and elements map
-      const activePage = draft.pages[el.pageId];
-      const updatedElementIds = (activePage?.elementIds || []).filter((id) => id !== elementId);
-
-      const updatedElements = { ...draft.elements };
+      const page = draft.pages[element.pageId];
+      const orderedChildren = Object.values(draft.elements)
+        .filter((item) => item.parentId === elementId)
+        .sort((a, b) => (a.layout?.order ?? 0) - (b.layout?.order ?? 0));
+      const updatedElements: Record<string, ElementModel> = { ...draft.elements };
       delete updatedElements[elementId];
 
-      // Also clean up any children where parentId === elementId
-      Object.keys(updatedElements).forEach((id) => {
-        if (updatedElements[id].parentId === elementId) {
-          updatedElements[id] = { ...updatedElements[id], parentId: null };
-        }
+      // Removing a container expands its children into the container's former parent.
+      orderedChildren.forEach((child, index) => {
+        updatedElements[child.id] = {
+          ...child,
+          parentId: element.parentId,
+          layout: { ...child.layout, order: (element.layout?.order ?? 0) + index / 100 },
+          updatedAt: new Date().toISOString(),
+        };
       });
 
-      const newDraft: StudioDraft = {
+      let updatedPage = page;
+      if (page && element.parentId === null) {
+        const oldIndex = (page.elementIds || []).indexOf(elementId);
+        const elementIds = (page.elementIds || []).filter((id) => id !== elementId);
+        elementIds.splice(
+          oldIndex < 0 ? elementIds.length : oldIndex,
+          0,
+          ...orderedChildren.map((child) => child.id),
+        );
+        updatedPage = { ...page, elementIds, updatedAt: new Date().toISOString() };
+      }
+
+      commitDraftChange({
         ...draft,
-        pages: {
-          ...draft.pages,
-          [el.pageId]: {
-            ...activePage,
-            elementIds: updatedElementIds,
-            updatedAt: new Date().toISOString(),
-          },
-        },
+        pages: updatedPage ? { ...draft.pages, [element.pageId]: updatedPage } : draft.pages,
         elements: updatedElements,
         hasUnpublishedChanges: true,
-      };
+      });
 
-      commitDraftChange(newDraft);
       const remainingSelection = selectedElementIds.filter((id) => id !== elementId);
       setSelectedElementIds(remainingSelection);
       if (selectedElementId === elementId) {
         setSelectedElementId(remainingSelection[remainingSelection.length - 1] || null);
       }
-      toast({ title: "تم حذف العنصر بنجاح" });
+      toast({ title: orderedChildren.length ? "تم حذف المجموعة وإبقاء عناصرها" : "تم حذف العنصر بنجاح" });
     },
-    [draft, selectedElementId, selectedElementIds, commitDraftChange],
+    [draft, selectedElementId, selectedElementIds, commitDraftChange, toast],
   );
 
   // Duplicate element
