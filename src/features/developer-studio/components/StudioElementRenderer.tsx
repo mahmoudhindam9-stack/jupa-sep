@@ -44,7 +44,7 @@ function evaluateStudioCondition(source: string): boolean {
 
 function isSafeWorkflowUrl(value: string): boolean {
   const url = String(value || "").trim();
-  if (url.startsWith("/") && !url.startsWith("//") && !url.includes("\\\\")) return true;
+  if (url.startsWith("/") && !url.startsWith("//") && !url.includes("\\")) return true;
   try {
     const parsed = new URL(url);
     return (parsed.protocol === "http:" || parsed.protocol === "https:") && !!parsed.hostname;
