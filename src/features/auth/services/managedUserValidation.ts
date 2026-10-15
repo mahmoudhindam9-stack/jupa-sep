@@ -144,8 +144,17 @@ export function userValidationErrorMessage(error: unknown): string {
   if (message.includes("invalid_username")) {
     return "اسم المستخدم غير صالح. استخدم 3–32 حرفًا إنجليزيًا صغيرًا أو رقمًا، مع النقطة أو الشرطة أو الشرطة السفلية فقط.";
   }
-  if (message.includes("full_name_required")) {
-    return "الاسم الكامل مطلوب، ويجب ألا يتجاوز 120 حرفًا.";
+  if (message.includes("full_name_required") || message.includes("full_name_too_long")) {
+    return "أدخل الاسم الكامل، ويجب ألا يتجاوز 120 حرفًا.";
+  }
+  if (message.includes("phone_too_long")) {
+    return "رقم الهاتف لا يمكن أن يتجاوز 40 حرفًا.";
+  }
+  if (message.includes("invalid_email")) {
+    return "البريد الإلكتروني غير صالح أو لا يتطابق مع حساب Supabase Auth.";
+  }
+  if (message.includes("cannot delete the account you are currently using")) {
+    return "لا يمكن حذف الحساب الذي تستخدمه حاليًا. سجّل الدخول بحساب مدير آخر أولًا.";
   }
   if (message.includes("invalid_role")) {
     return "الدور الوظيفي غير معتمد في قاعدة البيانات. اختر دورًا من القائمة.";
