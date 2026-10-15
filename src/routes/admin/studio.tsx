@@ -1042,18 +1042,18 @@ export function DeveloperStudioProPage() {
             {saveStatus === "saved" && (
               <Badge variant="outline" className="gap-1 text-[11px] bg-emerald-500/10 text-emerald-700 border-emerald-500/30">
                 <CheckCircle2 className="w-3 h-3" />
-                <span>المسودة محفوظة</span>
+                <span>المسودة متزامنة مع Supabase</span>
               </Badge>
             )}
             {saveStatus === "unsaved" && (
               <Badge variant="outline" className="gap-1 text-[11px] bg-blue-500/10 text-blue-700 border-blue-500/30">
-                <span>تعديلات غير محفوظة</span>
+                <span>محفوظ محليًا — بانتظار المزامنة</span>
               </Badge>
             )}
             {saveStatus === "error" && (
               <Badge variant="outline" className="gap-1 text-[11px] bg-destructive/10 text-destructive border-destructive/30">
                 <AlertCircle className="w-3 h-3" />
-                <span title={saveError || "تعذر حفظ المسودة على Supabase"}>فشل الحفظ — اضغط «حفظ ومزامنة» لعرض التفاصيل</span>
+                <span title={saveError || "تعذرت المزامنة السحابية؛ النسخة المحلية باقية"}>فشلت المزامنة — النسخة المحلية محفوظة</span>
               </Badge>
             )}
             <Badge
