@@ -5,9 +5,14 @@
 
 import React, { CSSProperties } from "react";
 import { Link } from "@tanstack/react-router";
-import { ElementModel } from "../models/studio.types";
+import { ElementModel, ElementType } from "../models/studio.types";
 import { cn } from "@/lib/utils";
 import { Lock, EyeOff } from "lucide-react";
+
+const ELEMENT_TYPE_NAMES: Record<ElementType, string> = {
+  heading: "عنوان", text: "نص", button: "زر", image: "صورة", card: "بطاقة",
+  container: "منطقة", table: "جدول", input: "حقل إدخال", badge: "شارة", divider: "فاصل",
+};
 
 interface StudioElementRendererProps {
   element: ElementModel;
@@ -178,7 +183,11 @@ export function StudioElementRenderer({
               if (isEditorMode) {
                 e.preventDefault();
               } else if (c.action === "alert") {
-                alert(label);
+                alert(String(c.message || label));
+              } else if (c.action === "submit") {
+                const form = (e.currentTarget as HTMLButtonElement).closest("form");
+                if (form) form.requestSubmit();
+                else alert("يجب وضع هذا الزر داخل نموذج حتى يرسل البيانات.");
               }
             }}
           >
@@ -378,7 +387,7 @@ export function StudioElementRenderer({
       default:
         return (
           <div style={elementStyle} className={cn("p-2 text-xs border rounded-lg", className)}>
-            عنصر: {element.type}
+            عنصر من نوع {ELEMENT_TYPE_NAMES[element.type] || "آخر"}
           </div>
         );
     }
@@ -396,7 +405,7 @@ export function StudioElementRenderer({
         {/* Editor badges (Type, Locked, Hidden) */}
         {isSelected && (
           <div className="absolute -top-3.5 right-2 z-20 flex items-center gap-1 bg-primary text-primary-foreground text-[10px] font-black px-2 py-0.5 rounded-full shadow-md select-none pointer-events-none">
-            <span>{element.type}</span>
+            <span>{ELEMENT_TYPE_NAMES[element.type] || "عنصر"}</span>
             {element.locked && <Lock size={10} className="text-amber-300" />}
             {!element.layout.visibility && <EyeOff size={10} className="text-rose-300" />}
           </div>
