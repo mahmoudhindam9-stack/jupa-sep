@@ -49,6 +49,21 @@ import {
   Monitor,
 } from "lucide-react";
 
+const ELEMENT_TYPE_NAMES: Record<ElementType, string> = {
+  heading: "عنوان", text: "نص", button: "زر", image: "صورة", card: "بطاقة",
+  container: "منطقة", table: "جدول", input: "حقل إدخال", badge: "شارة", divider: "فاصل",
+};
+const BUTTON_LINKS = [
+  { path: "/admin", label: "لوحة الإدارة الرئيسية" },
+  { path: "/admin/ledger", label: "الإدارة المالية" },
+  { path: "/admin/hr", label: "الموارد البشرية" },
+  { path: "/admin/inventory", label: "المخزون والمستودعات" },
+  { path: "/admin/restaurant", label: "إدارة المطعم" },
+  { path: "/admin/mall", label: "إدارة المول" },
+  { path: "/admin/park", label: "إدارة الحديقة" },
+  { path: "/admin/system-update", label: "خيارات المطوّر" },
+];
+
 interface PropertiesPanelProps {
   element: ElementModel | null;
   onUpdateElement: (elementId: string, updates: Partial<ElementModel>) => void;
@@ -114,19 +129,16 @@ export function PropertiesPanel({
       <div className="shrink-0 p-3.5 border-b border-border bg-muted/30 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <span className="w-7 h-7 rounded-lg bg-primary/10 text-primary border border-primary/20 flex items-center justify-center text-xs font-black shrink-0">
-            {element.type.slice(0, 2).toUpperCase()}
+            {ELEMENT_TYPE_NAMES[element.type] || "عنصر"}
           </span>
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
               <span className="font-bold text-xs text-foreground truncate">
-                {element.type}
-              </span>
-              <span className="text-[10px] text-muted-foreground font-mono">
-                #{element.id.replace("elem_", "")}
+                {ELEMENT_TYPE_NAMES[element.type] || "عنصر"}
               </span>
             </div>
             <p className="text-[10px] text-muted-foreground">
-              الإصدار {element.revision} • المخطط v{element.schemaVersion}
+              عدّل المحتوى أو المظهر أو وظيفة العنصر.
             </p>
           </div>
         </div>
@@ -203,7 +215,7 @@ export function PropertiesPanel({
             الأبعاد
           </TabsTrigger>
           <TabsTrigger value="advanced" className="text-[11px] py-1 cursor-pointer">
-            متقدم
+            خيارات إضافية
           </TabsTrigger>
         </TabsList>
 
@@ -319,34 +331,82 @@ export function PropertiesPanel({
                 />
               </div>
               <div>
-                <Label className="text-xs font-bold mb-1.5 block">نوع وشكل الزر (Variant)</Label>
+                <Label className="text-xs font-bold mb-1.5 block">شكل الزر</Label>
                 <div className="grid grid-cols-3 gap-1">
-                  {(["default", "secondary", "outline", "destructive", "ghost"] as const).map(
-                    (v) => (
-                      <Button
-                        key={v}
-                        type="button"
-                        size="sm"
-                        variant={(element.content as ButtonContent).variant === v ? "default" : "outline"}
-                        disabled={element.locked}
-                        onClick={() => updateContent({ variant: v })}
-                        className="text-[10px] h-7 px-1 cursor-pointer capitalize"
-                      >
-                        {v}
-                      </Button>
-                    ),
-                  )}
+                  {([
+                    ["default", "أساسي"],
+                    ["secondary", "ثانوي"],
+                    ["outline", "بإطار"],
+                    ["destructive", "تحذيري"],
+                    ["ghost", "هادئ"],
+                  ] as const).map(([v, label]) => (
+                    <Button
+                      key={v}
+                      type="button"
+                      size="sm"
+                      variant={(element.content as ButtonContent).variant === v ? "default" : "outline"}
+                      disabled={element.locked}
+                      onClick={() => updateContent({ variant: v })}
+                      className="text-[10px] h-7 px-1 cursor-pointer"
+                    >
+                      {label}
+                    </Button>
+                  ))}
                 </div>
               </div>
-              <div>
-                <Label className="text-xs font-bold mb-1.5 block">الإجراء عند الضغط</Label>
-                <Input
+              <div className="space-y-2 rounded-xl border border-primary/20 bg-primary/5 p-3">
+                <Label className="text-xs font-bold mb-1.5 block">ماذا يفعل الزر عند الضغط؟</Label>
+                <select
                   disabled={element.locked}
-                  value={(element.content as ButtonContent).url || ""}
-                  onChange={(e) => updateContent({ url: e.target.value, action: "link" })}
-                  placeholder="رابط المسار مثل /admin/menu"
-                  className="text-xs text-left font-mono"
-                />
+                  value={(element.content as ButtonContent).action || "none"}
+                  onChange={(e) => updateContent({ action: e.target.value as ButtonContent["action"] })}
+                  className="w-full rounded-lg border bg-background p-2 text-xs"
+                >
+                  <option value="none">بدون إجراء إضافي</option>
+                  <option value="link">الانتقال إلى صفحة</option>
+                  <option value="alert">عرض رسالة</option>
+                  <option value="submit">إرسال النموذج</option>
+                </select>
+                {(element.content as ButtonContent).action === "link" && (
+                  <div className="space-y-2">
+                    <Label className="text-xs font-semibold">اختر صفحة موجودة</Label>
+                    <select
+                      disabled={element.locked}
+                      value={BUTTON_LINKS.some((item) => item.path === (element.content as ButtonContent).url) ? (element.content as ButtonContent).url : "__custom"}
+                      onChange={(e) => {
+                        if (e.target.value !== "__custom") updateContent({ action: "link", url: e.target.value });
+                      }}
+                      className="w-full rounded-lg border bg-background p-2 text-xs"
+                    >
+                      {BUTTON_LINKS.map((item) => <option key={item.path} value={item.path}>{item.label}</option>)}
+                      <option value="__custom">كتابة مسار مخصص</option>
+                    </select>
+                    <Label className="text-xs font-semibold">رابط الانتقال</Label>
+                    <Input
+                      disabled={element.locked}
+                      value={(element.content as ButtonContent).url || ""}
+                      onChange={(e) => updateContent({ url: e.target.value, action: "link" })}
+                      placeholder="/admin/ledger"
+                      className="text-xs text-left"
+                      dir="ltr"
+                    />
+                  </div>
+                )}
+                {(element.content as ButtonContent).action === "alert" && (
+                  <Label className="block text-xs font-semibold">الرسالة التي ستظهر
+                    <Textarea
+                      disabled={element.locked}
+                      value={(element.content as ButtonContent).message || ""}
+                      onChange={(e) => updateContent({ message: e.target.value })}
+                      placeholder="اكتب الرسالة التي يراها المستخدم..."
+                      className="mt-1 text-xs text-right"
+                      rows={3}
+                    />
+                  </Label>
+                )}
+                {(element.content as ButtonContent).action === "submit" && (
+                  <p className="text-[10px] leading-5 text-muted-foreground">سيستخدم الزر إرسال النموذج الذي يوجد بداخله.</p>
+                )}
               </div>
             </div>
           )}
@@ -355,7 +415,7 @@ export function PropertiesPanel({
           {element.type === "image" && (
             <div className="space-y-3">
               <div>
-                <Label className="text-xs font-bold mb-1.5 block">رابط الصورة (URL)</Label>
+                <Label className="text-xs font-bold mb-1.5 block">رابط الصورة</Label>
                 <Input
                   disabled={element.locked}
                   value={(element.content as ImageContent).src || ""}
@@ -365,7 +425,7 @@ export function PropertiesPanel({
                 />
               </div>
               <div>
-                <Label className="text-xs font-bold mb-1.5 block">النص البديل (Alt text)</Label>
+                <Label className="text-xs font-bold mb-1.5 block">وصف الصورة</Label>
                 <Input
                   disabled={element.locked}
                   value={(element.content as ImageContent).alt || ""}
