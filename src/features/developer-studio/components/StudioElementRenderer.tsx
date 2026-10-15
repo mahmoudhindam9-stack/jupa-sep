@@ -8,7 +8,7 @@ import { Link } from "@tanstack/react-router";
 import { ElementModel, getElementDisplayName } from "../models/studio.types";
 import { evaluateArithmeticExpression, formatArithmeticResult } from "../utils/arithmetic";
 import { cn } from "@/lib/utils";
-import { Lock, EyeOff } from "lucide-react";
+import { Lock, EyeOff, Home, FileText, Search, Settings, Plus, Download, CheckCircle2, Link2, Mail, Printer, Calculator } from "lucide-react";
 
 interface StudioElementRendererProps {
   element: ElementModel;
@@ -162,6 +162,19 @@ export function StudioElementRenderer({
       case "button": {
         const label = c.label || "زر إجراء";
         const variant = c.variant || "default";
+        const iconName = String(element.attributes?.iconName || "");
+        const ButtonIcon = iconName === "home" ? Home
+          : iconName === "file" ? FileText
+          : iconName === "search" ? Search
+          : iconName === "settings" ? Settings
+          : iconName === "plus" ? Plus
+          : iconName === "download" ? Download
+          : iconName === "check" ? CheckCircle2
+          : iconName === "link" ? Link2
+          : iconName === "mail" ? Mail
+          : iconName === "print" ? Printer
+          : iconName === "calculator" ? Calculator
+          : null;
         const btnContent = (
           <button
             type="button"
@@ -205,7 +218,7 @@ export function StudioElementRenderer({
               }
             }}
           >
-            {label}
+            {ButtonIcon ? <><ButtonIcon size={16} aria-hidden="true" /><span>{label}</span></> : label}
           </button>
         );
 
