@@ -17,6 +17,8 @@ import {
   InputContent,
   ContainerContent,
   DividerContent,
+  PageModel,
+  getElementDisplayName,
 } from "../models/studio.types";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -54,6 +56,8 @@ interface PropertiesPanelProps {
   onUpdateElement: (elementId: string, updates: Partial<ElementModel>) => void;
   onDeleteElement: (elementId: string) => void;
   onDuplicateElement: (elementId: string) => void;
+  pages?: Record<string, PageModel>;
+  elements?: Record<string, ElementModel>;
   className?: string;
 }
 
@@ -62,6 +66,8 @@ export function PropertiesPanel({
   onUpdateElement,
   onDeleteElement,
   onDuplicateElement,
+  pages = {},
+  elements = {},
   className,
 }: PropertiesPanelProps) {
   const [activeTab, setActiveTab] = useState<"content" | "style" | "layout" | "advanced">("content");
@@ -119,14 +125,11 @@ export function PropertiesPanel({
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
               <span className="font-bold text-xs text-foreground truncate">
-                {element.type}
-              </span>
-              <span className="text-[10px] text-muted-foreground font-mono">
-                #{element.id.replace("elem_", "")}
+                {getElementDisplayName(element)}
               </span>
             </div>
             <p className="text-[10px] text-muted-foreground">
-              الإصدار {element.revision} • المخطط v{element.schemaVersion}
+              عدّل المحتوى والشكل أو طريقة عمل العنصر.
             </p>
           </div>
         </div>
@@ -203,7 +206,7 @@ export function PropertiesPanel({
             الأبعاد
           </TabsTrigger>
           <TabsTrigger value="advanced" className="text-[11px] py-1 cursor-pointer">
-            متقدم
+            عرض الأجهزة
           </TabsTrigger>
         </TabsList>
 
@@ -231,7 +234,7 @@ export function PropertiesPanel({
               </div>
 
               <div>
-                <Label className="text-xs font-bold mb-1.5 block">مستوى العنوان (Level)</Label>
+                <Label className="text-xs font-bold mb-1.5 block">حجم العنوان</Label>
                 <div className="grid grid-cols-6 gap-1">
                   {(["h1", "h2", "h3", "h4", "h5", "h6"] as const).map((lvl) => (
                     <Button
@@ -247,7 +250,7 @@ export function PropertiesPanel({
                       onClick={() => updateContent({ level: lvl })}
                       className="text-xs h-7 px-1 font-mono uppercase cursor-pointer"
                     >
-                      {lvl}
+                      {({ h1: "الأكبر", h2: "كبير", h3: "متوسط", h4: "صغير", h5: "أصغر", h6: "الأصغر" } as const)[lvl]}
                     </Button>
                   ))}
                 </div>
@@ -270,7 +273,7 @@ export function PropertiesPanel({
                 />
               </div>
               <div>
-                <Label className="text-xs font-bold mb-1.5 block">صيغة النص</Label>
+                <Label className="text-xs font-bold mb-1.5 block">طريقة عرض النص</Label>
                 <div className="grid grid-cols-2 gap-1.5">
                   <Button
                     type="button"
@@ -298,31 +301,130 @@ export function PropertiesPanel({
                     onClick={() => updateContent({ format: "markdown" })}
                     className="text-xs h-7 cursor-pointer"
                   >
-                    Markdown
+                    نص منسق
                   </Button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Button Content */}
+          {/* Button actions in everyday language */}
           {element.type === "button" && (
             <div className="space-y-3">
               <div>
-                <Label className="text-xs font-bold mb-1.5 block">نص الزر</Label>
+                <Label className="text-xs font-bold mb-1.5 block">النص الظاهر على الزر</Label>
                 <Input
                   disabled={element.locked}
                   value={(element.content as ButtonContent).label || ""}
                   onChange={(e) => updateContent({ label: e.target.value })}
-                  placeholder="نص الزر..."
+                  placeholder="مثال: عرض التقرير"
                   className="text-xs text-right"
                 />
               </div>
               <div>
-                <Label className="text-xs font-bold mb-1.5 block">نوع وشكل الزر (Variant)</Label>
+                <Label className="text-xs font-bold mb-1.5 block">ماذا يحدث عند الضغط؟</Label>
+                <select
+                  disabled={element.locked}
+                  value={(element.content as ButtonContent).action || "none"}
+                  onChange={(e) => updateContent({ action: e.target.value })}
+                  className="w-full h-9 rounded-md border border-border bg-background px-2 text-xs"
+                >
+                  <option value="none">لا يحدث شيء</option>
+                  <option value="link">الانتقال إلى صفحة داخل التطبيق</option>
+                  <option value="external">فتح موقع خارجي</option>
+                  <option value="alert">إظهار رسالة</option>
+                  <option value="formula">حساب قيمة وعرض النتيجة</option>
+                  <option value="toggle">إظهار أو إخفاء عنصر</option>
+                  <option value="submit">إرسال نموذج</option>
+                </select>
+              </div>
+              {(element.content as ButtonContent).action === "link" && Object.values(pages).length > 0 && (
+                <div>
+                  <Label className="text-xs font-bold mb-1.5 block">اختر صفحة الربط</Label>
+                  <select
+                    disabled={element.locked}
+                    value={(element.content as ButtonContent).url || ""}
+                    onChange={(e) => updateContent({ url: e.target.value })}
+                    className="w-full h-9 rounded-md border border-border bg-background px-2 text-xs"
+                  >
+                    <option value="">اختر صفحة...</option>
+                    {Object.values(pages).map((page) => (
+                      <option key={page.id} value={page.route}>{page.name}</option>
+                    ))}
+                    {(element.content as ButtonContent).url && !Object.values(pages).some((page) => page.route === (element.content as ButtonContent).url) && (
+                      <option value={(element.content as ButtonContent).url}>وجهة الربط الحالية</option>
+                    )}
+                  </select>
+                </div>
+              )}
+              {["link", "external"].includes((element.content as ButtonContent).action || "") && (
+                <div>
+                  <Label className="text-xs font-bold mb-1.5 block">
+                    {(element.content as ButtonContent).action === "external" ? "رابط الموقع الخارجي" : "عنوان صفحة الربط (يمكن تعديله)"}
+                  </Label>
+                  <Input
+                    disabled={element.locked}
+                    value={(element.content as ButtonContent).url || ""}
+                    onChange={(e) => updateContent({ url: e.target.value })}
+                    placeholder={(element.content as ButtonContent).action === "external" ? "https://example.com" : "/admin/menu"}
+                    className="text-xs text-left"
+                  />
+                  <p className="text-[10px] text-muted-foreground mt-1">يمكنك اختيار صفحة موجودة أو تعديل وجهة الربط الحالية.</p>
+                </div>
+              )}
+              {(element.content as ButtonContent).action === "alert" && (
+                <div>
+                  <Label className="text-xs font-bold mb-1.5 block">الرسالة التي ستظهر</Label>
+                  <Textarea
+                    disabled={element.locked}
+                    rows={3}
+                    value={(element.content as ButtonContent).message || ""}
+                    onChange={(e) => updateContent({ message: e.target.value })}
+                    placeholder="اكتب الرسالة هنا..."
+                    className="text-xs text-right"
+                  />
+                </div>
+              )}
+              {(element.content as ButtonContent).action === "formula" && (
+                <div>
+                  <Label className="text-xs font-bold mb-1.5 block">المعادلة الحسابية</Label>
+                  <Input
+                    disabled={element.locked}
+                    value={(element.content as ButtonContent).formula || ""}
+                    onChange={(e) => updateContent({ formula: e.target.value })}
+                    placeholder="مثال: (120 + 30) * 1.14"
+                    className="text-xs text-left"
+                  />
+                  <p className="text-[10px] text-muted-foreground mt-1">استخدم الأرقام والأقواس وعلامات + − × ÷. لا حاجة إلى كتابة كود.</p>
+                </div>
+              )}
+              {(element.content as ButtonContent).action === "toggle" && (
+                <div>
+                  <Label className="text-xs font-bold mb-1.5 block">العنصر الذي تريد إظهاره أو إخفاءه</Label>
+                  <select
+                    disabled={element.locked}
+                    value={(element.content as ButtonContent).targetElementId || ""}
+                    onChange={(e) => updateContent({ targetElementId: e.target.value })}
+                    className="w-full h-9 rounded-md border border-border bg-background px-2 text-xs"
+                  >
+                    <option value="">اختر عنصرًا من الصفحة...</option>
+                    {Object.values(elements).filter((item) => item.pageId === element.pageId && item.id !== element.id).map((item) => (
+                      <option key={item.id} value={item.id}>{getElementDisplayName(item)}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {(element.content as ButtonContent).action === "submit" && (
+                <p className="text-[10px] leading-5 text-muted-foreground bg-muted/50 p-2 rounded-lg">
+                  يرسل البيانات عند وضع الزر داخل نموذج. إذا لم يوجد نموذج، سيظهر تنبيه يوضح ذلك في المعاينة.
+                </p>
+              )}
+              <div>
+                <Label className="text-xs font-bold mb-1.5 block">شكل الزر</Label>
                 <div className="grid grid-cols-3 gap-1">
-                  {(["default", "secondary", "outline", "destructive", "ghost"] as const).map(
-                    (v) => (
+                  {(["default", "secondary", "outline", "destructive", "ghost"] as const).map((v) => {
+                    const labels = { default: "أساسي", secondary: "ثانوي", outline: "بإطار", destructive: "تحذيري", ghost: "بسيط" };
+                    return (
                       <Button
                         key={v}
                         type="button"
@@ -330,23 +432,13 @@ export function PropertiesPanel({
                         variant={(element.content as ButtonContent).variant === v ? "default" : "outline"}
                         disabled={element.locked}
                         onClick={() => updateContent({ variant: v })}
-                        className="text-[10px] h-7 px-1 cursor-pointer capitalize"
+                        className="text-[10px] h-7 px-1 cursor-pointer"
                       >
-                        {v}
+                        {labels[v]}
                       </Button>
-                    ),
-                  )}
+                    );
+                  })}
                 </div>
-              </div>
-              <div>
-                <Label className="text-xs font-bold mb-1.5 block">الإجراء عند الضغط</Label>
-                <Input
-                  disabled={element.locked}
-                  value={(element.content as ButtonContent).url || ""}
-                  onChange={(e) => updateContent({ url: e.target.value, action: "link" })}
-                  placeholder="رابط المسار مثل /admin/menu"
-                  className="text-xs text-left font-mono"
-                />
               </div>
             </div>
           )}
@@ -355,7 +447,7 @@ export function PropertiesPanel({
           {element.type === "image" && (
             <div className="space-y-3">
               <div>
-                <Label className="text-xs font-bold mb-1.5 block">رابط الصورة (URL)</Label>
+                <Label className="text-xs font-bold mb-1.5 block">رابط الصورة</Label>
                 <Input
                   disabled={element.locked}
                   value={(element.content as ImageContent).src || ""}
@@ -365,7 +457,7 @@ export function PropertiesPanel({
                 />
               </div>
               <div>
-                <Label className="text-xs font-bold mb-1.5 block">النص البديل (Alt text)</Label>
+                <Label className="text-xs font-bold mb-1.5 block">وصف الصورة</Label>
                 <Input
                   disabled={element.locked}
                   value={(element.content as ImageContent).alt || ""}
@@ -375,7 +467,7 @@ export function PropertiesPanel({
                 />
               </div>
               <div>
-                <Label className="text-xs font-bold mb-1.5 block">ملاءمة الأبعاد (Fit)</Label>
+                <Label className="text-xs font-bold mb-1.5 block">طريقة ملاءمة الصورة</Label>
                 <div className="grid grid-cols-3 gap-1">
                   {(["cover", "contain", "fill"] as const).map((fit) => (
                     <Button
@@ -480,7 +572,7 @@ export function PropertiesPanel({
           {element.type === "input" && (
             <div className="space-y-3">
               <div>
-                <Label className="text-xs font-bold mb-1.5 block">تسمية الحقل (Label)</Label>
+                <Label className="text-xs font-bold mb-1.5 block">اسم الحقل</Label>
                 <Input
                   disabled={element.locked}
                   value={(element.content as InputContent).label || ""}
@@ -490,7 +582,7 @@ export function PropertiesPanel({
                 />
               </div>
               <div>
-                <Label className="text-xs font-bold mb-1.5 block">النص التوضيحي (Placeholder)</Label>
+                <Label className="text-xs font-bold mb-1.5 block">النص المساعد</Label>
                 <Input
                   disabled={element.locked}
                   value={(element.content as InputContent).placeholder || ""}
@@ -506,7 +598,7 @@ export function PropertiesPanel({
           {element.type === "container" && (
             <div className="space-y-3">
               <div>
-                <Label className="text-xs font-bold mb-1.5 block">اتجاه العناصر (Flex Direction)</Label>
+                <Label className="text-xs font-bold mb-1.5 block">ترتيب العناصر</Label>
                 <div className="grid grid-cols-2 gap-1.5">
                   <Button
                     type="button"
@@ -523,7 +615,7 @@ export function PropertiesPanel({
                     }}
                     className="text-xs h-7 cursor-pointer"
                   >
-                    أفقي (Row)
+                    أفقي
                   </Button>
                   <Button
                     type="button"
@@ -540,12 +632,12 @@ export function PropertiesPanel({
                     }}
                     className="text-xs h-7 cursor-pointer"
                   >
-                    عمودي (Column)
+                    عمودي
                   </Button>
                 </div>
               </div>
               <div className="flex items-center justify-between pt-1">
-                <Label className="text-xs font-bold">التفاف العناصر (Wrap)</Label>
+                <Label className="text-xs font-bold">السماح بنقل العناصر إلى سطر جديد</Label>
                 <Switch
                   disabled={element.locked}
                   checked={(element.content as ContainerContent).wrap !== false}
@@ -719,7 +811,7 @@ export function PropertiesPanel({
             {/* Opacity */}
             <div>
               <div className="flex items-center justify-between text-xs mb-1">
-                <Label className="text-xs font-medium">الشفافية (Opacity)</Label>
+                <Label className="text-xs font-medium">الشفافية</Label>
                 <span className="font-mono text-[11px] text-muted-foreground">
                   {Math.round((element.styles.opacity ?? 1) * 100)}%
                 </span>
@@ -769,7 +861,7 @@ export function PropertiesPanel({
             {/* Shadow Preset */}
             <div>
               <Label className="text-[11px] font-medium text-muted-foreground mb-1 block">
-                الظل (Shadow)
+                الظل
               </Label>
               <div className="grid grid-cols-5 gap-1">
                 {(["none", "sm", "md", "lg", "xl"] as const).map((sh) => (
@@ -796,13 +888,13 @@ export function PropertiesPanel({
           <div className="space-y-3 border-b border-border/60 pb-3.5">
             <h4 className="text-xs font-bold text-foreground flex items-center gap-1.5">
               <Maximize className="w-3.5 h-3.5 text-primary" />
-              <span>الأبعاد (Dimensions)</span>
+              <span>الأبعاد</span>
             </h4>
 
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <Label className="text-[11px] font-medium text-muted-foreground mb-1 block">
-                  العرض (Width)
+                  العرض
                 </Label>
                 <Input
                   disabled={element.locked}
@@ -814,7 +906,7 @@ export function PropertiesPanel({
               </div>
               <div>
                 <Label className="text-[11px] font-medium text-muted-foreground mb-1 block">
-                  الارتفاع (Height)
+                  الارتفاع
                 </Label>
                 <Input
                   disabled={element.locked}
@@ -829,7 +921,7 @@ export function PropertiesPanel({
 
           {/* Padding */}
           <div className="space-y-2 border-b border-border/60 pb-3.5">
-            <h4 className="text-xs font-bold text-foreground">الحشو الداخلي (Padding)</h4>
+            <h4 className="text-xs font-bold text-foreground">المساحة الداخلية</h4>
             <div className="grid grid-cols-4 gap-1.5">
               <div>
                 <span className="text-[10px] text-muted-foreground block text-center mb-0.5">أعلى</span>
@@ -876,7 +968,7 @@ export function PropertiesPanel({
 
           {/* Margin */}
           <div className="space-y-2 border-b border-border/60 pb-3.5">
-            <h4 className="text-xs font-bold text-foreground">الهامش الخارجي (Margin)</h4>
+            <h4 className="text-xs font-bold text-foreground">المساحة الخارجية</h4>
             <div className="grid grid-cols-4 gap-1.5">
               <div>
                 <span className="text-[10px] text-muted-foreground block text-center mb-0.5">أعلى</span>
@@ -923,10 +1015,10 @@ export function PropertiesPanel({
 
           {/* Flexbox Alignment */}
           <div className="space-y-2">
-            <h4 className="text-xs font-bold text-foreground">المحاذاة والتباعد (Flex Gap)</h4>
+            <h4 className="text-xs font-bold text-foreground">المحاذاة والتباعد</h4>
             <div>
               <Label className="text-[11px] font-medium text-muted-foreground mb-1 block">
-                مسافة الفراغ بين العناصر (Gap)
+                المسافة بين العناصر
               </Label>
               <Input
                 disabled={element.locked}
@@ -948,7 +1040,7 @@ export function PropertiesPanel({
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-1.5 text-muted-foreground">
                   <Smartphone className="w-3.5 h-3.5" />
-                  <span>إخفاء على الهواتف (Mobile)</span>
+                  <span>إخفاء على الهواتف</span>
                 </span>
                 <Switch
                   disabled={element.locked}
@@ -964,7 +1056,7 @@ export function PropertiesPanel({
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-1.5 text-muted-foreground">
                   <Tablet className="w-3.5 h-3.5" />
-                  <span>إخفاء على الأجهزة اللوحية (Tablet)</span>
+                  <span>إخفاء على الأجهزة اللوحية</span>
                 </span>
                 <Switch
                   disabled={element.locked}
@@ -980,7 +1072,7 @@ export function PropertiesPanel({
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-1.5 text-muted-foreground">
                   <Monitor className="w-3.5 h-3.5" />
-                  <span>إخفاء على الحواسيب (Desktop)</span>
+                  <span>إخفاء على الحواسيب</span>
                 </span>
                 <Switch
                   disabled={element.locked}
@@ -995,33 +1087,8 @@ export function PropertiesPanel({
             </div>
           </div>
 
-          {/* Metadata & Audit */}
-          <div className="space-y-2.5 text-xs text-muted-foreground">
-            <h4 className="text-xs font-bold text-foreground">بيانات التدقيق والهوية</h4>
-            <div className="bg-muted/40 p-2.5 rounded-xl space-y-1.5 font-mono text-[11px]">
-              <div className="flex justify-between">
-                <span>معرف العنصر:</span>
-                <span className="text-foreground">{element.id}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>معرف الصفحة:</span>
-                <span className="text-foreground">{element.pageId}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>العنصر الأب:</span>
-                <span className="text-foreground">{element.parentId || "جذر (Root)"}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>رقم الإصدار:</span>
-                <span className="text-foreground">Rev #{element.revision}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>آخر تحديث:</span>
-                <span className="text-foreground text-[10px]">
-                  {new Date(element.updatedAt).toLocaleTimeString("ar-EG")}
-                </span>
-              </div>
-            </div>
+          <div className="rounded-xl border border-border bg-muted/40 p-3 text-xs leading-5 text-muted-foreground">
+            تُستخدم هذه الإعدادات لتحديد ظهور العنصر على الهاتف أو الجهاز اللوحي أو الحاسوب. لا تحتاج إلى تعديل أي أكواد.
           </div>
         </TabsContent>
       </Tabs>
