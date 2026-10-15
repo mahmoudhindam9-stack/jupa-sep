@@ -46,6 +46,7 @@ import { cn } from "@/lib/utils";
 import { CURRENT_VERSION } from "@/shared/config/version";
 import { GitHubUpdateBanner } from "@/components/admin/GitHubUpdateBanner";
 import { AppBreadcrumbBar } from "@/components/navigation/AppBreadcrumbBar";
+import { isAiStudioPreview } from "@/shared/services/previewAccess";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({ meta: [{ title: "لوحة الإدارة" }] }),
@@ -371,6 +372,7 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
+    const requiresSupabaseSession = isHostedDeployment() && !isAiStudioPreview();
 
     const readLocalUser = (storedUser: string) => {
       const normalized = String(storedUser || "")
@@ -466,7 +468,7 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
           data: { session },
         } = await supabase.auth.getSession();
         if (!mounted) return;
-        if (isHostedDeployment()) {
+        if (requiresSupabaseSession) {
           if (session?.user?.id) {
             await loadHostedProfile(session);
           } else {
@@ -495,7 +497,7 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
       } catch (error) {
         console.error("Al-Mokhtar auth check failed:", error);
         if (!mounted) return;
-        if (!isHostedDeployment() && localUser) {
+        if (!requiresSupabaseSession && localUser) {
           const local = readLocalUser(localUser);
           if (local) setUser(local);
           else {
@@ -518,7 +520,7 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
         void Promise.resolve().then(() => loadHostedProfile(session));
         return;
       }
-      if (isHostedDeployment()) {
+      if (requiresSupabaseSession) {
         setUser(null);
         navigate({ to: "/login" });
         return;
