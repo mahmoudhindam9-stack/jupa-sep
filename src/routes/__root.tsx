@@ -156,6 +156,8 @@ function RootComponent() {
     type StudioRuntimeSnapshot = {
       element: HTMLElement;
       styleAttribute: string | null;
+      svgAttributes: Array<[string, string]> | null;
+      svgInnerHTML: string | null;
       leafTextContent: string | null;
       directTextNodes: Array<{ node: ChildNode; text: string | null }>;
       parent: Node | null;
@@ -192,7 +194,7 @@ function RootComponent() {
       studioSnapshots.set(selector, {
         element,
         styleAttribute: element.getAttribute("style"),
-        svgAttributes: element.matches("svg") ? Array.from(element.attributes).map((attr) => [attr.name, attr.value]) : null,
+        svgAttributes: element.matches("svg") ? Array.from(element.attributes).map((attr): [string, string] => [attr.name, attr.value]) : null,
         svgInnerHTML: element.matches("svg") ? element.innerHTML : null,
         leafTextContent: element.children.length === 0 ? element.textContent ?? "" : null,
         directTextNodes: element.children.length === 0 ? [] : Array.from(element.childNodes)

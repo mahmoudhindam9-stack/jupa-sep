@@ -816,6 +816,8 @@ export function LiveAppPreview({
   };
   const frameWidth = previewSize === "mobile" ? "390px" : previewSize === "tablet" ? "820px" : "100%";
   const selectedIsVector = !!selected && ["svg", "path", "circle", "rect", "line", "polyline", "polygon"].includes(selected.tag);
+  const selectedIconName = selected ? String(edits[selected.selector]?.iconName || "") : "";
+  const SelectedIconComponent = STUDIO_ICON_COMPONENTS[selectedIconName];
   const visibleTreeNodes = useMemo(() => {
     const query = treeFilter.trim().toLocaleLowerCase();
     if (!query) return treeNodes;
@@ -1067,8 +1069,8 @@ export function LiveAppPreview({
                       {STUDIO_ICON_LIBRARY.map((entry) => <option key={entry.value} value={entry.value}>{entry.label}</option>)}
                     </select>
                   </label>
-                  {edits[selected.selector]?.iconName && STUDIO_ICON_COMPONENTS[edits[selected.selector].iconName] &&
-                    React.createElement(STUDIO_ICON_COMPONENTS[edits[selected.selector].iconName], { size: 32, strokeWidth: 2, className: "mx-auto text-primary" })}
+                  {SelectedIconComponent &&
+                    React.createElement(SelectedIconComponent, { size: 32, strokeWidth: 2, className: "mx-auto text-primary" })}
                   <div className="grid grid-cols-2 gap-2">
                     <label className="text-xs">لون التعبئة<input aria-label="لون تعبئة الأيقونة" type="color" value={fillColor} onChange={e => { setFillColor(e.target.value); applyStyle({ fill: e.target.value }); }} className="mt-1 h-9 w-full rounded border bg-background p-1" /></label>
                     <label className="text-xs">لون الخط<input aria-label="لون حد الأيقونة" type="color" value={strokeColor} onChange={e => { setStrokeColor(e.target.value); applyStyle({ stroke: e.target.value }); }} className="mt-1 h-9 w-full rounded border bg-background p-1" /></label>
