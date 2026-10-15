@@ -48,8 +48,9 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
   const [currentRoute, setCurrentRoute] = useState(route);
   const [treeNodes, setTreeNodes] = useState<LiveTreeNode[]>([]);
   const [pageLinks, setPageLinks] = useState<LiveRoute[]>([]);
-  const [showExplorer, setShowExplorer] = useState(true);
-  const [showProperties, setShowProperties] = useState(true);
+  // Keep the real app at its natural width by default; side panels are optional overlays.
+  const [showExplorer, setShowExplorer] = useState(false);
+  const [showProperties, setShowProperties] = useState(false);
   const [treeFilter, setTreeFilter] = useState("");
   const [edits, setEdits] = useState<Record<string, StudioDomEdit>>(initialEdits || {});
   editsRef.current = edits;
@@ -518,9 +519,9 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 overflow-hidden">
+      <div className="relative min-h-0 flex-1 overflow-hidden">
         {showExplorer && (
-          <aside className="flex w-[230px] max-w-[28vw] min-w-[190px] shrink-0 flex-col overflow-hidden border-l bg-card">
+          <aside className="absolute right-0 top-[112px] bottom-0 z-20 flex w-[230px] max-w-[28vw] min-w-[190px] flex-col overflow-hidden rounded-tl-xl border-l border-t bg-card/95 shadow-2xl backdrop-blur">
             <div className="shrink-0 border-b p-3">
               <div className="flex items-center justify-between gap-2">
                 <h3 className="text-sm font-black">صفحات ومكونات التطبيق</h3>
@@ -554,13 +555,13 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
             </section>
           </aside>
         )}
-        <div className="flex min-h-0 min-w-0 flex-1 items-stretch justify-center overflow-auto bg-slate-100 p-2 dark:bg-slate-950 sm:p-4">
+        <div className="absolute inset-0 flex min-h-0 min-w-0 items-stretch justify-center overflow-auto bg-slate-100 p-2 dark:bg-slate-950 sm:p-4">
           <div className="h-full min-h-0 overflow-hidden rounded-xl border bg-background shadow-xl transition-[width] duration-200" style={{ width: frameWidth, minWidth: previewSize === "desktop" ? 0 : frameWidth, flex: previewSize === "desktop" ? "1 1 auto" : "0 0 " + frameWidth }}>
             <iframe key={frameKey} ref={iframeRef} src={safeRoute} onLoad={installBridge} title="معاينة حية للتطبيق" className="h-full min-h-0 w-full border-0 bg-background" />
           </div>
         </div>
         {showProperties && (
-        <aside className="flex w-[280px] max-w-[32vw] min-w-[230px] shrink-0 flex-col gap-3 overflow-y-auto border-r bg-card p-3 2xl:w-[320px]">
+        <aside className="absolute left-0 top-[112px] bottom-0 z-20 flex w-[280px] max-w-[32vw] min-w-[230px] flex-col gap-3 overflow-y-auto rounded-tr-xl border-r border-t bg-card/95 p-3 shadow-2xl backdrop-blur 2xl:w-[320px]">
           <div>
             <h3 className="text-sm font-black">خصائص عنصر التطبيق</h3>
             <p className="mt-1 break-all text-[10px] text-muted-foreground">{selected ? "<" + selected.tag + "> · " + selected.selector : "انقر على عنصر داخل المعاينة"}</p>
@@ -607,7 +608,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
                 <label className="text-xs">استدارة الحواف<input value={borderRadius} placeholder="12px أو 50%" onChange={e => { setBorderRadius(e.target.value); applyStyle({ borderRadius: e.target.value }); }} className="mt-1 w-full rounded-lg border bg-background p-2" /></label>
                 <label className="text-xs">الظل<select value={shadowStyle} onChange={e => { setShadowStyle(e.target.value); applyStyle({ boxShadow: e.target.value }); }} className="mt-1 w-full rounded-lg border bg-background p-2"><option value="none">بدون</option><option value="0 1px 3px rgba(0,0,0,.12)">خفيف</option><option value="0 4px 12px rgba(0,0,0,.16)">متوسط</option><option value="0 12px 32px rgba(0,0,0,.22)">قوي</option><option value="0 0 0 2px rgba(99,102,241,.35)">إطار مضيء</option></select></label>
               </div>
-              <div className="rounded-lg bg-muted/60 p-2 text-[10px] leading-5 text-muted-foreground">حرّك العنصر بالسحب المباشر داخل المعاينة. التغييرات تبقى غير محفوظة حتى تضغط «حفظ المسودة».</div>
+              <div className="rounded-lg bg-muted/60 p-2 text-[10px] leading-5 text-muted-foreground">حرّك العنصر بالسحب المباشر داخل المعاينة. تُحفظ التغييرات محليًا فورًا وتُزامن مع Supabase عند الضغط على «حفظ ومزامنة».</div>
               <div className="grid grid-cols-2 gap-2">
                 <Button type="button" size="sm" variant="outline" onClick={() => action("moveUp")}><ArrowUp size={14} /> ترتيب لأعلى</Button>
                 <Button type="button" size="sm" variant="outline" onClick={() => action("moveDown")}><ArrowDown size={14} /> ترتيب لأسفل</Button>
@@ -617,7 +618,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
               <Button type="button" size="sm" variant="ghost" onClick={() => setSelected(null)}><Check size={14} /> إنهاء التحديد</Button>
             </>
           ) : (
-            <div className="rounded-xl border border-dashed p-4 text-xs leading-6 text-muted-foreground">انقر على نص أو زر أو بطاقة من التطبيق نفسه. التعديلات تُحفظ داخل المسودة، ولا تصبح معتمدة لبقية المستخدمين إلا بعد تأكيد النشر من الخادم.</div>
+            <div className="rounded-xl border border-dashed p-4 text-xs leading-6 text-muted-foreground">انقر على نص أو زر أو بطاقة من التطبيق نفسه. التعديلات تُحفظ محليًا وتظهر على صفحات هذا المتصفح؛ مزامنة Supabase من «حفظ ومزامنة»، والنشر لبقية المستخدمين خطوة منفصلة.</div>
           )}
           <div className="mt-auto rounded-lg bg-muted p-2 text-[10px] leading-5 text-muted-foreground">إذا ظهر خطأ مزامنة، تبقى النسخة المحلية موجودة لكن لا تعتبر محفوظة سحابيًا حتى نجاح التأكيد.</div>
         </aside>
