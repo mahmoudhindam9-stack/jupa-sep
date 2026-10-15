@@ -1070,6 +1070,25 @@ class StudioService {
   }
 
   /**
+   * Apply local Studio edits to this browser's real application pages.
+   * This does not call Supabase; the iframe preview and same-browser app tabs consume this map.
+   */
+  applyLocalDomEditsToRuntime(edits: Record<string, any> = {}): { success: boolean; error?: string } {
+    if (typeof window === "undefined") return { success: true };
+    const key = "restocash_studio_local_dom_edits_v1";
+    try {
+      localStorage.setItem(key, JSON.stringify(edits || {}));
+      window.dispatchEvent(new CustomEvent("studio_local_edits_updated", { detail: edits || {} }));
+      return { success: true };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: "تعذر تطبيق تعديلات الاستوديو محليًا على صفحات التطبيق: " + String(error?.message || ""),
+      };
+    }
+  }
+
+  /**
    * Adopt a row confirmed by Supabase Realtime without triggering another cloud write.
    */
   acceptRealtimeDraft(draft: StudioDraft): void {
