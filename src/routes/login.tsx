@@ -702,13 +702,13 @@ function LoginPage() {
         <p className="text-sm text-muted-foreground text-center">تسجيل الدخول للإدارة</p>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <Label>{isHostedDeployment(isMounted) ? "اسم المستخدم أو البريد الإلكتروني" : "اسم المستخدم"}</Label>
+            <Label>{isHostedDeployment(isMounted) ? "البريد الإلكتروني (أو اسم المستخدم للحسابات القديمة)" : "اسم المستخدم"}</Label>
             <Input
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
-              placeholder={isHostedDeployment(isMounted) ? "admin أو name@example.com" : "admin"}
+              placeholder={isHostedDeployment(isMounted) ? "name@example.com" : "admin"}
               autoComplete="username"
               dir="ltr"
               className="mt-1"
