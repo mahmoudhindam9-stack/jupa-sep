@@ -119,7 +119,7 @@ export const authService = {
 
     const { data, error } = await (supabase as any).rpc("upsert_managed_user_profile", {
       p_user_id: profile.id,
-      p_username: normalizeManagedUsername(profile.username),
+      p_username: normalizeManagedUsername(profile.username ?? ""),
       p_full_name: String(profile.full_name || "").trim(),
       p_phone: String(profile.phone || "").trim(),
       p_role: String(profile.role).trim().toLowerCase(),

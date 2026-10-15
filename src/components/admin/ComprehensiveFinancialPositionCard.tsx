@@ -245,43 +245,70 @@ export function ComprehensiveFinancialPositionCard() {
 
   // Handle Printing
   const handlePrint = () => {
+    const formatUsd = (value: number) =>
+      Number(value || 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
+
     printAccountingDocument({
       title: "تقرير المركز المالي الشامل الموحد",
-      type: "المركز المالي",
-      reference: `FIN-POS-${Date.now().toString().slice(-6)}`,
-      date: new Date().toLocaleDateString("ar-EG"),
-      notes:
-        "تقرير متزامن لحظياً يشمل كافة الإيرادات والمصروفات والأصول والالتزامات للقطاعات المختلفة.",
-      entries: [
+      subtitle:
+        "تقرير موحد للأصول والالتزامات وحقوق الملكية والإيرادات والمصروفات.",
+      documentNo: `FIN-POS-${Date.now().toString().slice(-6)}`,
+      columns: [
+        { key: "account_code", label: "كود الحساب", align: "center" },
+        { key: "description", label: "المؤشر المالي" },
+        { key: "amount", label: "القيمة", align: "left" },
+        { key: "currency", label: "العملة", align: "center" },
+      ],
+      rows: [
         {
           account_code: "1000",
           description: "إجمالي الأصول (Assets)",
-          amount: accountingSummary.totalAssets,
+          amount: formatUsd(accountingSummary.totalAssets),
           currency: "USD",
         },
         {
           account_code: "2000",
           description: "إجمالي الالتزامات (Liabilities)",
-          amount: accountingSummary.totalLiabilities,
+          amount: formatUsd(accountingSummary.totalLiabilities),
           currency: "USD",
         },
         {
           account_code: "3000",
           description: "إجمالي حقوق الملكية (Equity)",
-          amount: accountingSummary.totalEquity,
+          amount: formatUsd(accountingSummary.totalEquity),
           currency: "USD",
         },
         {
           account_code: "4000",
           description: "إجمالي إيرادات المبيعات والقطاعات",
-          amount: accountingSummary.totalRevenues,
+          amount: formatUsd(accountingSummary.totalRevenues),
           currency: "USD",
         },
         {
           account_code: "5000",
           description: "إجمالي المصروفات والمدفوعات",
-          amount: accountingSummary.totalExpenses,
+          amount: formatUsd(accountingSummary.totalExpenses),
           currency: "USD",
+        },
+        {
+          account_code: "6000",
+          description: "صافي الدخل",
+          amount: formatUsd(accountingSummary.netIncome),
+          currency: "USD",
+        },
+      ],
+      totals: [
+        {
+          label: "حالة الميزانية",
+          value: accountingSummary.isBalanced ? "متزنة" : "غير متزنة",
+        },
+        {
+          label: "إجمالي الأصول",
+          value: `${formatUsd(accountingSummary.totalAssets)} USD`,
+        },
+        {
+          label: "صافي الدخل",
+          value: `${formatUsd(accountingSummary.netIncome)} USD`,
         },
       ],
     });
