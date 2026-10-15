@@ -34,7 +34,6 @@ import {
   Eye,
   Printer,
   CheckCircle,
-  Sparkles,
   Settings,
   Building2,
   X,
@@ -107,70 +106,26 @@ function InventoryPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Fetch current user and their profile
+  // Load the authenticated Supabase identity and its real managed profile.
+  // Never synthesize an admin profile or promote the current user from this feature.
   const userProfileQuery = useQuery({
     queryKey: ["current_user_profile"],
     queryFn: async () => {
       const {
         data: { user },
+        error: authError,
       } = await supabase.auth.getUser();
+      if (authError) throw authError;
+      if (!user) return { user: null, profile: null };
 
-      // Fallback dev user profile so operations are never blocked
-      const fallbackUser = user || { id: "dev-user-id", email: "dev@admin.com" };
-      const fallbackProfile = {
-        id: fallbackUser.id,
-        role: "admin",
-        full_name: "مطور (وضع التطوير)",
-      };
-
-      if (!user) return { user: fallbackUser, profile: fallbackProfile };
-
-      const { data: profile } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", user.id)
         .maybeSingle();
 
-      const userProfile = profile ? { ...profile, role: "admin" } : fallbackProfile;
-
-      return { user, profile: userProfile };
-    },
-  });
-
-  const promoteToAdmin = useMutation({
-    mutationFn: async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) throw new Error("المستخدم غير مسجل");
-
-      const { error } = await supabase.from("profiles").upsert(
-        {
-          id: user.id,
-          role: "admin",
-          full_name: user.user_metadata?.full_name || user.email?.split("@")[0] || "مدير النظام",
-          phone: user.user_metadata?.phone || null,
-        },
-        { onConflict: "id" },
-      );
-
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      toast({
-        title: "نجاح الترقية",
-        description: "تمت ترقية حسابك إلى مدير (Admin) بنجاح! يمكنك الآن إدارة المخزن بالكامل.",
-      });
-      userProfileQuery.refetch();
-      inventoryQuery.refetch();
-      queryClient.invalidateQueries({ queryKey: ["admin", "inventory"] });
-    },
-    onError: (err: any) => {
-      toast({
-        title: "خطأ في الترقية",
-        description: err.message || "حدث خطأ غير متوقع أثناء ترقية الحساب.",
-        variant: "destructive",
-      });
+      if (profileError) throw profileError;
+      return { user, profile };
     },
   });
   const [activeTab, setActiveTab] = useState(() => {
@@ -1353,42 +1308,30 @@ function InventoryPage() {
       {/* Grid View */}
       {activeTab === "grid" && (
         <div className="space-y-6">
-          {/* Role and Permissions Warning & Self-Promotion */}
+          {/* Role and permission warning; role changes are managed only from Users & Permissions. */}
           {userProfileQuery.data &&
             (!userProfileQuery.data.profile ||
               !["admin", "manager"].includes(userProfileQuery.data.profile.role)) && (
-              <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="flex gap-3 items-start sm:items-center">
-                  <div className="p-2 bg-amber-500/10 text-amber-600 rounded-xl shrink-0">
-                    <AlertTriangle size={20} />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-sm text-amber-800 dark:text-amber-400">
-                      صلاحيات محدودة في المخزن
-                    </h3>
-                    <p className="text-xs text-amber-700/80 dark:text-amber-400/80 mt-1 leading-relaxed">
-                      حسابك مسجل حالياً بدور{" "}
-                      <span className="font-bold underline">
-                        {userProfileQuery.data.profile?.role
-                          ? roleLabels[userProfileQuery.data.profile.role] ||
-                            userProfileQuery.data.profile.role
-                          : "غير معروف / كاشير"}
-                      </span>
-                      . لتتمكن من تعديل أو إضافة أصناف المخزن، يرجى ترقية حسابك إلى مدير (Admin)
-                      فوراً بضغطة زر واحدة أدناه لتفعيل الصلاحيات الكاملة وتحديث قواعد البيانات.
-                    </p>
-                  </div>
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex gap-3 items-start">
+                <div className="p-2 bg-amber-500/10 text-amber-600 rounded-xl shrink-0">
+                  <AlertTriangle size={20} />
                 </div>
-                <Button
-                  onClick={() => promoteToAdmin.mutate()}
-                  disabled={promoteToAdmin.isPending}
-                  className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs px-4 py-2 shrink-0 flex items-center gap-1.5 self-end sm:self-center"
-                >
-                  <Sparkles size={14} />
-                  <span>
-                    {promoteToAdmin.isPending ? "جاري الترقية..." : "الترقية إلى مدير (Admin) الآن"}
-                  </span>
-                </Button>
+                <div>
+                  <h3 className="font-bold text-sm text-amber-800 dark:text-amber-400">
+                    صلاحيات محدودة في المخزن
+                  </h3>
+                  <p className="text-xs text-amber-700/80 dark:text-amber-400/80 mt-1 leading-relaxed">
+                    {userProfileQuery.data.profile
+                      ? `حسابك مسجل بدور ${roleLabels[userProfileQuery.data.profile.role] || userProfileQuery.data.profile.role}. اطلب من مسؤول النظام مراجعة صلاحية المخزون من صفحة المستخدمين والصلاحيات.`
+                      : "لا يوجد ملف مستخدم مرتبط بحساب الدخول الحالي. لا يمكن منح الصلاحيات تلقائيًا من هذه الصفحة؛ اطلب من مسؤول النظام مراجعة حسابك في صفحة المستخدمين."}
+                  </p>
+                  <Link
+                    to="/admin/users"
+                    className="inline-flex mt-2 text-xs font-bold underline underline-offset-4"
+                  >
+                    فتح صفحة المستخدمين والصلاحيات
+                  </Link>
+                </div>
               </div>
             )}
 
