@@ -1,6 +1,6 @@
 import { useSettings, Currency } from "@/hooks/use-settings";
 import { DollarSign, Coins, Globe, ArrowRightLeft, Settings2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 interface CurrencySwitcherProps {
   pageKey?: string;
@@ -13,6 +13,60 @@ const currencies: { code: Currency; labelAr: string; symbol: string; flag: strin
   { code: "USD", labelAr: "دولار أمريكي", symbol: "$", flag: "🇺🇸" },
   { code: "SSP", labelAr: "جنيه جنوب سوداني", symbol: "ج.س.ج", flag: "🇸🇸" },
 ];
+
+
+function ExchangeRateField({
+  code,
+  label,
+  value,
+  onCommit,
+  compact = false,
+}: {
+  code: Currency;
+  label: string;
+  value: number;
+  onCommit: (code: Currency, rate: number) => void;
+  compact?: boolean;
+}) {
+  const [draft, setDraft] = useState(String(value || ""));
+  useEffect(() => setDraft(String(value || "")), [value]);
+
+  const commit = () => {
+    const parsed = Number(draft);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      onCommit(code, parsed);
+      setDraft(String(parsed));
+    } else {
+      setDraft(String(value || ""));
+    }
+  };
+
+  return (
+    <label className={compact ? "flex min-w-0 items-center gap-1 text-[10px] font-bold" : "flex items-center gap-1.5 text-[11px] font-bold"}>
+      <span className="shrink-0 text-muted-foreground">{label}</span>
+      <input
+        type="number"
+        inputMode="decimal"
+        step="any"
+        min="0.01"
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            commit();
+            (event.currentTarget as HTMLInputElement).blur();
+          }
+        }}
+        className={compact
+          ? "min-w-0 w-14 h-5 px-1 text-center font-mono font-bold bg-background border border-border rounded text-[10px] focus:ring-1 focus:ring-primary focus:outline-none"
+          : "min-w-0 w-16 h-6 px-1.5 text-center font-mono font-bold bg-background border border-input rounded-md text-xs text-foreground focus:ring-1 focus:ring-primary focus:outline-none"}
+        aria-label={`معامل التحويل ${code}`}
+        title={`معامل تحويل الدولار إلى ${label}`}
+      />
+    </label>
+  );
+}
 
 export function CurrencySwitcher({
   pageKey,
@@ -45,27 +99,10 @@ export function CurrencySwitcher({
             );
           })}
         </div>
-        {currency !== "USD" && (
-          <div className="flex items-center justify-between gap-1.5 bg-muted/40 px-2 py-1 rounded-lg border border-border/60 text-[11px]">
-            <span className="text-muted-foreground font-bold shrink-0">1 $ =</span>
-            <input
-              type="number"
-              step="any"
-              value={exchangeRates[currency] || ""}
-              onChange={(e) => {
-                const val = parseFloat(e.target.value);
-                if (!isNaN(val) && val > 0) {
-                  updateExchangeRate(currency, val);
-                }
-              }}
-              className="w-14 h-5 px-1 text-center font-mono font-bold bg-background border border-border rounded text-[11px] focus:ring-1 focus:ring-primary focus:outline-none"
-              title="سعر الصرف اليومي للتحويل مقابل الدولار"
-            />
-            <span className="font-bold text-foreground shrink-0">
-              {currency === "EGP" ? "ج.م" : "ج.س.ج"}
-            </span>
-          </div>
-        )}
+        <div data-studio-preserve="currency-switcher-tools" className="grid grid-cols-2 gap-1.5 bg-muted/40 px-2 py-1.5 rounded-lg border border-border/60">
+          <ExchangeRateField code="EGP" label="ج.م" value={exchangeRates.EGP} onCommit={updateExchangeRate} compact />
+          <ExchangeRateField code="SSP" label="ج.س.ج" value={exchangeRates.SSP} onCommit={updateExchangeRate} compact />
+        </div>}
       </div>
     );
   }
@@ -100,46 +137,20 @@ export function CurrencySwitcher({
         })}
       </div>
 
-      {/* Inline Exchange Rate Input */}
-      {currency !== "USD" ? (
-        <div className="flex items-center gap-1.5 bg-muted/60 px-2.5 py-1 rounded-xl border border-border/80 text-xs mr-1 animate-fadeIn">
-          <span className="text-[11px] font-bold text-muted-foreground shrink-0">
-            سعر الصرف اليومي (1$ =)
-          </span>
-          <input
-            type="number"
-            step="any"
-            min="0.01"
-            value={exchangeRates[currency] || ""}
-            onChange={(e) => {
-              const val = parseFloat(e.target.value);
-              if (!isNaN(val) && val > 0) {
-                updateExchangeRate(currency, val);
-              }
-            }}
-            className="w-16 h-6 px-1.5 text-center font-mono font-bold bg-background border border-input rounded-md text-xs text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
-            placeholder="السعر"
-            title="أدخل سعر الصرف اليومي للتحويل مقابل الدولار"
-          />
-          <span className="text-[11px] font-bold text-primary shrink-0">
-            {currency === "EGP" ? "ج.م" : "ج.س.ج"}
-          </span>
-        </div>
-      ) : (
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setShowRatesModal(!showRatesModal)}
-            className="text-[11px] font-bold text-muted-foreground hover:text-primary transition flex items-center gap-1 px-2 py-0.5 rounded-lg bg-muted/40 hover:bg-muted border border-transparent hover:border-border"
-            title="تعديل أسعار الصرف اليومية للعملات الأخرى"
-          >
-            <ArrowRightLeft size={12} className="text-primary" />
-            <span>
-              أسعار الصرف: 1$ = {exchangeRates.EGP} ج.م | {exchangeRates.SSP} ج.س.ج
-            </span>
-          </button>
-        </div>
-      )}
+      {/* Always-visible exchange-rate controls — protected from accidental visual edits. */}
+      <div data-studio-preserve="currency-switcher-tools" className="flex flex-wrap items-center gap-2 bg-muted/60 px-2.5 py-1.5 rounded-xl border border-border/80 text-xs">
+        <span className="text-[11px] font-black text-muted-foreground shrink-0">المعامل (1$ =)</span>
+        <ExchangeRateField code="EGP" label="ج.م" value={exchangeRates.EGP} onCommit={updateExchangeRate} />
+        <ExchangeRateField code="SSP" label="ج.س.ج" value={exchangeRates.SSP} onCommit={updateExchangeRate} />
+        <button
+          type="button"
+          onClick={() => setShowRatesModal(true)}
+          className="rounded-lg border border-border/70 px-2 py-1 text-[10px] font-bold text-muted-foreground hover:bg-background hover:text-primary"
+          title="فتح نافذة إعدادات أسعار الصرف"
+        >
+          إعدادات المعامل
+        </button>
+      </div>
 
       {showRatesModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
