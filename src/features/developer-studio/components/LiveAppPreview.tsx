@@ -517,6 +517,10 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
       };
       const runFlowAction = (action) => {
         if (!action || typeof action !== "object") return;
+        if (action.type === "sequence" && Array.isArray(action.steps)) {
+          action.steps.forEach((step) => runFlowAction(step));
+          return;
+        }
         if (action.type === "navigate") {
           const path = String(action.destination || "");
           if (path.startsWith("/") && !path.startsWith("//")) window.location.assign(path);
