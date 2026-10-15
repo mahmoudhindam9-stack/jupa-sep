@@ -76,11 +76,9 @@ export function validateManagedUserForm(input: ManagedUserFormInput): {
     throw new Error("أدخل بريدًا إلكترونيًا حقيقيًا وصالحًا لحساب Supabase.");
   }
 
-  if (input.requirePassword && password.length < (input.hosted ? 8 : 4)) {
+  if (input.requirePassword && password.length < 8) {
     throw new Error(
-      input.hosted
-        ? "كلمة مرور Supabase يجب ألا تقل عن 8 أحرف؛ وقد يرفضها Supabase إذا خالفت سياسة قوة كلمة المرور."
-        : "كلمة المرور المحلية يجب ألا تقل عن 4 خانات.",
+      "كلمة المرور يجب ألا تقل عن 8 أحرف؛ وقد يرفضها Supabase إذا خالفت سياسة قوة كلمة المرور.",
     );
   }
 
