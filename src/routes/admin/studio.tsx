@@ -1082,7 +1082,7 @@ export function DeveloperStudioProPage() {
   const selectedElement = selectedElementId ? draft.elements[selectedElementId] : null;
 
   return (
-    <div className="h-[calc(100dvh-72px)] min-h-[560px] w-full flex flex-col overflow-hidden bg-background font-cairo text-right select-none">
+    <div className="h-[calc(100dvh-88px)] min-h-[560px] w-full flex flex-col overflow-hidden bg-background font-cairo text-right select-none">
       {/* ========================================================= */}
       {/* TOP WORKSPACE NAVIGATION & CONTROL BAR                    */}
       {/* ========================================================= */}
