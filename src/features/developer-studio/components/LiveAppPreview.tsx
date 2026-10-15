@@ -110,7 +110,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
       setStatus("تم تحديد العنصر: " + item.tag);
     } else if (event.data.type === "STUDIO_CHANGE") {
       commitEdits(String(event.data.selector), event.data.patch || {});
-      setStatus("تم تعديل المعاينة — التغيير غير محفوظ؛ اضغط «حفظ المسودة»");
+      setStatus("تم تعديل المعاينة فقط — اضغط «حفظ ومزامنة» لاعتماد المسودة على الخادم.");
     } else if (event.data.type === "STUDIO_PROTECTED_ELEMENT") {
       setStatus(String(event.data.message || "هذا العنصر محمي من التعديل لضمان بقاء وظائفه الأصلية."));
     } else if (event.data.type === "STUDIO_BRIDGE_READY") {
