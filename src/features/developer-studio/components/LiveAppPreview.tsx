@@ -25,6 +25,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
   const editsRef = useRef<Record<string, StudioDomEdit>>(initialEdits || {});
   const changeCallbackRef = useRef(onEditsChange);
   const [selected, setSelected] = useState<SelectedDomElement | null>(null);
+  const selectedSelectorRef = useRef<string | null>(null);
   const [linkValue, setLinkValue] = useState("");
   const [showAddItem, setShowAddItem] = useState(false);
   const [addedType, setAddedType] = useState<StudioDomAddedItem["type"]>("button");
@@ -101,9 +102,12 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
       setPageLinks(routes);
     } else if (event.data.type === "STUDIO_SELECTED") {
       const item = event.data.element as SelectedDomElement;
-      setSelected(item);
+      // Clicking the currently selected item toggles its property panel closed.
+      const toggledOff = selectedSelectorRef.current === item.selector;
+      selectedSelectorRef.current = toggledOff ? null : item.selector;
+      setSelected(toggledOff ? null : item);
       setLinkValue(item.href || "");
-      if (editMode) setShowProperties(true);
+      if (editMode) setShowProperties(!toggledOff);
       setTextValue(item.text || "");
       setTextColor(item.color || "#111827");
       setBackgroundColor(item.backgroundColor || "#ffffff");
@@ -142,6 +146,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
   useEffect(() => {
     setReady(false);
     setSelected(null);
+    selectedSelectorRef.current = null;
     setTreeNodes([]);
     setPageLinks([]);
     setStatus("جاري تحميل الصفحة الفعلية: " + safeRoute);
@@ -663,6 +668,8 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
     if (!href.startsWith("/") || href.startsWith("//")) return;
     setCurrentRoute(href);
     setSelected(null);
+    selectedSelectorRef.current = null;
+    setShowProperties(false);
     setFrameKey((value) => value + 1);
   };
 
