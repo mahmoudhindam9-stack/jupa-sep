@@ -480,9 +480,9 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         return Number.isFinite(number) ? number : 0;
       };
       const evaluateFormula = (formula, variables) => {
-        const source = String(formula || "").replace(/\\s/g, "");
+        const source = String(formula || "").replace(/\s/g, "");
         if (!source || source.length > 240) throw new Error("اكتب معادلة قصيرة وصحيحة.");
-        const tokens = source.match(/\\d+(?:\\.\\d*)?|\\.\\d+|[a-zA-Z_][a-zA-Z0-9_]*|[()+\\-*/%]/g) || [];
+        const tokens = source.match(/\d+(?:\.\d*)?|\.\d+|[a-zA-Z_][a-zA-Z0-9_]*|[()+\-*/%]/g) || [];
         if (tokens.join("") !== source) throw new Error("المعادلة تحتوي على رمز غير مدعوم.");
         let index = 0;
         const peek = () => tokens[index];
