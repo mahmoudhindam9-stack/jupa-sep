@@ -209,7 +209,7 @@ export function getElementDisplayName(element: Pick<ElementModel, "type" | "cont
   const content = element.content || {};
   const value = content.title || content.text || content.label || content.alt || content.placeholder;
   if (typeof value === "string" && value.trim()) {
-    return value.trim().replace(/\\s+/g, " ").slice(0, 42);
+    return value.trim().replace(/\s+/g, " ").slice(0, 42);
   }
   return ELEMENT_TYPE_LABELS[element.type] || "عنصر";
 }
