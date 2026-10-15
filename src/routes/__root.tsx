@@ -167,9 +167,19 @@ function RootComponent() {
     let activeLegacyStudioEdits: Record<string, any> = {};
     let studioObserver: MutationObserver | null = null;
 
-    const isStudioPreserved = (element: Element) => {
-      const preserved = '[data-studio-preserve="currency-switcher-tools"], [data-studio-preserve="currency-switcher"]';
-      return !!element.closest(preserved) || !!element.querySelector(preserved);
+    const preservedStudioSelector = '[data-studio-preserve="currency-switcher-tools"], [data-studio-preserve="currency-switcher"]';
+    const isStudioPreserved = (element: Element) => !!element.closest(preservedStudioSelector);
+    const containsStudioPreserved = (element: Element) => !!element.querySelector(preservedStudioSelector);
+    const hidesPreservedStudioUi = (edit: any) => {
+      if (edit?.deleted) return true;
+      const styles = edit?.styles || {};
+      return styles.display === "none" ||
+        styles.visibility === "hidden" ||
+        Number(styles.opacity) === 0 ||
+        ["0", "0px"].includes(String(styles.height || "")) ||
+        ["0", "0px"].includes(String(styles.width || "")) ||
+        ["0", "0px"].includes(String(styles.maxHeight || "")) ||
+        ["0", "0px"].includes(String(styles.maxWidth || ""));
     };
 
     const rememberStudioOriginal = (selector: string, element: HTMLElement) => {
@@ -219,6 +229,7 @@ function RootComponent() {
         let element: Element | null = null;
         try { element = document.querySelector(selector); } catch { continue; }
         if (!element || isStudioPreserved(element)) continue;
+        if (containsStudioPreserved(element) && hidesPreservedStudioUi(edit)) continue;
 
         const html = element as HTMLElement;
         rememberStudioOriginal(selector, html);
