@@ -3182,9 +3182,15 @@ export class ERPStore {
         password: undefined,
       }));
     this.state.users = cleanUsers;
-    this.state.userPermissions = Object.fromEntries(
-      cleanUsers.map((user) => [user.username, { ...(user.permissions || {}) }]),
-    );
+    const permissionsByIdentity: Record<string, UserPermission> = {};
+    for (const user of cleanUsers) {
+      const permissions = { ...(user.permissions || {}) };
+      permissionsByIdentity[user.username] = permissions;
+      if (user.email) {
+        permissionsByIdentity[String(user.email).trim().toLowerCase()] = { ...permissions };
+      }
+    }
+    this.state.userPermissions = permissionsByIdentity;
     this.saveState();
   }
   upsertUser(user) {
