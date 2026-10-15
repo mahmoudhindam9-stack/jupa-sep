@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Check, Copy, Eye, EyeOff, Layers, Monitor, RefreshCw, Settings2, Smartphone, Tablet, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { StudioDomEdit } from "../models/studio.types";
+import type { StudioDomAddedItem, StudioDomEdit } from "../models/studio.types";
 
 type SelectedDomElement = {
   selector: string; tag: string; text: string; color: string; backgroundColor: string;
   fontSize: string; fontWeight: string; width: string; height: string;
   fill: string; stroke: string; strokeWidth: string; opacity: string;
-  borderRadius: string; rotate: string; textAlign: string;
+  borderRadius: string; rotate: string; textAlign: string; href: string; isLink: boolean;
 };
 type LiveTreeNode = { selector: string; tag: string; label: string; children: LiveTreeNode[] };
 type LiveRoute = { href: string; label: string };
@@ -25,6 +25,15 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
   const editsRef = useRef<Record<string, StudioDomEdit>>(initialEdits || {});
   const changeCallbackRef = useRef(onEditsChange);
   const [selected, setSelected] = useState<SelectedDomElement | null>(null);
+  const [linkValue, setLinkValue] = useState("");
+  const [showAddItem, setShowAddItem] = useState(false);
+  const [addedType, setAddedType] = useState<StudioDomAddedItem["type"]>("button");
+  const [addedName, setAddedName] = useState("عنصر جديد");
+  const [addedText, setAddedText] = useState("عنصر جديد");
+  const [addedPlacement, setAddedPlacement] = useState<StudioDomAddedItem["placement"]>("after");
+  const [addedAction, setAddedAction] = useState<NonNullable<StudioDomAddedItem["action"]>>("none");
+  const [addedUrl, setAddedUrl] = useState("");
+  const [addedMessage, setAddedMessage] = useState("تم تنفيذ الإجراء.");
   const [textValue, setTextValue] = useState("");
   const [textColor, setTextColor] = useState("#111827");
   const [backgroundColor, setBackgroundColor] = useState("#ffffff");
@@ -93,6 +102,8 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
     } else if (event.data.type === "STUDIO_SELECTED") {
       const item = event.data.element as SelectedDomElement;
       setSelected(item);
+      setLinkValue(item.href || "");
+      if (editMode) setShowProperties(true);
       setTextValue(item.text || "");
       setTextColor(item.color || "#111827");
       setBackgroundColor(item.backgroundColor || "#ffffff");
@@ -136,6 +147,11 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
 
   useEffect(() => {
     setEditMode(designerMode);
+    setShowExplorer(designerMode);
+    if (!designerMode) {
+      setShowProperties(false);
+      setShowAddItem(false);
+    }
   }, [designerMode]);
 
   useEffect(() => {
@@ -582,6 +598,11 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
           <Button type="button" size="sm" variant={editMode ? "default" : "outline"} className="h-7 gap-1 px-2 text-xs" onClick={() => setEditMode(v => !v)}>
             {editMode ? <EyeOff size={14} /> : <Eye size={14} />}{editMode ? "وضع التحرير" : "وضع التفاعل"}
           </Button>
+          {designerMode && (
+            <Button type="button" size="sm" variant={showAddItem ? "default" : "outline"} className="h-7 gap-1 px-2 text-xs" disabled={!selected} onClick={() => setShowAddItem(v => !v)} title={selected ? "إضافة عنصر في الموضع المحدد داخل الصفحة الفعلية" : "حدد الموضع أولًا داخل المعاينة"}>
+              <Plus size={14} /> إضافة عنصر
+            </Button>
+          )}
           <Button type="button" size="sm" variant={showExplorer ? "default" : "outline"} className="h-7 gap-1 px-2 text-xs" onClick={() => setShowExplorer(v => !v)}><Layers size={14} /> {showExplorer ? "إخفاء الشجرة" : "الصفحات والشجرة"}</Button>
           <Button type="button" size="sm" variant={showProperties ? "default" : "outline"} className="h-7 gap-1 px-2 text-xs" onClick={() => setShowProperties(v => !v)}><Settings2 size={14} /> {showProperties ? "إخفاء الخصائص" : "الخصائص"}</Button>
           <Button type="button" size="sm" variant="outline" className="h-7 gap-1 px-2 text-xs" onClick={() => setFrameKey(v => v + 1)}><RefreshCw size={14} /> تحديث</Button>
@@ -589,6 +610,83 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
       </div>
 
       <div className="relative min-h-0 flex-1 overflow-hidden">
+        {showAddItem && designerMode && (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!selected) {
+                setStatus("حدد موضعًا في الصفحة الفعلية أولًا.");
+                return;
+              }
+              const cleanUrl = addedUrl.trim();
+              const validUrl = !cleanUrl || (cleanUrl.startsWith("/") && !cleanUrl.startsWith("//")) || /^https?:\/\//i.test(cleanUrl);
+              if (!validUrl) {
+                setStatus("استخدم مسارًا داخليًا يبدأ بشرطة واحدة أو رابط HTTP/HTTPS.");
+                return;
+              }
+              const item: StudioDomAddedItem = {
+                id: "studio-added-" + Date.now().toString(36),
+                type: addedType,
+                name: addedName.trim() || "عنصر جديد",
+                text: addedText.trim() || addedName.trim() || "عنصر جديد",
+                placement: addedPlacement,
+                action: addedAction,
+                url: cleanUrl,
+                message: addedMessage.trim(),
+              };
+              const previous = editsRef.current[selected.selector]?.additions || [];
+              commitEdits(selected.selector, { additions: [...previous, item] });
+              setShowAddItem(false);
+              setStatus("تمت إضافة العنصر إلى معاينة المسودة. احفظ المسودة ثم انشرها عند اكتمال الاختبار.");
+            }}
+            className="absolute right-1/2 top-3 z-40 w-[min(440px,92%)] translate-x-1/2 space-y-3 rounded-2xl border bg-card/95 p-4 text-right shadow-2xl backdrop-blur"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-black">إضافة عنصر إلى الصفحة</h3>
+                <p className="mt-1 text-[10px] text-muted-foreground">{selected ? "الموضع محدد من معاينة التطبيق الفعلية." : "انقر على موضع في الصفحة أولًا."}</p>
+              </div>
+              <Button type="button" variant="ghost" size="sm" className="h-7 px-2" onClick={() => setShowAddItem(false)}>إغلاق</Button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="text-xs font-bold">نوع العنصر
+                <select value={addedType} onChange={(event) => setAddedType(event.target.value as StudioDomAddedItem["type"])} className="mt-1 h-9 w-full rounded-lg border bg-background px-2 font-normal">
+                  <option value="text">نص</option><option value="button">زر</option><option value="input">حقل إدخال</option><option value="card">بطاقة</option><option value="divider">فاصل</option><option value="link">رابط</option>
+                </select>
+              </label>
+              <label className="text-xs font-bold">مكان الإضافة
+                <select value={addedPlacement} onChange={(event) => setAddedPlacement(event.target.value as StudioDomAddedItem["placement"])} className="mt-1 h-9 w-full rounded-lg border bg-background px-2 font-normal">
+                  <option value="after">بعد العنصر المحدد</option><option value="inside">داخل العنصر المحدد</option>
+                </select>
+              </label>
+            </div>
+            <label className="block text-xs font-bold">اسم العنصر
+              <input value={addedName} onChange={(event) => setAddedName(event.target.value)} className="mt-1 h-9 w-full rounded-lg border bg-background px-3 font-normal" placeholder="مثال: زر فتح التقارير" />
+            </label>
+            {addedType !== "divider" && <label className="block text-xs font-bold">النص أو التسمية
+              <input value={addedText} onChange={(event) => setAddedText(event.target.value)} className="mt-1 h-9 w-full rounded-lg border bg-background px-3 font-normal" placeholder="النص الظاهر للمستخدم" />
+            </label>}
+            {(addedType === "button" || addedType === "link") && (
+              <>
+                <label className="block text-xs font-bold">وظيفة العنصر
+                  <select value={addedAction} onChange={(event) => setAddedAction(event.target.value as NonNullable<StudioDomAddedItem["action"]>)} className="mt-1 h-9 w-full rounded-lg border bg-background px-2 font-normal">
+                    <option value="none">دون ربط حتى الآن</option><option value="message">إظهار رسالة</option><option value="navigate">فتح صفحة داخل التطبيق</option><option value="external">فتح موقع خارجي</option>
+                  </select>
+                </label>
+                {(addedAction === "navigate" || addedAction === "external") && <label className="block text-xs font-bold">المسار أو رابط الوجهة
+                  <input value={addedUrl} onChange={(event) => setAddedUrl(event.target.value)} className="mt-1 h-9 w-full rounded-lg border bg-background px-3 font-normal" placeholder={addedAction === "navigate" ? "/admin/reports" : "https://example.com"} />
+                </label>}
+                {addedAction === "message" && <label className="block text-xs font-bold">الرسالة
+                  <input value={addedMessage} onChange={(event) => setAddedMessage(event.target.value)} className="mt-1 h-9 w-full rounded-lg border bg-background px-3 font-normal" />
+                </label>}
+              </>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button type="button" size="sm" variant="outline" onClick={() => setShowAddItem(false)}>إلغاء</Button>
+              <Button type="submit" size="sm" disabled={!selected}>إضافة للمعاينة</Button>
+            </div>
+          </form>
+        )}
         {showExplorer && (
           <aside className="absolute right-0 top-[112px] bottom-0 z-20 flex w-[230px] max-w-[28vw] min-w-[190px] flex-col overflow-hidden rounded-tl-xl border-l border-t bg-card/95 shadow-2xl backdrop-blur">
             <div className="shrink-0 border-b p-3">
@@ -633,10 +731,27 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         <aside className="absolute left-0 top-[112px] bottom-0 z-20 flex w-[280px] max-w-[32vw] min-w-[230px] flex-col gap-3 overflow-y-auto rounded-tr-xl border-r border-t bg-card/95 p-3 shadow-2xl backdrop-blur 2xl:w-[320px]">
           <div>
             <h3 className="text-sm font-black">خصائص عنصر التطبيق</h3>
-            <p className="mt-1 break-all text-[10px] text-muted-foreground">{selected ? "<" + selected.tag + "> · " + selected.selector : "انقر على عنصر داخل المعاينة"}</p>
+            <p className="mt-1 text-[10px] text-muted-foreground">{selected ? "نوع العنصر: " + ({a: "رابط", button: "زر", input: "حقل إدخال", textarea: "حقل نصي", select: "قائمة اختيار", img: "صورة", h1: "عنوان", h2: "عنوان", h3: "عنوان", p: "نص", div: "حاوية", section: "قسم"}[selected.tag] || "عنصر") : "انقر على عنصر داخل المعاينة"}</p>
           </div>
           {selected ? (
             <>
+              <div className="space-y-2 rounded-xl border p-3">
+                <h4 className="text-xs font-black">الرابط الحالي والوجهة</h4>
+                {selected.isLink ? (
+                  <>
+                    <input value={linkValue} onChange={(event) => setLinkValue(event.target.value)} placeholder="/مسار-داخلي أو https://..." className="h-9 w-full rounded-lg border bg-background px-2 text-xs font-normal" aria-label="الرابط الحالي" />
+                    <Button type="button" size="sm" variant="outline" className="w-full" onClick={() => {
+                      const value = linkValue.trim();
+                      if (value && !(value.startsWith("/") && !value.startsWith("//")) && !/^https?:\/\//i.test(value)) {
+                        setStatus("الرابط يجب أن يكون مسارًا داخليًا أو HTTP/HTTPS.");
+                        return;
+                      }
+                      send({ action: "href", url: value });
+                      setStatus("تم تحديث الرابط في المعاينة المحلية.");
+                    }}>تحديث الرابط الحالي</Button>
+                  </>
+                ) : <p className="text-[10px] leading-5 text-muted-foreground">العنصر المحدد لا يحتوي على رابط مباشر. لعرض روابط عنصر آخر، حدده من الصفحة. يمكن إضافة زر جديد مرتبط من «إضافة عنصر».</p>}
+              </div>
               {!selectedIsVector && <label className="block text-xs font-bold">النص<textarea value={textValue} onChange={e => editText(e.target.value)} className="mt-1 min-h-16 w-full rounded-lg border bg-background p-2 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>}
               <div className="grid grid-cols-2 gap-2">
                 {!selectedIsVector && <label className="text-xs">لون النص<input aria-label="لون النص" type="color" value={/^#[0-9a-f]{6}$/i.test(textColor) ? textColor : "#111827"} onChange={e => { setTextColor(e.target.value); applyStyle({ color: e.target.value }); }} className="mt-1 h-9 w-full rounded border bg-background p-1" /></label>}
