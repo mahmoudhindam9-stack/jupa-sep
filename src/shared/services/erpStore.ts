@@ -303,6 +303,16 @@ export interface UserPermission {
   branch_mgmt?: boolean;
   audit_logs?: boolean;
   users_roles?: boolean;
+  developer_options?: boolean;
+  restaurant_open_shift?: boolean;
+  restaurant_returns?: boolean;
+  park_open_shift?: boolean;
+  park_returns?: boolean;
+
+  // Legacy aliases retained for older persisted profiles and screens.
+  approval_journals?: boolean;
+  approval_expenses?: boolean;
+  approval_revenues?: boolean;
 
   // Granular Sub-permissions & Super Admin Controls
   // 1. Orders & Sales
