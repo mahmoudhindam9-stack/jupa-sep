@@ -829,6 +829,11 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
           </div>
           {selected ? (
             <>
+              <details open className="rounded-xl border bg-background/60 p-2">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-lg px-1 py-1 text-xs font-black">
+                  <span>المحتوى والروابط</span><span className="text-[10px] font-normal text-muted-foreground">النص والوجهة</span>
+                </summary>
+                <div className="mt-2 space-y-2">
               <div className="space-y-2 rounded-xl border p-3">
                 <h4 className="text-xs font-black">الرابط الحالي والوجهة</h4>
                 {selected.isLink ? (
@@ -847,6 +852,13 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
                 ) : <p className="text-[10px] leading-5 text-muted-foreground">العنصر المحدد لا يحتوي على رابط مباشر. لعرض روابط عنصر آخر، حدده من الصفحة. يمكن إضافة زر جديد مرتبط من «إضافة عنصر».</p>}
               </div>
               {!selectedIsVector && <label className="block text-xs font-bold">النص<textarea value={textValue} onChange={e => editText(e.target.value)} className="mt-1 min-h-16 w-full rounded-lg border bg-background p-2 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>}
+                </div>
+              </details>
+              <details className="rounded-xl border bg-background/60 p-2">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-lg px-1 py-1 text-xs font-black">
+                  <span>المظهر والأبعاد</span><span className="text-[10px] font-normal text-muted-foreground">الألوان والحجم والمحاذاة</span>
+                </summary>
+                <div className="mt-2 space-y-3">
               <div className="grid grid-cols-2 gap-2">
                 {!selectedIsVector && <label className="text-xs">لون النص<input aria-label="لون النص" type="color" value={/^#[0-9a-f]{6}$/i.test(textColor) ? textColor : "#111827"} onChange={e => { setTextColor(e.target.value); applyStyle({ color: e.target.value }); }} className="mt-1 h-9 w-full rounded border bg-background p-1" /></label>}
                 <label className="text-xs">{selectedIsVector ? "خلفية الأيقونة" : "لون الخلفية"}<input aria-label="لون الخلفية" type="color" value={/^#[0-9a-f]{6}$/i.test(backgroundColor) ? backgroundColor : "#ffffff"} onChange={e => { setBackgroundColor(e.target.value); applyStyle({ backgroundColor: e.target.value }); }} className="mt-1 h-9 w-full rounded border bg-background p-1" /></label>
@@ -886,13 +898,22 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
                 <label className="text-xs">استدارة الحواف<input value={borderRadius} placeholder="12px أو 50%" onChange={e => { setBorderRadius(e.target.value); applyStyle({ borderRadius: e.target.value }); }} className="mt-1 w-full rounded-lg border bg-background p-2" /></label>
                 <label className="text-xs">الظل<select value={shadowStyle} onChange={e => { setShadowStyle(e.target.value); applyStyle({ boxShadow: e.target.value }); }} className="mt-1 w-full rounded-lg border bg-background p-2"><option value="none">بدون</option><option value="0 1px 3px rgba(0,0,0,.12)">خفيف</option><option value="0 4px 12px rgba(0,0,0,.16)">متوسط</option><option value="0 12px 32px rgba(0,0,0,.22)">قوي</option><option value="0 0 0 2px rgba(99,102,241,.35)">إطار مضيء</option></select></label>
               </div>
-              <div className="rounded-lg bg-muted/60 p-2 text-[10px] leading-5 text-muted-foreground">حرّك العنصر بالسحب المباشر داخل المعاينة. تُحفظ التغييرات محليًا فورًا وتُزامن مع Supabase عند الضغط على «حفظ ومزامنة».</div>
+                </div>
+              </details>
+              <details className="rounded-xl border bg-background/60 p-2">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-lg px-1 py-1 text-xs font-black">
+                  <span>الترتيب والإجراءات</span><span className="text-[10px] font-normal text-muted-foreground">نسخ، إخفاء، ترتيب</span>
+                </summary>
+                <div className="mt-2 space-y-2">
+              <div className="rounded-lg bg-muted/60 p-2 text-[10px] leading-5 text-muted-foreground">تظهر هذه التعديلات في معاينة المسودة فقط. استخدم «حفظ ومزامنة» لحفظ المسودة، ثم «نشر» لتطبيقها على بقية مستخدمي التطبيق.</div>
               <div className="grid grid-cols-2 gap-2">
                 <Button type="button" size="sm" variant="outline" onClick={() => action("moveUp")}><ArrowUp size={14} /> ترتيب لأعلى</Button>
                 <Button type="button" size="sm" variant="outline" onClick={() => action("moveDown")}><ArrowDown size={14} /> ترتيب لأسفل</Button>
                 <Button type="button" size="sm" variant="outline" onClick={() => action("duplicate", { duplicateCount: Math.min(5, Number(edits[selected.selector]?.duplicateCount || 0) + 1) })}><Copy size={14} /> نسخ العنصر</Button>
                 <Button type="button" size="sm" variant="destructive" onClick={() => action("delete", { deleted: true })}><Trash2 size={14} /> إخفاء العنصر</Button>
               </div>
+                </div>
+              </details>
               <Button type="button" size="sm" variant="ghost" onClick={() => { setSelected(null); selectedSelectorRef.current = null; }}><Check size={14} /> إنهاء التحديد</Button>
             </>
           ) : (
