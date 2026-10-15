@@ -10,10 +10,8 @@ const MANAGED_USER_ROLES = new Set([
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
-export function normalizeManagedUsername(value: string): string {
+export function normalizeManagedDigits(value: string): string {
   return String(value ?? "")
-    .trim()
-    .toLowerCase()
     .replace(/[٠۰]/g, "0")
     .replace(/[١۱]/g, "1")
     .replace(/[٢۲]/g, "2")
@@ -24,6 +22,10 @@ export function normalizeManagedUsername(value: string): string {
     .replace(/[٧۷]/g, "7")
     .replace(/[٨۸]/g, "8")
     .replace(/[٩۹]/g, "9");
+}
+
+export function normalizeManagedUsername(value: string): string {
+  return normalizeManagedDigits(value).trim().toLowerCase();
 }
 
 export function normalizeManagedEmail(value: string): string {
@@ -55,7 +57,7 @@ export function validateManagedUserForm(input: ManagedUserFormInput): {
   const username = normalizeManagedUsername(input.username);
   const email = normalizeManagedEmail(input.email ?? "");
   const phone = String(input.phone ?? "").trim();
-  const password = String(input.password ?? "");
+  const password = normalizeManagedDigits(String(input.password ?? ""));
 
   if (!fullName) throw new Error("الاسم الكامل مطلوب.");
   if (fullName.length > 120) throw new Error("الاسم الكامل لا يمكن أن يتجاوز 120 حرفًا.");
@@ -82,7 +84,10 @@ export function validateManagedUserForm(input: ManagedUserFormInput): {
     );
   }
 
-  if (input.requirePasswordConfirmation && password !== String(input.passwordConfirmation ?? "")) {
+  if (
+    input.requirePasswordConfirmation &&
+    password !== normalizeManagedDigits(String(input.passwordConfirmation ?? ""))
+  ) {
     throw new Error("تأكيد كلمة المرور غير مطابق.");
   }
 
