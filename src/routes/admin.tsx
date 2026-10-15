@@ -293,18 +293,24 @@ function permissionsForUser(
   } | null,
 ): Record<string, boolean> {
   const current = user?.permissions || {};
-  const isUserAdmin =
+
+  // On hosted environments, a confirmed Supabase profile is authoritative.
+  // Only the explicit super-admin override grants every permission; the role or
+  // a username/email containing "admin" must never manufacture access.
+  if (user?.permissionsManaged) {
+    return current.super_admin_full_access === true
+      ? defaultPermissionsForRole("super_admin")
+      : current;
+  }
+
+  // Local-only mode retains role defaults for local development records, but does
+  // not infer administration from a name, email, or editable browser storage key.
+  const isLocalAdmin =
     user?.role === "admin" ||
     user?.role === "super_admin" ||
-    user?.username?.toLowerCase() === "admin" ||
-    user?.email?.toLowerCase().includes("admin") ||
-    current.super_admin_full_access === true ||
-    current.admin === true;
+    current.super_admin_full_access === true;
+  if (isLocalAdmin) return defaultPermissionsForRole("super_admin");
 
-  if (isUserAdmin) {
-    return defaultPermissionsForRole("super_admin");
-  }
-  if (user?.permissionsManaged) return current;
   const hasGranular = Object.keys(current).some(
     (key) => key.includes("_view") || key.endsWith("_access") || key.startsWith("system_"),
   );
@@ -323,18 +329,23 @@ function hasAnyPermission(
   } | null,
   keys: string[] = [],
 ): boolean {
+  if (!user) return false;
   if (keys.length === 0) return true;
+
+  if (user.permissionsManaged) {
+    if (user.permissions?.super_admin_full_access === true) return true;
+    const permissions = user.permissions || {};
+    return keys.some((key) => permissions[key] === true);
+  }
+
   if (
-    !user ||
     user.role === "admin" ||
     user.role === "super_admin" ||
-    user.username?.toLowerCase() === "admin" ||
-    user.email?.toLowerCase().includes("admin") ||
-    user.permissions?.super_admin_full_access === true ||
-    user.permissions?.admin === true
+    user.permissions?.super_admin_full_access === true
   ) {
-    return true; // Admin ALWAYS has access to all pages!
+    return true;
   }
+
   const permissions = permissionsForUser(user);
   return keys.some((key) => permissions[key] === true);
 }
@@ -380,27 +391,13 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
         return storedName.includes("@") ? storedName === normalized : storedName === username;
       });
 
-      const isRecordAdmin =
-        username === "admin" ||
-        normalized === "admin" ||
-        normalized.includes("admin") ||
-        localRecord?.role === "admin" ||
-        localRecord?.role === "super_admin";
-
+      // A local account must exist in the local user store and have a password.
+      // The typed username/email alone cannot create an administrator session.
       if (!localRecord || typeof localRecord.password !== "string" || !localRecord.password) {
-        if (isRecordAdmin) {
-          return {
-            email: storedUser,
-            username: "admin",
-            role: "admin",
-            permissions: defaultPermissionsForRole("super_admin"),
-            permissionsManaged: false,
-          };
-        }
         return null;
       }
 
-      const role = isRecordAdmin ? "admin" : localRecord.role || "cashier";
+      const role = localRecord.role || "cashier";
       const permissions =
         role === "admin" || role === "super_admin"
           ? defaultPermissionsForRole("super_admin")
@@ -475,8 +472,17 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
           data: { session },
         } = await supabase.auth.getSession();
         if (!mounted) return;
-        if (isHostedDeployment() && session?.user?.id) {
-          await loadHostedProfile(session);
+        if (isHostedDeployment()) {
+          if (session?.user?.id) {
+            await loadHostedProfile(session);
+          } else {
+            localStorage.removeItem("restocash_auth_user");
+            localStorage.removeItem("restocash_user_role");
+            sessionStorage.removeItem("restocash_auth_user");
+            sessionStorage.removeItem("restocash_user_role");
+            setUser(null);
+            navigate({ to: "/login" });
+          }
         } else if (localUser) {
           const local = readLocalUser(localUser);
           if (local) setUser(local);
@@ -495,7 +501,7 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
       } catch (error) {
         console.error("Al-Mokhtar auth check failed:", error);
         if (!mounted) return;
-        if (localUser) {
+        if (!isHostedDeployment() && localUser) {
           const local = readLocalUser(localUser);
           if (local) setUser(local);
           else {
@@ -516,6 +522,11 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
       if (!mounted) return;
       if (session?.user?.id && isHostedDeployment()) {
         void Promise.resolve().then(() => loadHostedProfile(session));
+        return;
+      }
+      if (isHostedDeployment()) {
+        setUser(null);
+        navigate({ to: "/login" });
         return;
       }
       const localUser =
@@ -687,8 +698,10 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
                 "mall_garden_finance",
                 "super_admin_full_access",
               ];
-            } else if (pathname.startsWith("/admin/hr") || pathname.startsWith("/admin/users")) {
-              required = ["hr", "users_roles", "system_manage_users"];
+            } else if (pathname.startsWith("/admin/users")) {
+              required = ["users_roles", "system_manage_users", "super_admin_full_access"];
+            } else if (pathname.startsWith("/admin/hr")) {
+              required = ["hr", "hr_view_attendance", "super_admin_full_access"];
             } else if (
               pathname.startsWith("/admin/restaurant") ||
               pathname.startsWith("/admin/orders")
