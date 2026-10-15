@@ -122,21 +122,8 @@ function MallManagementPage() {
     () => erpStore.getState(),
   );
 
-  const [currentUserEmail, setCurrentUserEmail] = useState("admin");
-  const [currentUserRole, setCurrentUserRole] = useState("super_admin");
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const email =
-        localStorage.getItem("restocash_auth_user") ||
-        sessionStorage.getItem("restocash_auth_user") ||
-        "admin";
-      const role = localStorage.getItem("restocash_user_role") || "super_admin";
-      setCurrentUserEmail(email);
-      setCurrentUserRole(role);
-    }
-  }, []);
-  const currentUserPerms = state.userPermissions?.[currentUserEmail] || {};
+  // Permissions for this route are enforced by AdminLayout against the authenticated
+  // Supabase profile. Do not infer a role from localStorage defaults.
   const shops: MallShop[] = state.mallShops || [];
   const payments: MallRentalPayment[] = state.mallPayments || [];
   const gardenRevenues: MallGardenRevenue[] = state.mallGardenRevenues || [];
