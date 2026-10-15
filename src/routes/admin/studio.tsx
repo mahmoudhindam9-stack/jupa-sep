@@ -112,7 +112,7 @@ export function DeveloperStudioProPage() {
   const [historyPointer, setHistoryPointer] = useState<number>(-1);
 
   // Open on the real application by default; the component builder is available separately.
-  const [workspaceMode, setWorkspaceMode] = useState<"builder" | "live" | "workflow" | "app-editor">("live");
+  const [workspaceMode, setWorkspaceMode] = useState<"builder" | "live" | "workflow" | "app-editor">("app-editor");
 
   // Modals
   const [showPublishModal, setShowPublishModal] = useState(false);
@@ -1082,7 +1082,7 @@ export function DeveloperStudioProPage() {
   const selectedElement = selectedElementId ? draft.elements[selectedElementId] : null;
 
   return (
-    <div className="h-[calc(100dvh-88px)] min-h-[560px] flex flex-col overflow-hidden bg-background font-cairo text-right select-none">
+    <div className="h-[calc(100dvh-72px)] min-h-[560px] w-full flex flex-col overflow-hidden bg-background font-cairo text-right select-none">
       {/* ========================================================= */}
       {/* TOP WORKSPACE NAVIGATION & CONTROL BAR                    */}
       {/* ========================================================= */}
@@ -1208,48 +1208,22 @@ export function DeveloperStudioProPage() {
               <Layers className="w-3.5 h-3.5" /><span>فصل المجموعة</span>
             </Button>
           )}
-          <Button
-            type="button"
-            variant={workspaceMode === "builder" ? "default" : "outline"}
-            size="sm"
-            onClick={() => setWorkspaceMode("builder")}
-            className="h-8 px-2.5 text-xs gap-1.5 cursor-pointer font-bold"
-          >
-            <Layers className="w-3.5 h-3.5" />
-            <span>مصمم العناصر</span>
-          </Button>
-          <Button
-            type="button"
-            variant={workspaceMode === "workflow" ? "default" : "outline"}
-            size="sm"
-            onClick={() => setWorkspaceMode("workflow")}
-            className="h-8 px-2.5 text-xs gap-1.5 cursor-pointer font-bold"
-            title="إضافة خطوات وربطها ومعاينة النتيجة"
-          >
-            <GitBranch className="w-3.5 h-3.5" />
-            <span>مسارات العمل</span>
-          </Button>
-          <Button
-            type="button"
-            variant={workspaceMode === "app-editor" ? "default" : "outline"}
-            size="sm"
-            onClick={() => setWorkspaceMode("app-editor")}
-            className="h-8 px-2.5 text-xs gap-1.5 cursor-pointer font-bold"
-            title="تعديل عناصر الشاشة الحقيقية في معاينة معزولة"
-          >
-            <Settings2 className="w-3.5 h-3.5" />
-            <span>تعديل الواجهة</span>
-          </Button>
-          <Button
-            type="button"
-            variant={workspaceMode === "live" ? "default" : "outline"}
-            size="sm"
-            onClick={() => setWorkspaceMode("live")}
-            className="h-8 px-2.5 text-xs gap-1.5 cursor-pointer font-bold"
-          >
-            <Eye className="w-3.5 h-3.5" />
-            <span>التطبيق الحقيقي</span>
-          </Button>
+          <div className="flex h-9 items-center gap-2 rounded-xl border border-border/80 bg-muted/40 px-2 shadow-sm" title="اختر مساحة العمل">
+            <Settings2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <label htmlFor="studio-workspace-mode" className="sr-only">مساحة العمل</label>
+            <select
+              id="studio-workspace-mode"
+              aria-label="مساحة العمل"
+              value={workspaceMode}
+              onChange={(event) => setWorkspaceMode(event.target.value as "builder" | "live" | "workflow" | "app-editor")}
+              className="h-8 max-w-[190px] cursor-pointer bg-transparent px-1 text-xs font-bold text-foreground outline-none"
+            >
+              <option value="app-editor">تحرير واجهة التطبيق</option>
+              <option value="builder">مصمم العناصر</option>
+              <option value="workflow">مسارات العمل</option>
+              <option value="live">عرض التطبيق</option>
+            </select>
+          </div>
           <Button
             type="button"
             variant="outline"
