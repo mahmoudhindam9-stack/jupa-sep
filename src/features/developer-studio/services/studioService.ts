@@ -479,43 +479,34 @@ class StudioService {
     }
 
     try {
-      // Select the existing row ID first. This works even on installations where
-      // the hardening migration has not yet installed the unique(owner) index.
-      const { data: existing, error: lookupError } = (await supabase
-        .from("studio_drafts" as any)
-        .select("id, owner")
-        .eq("owner", updatedDraft.owner)
-        .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle()) as any;
-      if (lookupError) throw lookupError;
-
-      const draftId = existing?.id || updatedDraft.id || "draft_" + updatedDraft.owner;
-      const { data, error } = (await supabase
-        .from("studio_drafts" as any)
-        .upsert({
-          id: draftId,
-          owner: updatedDraft.owner,
-          base_revision: updatedDraft.baseRevision,
-          schema_version: updatedDraft.schemaVersion,
-          pages: updatedDraft.pages,
-          elements: updatedDraft.elements,
-          dom_edits: updatedDraft.domEdits || {},
-          updated_at: updatedAt,
-        }, { onConflict: "id" })
-        .select("id, owner, updated_at")
-        .maybeSingle()) as any;
+      // Use the permission-checked SECURITY DEFINER RPC. This avoids a direct
+      // client SELECT dependency on studio_drafts and compares the server version
+      // atomically under a row lock before writing.
+      const { data, error } = (await supabase.rpc("developer_studio_save_draft" as any, {
+        p_owner: updatedDraft.owner,
+        p_draft_id: updatedDraft.id || "draft_" + updatedDraft.owner,
+        p_expected_updated_at: updatedDraft.serverUpdatedAt || null,
+        p_base_revision: updatedDraft.baseRevision,
+        p_schema_version: updatedDraft.schemaVersion,
+        p_pages: updatedDraft.pages,
+        p_elements: updatedDraft.elements,
+        p_dom_edits: updatedDraft.domEdits || {},
+      } as any)) as any;
 
       if (error) throw error;
-      if (!data || data.owner !== updatedDraft.owner) {
-        throw new Error("لم يؤكد Supabase حفظ المسودة؛ بقيت نسخة محلية غير متزامنة.");
+      const saved = data as Record<string, any> | null;
+      if (!saved?.success) {
+        throw new Error(saved?.error || (saved?.conflict
+          ? "تغيرت المسودة على الخادم من جلسة أخرى. احتفظنا بتعديلاتك محليًا ولم تتم الكتابة فوقها."
+          : "لم يؤكد Supabase حفظ المسودة؛ بقيت النسخة المحلية غير متزامنة."));
       }
 
+      const serverUpdatedAt = String(saved.serverUpdatedAt || saved.updatedAt || updatedAt);
       const confirmedDraft = {
         ...updatedDraft,
-        id: data.id || updatedDraft.id,
-        updatedAt: data.updated_at || updatedAt,
-        serverUpdatedAt: data.updated_at || updatedAt,
+        id: String(saved.id || updatedDraft.id),
+        updatedAt: serverUpdatedAt,
+        serverUpdatedAt,
         hasUnsavedLocalChanges: false,
       };
       // An earlier save can succeed after the user has already made newer changes.
@@ -529,8 +520,10 @@ class StudioService {
     } catch (e: any) {
       const raw = String(e?.message || e?.details || "تعذر تأكيد حفظ المسودة على الخادم.");
       let actionable = raw;
-      if (/column .*dom_edits.* does not exist|dom_edits.*column/i.test(raw)) {
-        actionable = "قاعدة البيانات تحتاج إلى التحديث قبل حفظ معاينة التطبيق. نفّذ ملف supabase/migrations/20261014153000_fix_developer_studio_rls_and_access_diagnostics.sql في Supabase SQL Editor ثم أعد المحاولة. التفاصيل: " + raw;
+      if (/developer_studio_save_draft|function .* does not exist|schema cache/i.test(raw)) {
+        actionable = "قاعدة البيانات تحتاج إلى دوال المزامنة الآمنة. نفّذ ملف supabase/migrations/20261015100000_studio_local_first_sync_rpcs.sql في Supabase SQL Editor ثم أعد المحاولة. التفاصيل: " + raw;
+      } else if (/column .*dom_edits.* does not exist|dom_edits.*column/i.test(raw)) {
+        actionable = "قاعدة البيانات تحتاج إلى التحديث قبل حفظ معاينة التطبيق. نفّذ ملف supabase/migrations/20261015100000_studio_local_first_sync_rpcs.sql في Supabase SQL Editor ثم أعد المحاولة. التفاصيل: " + raw;
       } else if (/row-level security|permission denied|not authorized/i.test(raw)) {
         let accessHint = "";
         try {
@@ -568,51 +561,54 @@ class StudioService {
   async checkDraftSyncCompatibility(draft: StudioDraft): Promise<{
     compatible: boolean;
     serverUpdatedAt?: string;
+    needsRebase?: boolean;
+    serverDraft?: StudioDraft;
+    message?: string;
     error?: string;
   }> {
     try {
-      const { data, error } = (await supabase
-        .from("studio_drafts" as any)
-        .select("id, owner, updated_at")
-        .eq("owner", draft.owner)
-        .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle()) as any;
+      const { data, error } = (await supabase.rpc("developer_studio_check_draft_sync" as any, {
+        p_owner: draft.owner,
+        p_expected_updated_at: draft.serverUpdatedAt || null,
+      } as any)) as any;
       if (error) throw error;
 
-      if (!data) {
-        if (draft.serverUpdatedAt) {
-          return {
-            compatible: false,
-            error: "تم حذف المسودة البعيدة منذ تحميلها. لم تتم المزامنة حتى لا نفقد نسخة أخرى؛ استخدم «إلغاء التعديلات» لتحميل الحالة المحفوظة مجددًا.",
-          };
-        }
-        return { compatible: true };
+      const result = data as Record<string, any> | null;
+      if (!result) {
+        return { compatible: false, error: "Supabase لم يُرجع نتيجة لفحص توافق المسودة؛ لم تتم المزامنة." };
       }
+      const serverDraftData = result.serverDraft;
+      const serverDraft: StudioDraft | undefined = serverDraftData ? {
+        id: String(serverDraftData.id || "draft_" + draft.owner),
+        owner: String(serverDraftData.owner || draft.owner),
+        baseRevision: Number(serverDraftData.baseRevision || 1),
+        schemaVersion: Number(serverDraftData.schemaVersion || CURRENT_SCHEMA_VERSION),
+        pages: serverDraftData.pages || {},
+        elements: serverDraftData.elements || {},
+        domEdits: serverDraftData.domEdits || {},
+        updatedAt: String(serverDraftData.updatedAt || result.serverUpdatedAt || new Date().toISOString()),
+        serverUpdatedAt: String(serverDraftData.serverUpdatedAt || result.serverUpdatedAt || ""),
+        createdAt: String(serverDraftData.createdAt || serverDraftData.updatedAt || new Date().toISOString()),
+        hasUnpublishedChanges: true,
+        hasUnsavedLocalChanges: false,
+      } : undefined;
 
-      if (!draft.serverUpdatedAt) {
-        return {
-          compatible: false,
-          serverUpdatedAt: String(data.updated_at || ""),
-          error: "توجد مسودة سحابية لم تكن ضمن النسخة المحلية عند بدء التعديل. لم نستبدلها؛ استخدم «إلغاء التعديلات» لتحميل أحدث مسودة ثم أعد التعديل.",
-        };
-      }
-      if (
-        draft.serverUpdatedAt === "__unknown_server_version__" ||
-        String(data.updated_at || "") !== String(draft.serverUpdatedAt)
-      ) {
-        return {
-          compatible: false,
-          serverUpdatedAt: String(data.updated_at || ""),
-          error: "تغيرت المسودة المحفوظة على Supabase من جلسة أخرى. تم الاحتفاظ بتعديلاتك محليًا ولم نكتب فوق المسودة البعيدة. استخدم «إلغاء التعديلات» لتحميل أحدث نسخة أو قارن التغييرات يدويًا.",
-        };
-      }
-
-      return { compatible: true, serverUpdatedAt: String(data.updated_at || "") };
+      return {
+        compatible: result.compatible === true,
+        serverUpdatedAt: result.serverUpdatedAt ? String(result.serverUpdatedAt) : undefined,
+        needsRebase: result.needsRebase === true,
+        serverDraft,
+        message: result.message ? String(result.message) : undefined,
+        error: result.error ? String(result.error) : undefined,
+      };
     } catch (error: any) {
+      const raw = String(error?.message || error?.details || "تعذر فحص توافق المسودة.");
+      const migrationHint = /developer_studio_check_draft_sync|function .* does not exist|schema cache/i.test(raw)
+        ? "نفّذ supabase/migrations/20261015100000_studio_local_first_sync_rpcs.sql في Supabase SQL Editor ثم أعد المحاولة."
+        : "";
       return {
         compatible: false,
-        error: "تعذر تأكيد توافق نسخة المسودة مع Supabase؛ لم تتم المزامنة. " + String(error?.message || ""),
+        error: "تعذر تأكيد توافق نسخة المسودة مع Supabase؛ احتفظنا بالتعديلات محليًا ولم تتم المزامنة. " + migrationHint + " " + raw,
       };
     }
   }
