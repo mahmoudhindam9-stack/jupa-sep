@@ -20,18 +20,21 @@ export async function currentUserHasPermission(keys: string[]): Promise<boolean>
   if (isAiStudioPreview()) return true;
 
   if (isHostedDeployment()) {
+    // A hosted authorization failure must fail closed. Never fall back to a stale or
+    // browser-editable local user/permission cache when Supabase is unavailable.
     try {
       const {
         data: { session },
       } = await supabase.auth.getSession();
-      if (session?.user?.id) {
-        const profile: any = await authService.getProfile(session.user.id);
-        if (profile?.id && profile?.username) {
-          return hasAnyRequestedPermission(profile.permissions || {}, keys);
-        }
-      }
-    } catch {
-      // Fallback to local user
+      if (!session?.user?.id) return false;
+
+      const profile: any = await authService.getProfile(session.user.id);
+      if (!profile?.id || !profile?.username) return false;
+
+      return hasAnyRequestedPermission(profile.permissions || {}, keys);
+    } catch (error) {
+      console.error("Unable to verify hosted user permissions with Supabase.", error);
+      return false;
     }
   }
 
