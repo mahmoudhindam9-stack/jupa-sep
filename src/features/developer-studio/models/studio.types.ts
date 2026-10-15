@@ -209,9 +209,20 @@ export function getElementDisplayName(element: Pick<ElementModel, "type" | "cont
   const content = element.content || {};
   const value = content.title || content.text || content.label || content.alt || content.placeholder;
   if (typeof value === "string" && value.trim()) {
-    return value.trim().replace(/\\s+/g, " ").slice(0, 42);
+    return value.trim().replace(/\s+/g, " ").slice(0, 42);
   }
   return ELEMENT_TYPE_LABELS[element.type] || "عنصر";
+}
+
+export interface StudioDomAddedItem {
+  id: string;
+  type: "text" | "button" | "input" | "card" | "divider" | "link";
+  name: string;
+  text: string;
+  placement: "inside" | "after";
+  action?: "none" | "message" | "navigate" | "external";
+  url?: string;
+  message?: string;
 }
 
 export interface StudioDomEdit {
@@ -220,6 +231,13 @@ export interface StudioDomEdit {
   deleted?: boolean;
   duplicateCount?: number;
   order?: number;
+  /** An editable existing link destination, limited to relative paths or HTTP(S). */
+  href?: string;
+  /** Icon selected from Studio; sanitized SVG markup survives reload/publish. */
+  iconName?: string;
+  iconSvg?: string;
+  /** User-created preview elements anchored to an existing real DOM element. */
+  additions?: StudioDomAddedItem[];
 }
 
 export interface StudioDraft {

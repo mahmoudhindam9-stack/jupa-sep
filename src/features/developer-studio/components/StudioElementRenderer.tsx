@@ -8,7 +8,162 @@ import { Link } from "@tanstack/react-router";
 import { ElementModel, getElementDisplayName } from "../models/studio.types";
 import { evaluateArithmeticExpression, formatArithmeticResult } from "../utils/arithmetic";
 import { cn } from "@/lib/utils";
-import { Lock, EyeOff } from "lucide-react";
+import {
+  Lock, EyeOff, Home, FileText, Search, Settings, Plus, Download, CheckCircle2,
+  Link2, Mail, Printer, Calculator, Bell, CalendarDays, Coffee, CreditCard,
+  Package, Truck, UserRound, Users, Wallet, BarChart3, ClipboardList, ShieldCheck,
+  CircleDollarSign,
+} from "lucide-react";
+
+type RuntimeFlowNode = {
+  id: string;
+  kind: "trigger" | "action" | "condition" | "formula" | "result";
+  label?: string;
+  action?: "message" | "navigate" | "external" | "formula" | "toggle" | "submit" | "none";
+  formula?: string;
+  condition?: string;
+  url?: string;
+  message?: string;
+  targetElementId?: string;
+};
+type RuntimeFlowConnection = { id: string; from: string; to: string; label?: string };
+
+function evaluateStudioCondition(source: string): boolean {
+  const expression = String(source || "").trim();
+  const comparison = expression.match(/^(.*?)\s*(>=|<=|===|!==|==|!=|>|<)\s*(.*?)$/);
+  if (!comparison) return evaluateArithmeticExpression(expression) !== 0;
+  const left = evaluateArithmeticExpression(comparison[1]);
+  const right = evaluateArithmeticExpression(comparison[3]);
+  switch (comparison[2]) {
+    case ">": return left > right;
+    case "<": return left < right;
+    case ">=": return left >= right;
+    case "<=": return left <= right;
+    case "==":
+    case "===": return left === right;
+    case "!=":
+    case "!==": return left !== right;
+    default: throw new Error("شرط غير مدعوم.");
+  }
+}
+
+function isSafeWorkflowUrl(value: string): boolean {
+  const url = String(value || "").trim();
+  if (url.startsWith("/") && !url.startsWith("//") && !url.includes("\\")) return true;
+  try {
+    const parsed = new URL(url);
+    return (parsed.protocol === "http:" || parsed.protocol === "https:") && !!parsed.hostname;
+  } catch {
+    return false;
+  }
+}
+
+/** Execute only the saved, data-driven graph. Never evaluates arbitrary JavaScript. */
+function runStudioWorkflow(raw: unknown, event: React.MouseEvent<HTMLButtonElement>): boolean {
+  if (!raw || typeof raw !== "object") return false;
+  const candidate = raw as { nodes?: unknown; connections?: unknown };
+  if (!Array.isArray(candidate.nodes) || !candidate.nodes.length || !Array.isArray(candidate.connections)) return false;
+
+  const nodes = (candidate.nodes as RuntimeFlowNode[]).filter((node) =>
+    node && typeof node.id === "string" &&
+    ["trigger", "action", "condition", "formula", "result"].includes(node.kind),
+  );
+  const ids = new Set(nodes.map((node) => node.id));
+  const connections = (candidate.connections as RuntimeFlowConnection[]).filter((link) =>
+    link && typeof link.id === "string" && ids.has(link.from) && ids.has(link.to) && link.from !== link.to,
+  );
+  if (!nodes.length) return false;
+  const nodeById = new Map<string, RuntimeFlowNode>();
+  nodes.forEach((node) => nodeById.set(node.id, node));
+  const incoming = new Set(connections.map((link) => link.to));
+  const start = nodes.find((node) => node.kind === "trigger") || nodes.find((node) => !incoming.has(node.id)) || nodes[0];
+  const queue = [start.id];
+  const visitedEdges = new Set<string>();
+  const outcomes: string[] = [];
+  let lastResult: number | undefined;
+  let steps = 0;
+
+  const validDestination = (url: string, external: boolean) =>
+    isSafeWorkflowUrl(url) && (external ? /^https?:\/\//i.test(url) : url.startsWith("/") && !url.startsWith("//"));
+
+  try {
+    while (queue.length && steps < 100) {
+      const currentId = queue.shift();
+      const node = currentId ? nodeById.get(currentId) : undefined;
+      if (!node) continue;
+      steps += 1;
+
+      if (node.kind === "formula" || (node.kind === "action" && node.action === "formula")) {
+        lastResult = evaluateArithmeticExpression(node.formula || "");
+      } else if (node.kind === "condition") {
+        // evaluated below while choosing its outgoing branch
+      } else if (node.kind === "action") {
+        const action = node.action || "none";
+        if (action === "message") {
+          window.alert(node.message || node.label || "تم تنفيذ الإجراء.");
+        } else if (action === "navigate") {
+          const url = String(node.url || "").trim();
+          if (!validDestination(url, false)) throw new Error("وجهة الصفحة الداخلية غير صالحة.");
+          window.location.assign(url);
+          return true;
+        } else if (action === "external") {
+          const url = String(node.url || "").trim();
+          if (!validDestination(url, true)) throw new Error("الرابط الخارجي غير صالح.");
+          window.open(url, "_blank", "noopener,noreferrer");
+        } else if (action === "toggle") {
+          const targetId = String(node.targetElementId || "");
+          const target = targetId ? document.getElementById("studio-elem-" + targetId) : null;
+          if (!target) window.alert("لم يتم العثور على العنصر المطلوب إظهاره أو إخفاؤه.");
+          else {
+            const isHidden = target.style.display === "none";
+            target.style.display = isHidden ? "contents" : "none";
+            target.setAttribute("aria-hidden", isHidden ? "false" : "true");
+          }
+        } else if (action === "submit") {
+          const form = event.currentTarget.closest("form");
+          if (form) form.requestSubmit();
+          else window.alert("ضع الزر داخل نموذج حتى يمكن إرسال البيانات.");
+        }
+      } else if (node.kind === "result") {
+        outcomes.push(lastResult === undefined
+          ? (node.label || "تم إكمال العملية")
+          : (node.label || "النتيجة") + ": " + formatArithmeticResult(lastResult));
+      }
+
+      let outgoing = connections.filter((link) => link.from === node.id && !visitedEdges.has(link.id));
+      if (node.kind === "condition" && outgoing.length > 1) {
+        const conditionResult = evaluateStudioCondition(node.condition || "");
+        const truthLabels = conditionResult
+          ? /^(yes|true|1|نعم|صحيح|موافق)$/i
+          : /^(no|false|0|لا|خطأ|غير صحيح)$/i;
+        const chosen = outgoing.find((link) => truthLabels.test(String(link.label || "").trim()));
+        if (!chosen) throw new Error("سمِّ مخارج الشرط «نعم» و«لا» لتمييز مساري النتيجة.");
+        outgoing = [chosen];
+      } else if (node.kind === "condition" && outgoing.length === 1) {
+        const conditionResult = evaluateStudioCondition(node.condition || "");
+        const label = String(outgoing[0].label || "").trim();
+        const isFalseLabel = /^(no|false|0|لا|خطأ|غير صحيح)$/i.test(label);
+        if (isFalseLabel === conditionResult) outgoing = [];
+      }
+
+      outgoing.forEach((link) => {
+        visitedEdges.add(link.id);
+        queue.push(link.to);
+      });
+    }
+
+    if (queue.length) {
+      window.alert("توقف مسار العمل لأنه تجاوز الحد الآمن البالغ 100 خطوة. راجع وجود حلقة متكررة في المسار.");
+    } else if (outcomes.length) {
+      window.alert(outcomes.join("\n"));
+    } else if (lastResult !== undefined) {
+      window.alert("نتيجة الحساب: " + formatArithmeticResult(lastResult));
+    }
+  } catch (error) {
+    window.alert(error instanceof Error ? error.message : "تعذر تنفيذ مسار العمل.");
+  }
+  return true;
+}
 
 interface StudioElementRendererProps {
   element: ElementModel;
@@ -162,6 +317,32 @@ export function StudioElementRenderer({
       case "button": {
         const label = c.label || "زر إجراء";
         const variant = c.variant || "default";
+        const iconName = String(element.attributes?.iconName || "");
+        const ButtonIcon = iconName === "home" ? Home
+          : iconName === "file" ? FileText
+          : iconName === "search" ? Search
+          : iconName === "settings" ? Settings
+          : iconName === "plus" ? Plus
+          : iconName === "download" ? Download
+          : iconName === "check" ? CheckCircle2
+          : iconName === "link" ? Link2
+          : iconName === "mail" ? Mail
+          : iconName === "print" ? Printer
+          : iconName === "calculator" ? Calculator
+          : iconName === "bell" ? Bell
+          : iconName === "calendar" ? CalendarDays
+          : iconName === "coffee" ? Coffee
+          : iconName === "card" ? CreditCard
+          : iconName === "package" ? Package
+          : iconName === "truck" ? Truck
+          : iconName === "user" ? UserRound
+          : iconName === "users" ? Users
+          : iconName === "wallet" ? Wallet
+          : iconName === "chart" ? BarChart3
+          : iconName === "clipboard" ? ClipboardList
+          : iconName === "shield" ? ShieldCheck
+          : iconName === "money" ? CircleDollarSign
+          : null;
         const btnContent = (
           <button
             type="button"
@@ -180,6 +361,11 @@ export function StudioElementRenderer({
                 e.preventDefault();
                 return;
               }
+              const savedWorkflow = element.attributes?.studioWorkflow;
+              if (savedWorkflow && runStudioWorkflow(savedWorkflow, e)) {
+                e.preventDefault();
+                return;
+              }
               if (c.action === "alert") {
                 window.alert(c.message || label);
               } else if (c.action === "formula") {
@@ -195,8 +381,9 @@ export function StudioElementRenderer({
                 if (!target) {
                   window.alert("اختر العنصر المطلوب أولًا من إعدادات الزر.");
                 } else {
-                  target.classList.toggle("hidden");
-                  target.setAttribute("aria-hidden", target.classList.contains("hidden") ? "true" : "false");
+                  const isHidden = target.style.display === "none";
+                  target.style.display = isHidden ? "contents" : "none";
+                  target.setAttribute("aria-hidden", isHidden ? "false" : "true");
                 }
               } else if (c.action === "submit") {
                 const form = (e.currentTarget as HTMLButtonElement).closest("form");
@@ -205,7 +392,7 @@ export function StudioElementRenderer({
               }
             }}
           >
-            {label}
+            {ButtonIcon ? <><ButtonIcon size={16} aria-hidden="true" /><span>{label}</span></> : label}
           </button>
         );
 
@@ -438,6 +625,15 @@ export function StudioElementRenderer({
     );
   }
 
-  // Live Runtime Mode
-  return renderContent();
+  // Live Runtime Mode — keep a stable target for show/hide workflow actions without
+  // imposing an extra layout box on the actual rendered element.
+  return (
+    <div
+      id={`studio-elem-${element.id}`}
+      data-studio-element-id={element.id}
+      style={{ display: element.layout.visibility ? "contents" : "none" }}
+    >
+      {renderContent()}
+    </div>
+  );
 }

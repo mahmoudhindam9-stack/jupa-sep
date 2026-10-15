@@ -140,7 +140,7 @@ export function WorkflowEditorPanel({ element, elements, onUpdateElement, onAddB
       formula: { label: "حساب قيمة", formula: "(120 + 30) * 1.14" },
       result: { label: "النتيجة النهائية" },
     };
-    const node: FlowNode = { id, kind, label: defaults[kind].label || NODE_LABELS[kind], ...defaults[kind] };
+    const node: FlowNode = { ...defaults[kind], id, kind, label: defaults[kind].label || NODE_LABELS[kind] };
     const previous = workflow.nodes[workflow.nodes.length - 1];
     const connections = previous
       ? [...workflow.connections, { id: newId("link"), from: previous.id, to: id, label: "ثم" }]
@@ -257,6 +257,20 @@ export function WorkflowEditorPanel({ element, elements, onUpdateElement, onAddB
                           <label className="mb-1 block text-xs font-bold">المعادلة</label>
                           <input value={node.formula || ""} onChange={(event) => updateNode(node.id, { formula: event.target.value })} placeholder="مثال: 250 * 1.14" className="h-9 w-full rounded-lg border border-border bg-background px-3 text-xs" />
                         </div>
+                      )}
+                      {node.action === "toggle" && (
+                        <div className="sm:col-span-2">
+                          <label className="mb-1 block text-xs font-bold">العنصر المطلوب إظهاره أو إخفاؤه</label>
+                          <select value={node.targetElementId || ""} onChange={(event) => updateNode(node.id, { targetElementId: event.target.value })} className="h-9 w-full rounded-lg border border-border bg-background px-2 text-xs">
+                            <option value="">اختر عنصرًا...</option>
+                            {Object.values(elements).filter((item) => item.pageId === element.pageId && item.id !== element.id).map((item) => <option key={item.id} value={item.id}>{getElementDisplayName(item)}</option>)}
+                          </select>
+                        </div>
+                      )}
+                      {node.action === "submit" && (
+                        <p className="sm:col-span-2 rounded-lg bg-muted/50 p-2 text-[10px] leading-5 text-muted-foreground">
+                          يتطلب هذا الإجراء وجود نموذج يحتوي على حقول البيانات.
+                        </p>
                       )}
                     </div>
                   )}

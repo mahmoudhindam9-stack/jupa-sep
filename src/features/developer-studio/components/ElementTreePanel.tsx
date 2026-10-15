@@ -42,9 +42,10 @@ interface ElementTreePanelProps {
   activePageId: string;
   elements: Record<string, ElementModel>;
   selectedElementId: string | null;
+  selectedElementIds?: string[];
   onSelectPage: (pageId: string) => void;
   onAddPage: (name: string, route: string) => void;
-  onSelectElement: (elementId: string) => void;
+  onSelectElement: (elementId: string, multiSelect?: boolean) => void;
   onAddElement: (type: ElementType, parentId?: string | null) => void;
   onDeleteElement: (elementId: string) => void;
   onDuplicateElement: (elementId: string) => void;
@@ -84,6 +85,7 @@ export function ElementTreePanel({
   activePageId,
   elements,
   selectedElementId,
+  selectedElementIds,
   onSelectPage,
   onAddPage,
   onSelectElement,
@@ -104,7 +106,7 @@ export function ElementTreePanel({
 
   // Build a readable parent/child tree and keep each group together.
   const pageElements = Object.values(elements).filter((el) => el.pageId === activePageId);
-  const pageOrder = new Map((activePage?.elementIds || []).map((id, index) => [id, index]));
+  const pageOrder = new Map((activePage?.elementIds || []).map((id, index) => [id, index] as const));
   const sortTreeSiblings = (a: ElementModel, b: ElementModel) =>
     (a.layout?.order ?? pageOrder.get(a.id) ?? 0) - (b.layout?.order ?? pageOrder.get(b.id) ?? 0);
   const orderedPageElements: ElementModel[] = [];
@@ -225,6 +227,9 @@ export function ElementTreePanel({
                 className="h-8 text-xs pr-8 rounded-lg bg-background"
               />
             </div>
+            <p className="text-[10px] leading-5 text-muted-foreground">
+              لتحديد أكثر من عنصر: اضغط Ctrl أو ⌘ مع النقر. بعد ذلك استخدم «تجميع المحدد» أو «فصل المجموعة».
+            </p>
           </div>
 
           {/* Tree list */}
@@ -232,21 +237,24 @@ export function ElementTreePanel({
             {filteredElements.length > 0 ? (
               filteredElements.map((elem) => {
                 const Icon = ELEMENT_TYPE_ICONS[elem.type] || Box;
-                const isSelected = selectedElementId === elem.id;
+                const isPrimarySelected = selectedElementId === elem.id;
+                const isSelected = selectedElementIds ? selectedElementIds.includes(elem.id) : isPrimarySelected;
                 const excerpt = getElementDisplayName(elem);
                 const depth = depthById.get(elem.id) || 0;
 
                 return (
                   <div
                     key={elem.id}
-                    onClick={() => onSelectElement(elem.id)}
+                    onClick={(event) => onSelectElement(elem.id, event.ctrlKey || event.metaKey || event.shiftKey)}
                     style={{ marginRight: `${depth * 12}px` }}
                     className={cn(
                       "group flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer",
                       depth > 0 ? "border-r-2 border-primary/20" : "",
-                      isSelected
+                      isPrimarySelected
                         ? "bg-primary text-primary-foreground shadow-2xs"
-                        : "hover:bg-muted/70 text-foreground",
+                        : isSelected
+                          ? "bg-primary/10 text-foreground ring-1 ring-primary/40"
+                          : "hover:bg-muted/70 text-foreground",
                     )}
                   >
                     <div className="flex items-center gap-2 min-w-0">
@@ -388,12 +396,12 @@ export function ElementTreePanel({
               </div>
               <div>
                 <label className="text-[11px] font-bold text-muted-foreground block mb-1">
-                  المسار (Route):
+                  رابط الصفحة داخل التطبيق:
                 </label>
                 <Input
                   value={newPageRoute}
                   onChange={(e) => setNewPageRoute(e.target.value)}
-                  placeholder="/admin/custom-page"
+                  placeholder="مثال: /admin/reports"
                   className="h-8 text-xs font-mono bg-background"
                   required
                 />
@@ -434,11 +442,11 @@ export function ElementTreePanel({
                     <div className="font-black truncate">{p.name}</div>
                     <div
                       className={cn(
-                        "text-[10px] font-mono mt-0.5",
+                        "text-[10px] mt-0.5",
                         isActive ? "text-primary-foreground/80" : "text-muted-foreground",
                       )}
                     >
-                      {p.route}
+                      صفحة داخل التطبيق
                     </div>
                   </div>
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-black/10 dark:bg-white/10 font-bold">

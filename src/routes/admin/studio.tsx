@@ -18,13 +18,13 @@ import {
 import { studioService } from "@/features/developer-studio/services/studioService";
 import { supabase } from "@/integrations/supabase/client";
 import { ElementTreePanel } from "@/features/developer-studio/components/ElementTreePanel";
-import { VisualEditorCanvas } from "@/features/developer-studio/components/VisualEditorCanvas";
 import { PropertiesPanel } from "@/features/developer-studio/components/PropertiesPanel";
 import { PublishModal } from "@/features/developer-studio/components/PublishModal";
 import { ConflictResolutionModal } from "@/features/developer-studio/components/ConflictResolutionModal";
 import { HistoryRollbackModal } from "@/features/developer-studio/components/HistoryRollbackModal";
 import { StudioElementRenderer } from "@/features/developer-studio/components/StudioElementRenderer";
 import { LiveAppPreview } from "@/features/developer-studio/components/LiveAppPreview";
+import { WorkflowEditorPanel } from "@/features/developer-studio/components/WorkflowEditorPanel";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
@@ -42,6 +42,7 @@ import {
   AlertCircle,
   Loader2,
   Layers,
+  GitBranch,
   Settings2,
   Maximize2,
   ArrowRight,
@@ -77,6 +78,20 @@ export function DeveloperStudioProPage() {
   const latestRealtimePublishedRevisionRef = useRef(0);
   const [activePageId, setActivePageId] = useState<string>("page_dashboard");
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
+  const [selectedElementIds, setSelectedElementIds] = useState<string[]>([]);
+  const handleSelectElement = useCallback((elementId: string, multiSelect = false) => {
+    if (!multiSelect) {
+      setSelectedElementId(elementId);
+      setSelectedElementIds([elementId]);
+      return;
+    }
+    const isSelected = selectedElementIds.includes(elementId);
+    const next = isSelected
+      ? (selectedElementIds.length > 1 ? selectedElementIds.filter((id) => id !== elementId) : selectedElementIds)
+      : [...selectedElementIds, elementId];
+    setSelectedElementIds(next);
+    setSelectedElementId(isSelected && next.length > 0 ? next[next.length - 1] : elementId);
+  }, [selectedElementIds]);
   const [isLoading, setIsLoading] = useState(true);
   const [isMounted, setIsMounted] = useState(false);
 
@@ -97,7 +112,7 @@ export function DeveloperStudioProPage() {
   const [historyPointer, setHistoryPointer] = useState<number>(-1);
 
   // Open on the real application by default; the component builder is available separately.
-  const [workspaceMode, setWorkspaceMode] = useState<"builder" | "live">("live");
+  // One unified workspace combines live preview, element design and workflows in side docks.
 
   // Modals
   const [showPublishModal, setShowPublishModal] = useState(false);
@@ -210,6 +225,7 @@ export function DeveloperStudioProPage() {
         const firstPageId = Object.keys(incoming.pages || {})[0] || "page_dashboard";
         setActivePageId(firstPageId);
         setSelectedElementId(null);
+                setSelectedElementIds([]);
       })
       .on("postgres_changes", {
         event: "*",
@@ -713,7 +729,7 @@ export function DeveloperStudioProPage() {
         type,
         content: defaultContent,
         styles: defaultStyles,
-        layout: { position: "static", order: (draft.pages[activePageId]?.elementIds?.length || 0) + 1, visibility: true },
+        layout: { position: "static", order: parentId ? Object.values(draft.elements).filter((item) => item.parentId === parentId).length + 1 : (draft.pages[activePageId]?.elementIds?.length || 0) + 1, visibility: true },
         attributes: {},
         locked: false,
         schemaVersion: CURRENT_SCHEMA_VERSION,
@@ -723,7 +739,7 @@ export function DeveloperStudioProPage() {
       };
 
       const activePage = draft.pages[activePageId];
-      const updatedElementIds = [...(activePage?.elementIds || []), newId];
+      const updatedElementIds = parentId ? [...(activePage?.elementIds || [])] : [...(activePage?.elementIds || []), newId];
 
       const newDraft: StudioDraft = {
         ...draft,
@@ -744,58 +760,68 @@ export function DeveloperStudioProPage() {
 
       commitDraftChange(newDraft);
       setSelectedElementId(newId);
+      setSelectedElementIds([newId]);
       toast({ title: `تمت إضافة عنصر (${type}) جديد` });
     },
     [draft, activePageId, commitDraftChange],
   );
 
-  // Delete element safely
+  // Delete an element while preserving any children in the same parent scope.
   const handleDeleteElement = useCallback(
     (elementId: string) => {
       if (!draft) return;
-      const el = draft.elements[elementId];
-      if (!el) return;
+      const element = draft.elements[elementId];
+      if (!element) return;
 
-      if (el.locked) {
+      if (element.locked) {
         toast({ title: "لا يمكن حذف عنصر مقفل", variant: "destructive" });
         return;
       }
 
-      // Remove from page elementIds and elements map
-      const activePage = draft.pages[el.pageId];
-      const updatedElementIds = (activePage?.elementIds || []).filter((id) => id !== elementId);
-
-      const updatedElements = { ...draft.elements };
+      const page = draft.pages[element.pageId];
+      const orderedChildren = Object.values(draft.elements)
+        .filter((item) => item.parentId === elementId)
+        .sort((a, b) => (a.layout?.order ?? 0) - (b.layout?.order ?? 0));
+      const updatedElements: Record<string, ElementModel> = { ...draft.elements };
       delete updatedElements[elementId];
 
-      // Also clean up any children where parentId === elementId
-      Object.keys(updatedElements).forEach((id) => {
-        if (updatedElements[id].parentId === elementId) {
-          updatedElements[id] = { ...updatedElements[id], parentId: null };
-        }
+      // Removing a container expands its children into the container's former parent.
+      orderedChildren.forEach((child, index) => {
+        updatedElements[child.id] = {
+          ...child,
+          parentId: element.parentId,
+          layout: { ...child.layout, order: (element.layout?.order ?? 0) + index / 100 },
+          updatedAt: new Date().toISOString(),
+        };
       });
 
-      const newDraft: StudioDraft = {
+      let updatedPage = page;
+      if (page && element.parentId === null) {
+        const oldIndex = (page.elementIds || []).indexOf(elementId);
+        const elementIds = (page.elementIds || []).filter((id) => id !== elementId);
+        elementIds.splice(
+          oldIndex < 0 ? elementIds.length : oldIndex,
+          0,
+          ...orderedChildren.map((child) => child.id),
+        );
+        updatedPage = { ...page, elementIds, updatedAt: new Date().toISOString() };
+      }
+
+      commitDraftChange({
         ...draft,
-        pages: {
-          ...draft.pages,
-          [el.pageId]: {
-            ...activePage,
-            elementIds: updatedElementIds,
-            updatedAt: new Date().toISOString(),
-          },
-        },
+        pages: updatedPage ? { ...draft.pages, [element.pageId]: updatedPage } : draft.pages,
         elements: updatedElements,
         hasUnpublishedChanges: true,
-      };
+      });
 
-      commitDraftChange(newDraft);
+      const remainingSelection = selectedElementIds.filter((id) => id !== elementId);
+      setSelectedElementIds(remainingSelection);
       if (selectedElementId === elementId) {
-        setSelectedElementId(null);
+        setSelectedElementId(remainingSelection[remainingSelection.length - 1] || null);
       }
-      toast({ title: "تم حذف العنصر بنجاح" });
+      toast({ title: orderedChildren.length ? "تم حذف المجموعة وإبقاء عناصرها" : "تم حذف العنصر بنجاح" });
     },
-    [draft, selectedElementId, commitDraftChange],
+    [draft, selectedElementId, selectedElementIds, commitDraftChange, toast],
   );
 
   // Duplicate element
@@ -816,7 +842,9 @@ export function DeveloperStudioProPage() {
       const activePage = draft.pages[source.pageId];
       const sourceIndex = (activePage?.elementIds || []).indexOf(elementId);
       const updatedElementIds = [...(activePage?.elementIds || [])];
-      updatedElementIds.splice(sourceIndex + 1, 0, newId);
+      if (source.parentId === null) {
+        updatedElementIds.splice(sourceIndex + 1, 0, newId);
+      }
 
       const newDraft: StudioDraft = {
         ...draft,
@@ -837,6 +865,7 @@ export function DeveloperStudioProPage() {
 
       commitDraftChange(newDraft);
       setSelectedElementId(newId);
+      setSelectedElementIds([newId]);
       toast({ title: "تم تكرار العنصر بنجاح" });
     },
     [draft, commitDraftChange],
@@ -881,6 +910,74 @@ export function DeveloperStudioProPage() {
     },
     [draft, commitDraftChange],
   );
+
+  // Group selected siblings into a container without moving them to another page.
+  const handleGroupSelected = useCallback(() => {
+    if (!draft || selectedElementIds.length < 2) return;
+    const selected = selectedElementIds.map((id) => draft.elements[id]).filter((item): item is ElementModel => !!item);
+    if (selected.length < 2) return;
+    const first = selected[0];
+    if (!selected.every((item) => item.pageId === first.pageId && item.parentId === first.parentId)) {
+      toast({ title: "لا يمكن تجميع العناصر المحددة", description: "اختر عناصر من الصفحة والمجموعة الأب نفسيهما.", variant: "destructive" });
+      return;
+    }
+    const page = draft.pages[first.pageId];
+    if (!page) return;
+    const now = new Date().toISOString();
+    const groupId = "elem_container_group_" + Date.now().toString(36);
+    const selectedIds = new Set(selected.map((item) => item.id));
+    const pageIndexes = (page.elementIds || []).map((id, index) => selectedIds.has(id) ? index : -1).filter((index) => index >= 0);
+    const insertAt = pageIndexes.length ? Math.min(...pageIndexes) : (page.elementIds || []).length;
+    const group: ElementModel = {
+      id: groupId, pageId: first.pageId, parentId: first.parentId, type: "container",
+      content: { direction: "column", wrap: true, title: "مجموعة عناصر جديدة" },
+      styles: { display: "flex", flexDirection: "column", gap: "12px", paddingTop: "12px", paddingRight: "12px", paddingBottom: "12px", paddingLeft: "12px", borderWidth: "1px", borderStyle: "dashed", borderColor: "#cbd5e1", borderRadius: "12px" },
+      layout: { position: "static", order: Math.min(...selected.map((item) => item.layout?.order ?? 0)), visibility: selected.every((item) => item.layout.visibility) },
+      attributes: {}, locked: false, schemaVersion: CURRENT_SCHEMA_VERSION, revision: draft.baseRevision, updatedAt: now, updatedBy: "admin",
+    };
+    const elements: Record<string, ElementModel> = { ...draft.elements, [groupId]: group };
+    selected.slice().sort((a, b) => (a.layout?.order ?? 0) - (b.layout?.order ?? 0)).forEach((item, index) => {
+      elements[item.id] = { ...item, parentId: groupId, layout: { ...item.layout, order: index + 1 }, updatedAt: now };
+    });
+    let updatedPage = page;
+    if (first.parentId === null) {
+      const elementIds = (page.elementIds || []).filter((id) => !selectedIds.has(id));
+      elementIds.splice(Math.min(insertAt, elementIds.length), 0, groupId);
+      updatedPage = { ...page, elementIds, updatedAt: now };
+    }
+    commitDraftChange({ ...draft, pages: { ...draft.pages, [first.pageId]: updatedPage }, elements, hasUnpublishedChanges: true });
+    setSelectedElementId(groupId);
+    setSelectedElementIds([groupId]);
+    toast({ title: "تم تجميع العناصر المحددة" });
+  }, [draft, selectedElementIds, commitDraftChange, toast]);
+
+  const handleUngroupSelected = useCallback(() => {
+    if (!draft || !selectedElementId) return;
+    const group = draft.elements[selectedElementId];
+    if (!group || group.type !== "container") return;
+    const children = Object.values(draft.elements).filter((item) => item.parentId === group.id).sort((a, b) => (a.layout?.order ?? 0) - (b.layout?.order ?? 0));
+    if (!children.length) {
+      toast({ title: "المجموعة فارغة", description: "أضف عناصر إلى المجموعة قبل فصلها.", variant: "destructive" });
+      return;
+    }
+    const now = new Date().toISOString();
+    const elements: Record<string, ElementModel> = { ...draft.elements };
+    delete elements[group.id];
+    children.forEach((item, index) => {
+      elements[item.id] = { ...item, parentId: group.parentId, layout: { ...item.layout, order: (group.layout?.order ?? 0) + index / 100 }, updatedAt: now };
+    });
+    let updatedPage = draft.pages[group.pageId];
+    if (updatedPage && group.parentId === null) {
+      const oldIndex = (updatedPage.elementIds || []).indexOf(group.id);
+      const elementIds = (updatedPage.elementIds || []).filter((id) => id !== group.id);
+      elementIds.splice(oldIndex < 0 ? elementIds.length : oldIndex, 0, ...children.map((item) => item.id));
+      updatedPage = { ...updatedPage, elementIds, updatedAt: now };
+    }
+    commitDraftChange({ ...draft, pages: updatedPage ? { ...draft.pages, [group.pageId]: updatedPage } : draft.pages, elements, hasUnpublishedChanges: true });
+    setSelectedElementId(children[0].id);
+    setSelectedElementIds(children.map((item) => item.id));
+    toast({ title: "تم فصل المجموعة" });
+  }, [draft, selectedElementId, commitDraftChange, toast]);
 
   // Add new page to draft
   const handleAddPage = useCallback(
@@ -929,6 +1026,7 @@ export function DeveloperStudioProPage() {
       setDraft(fresh);
       setActivePageId(Object.keys(fresh.pages || {})[0] || "page_dashboard");
       setSelectedElementId(null);
+                setSelectedElementIds([]);
       setHistoryStack([JSON.parse(JSON.stringify(fresh))]);
       setHistoryPointer(0);
       setSaveStatus("saved");
@@ -984,13 +1082,13 @@ export function DeveloperStudioProPage() {
   const selectedElement = selectedElementId ? draft.elements[selectedElementId] : null;
 
   return (
-    <div className="h-[calc(100dvh-88px)] min-h-[560px] flex flex-col overflow-hidden bg-background font-cairo text-right select-none">
+    <div className="h-[calc(100dvh-88px)] min-h-[560px] w-full flex flex-col overflow-hidden bg-background font-cairo text-right select-none">
       {/* ========================================================= */}
       {/* TOP WORKSPACE NAVIGATION & CONTROL BAR                    */}
       {/* ========================================================= */}
-      <header className="shrink-0 z-30 bg-card border-b border-border px-3 sm:px-5 py-2.5 flex items-center justify-between gap-3 shadow-2xs">
+      <header className="shrink-0 z-30 bg-card border-b border-border px-3 sm:px-5 py-3 flex flex-wrap items-center justify-between gap-3 shadow-sm">
         {/* Right side (RTL): Brand, Page Selector, Revision */}
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
             <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary border border-primary/20 flex items-center justify-center shrink-0">
               <Sparkles className="w-4 h-4" />
@@ -998,8 +1096,8 @@ export function DeveloperStudioProPage() {
             <div className="hidden sm:block">
               <h1 className="text-sm font-black text-foreground leading-tight flex items-center gap-1.5">
                 <span>استوديو المطور Pro</span>
-                <Badge variant="outline" className="text-[10px] font-mono px-1.5 py-0">
-                  Visual Editor
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                  تصميم بصري
                 </Badge>
               </h1>
               <p className="text-[10px] text-muted-foreground">
@@ -1017,12 +1115,13 @@ export function DeveloperStudioProPage() {
               onChange={(e) => {
                 setActivePageId(e.target.value);
                 setSelectedElementId(null);
+                setSelectedElementIds([]);
               }}
               className="text-xs font-bold bg-muted/80 hover:bg-muted border border-border/80 rounded-lg px-2.5 py-1.5 cursor-pointer max-w-[160px] truncate"
             >
               {Object.values(draft.pages || {}).map((p) => (
                 <option key={p.id} value={p.id}>
-                  📄 {p.name} ({p.route})
+                  📄 {p.name}
                 </option>
               ))}
             </select>
@@ -1072,14 +1171,14 @@ export function DeveloperStudioProPage() {
         </div>
 
         {/* Center: Undo / Redo & Preview Toggle */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center justify-center gap-2 rounded-xl border border-border/70 bg-muted/20 p-1.5">
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={handleUndo}
             disabled={historyPointer <= 0}
-            className="h-8 px-2 text-xs gap-1 cursor-pointer"
+            className="h-9 px-3 text-xs gap-1.5 cursor-pointer"
             title="تراجع (Ctrl+Z)"
           >
             <Undo2 className="w-3.5 h-3.5" />
@@ -1099,33 +1198,23 @@ export function DeveloperStudioProPage() {
             <span className="hidden lg:inline">إعادة</span>
           </Button>
 
-          <Button
-            type="button"
-            variant={workspaceMode === "builder" ? "default" : "outline"}
-            size="sm"
-            onClick={() => setWorkspaceMode("builder")}
-            className="h-8 px-2.5 text-xs gap-1.5 cursor-pointer font-bold"
-          >
-            <Layers className="w-3.5 h-3.5" />
-            <span>مصمم العناصر</span>
-          </Button>
-          <Button
-            type="button"
-            variant={workspaceMode === "live" ? "default" : "outline"}
-            size="sm"
-            onClick={() => setWorkspaceMode("live")}
-            className="h-8 px-2.5 text-xs gap-1.5 cursor-pointer font-bold"
-          >
-            <Eye className="w-3.5 h-3.5" />
-            <span>التطبيق الحقيقي</span>
-          </Button>
+          {selectedElementIds.length > 1 && (
+            <Button type="button" variant="outline" size="sm" onClick={handleGroupSelected} className="h-8 px-2 text-xs gap-1 cursor-pointer font-bold" title="تجميع العناصر المحددة في مجموعة واحدة">
+              <Layers className="w-3.5 h-3.5" /><span>تجميع المحدد</span>
+            </Button>
+          )}
+          {selectedElement?.type === "container" && (
+            <Button type="button" variant="outline" size="sm" onClick={handleUngroupSelected} className="h-8 px-2 text-xs gap-1 cursor-pointer font-bold" title="فصل عناصر هذه المجموعة">
+              <Layers className="w-3.5 h-3.5" /><span>فصل المجموعة</span>
+            </Button>
+          )}
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={() => void handleSaveDraft()}
             disabled={saveStatus === "saving" || isSyncWorkflowInProgress || !draft.hasUnsavedLocalChanges}
-            className="h-8 px-2.5 text-xs gap-1.5 cursor-pointer font-bold"
+            className="h-9 px-3 text-xs gap-1.5 cursor-pointer font-bold"
             title={saveError || "حفظ محلي أولًا، فحص التوافق، ثم مزامنة Supabase (Ctrl+S)"}
           >
             {saveStatus === "saving" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
@@ -1134,7 +1223,7 @@ export function DeveloperStudioProPage() {
         </div>
 
         {/* Left side (RTL): History, Discard, Publish Action */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/70 bg-muted/20 p-1.5">
           <Button
             type="button"
             variant="ghost"
@@ -1146,7 +1235,7 @@ export function DeveloperStudioProPage() {
               }
               setShowHistoryModal(true);
             }}
-            className="h-8 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground cursor-pointer"
+            className="h-9 px-3 text-xs gap-1.5 text-muted-foreground hover:text-foreground cursor-pointer"
             title={draft.hasUnsavedLocalChanges ? "احفظ المسودة أولًا قبل فتح سجل الإصدارات" : "سجل الإصدارات والاسترجاع"}
           >
             <History className="w-3.5 h-3.5" />
@@ -1159,7 +1248,7 @@ export function DeveloperStudioProPage() {
             size="sm"
             onClick={handleDiscardDraft}
             disabled={!draft.hasUnsavedLocalChanges}
-            className="h-8 px-2 text-xs gap-1 text-muted-foreground hover:text-destructive cursor-pointer disabled:opacity-40"
+            className="h-9 px-3 text-xs gap-1.5 text-muted-foreground hover:text-destructive cursor-pointer disabled:opacity-40"
             title="إلغاء التعديلات غير المنشورة"
           >
             <RotateCcw className="w-3.5 h-3.5" />
@@ -1171,7 +1260,7 @@ export function DeveloperStudioProPage() {
             variant="default"
             size="sm"
             onClick={handleTriggerPublish}
-            className="h-8 px-3 text-xs font-black gap-1.5 cursor-pointer bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
+            className="h-9 px-4 text-xs font-black gap-1.5 cursor-pointer bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
           >
             <UploadCloud className="w-3.5 h-3.5" />
             <span>نشر التغييرات</span>
@@ -1188,12 +1277,60 @@ export function DeveloperStudioProPage() {
       <div className="min-h-0 flex-1 overflow-hidden">
         <LiveAppPreview
           route={activePage?.route || "/admin"}
-          designerMode={workspaceMode === "builder"}
+          designerMode={true}
           initialEdits={draft.domEdits || {}}
+          selectedDraftElementId={selectedElementId}
           onEditsChange={(domEdits) => {
             if (!draft) return;
             commitDraftChange({ ...draft, domEdits, hasUnpublishedChanges: true });
           }}
+          draftTreePanel={
+            <ElementTreePanel
+              pages={draft.pages}
+              activePageId={activePageId}
+              elements={draft.elements}
+              selectedElementId={selectedElementId}
+              selectedElementIds={selectedElementIds}
+              className="!h-full !w-full !min-w-0 !border-0"
+              onSelectPage={(pageId) => {
+                setActivePageId(pageId);
+                setSelectedElementId(null);
+                setSelectedElementIds([]);
+              }}
+              onAddPage={handleAddPage}
+              onSelectElement={handleSelectElement}
+              onAddElement={handleAddElement}
+              onDeleteElement={handleDeleteElement}
+              onDuplicateElement={handleDuplicateElement}
+              onToggleVisibility={(elementId) => {
+                const target = draft.elements[elementId];
+                if (target) handleUpdateElement(elementId, { layout: { ...target.layout, visibility: !target.layout.visibility } });
+              }}
+              onToggleLock={(elementId) => {
+                const target = draft.elements[elementId];
+                if (target) handleUpdateElement(elementId, { locked: !target.locked });
+              }}
+            />
+          }
+          elementPropertiesPanel={
+            <PropertiesPanel
+              element={selectedElement}
+              pages={draft.pages}
+              elements={draft.elements}
+              onUpdateElement={handleUpdateElement}
+              onDeleteElement={handleDeleteElement}
+              onDuplicateElement={handleDuplicateElement}
+              className="!h-full !w-full !min-w-0 !border-0"
+            />
+          }
+          workflowPanel={
+            <WorkflowEditorPanel
+              element={selectedElement}
+              elements={draft.elements}
+              onUpdateElement={handleUpdateElement}
+              onAddButton={() => handleAddElement("button")}
+            />
+          }
         />
       </div>
 
@@ -1253,6 +1390,7 @@ export function DeveloperStudioProPage() {
             setDraft(updatedDraft);
             setActivePageId(Object.keys(updatedDraft.pages || {})[0] || "page_dashboard");
             setSelectedElementId(null);
+                setSelectedElementIds([]);
             setHistoryStack([JSON.parse(JSON.stringify(updatedDraft))]);
             setHistoryPointer(0);
             setSaveStatus("saved");

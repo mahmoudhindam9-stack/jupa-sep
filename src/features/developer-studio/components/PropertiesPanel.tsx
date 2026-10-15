@@ -322,6 +322,42 @@ export function PropertiesPanel({
                 />
               </div>
               <div>
+                <Label className="text-xs font-bold mb-1.5 block">مكتبة الأيقونات</Label>
+                <select
+                  disabled={element.locked}
+                  value={String(element.attributes?.iconName || "")}
+                  onChange={(e) => onUpdateElement(element.id, { attributes: { ...element.attributes, iconName: e.target.value } })}
+                  className="w-full h-9 rounded-md border border-border bg-background px-2 text-xs"
+                >
+                  <option value="">بدون أيقونة</option>
+                  <option value="home">الرئيسية</option>
+                  <option value="file">ملف أو تقرير</option>
+                  <option value="search">بحث</option>
+                  <option value="settings">إعدادات</option>
+                  <option value="plus">إضافة</option>
+                  <option value="download">تحميل</option>
+                  <option value="check">تأكيد</option>
+                  <option value="link">رابط</option>
+                  <option value="mail">رسالة</option>
+                  <option value="print">طباعة</option>
+                  <option value="calculator">آلة حاسبة</option>
+                  <option value="bell">تنبيهات</option>
+                  <option value="calendar">تقويم</option>
+                  <option value="coffee">قهوة</option>
+                  <option value="card">بطاقة دفع</option>
+                  <option value="package">صندوق ومخزون</option>
+                  <option value="truck">شحن ونقل</option>
+                  <option value="user">مستخدم</option>
+                  <option value="users">المستخدمون</option>
+                  <option value="wallet">محفظة</option>
+                  <option value="chart">تقارير ورسوم</option>
+                  <option value="clipboard">قائمة مهام</option>
+                  <option value="shield">حماية</option>
+                  <option value="money">مبالغ مالية</option>
+                </select>
+                <p className="mt-1 text-[10px] text-muted-foreground">يمكنك اختيار رمز جاهز ليظهر قبل نص الزر.</p>
+              </div>
+              <div>
                 <Label className="text-xs font-bold mb-1.5 block">ماذا يحدث عند الضغط؟</Label>
                 <select
                   disabled={element.locked}
@@ -676,6 +712,26 @@ export function PropertiesPanel({
               <span>الخطوط والطباعة</span>
             </h4>
 
+            <div>
+              <Label className="text-[11px] font-medium text-muted-foreground mb-1 block">عائلة الخط (عربي / English)</Label>
+              <select
+                disabled={element.locked}
+                value={element.styles.fontFamily || "Cairo, sans-serif"}
+                onChange={(e) => updateStyles({ fontFamily: e.target.value })}
+                className="w-full h-9 px-2 rounded-md border border-border bg-background text-xs"
+              >
+                <option value="Cairo, sans-serif">Cairo — عربي واضح</option>
+                <option value="Tajawal, sans-serif">Tajawal — عربي حديث</option>
+                <option value="IBM Plex Sans Arabic, sans-serif">IBM Plex Sans Arabic</option>
+                <option value="Noto Sans Arabic, sans-serif">Noto Sans Arabic</option>
+                <option value="Inter, Arial, sans-serif">Inter — English</option>
+                <option value="Arial, sans-serif">Arial — عام</option>
+                <option value="Georgia, serif">Georgia — كلاسيكي</option>
+                <option value="monospace">خط ثابت العرض</option>
+              </select>
+              <p className="mt-1 text-[10px] text-muted-foreground">يعرض الخط إذا كان متاحًا في التطبيق أو على جهاز المستخدم.</p>
+            </div>
+
             {/* Font Size & Weight */}
             <div className="grid grid-cols-2 gap-2">
               <div>
@@ -744,6 +800,36 @@ export function PropertiesPanel({
               <Palette className="w-3.5 h-3.5 text-primary" />
               <span>الألوان والمظهر</span>
             </h4>
+
+            <div className="space-y-2">
+              <Label className="text-[11px] font-medium text-muted-foreground">مكتبة الألوان الجاهزة</Label>
+              <div className="grid grid-cols-4 gap-2">
+                {[
+                  { name: "كحلي", textColor: "#0f172a", backgroundColor: "#f8fafc", borderColor: "#cbd5e1" },
+                  { name: "أزرق", textColor: "#1e3a8a", backgroundColor: "#dbeafe", borderColor: "#93c5fd" },
+                  { name: "أخضر", textColor: "#14532d", backgroundColor: "#dcfce7", borderColor: "#86efac" },
+                  { name: "ذهبي", textColor: "#78350f", backgroundColor: "#fef3c7", borderColor: "#fcd34d" },
+                  { name: "أرجواني", textColor: "#581c87", backgroundColor: "#f3e8ff", borderColor: "#d8b4fe" },
+                  { name: "أحمر", textColor: "#7f1d1d", backgroundColor: "#fee2e2", borderColor: "#fca5a5" },
+                  { name: "داكن", textColor: "#f8fafc", backgroundColor: "#0f172a", borderColor: "#334155" },
+                  { name: "محايد", textColor: "#374151", backgroundColor: "#f3f4f6", borderColor: "#d1d5db" },
+                ].map((preset) => (
+                  <button
+                    key={preset.name}
+                    type="button"
+                    disabled={element.locked}
+                    title={preset.name}
+                    aria-label={"تطبيق مجموعة ألوان " + preset.name}
+                    onClick={() => updateStyles({ textColor: preset.textColor, backgroundColor: preset.backgroundColor, borderColor: preset.borderColor })}
+                    className="flex h-9 items-center justify-center gap-1 rounded-lg border p-1 text-[9px] font-bold disabled:opacity-40"
+                    style={{ backgroundColor: preset.backgroundColor, color: preset.textColor, borderColor: preset.borderColor }}
+                  >
+                    <span className="h-3 w-3 rounded-full border" style={{ backgroundColor: preset.textColor, borderColor: preset.borderColor }} />
+                    <span>{preset.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
 
             {/* Text Color */}
             <div className="flex items-center justify-between gap-2">

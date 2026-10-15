@@ -1,13 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, Check, Copy, Eye, EyeOff, Layers, Monitor, RefreshCw, Settings2, Smartphone, Tablet, Trash2 } from "lucide-react";
+import { renderToStaticMarkup } from "react-dom/server";
+import {
+  ArrowDown, ArrowUp, BarChart3, Bell, CalendarDays, Check, CheckCircle2, CircleDollarSign,
+  ClipboardList, Coffee, Copy, CreditCard, Download, Eye, EyeOff, FileText, Home, Layers,
+  Mail, Monitor, Package, Plus, Printer, RefreshCw, Search, Settings, Settings2, ShieldCheck,
+  Smartphone, Tablet, Trash2, Truck, UserRound, Users, Wallet,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { StudioDomEdit } from "../models/studio.types";
+import type { StudioDomAddedItem, StudioDomEdit } from "../models/studio.types";
 
 type SelectedDomElement = {
   selector: string; tag: string; text: string; color: string; backgroundColor: string;
   fontSize: string; fontWeight: string; width: string; height: string;
   fill: string; stroke: string; strokeWidth: string; opacity: string;
-  borderRadius: string; rotate: string; textAlign: string;
+  borderRadius: string; rotate: string; textAlign: string; fontFamily: string; href: string; isLink: boolean;
 };
 type LiveTreeNode = { selector: string; tag: string; label: string; children: LiveTreeNode[] };
 type LiveRoute = { href: string; label: string };
@@ -15,21 +21,114 @@ type Props = {
   route: string;
   initialEdits: Record<string, StudioDomEdit>;
   onEditsChange: (edits: Record<string, StudioDomEdit>) => void;
-  /** Enable direct DOM editing only while the Element Designer workspace is active. */
+  /** Enable direct DOM editing only while the unified Studio workspace is active. */
   designerMode?: boolean;
+  draftTreePanel?: React.ReactNode;
+  elementPropertiesPanel?: React.ReactNode;
+  workflowPanel?: React.ReactNode;
+  selectedDraftElementId?: string | null;
 };
 type PreviewSize = "desktop" | "tablet" | "mobile";
+type LeftPanelTab = "app" | "elements";
+type InspectorTab = "dom" | "element" | "workflow";
 
-export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMode = false }: Props) {
+const STUDIO_ICON_LIBRARY = [
+  { value: "home", label: "الرئيسية", icon: Home },
+  { value: "search", label: "بحث", icon: Search },
+  { value: "settings", label: "إعدادات", icon: Settings },
+  { value: "plus", label: "إضافة", icon: Plus },
+  { value: "check", label: "تأكيد", icon: Check },
+  { value: "check-circle", label: "اعتماد", icon: CheckCircle2 },
+  { value: "file", label: "ملف أو تقرير", icon: FileText },
+  { value: "download", label: "تحميل", icon: Download },
+  { value: "mail", label: "رسالة", icon: Mail },
+  { value: "printer", label: "طباعة", icon: Printer },
+  { value: "calculator", label: "آلة حاسبة", icon: CircleDollarSign },
+  { value: "calendar", label: "تقويم", icon: CalendarDays },
+  { value: "coffee", label: "قهوة", icon: Coffee },
+  { value: "wallet", label: "محفظة", icon: Wallet },
+  { value: "card", label: "بطاقة دفع", icon: CreditCard },
+  { value: "package", label: "صندوق ومخزون", icon: Package },
+  { value: "truck", label: "شحن ونقل", icon: Truck },
+  { value: "user", label: "مستخدم", icon: UserRound },
+  { value: "users", label: "المستخدمون", icon: Users },
+  { value: "chart", label: "تقارير ورسوم", icon: BarChart3 },
+  { value: "bell", label: "تنبيهات", icon: Bell },
+  { value: "clipboard", label: "قائمة مهام", icon: ClipboardList },
+  { value: "shield", label: "حماية", icon: ShieldCheck },
+] as const;
+const STUDIO_ICON_COMPONENTS: Record<string, React.ComponentType<any>> = Object.fromEntries(
+  STUDIO_ICON_LIBRARY.map((entry) => [entry.value, entry.icon]),
+);
+
+const getFriendlyElementType = (tag: string): string => {
+  const labels: Record<string, string> = {
+    a: "رابط",
+    button: "زر",
+    input: "حقل إدخال",
+    textarea: "حقل نصي",
+    select: "قائمة اختيار",
+    option: "خيار",
+    img: "صورة",
+    h1: "عنوان رئيسي",
+    h2: "عنوان فرعي",
+    h3: "عنوان",
+    h4: "عنوان صغير",
+    p: "نص",
+    span: "جزء نصي",
+    div: "حاوية",
+    section: "قسم",
+    article: "محتوى",
+    main: "منطقة المحتوى",
+    nav: "شريط تنقل",
+    header: "رأس الصفحة",
+    footer: "تذييل الصفحة",
+    form: "نموذج",
+    label: "تسمية",
+    table: "جدول",
+    thead: "رأس الجدول",
+    tbody: "محتوى الجدول",
+    tr: "صف",
+    th: "عنوان عمود",
+    td: "خلية",
+    ul: "قائمة",
+    ol: "قائمة مرتبة",
+    li: "عنصر قائمة",
+    svg: "رسم أو أيقونة",
+    path: "جزء من رسم",
+    circle: "شكل دائري",
+    rect: "شكل مستطيل",
+    line: "خط",
+    polygon: "شكل متعدد الأضلاع",
+    polyline: "خط متعدد النقاط",
+  };
+  return labels[tag.toLowerCase()] || "عنصر";
+};
+
+export function LiveAppPreview({
+  route, initialEdits, onEditsChange, designerMode = false,
+  draftTreePanel, elementPropertiesPanel, workflowPanel, selectedDraftElementId,
+}: Props) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const editsRef = useRef<Record<string, StudioDomEdit>>(initialEdits || {});
   const changeCallbackRef = useRef(onEditsChange);
   const [selected, setSelected] = useState<SelectedDomElement | null>(null);
+  const selectedSelectorRef = useRef<string | null>(null);
+  const [linkValue, setLinkValue] = useState("");
+  const [showAddItem, setShowAddItem] = useState(false);
+  const [addedType, setAddedType] = useState<StudioDomAddedItem["type"]>("button");
+  const [addedName, setAddedName] = useState("عنصر جديد");
+  const [addedText, setAddedText] = useState("عنصر جديد");
+  const [addedPlacement, setAddedPlacement] = useState<StudioDomAddedItem["placement"]>("after");
+  const [addedAction, setAddedAction] = useState<NonNullable<StudioDomAddedItem["action"]>>("none");
+  const [addedUrl, setAddedUrl] = useState("");
+  const [addedMessage, setAddedMessage] = useState("تم تنفيذ الإجراء.");
   const [textValue, setTextValue] = useState("");
   const [textColor, setTextColor] = useState("#111827");
   const [backgroundColor, setBackgroundColor] = useState("#ffffff");
   const [fontSize, setFontSize] = useState("16");
   const [fontWeight, setFontWeight] = useState("400");
+  const [fontFamily, setFontFamily] = useState("Arial, sans-serif");
   const [width, setWidth] = useState("");
   const [height, setHeight] = useState("");
   const [fillColor, setFillColor] = useState("#6366f1");
@@ -49,8 +148,10 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
   const [treeNodes, setTreeNodes] = useState<LiveTreeNode[]>([]);
   const [pageLinks, setPageLinks] = useState<LiveRoute[]>([]);
   // Keep the real app at its natural width by default; side panels are optional overlays.
-  const [showExplorer, setShowExplorer] = useState(false);
-  const [showProperties, setShowProperties] = useState(false);
+  const [showExplorer, setShowExplorer] = useState(designerMode);
+  const [showProperties, setShowProperties] = useState(designerMode);
+  const [leftPanelTab, setLeftPanelTab] = useState<LeftPanelTab>("app");
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>("dom");
   const [treeFilter, setTreeFilter] = useState("");
   const [edits, setEdits] = useState<Record<string, StudioDomEdit>>(initialEdits || {});
   editsRef.current = edits;
@@ -64,6 +165,12 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
     const value = (currentRoute || "/admin").trim();
     return value.startsWith("/") && !value.startsWith("//") ? value : "/admin";
   }, [currentRoute]);
+  // Mark the iframe so the app shell knows Studio is already handling draft edits.
+  const previewRoute = useMemo(() => {
+    const url = new URL(safeRoute, "https://studio-preview.invalid");
+    url.searchParams.set("studioPreview", "1");
+    return `${url.pathname}${url.search}${url.hash}`;
+  }, [safeRoute]);
   const origin = typeof window !== "undefined" ? window.location.origin : "";
 
   const send = useCallback((data: Record<string, unknown>) => {
@@ -92,7 +199,15 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
       setPageLinks(routes);
     } else if (event.data.type === "STUDIO_SELECTED") {
       const item = event.data.element as SelectedDomElement;
-      setSelected(item);
+      // Clicking the currently selected item toggles its property panel closed.
+      const toggledOff = event.data.toggle === true && selectedSelectorRef.current === item.selector && showProperties;
+      selectedSelectorRef.current = toggledOff ? null : item.selector;
+      setSelected(toggledOff ? null : item);
+      setLinkValue(item.href || "");
+      if (editMode) {
+        setShowProperties(true);
+        setInspectorTab("dom");
+      }
       setTextValue(item.text || "");
       setTextColor(item.color || "#111827");
       setBackgroundColor(item.backgroundColor || "#ffffff");
@@ -107,10 +222,15 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
       setBorderRadius(item.borderRadius || "8px");
       setIconRotation(item.rotate || "0deg");
       setTextAlign(item.textAlign || "right");
-      setStatus("تم تحديد العنصر: " + item.tag);
+      setFontFamily(item.fontFamily || "Arial, sans-serif");
+      setInspectorTab("dom");
+      setShowProperties(true);
+      setStatus("تم تحديد: " + getFriendlyElementType(item.tag));
     } else if (event.data.type === "STUDIO_CHANGE") {
       commitEdits(String(event.data.selector), event.data.patch || {});
       setStatus("تم تعديل المعاينة فقط — اضغط «حفظ ومزامنة» لاعتماد المسودة على الخادم.");
+    } else if (event.data.type === "STUDIO_LINK_UNAVAILABLE") {
+      setStatus(String(event.data.message || "تعذر تحديث الرابط."));
     } else if (event.data.type === "STUDIO_PROTECTED_ELEMENT") {
       setStatus(String(event.data.message || "هذا العنصر محمي من التعديل لضمان بقاء وظائفه الأصلية."));
     } else if (event.data.type === "STUDIO_BRIDGE_READY") {
@@ -119,7 +239,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
       send({ action: "setMode", enabled: editMode });
       send({ action: "restore", edits: editsRef.current });
     }
-  }, [commitEdits, editMode, send]);
+  }, [commitEdits, editMode, send, showProperties]);
 
   useEffect(() => {
     window.addEventListener("message", onMessage);
@@ -129,6 +249,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
   useEffect(() => {
     setReady(false);
     setSelected(null);
+    selectedSelectorRef.current = null;
     setTreeNodes([]);
     setPageLinks([]);
     setStatus("جاري تحميل الصفحة الفعلية: " + safeRoute);
@@ -136,7 +257,23 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
 
   useEffect(() => {
     setEditMode(designerMode);
+    // Keep the application canvas unobstructed until the user opens the explorer.
+    setShowExplorer(designerMode);
+    setShowProperties(designerMode);
+    if (!designerMode) {
+      setShowProperties(false);
+      setShowAddItem(false);
+    }
   }, [designerMode]);
+
+  useEffect(() => {
+    if (selectedDraftElementId) {
+      setShowExplorer(true);
+      setLeftPanelTab("elements");
+      setInspectorTab("element");
+      setShowProperties(true);
+    }
+  }, [selectedDraftElementId]);
 
   useEffect(() => {
     if (ready) send({ action: "setMode", enabled: editMode });
@@ -217,16 +354,21 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         originalStates.set(selector, {
           el,
           styleAttribute: el.getAttribute("style"),
+          svgAttributes: el.matches("svg") ? Array.from(el.attributes).map((attr) => [attr.name, attr.value]) : null,
+          svgInnerHTML: el.matches("svg") ? el.innerHTML : null,
           leafText: el.children.length === 0 ? (el.textContent || "") : null,
           directTextNodes: el.children.length === 0 ? [] : Array.from(el.childNodes)
             .filter((node) => node.nodeType === Node.TEXT_NODE)
             .map((node) => ({ node, text: node.textContent })),
           parent: el.parentNode,
           nextSibling: el.nextSibling,
+          linkEl: el.matches("a[href]") ? el : el.closest("a[href]"),
+          hrefAttribute: (el.matches("a") ? el : el.closest("a"))?.getAttribute("href") ?? null,
         });
       };
       const resetPreviewEdits = () => {
         document.querySelectorAll("[data-coding-studio-clone-of]").forEach((el) => el.remove());
+        document.querySelectorAll("[data-coding-studio-added-for]").forEach((el) => el.remove());
         for (const state of Array.from(originalStates.values()).reverse()) {
           const el = state.el;
           if (!el.isConnected) continue;
@@ -238,8 +380,17 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
             }
           }
           delete el.dataset.codingStudioTextApplied;
+          if (state.svgAttributes) {
+            Array.from(el.attributes).forEach((attr) => el.removeAttribute(attr.name));
+            state.svgAttributes.forEach(([name, value]) => el.setAttribute(name, value));
+            el.innerHTML = state.svgInnerHTML || "";
+          }
           if (state.styleAttribute === null) el.removeAttribute("style");
           else el.setAttribute("style", state.styleAttribute);
+          if (state.linkEl?.isConnected) {
+            if (state.hrefAttribute === null) state.linkEl.removeAttribute("href");
+            else state.linkEl.setAttribute("href", state.hrefAttribute);
+          }
           if (state.parent && el.parentNode === state.parent) {
             if (state.nextSibling && state.nextSibling.parentNode === state.parent) state.parent.insertBefore(el, state.nextSibling);
             else state.parent.appendChild(el);
@@ -255,7 +406,10 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
           width: el.style.width || "auto", height: el.style.height || "auto", fontWeight: css.fontWeight,
           fill: css.fill || el.getAttribute("fill") || "", stroke: css.stroke || el.getAttribute("stroke") || "",
           strokeWidth: css.strokeWidth || el.getAttribute("stroke-width") || "2", opacity: css.opacity || "1",
-          borderRadius: css.borderRadius || "0px", rotate: css.rotate || "0deg", textAlign: css.textAlign || "right" };
+          borderRadius: css.borderRadius || "0px", rotate: css.rotate || "0deg", textAlign: css.textAlign || "right",
+          fontFamily: css.fontFamily || "Arial, sans-serif",
+          href: (el.matches("a[href]") ? el : el.closest("a[href]"))?.getAttribute("href") || "",
+          isLink: !!(el.matches("a") || el.closest("a")) };
       };
       const applyStyles = (el, styles) => {
         const applyTo = [el];
@@ -276,6 +430,75 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         else if (!el.children.length) el.textContent = String(value);
         el.dataset.codingStudioTextApplied = String(value);
       };
+      const safeLinkUrl = (value) => {
+        const url = String(value || "").trim();
+        return (url.startsWith("/") && !url.startsWith("//")) || /^https?:\/\//i.test(url) ? url : "";
+      };
+      const renderAddedItem = (item, selector) => {
+        const types = { text: "p", button: "button", input: "input", card: "div", divider: "hr", link: "a" };
+        const node = document.createElement(types[item?.type] || "p");
+        node.dataset.codingStudioAddedFor = selector;
+        node.id = String(item?.id || "");
+        node.dataset.studioAddedName = String(item?.name || "عنصر جديد");
+        node.setAttribute("aria-label", node.dataset.studioAddedName);
+        if (item?.type === "input") {
+          node.setAttribute("placeholder", String(item?.text || ""));
+          node.setAttribute("type", "text");
+          node.style.cssText = "display:block;max-width:100%;padding:8px 10px;margin:6px 0;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#111827";
+        } else if (item?.type === "divider") {
+          node.style.cssText = "display:block;width:100%;margin:10px 0;border:0;border-top:1px solid #cbd5e1";
+        } else {
+          node.textContent = String(item?.text || item?.name || "عنصر جديد");
+          node.style.cssText = item?.type === "button"
+            ? "display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 12px;margin:6px 4px;border:1px solid #cbd5e1;border-radius:8px;background:#4f46e5;color:#fff;font-weight:700;cursor:pointer"
+            : item?.type === "card"
+              ? "display:block;padding:12px;margin:8px 0;border:1px solid #cbd5e1;border-radius:12px;background:#fff;color:#111827"
+              : item?.type === "link"
+                ? "display:inline-block;margin:6px 4px;color:#2563eb;text-decoration:underline;cursor:pointer"
+                : "display:block;margin:6px 0;color:inherit";
+        }
+        if (item?.type === "link") {
+          const safe = safeLinkUrl(item.url);
+          if (safe) node.setAttribute("href", safe);
+        }
+        if (item?.type === "button" || item?.type === "link") {
+          node.addEventListener("click", (event) => {
+            const action = item?.action || "none";
+            const safe = safeLinkUrl(item?.url);
+            if (action !== "none") event.preventDefault();
+            if (action === "message") window.alert(String(item?.message || "تم تنفيذ الإجراء."));
+            else if (action === "navigate" && safe.startsWith("/") && !safe.startsWith("//")) location.assign(safe);
+            else if (action === "external" && /^https?:\/\//i.test(safe)) window.open(safe, "_blank", "noopener,noreferrer");
+          });
+        }
+        return node;
+      };
+      const applyStudioIconMarkup = (element, markup) => {
+        const target = element?.matches?.("svg") ? element : element?.querySelector?.("svg");
+        if (!target || typeof markup !== "string" || markup.length > 16000) return false;
+        const parsed = new DOMParser().parseFromString(markup, "image/svg+xml");
+        const source = parsed.documentElement;
+        if (!source || source.localName.toLowerCase() !== "svg" || parsed.querySelector("parsererror")) return false;
+        const tags = new Set(["path", "circle", "rect", "line", "polyline", "polygon", "ellipse"]);
+        const attrs = new Set(["d", "x", "y", "x1", "y1", "x2", "y2", "cx", "cy", "r", "rx", "ry", "width", "height", "points", "transform", "fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin", "fill-rule", "clip-rule", "opacity"]);
+        const safeClone = (node) => {
+          const tag = node.localName?.toLowerCase();
+          if (!tags.has(tag)) return null;
+          const clone = document.createElementNS("http://www.w3.org/2000/svg", tag);
+          Array.from(node.attributes || []).forEach((attr) => {
+            if (attrs.has(attr.name.toLowerCase()) && !attr.name.toLowerCase().startsWith("on")) clone.setAttribute(attr.name, attr.value);
+          });
+          Array.from(node.children || []).forEach((child) => { const copy = safeClone(child); if (copy) clone.appendChild(copy); });
+          return clone;
+        };
+        ["viewBox", "fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin"].forEach((attr) => {
+          const value = source.getAttribute(attr);
+          if (value !== null) target.setAttribute(attr, value);
+        });
+        target.querySelectorAll("path,circle,rect,line,polyline,polygon,ellipse").forEach((node) => node.remove());
+        Array.from(source.children).forEach((child) => { const copy = safeClone(child); if (copy) target.appendChild(copy); });
+        return true;
+      };
       const applyEdit = (selector, edit) => {
         const el = find(selector);
         if (!el || !edit || isProtected(el)) return;
@@ -283,6 +506,15 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         rememberOriginal(selector, el);
         if (edit.text !== undefined && el.dataset.codingStudioTextApplied !== String(edit.text)) applyText(el, edit.text);
         if (edit.styles && typeof edit.styles === "object") applyStyles(el, edit.styles);
+        if (typeof edit.iconSvg === "string") applyStudioIconMarkup(el, edit.iconSvg);
+        if (typeof edit.href === "string") {
+          const anchor = el.matches("a") ? el : el.closest("a");
+          if (anchor) {
+            const safeHref = safeLinkUrl(edit.href);
+            if (safeHref) anchor.setAttribute("href", safeHref);
+            else if (!edit.href.trim()) anchor.removeAttribute("href");
+          }
+        }
         if (edit.deleted) el.style.display = "none";
         if (typeof edit.order === "number" && el.parentElement) {
           const siblings = Array.from(el.parentElement.children).filter((item) =>
@@ -297,16 +529,27 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         const parent = el.parentElement;
         if (parent) {
           const wanted = Math.min(5, Math.max(0, Number(edit.duplicateCount) || 0));
-          const count = Array.from(parent.children).filter((item) =>
+          const clones = Array.from(parent.children).filter((item) =>
             item.getAttribute("data-coding-studio-clone-of") === selector ||
-            item.getAttribute("data-studio-clone-of") === selector).length;
-          for (let i = count; i < wanted; i++) {
+            item.getAttribute("data-studio-clone-of") === selector);
+          // Reconcile to the exact requested count so undoing/removing duplicates
+          // cannot leave stale copies behind in the preview.
+          clones.slice(wanted).forEach((clone) => clone.remove());
+          for (let i = clones.length; i < wanted; i++) {
             const clone = el.cloneNode(true);
             clone.removeAttribute("id");
             clone.removeAttribute("data-coding-studio-selected");
             clone.setAttribute("data-coding-studio-clone-of", selector);
             parent.insertBefore(clone, el.nextSibling);
           }
+        }
+        if (!edit.deleted && Array.isArray(edit.additions)) {
+          edit.additions.slice(0, 100).forEach((item) => {
+            if (!item || !item.id || !["text", "button", "input", "card", "divider", "link"].includes(item.type)) return;
+            const added = renderAddedItem(item, selector);
+            if (item.placement === "inside") el.appendChild(added);
+            else if (el.parentElement) el.parentElement.insertBefore(added, el.nextSibling);
+          });
         }
       };
       let selected = null;
@@ -333,16 +576,17 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         if (!el || el === document.body || el === document.documentElement) return;
         if (["PATH", "CIRCLE", "RECT", "LINE", "POLYLINE", "POLYGON"].includes(el.tagName)) el = el.closest("svg") || el;
         if (isProtected(el)) return;
+        const wasSelected = selected === el;
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
-        selectElement(el);
+        if (!wasSelected) selectElement(el);
         rememberOriginal(selectorFor(el), el);
         const existingTranslate = getComputedStyle(el).translate || "none";
         const values = existingTranslate === "none" ? [] : existingTranslate.match(/-?\d+(?:\.\d+)?/g) || [];
         const baseX = Number(values[0] || 0);
         const baseY = Number(values[1] || 0);
-        dragState = { el, selector: selectorFor(el), pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, baseX, baseY, x: baseX, y: baseY, moved: false };
+        dragState = { el, selector: selectorFor(el), pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, baseX, baseY, x: baseX, y: baseY, moved: false, wasSelected };
         try { el.setPointerCapture(event.pointerId); } catch { /* pointer capture is optional */ }
       }, true);
       document.addEventListener("pointermove", (event) => {
@@ -369,6 +613,10 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
             patch: { styles: { translate: finished.x + "px " + finished.y + "px", zIndex: finished.el.style.zIndex } }
           });
           send("STUDIO_SELECTED", { element: describe(finished.el) });
+        } else if (finished.wasSelected) {
+          // A deliberate second click on the selected element toggles its inspector.
+          // A drag must never close the inspector just because the element stayed selected.
+          send("STUDIO_SELECTED", { element: describe(finished.el), toggle: true });
         }
       }, true);
       document.addEventListener("click", (event) => {
@@ -382,6 +630,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
+        if (selected === el) return;
         selectElement(el);
       }, true);
       window.addEventListener("message", (event) => {
@@ -418,12 +667,36 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         const selector = selectorFor(el);
         rememberOriginal(selector, el);
         const notify = (patch) => send("STUDIO_CHANGE", { selector, patch });
-        if (data.action === "style") {
+        if (data.action === "icon") {
+          const iconSvg = String(data.iconSvg || "");
+          if (!applyStudioIconMarkup(el, iconSvg)) {
+            send("STUDIO_LINK_UNAVAILABLE", { message: "تعذر تطبيق الأيقونة المحددة على هذا العنصر." });
+            return;
+          }
+          notify({ iconSvg, iconName: String(data.iconName || "") });
+          send("STUDIO_SELECTED", { element: describe(el) });
+        } else if (data.action === "style") {
           applyStyles(el, data.styles || {});
           notify({ styles: data.styles || {} });
         } else if (data.action === "text") {
           applyText(el, data.text);
           notify({ text: data.text });
+        } else if (data.action === "href") {
+          const anchor = el.matches("a") ? el : el.closest("a");
+          if (!anchor) {
+            send("STUDIO_LINK_UNAVAILABLE", { message: "العنصر المحدد لا يحتوي على رابط قابل للتعديل." });
+            return;
+          }
+          const requested = String(data.url || "").trim();
+          const safe = safeLinkUrl(requested);
+          if (requested && !safe) {
+            send("STUDIO_LINK_UNAVAILABLE", { message: "الرابط يجب أن يكون مسارًا داخليًا أو HTTP/HTTPS." });
+            return;
+          }
+          if (safe) anchor.setAttribute("href", safe);
+          else anchor.removeAttribute("href");
+          notify({ href: requested });
+          send("STUDIO_SELECTED", { element: describe(el) });
         } else if (data.action === "delete") {
           el.style.display = "none";
           notify({ deleted: true });
@@ -526,18 +799,31 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
     if (!selected) return;
     send({ action: "text", selector: selected.selector, text: value });
   };
-  const action = (name: string, _patch?: StudioDomEdit) => {
+  const action = (name: string, patch?: Record<string, unknown>) => {
     if (!selected) return;
-    send({ action: name, selector: selected.selector });
+    send({ action: name, selector: selected.selector, ...(patch || {}) });
+  };
+
+  const chooseStudioIcon = (name: string) => {
+    if (!selected || !selectedIsVector) return;
+    const Icon = STUDIO_ICON_COMPONENTS[name];
+    if (!Icon) return;
+    const iconSvg = renderToStaticMarkup(React.createElement(Icon, {
+      size: 24, strokeWidth: 2, "aria-hidden": true,
+    }));
+    action("icon", { iconName: name, iconSvg });
+    setStatus("تم تغيير الأيقونة مباشرة في المعاينة؛ سيُحفظ الاختيار مع المسودة.");
   };
   const frameWidth = previewSize === "mobile" ? "390px" : previewSize === "tablet" ? "820px" : "100%";
   const selectedIsVector = !!selected && ["svg", "path", "circle", "rect", "line", "polyline", "polygon"].includes(selected.tag);
+  const selectedIconName = selected ? String(edits[selected.selector]?.iconName || "") : "";
+  const SelectedIconComponent = STUDIO_ICON_COMPONENTS[selectedIconName];
   const visibleTreeNodes = useMemo(() => {
     const query = treeFilter.trim().toLocaleLowerCase();
     if (!query) return treeNodes;
     const filterNodes = (nodes: LiveTreeNode[]): LiveTreeNode[] => nodes
       .map((node) => ({ ...node, children: filterNodes(node.children || []) }))
-      .filter((node) => node.label.toLocaleLowerCase().includes(query) || node.tag.toLocaleLowerCase().includes(query) || node.children.length > 0);
+      .filter((node) => node.label.toLocaleLowerCase().includes(query) || getFriendlyElementType(node.tag).toLocaleLowerCase().includes(query) || node.tag.toLocaleLowerCase().includes(query) || node.children.length > 0);
     return filterNodes(treeNodes);
   }, [treeNodes, treeFilter]);
   const renderTreeNodes = (nodes: LiveTreeNode[], depth = 0): React.ReactNode => nodes.map((node) => (
@@ -549,7 +835,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         className={"flex min-h-7 w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-right text-[11px] hover:bg-accent " + (selected?.selector === node.selector ? "bg-primary/10 font-black text-primary" : "text-foreground")}
         style={{ paddingRight: Math.min(18, depth * 7 + 6) + "px" }}
       >
-        <span className="shrink-0 rounded bg-muted px-1 font-mono text-[9px] text-muted-foreground">{node.tag}</span>
+        <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[9px] text-muted-foreground">{getFriendlyElementType(node.tag)}</span>
         <span className="min-w-0 flex-1 truncate">{node.label}</span>
       </button>
       {node.children.length > 0 && <div className="mr-2 border-r border-border/70 pr-1">{renderTreeNodes(node.children, depth + 1)}</div>}
@@ -560,37 +846,121 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
     if (!href.startsWith("/") || href.startsWith("//")) return;
     setCurrentRoute(href);
     setSelected(null);
+    selectedSelectorRef.current = null;
+    setShowProperties(false);
     setFrameKey((value) => value + 1);
   };
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-background" dir="rtl">
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-card px-3 py-2">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b bg-card px-4 py-3">
         <div className="flex min-w-0 items-center gap-2">
           <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><Monitor size={16} /></span>
           <div className="min-w-0">
             <p className="truncate text-sm font-black">{designerMode ? "مصمم العناصر — معاينة التطبيق الفعلية" : "معاينة التطبيق الحقيقية"}</p>
-            <p className="truncate text-[10px] text-muted-foreground" title={safeRoute}>{safeRoute} · {designerMode ? "تعديلات محلية — الحفظ يدوي" : "وضع العرض الفعلي"} · {status}</p>
+            <p className="truncate text-[10px] text-muted-foreground" title={safeRoute}>{designerMode ? "تحرير مسودة محلية — الحفظ يدوي" : "معاينة التطبيق"} · {status}</p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <div className="flex rounded-lg border bg-background p-0.5">
-            <Button type="button" size="sm" variant={previewSize === "desktop" ? "default" : "ghost"} className="h-7 px-2" onClick={() => setPreviewSize("desktop")} title="سطح المكتب"><Monitor size={14} /></Button>
-            <Button type="button" size="sm" variant={previewSize === "tablet" ? "default" : "ghost"} className="h-7 px-2" onClick={() => setPreviewSize("tablet")} title="جهاز لوحي"><Tablet size={14} /></Button>
-            <Button type="button" size="sm" variant={previewSize === "mobile" ? "default" : "ghost"} className="h-7 px-2" onClick={() => setPreviewSize("mobile")} title="هاتف"><Smartphone size={14} /></Button>
+            <Button type="button" size="sm" variant={previewSize === "desktop" ? "default" : "ghost"} className="h-8 px-3" onClick={() => setPreviewSize("desktop")} title="سطح المكتب"><Monitor size={14} /></Button>
+            <Button type="button" size="sm" variant={previewSize === "tablet" ? "default" : "ghost"} className="h-8 px-3" onClick={() => setPreviewSize("tablet")} title="جهاز لوحي"><Tablet size={14} /></Button>
+            <Button type="button" size="sm" variant={previewSize === "mobile" ? "default" : "ghost"} className="h-8 px-3" onClick={() => setPreviewSize("mobile")} title="هاتف"><Smartphone size={14} /></Button>
           </div>
-          <Button type="button" size="sm" variant={editMode ? "default" : "outline"} className="h-7 gap-1 px-2 text-xs" onClick={() => setEditMode(v => !v)}>
+          <Button type="button" size="sm" variant={editMode ? "default" : "outline"} className="h-8 gap-1.5 px-3 text-xs" onClick={() => setEditMode(v => !v)}>
             {editMode ? <EyeOff size={14} /> : <Eye size={14} />}{editMode ? "وضع التحرير" : "وضع التفاعل"}
           </Button>
-          <Button type="button" size="sm" variant={showExplorer ? "default" : "outline"} className="h-7 gap-1 px-2 text-xs" onClick={() => setShowExplorer(v => !v)}><Layers size={14} /> {showExplorer ? "إخفاء الشجرة" : "الصفحات والشجرة"}</Button>
-          <Button type="button" size="sm" variant={showProperties ? "default" : "outline"} className="h-7 gap-1 px-2 text-xs" onClick={() => setShowProperties(v => !v)}><Settings2 size={14} /> {showProperties ? "إخفاء الخصائص" : "الخصائص"}</Button>
-          <Button type="button" size="sm" variant="outline" className="h-7 gap-1 px-2 text-xs" onClick={() => setFrameKey(v => v + 1)}><RefreshCw size={14} /> تحديث</Button>
+          {designerMode && (
+            <Button type="button" size="sm" variant={showAddItem ? "default" : "outline"} className="h-8 gap-1.5 px-3 text-xs" disabled={!selected} onClick={() => setShowAddItem(v => !v)} title={selected ? "إضافة عنصر في الموضع المحدد داخل الصفحة الفعلية" : "حدد الموضع أولًا داخل المعاينة"}>
+              <Plus size={14} /> إضافة عنصر
+            </Button>
+          )}
+          <Button type="button" size="sm" variant={showExplorer ? "default" : "outline"} className="h-8 gap-1.5 px-3 text-xs" onClick={() => setShowExplorer(v => !v)}><Layers size={14} /> {showExplorer ? "إخفاء الشجرة" : "الصفحات والشجرة"}</Button>
+          <Button type="button" size="sm" variant={showProperties ? "default" : "outline"} className="h-8 gap-1.5 px-3 text-xs" onClick={() => setShowProperties(v => !v)}><Settings2 size={14} /> {showProperties ? "إخفاء الخصائص" : "الخصائص"}</Button>
+          <Button type="button" size="sm" variant="outline" className="h-8 gap-1.5 px-3 text-xs" onClick={() => setFrameKey(v => v + 1)}><RefreshCw size={14} /> تحديث</Button>
         </div>
       </div>
 
-      <div className="relative min-h-0 flex-1 overflow-hidden">
+      <div className="relative flex min-h-0 flex-1 overflow-hidden" dir="ltr">
+        {showAddItem && designerMode && (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!selected) {
+                setStatus("حدد موضعًا في الصفحة الفعلية أولًا.");
+                return;
+              }
+              const cleanUrl = addedUrl.trim();
+              const validUrl = !cleanUrl || (cleanUrl.startsWith("/") && !cleanUrl.startsWith("//")) || /^https?:\/\//i.test(cleanUrl);
+              if (!validUrl) {
+                setStatus("استخدم مسارًا داخليًا يبدأ بشرطة واحدة أو رابط HTTP/HTTPS.");
+                return;
+              }
+              const item: StudioDomAddedItem = {
+                id: "studio-added-" + Date.now().toString(36),
+                type: addedType,
+                name: addedName.trim() || "عنصر جديد",
+                text: addedText.trim() || addedName.trim() || "عنصر جديد",
+                placement: addedPlacement,
+                action: addedAction,
+                url: cleanUrl,
+                message: addedMessage.trim(),
+              };
+              const previous = editsRef.current[selected.selector]?.additions || [];
+              commitEdits(selected.selector, { additions: [...previous, item] });
+              setShowAddItem(false);
+              setStatus("تمت إضافة العنصر إلى معاينة المسودة. احفظ المسودة ثم انشرها عند اكتمال الاختبار.");
+            }}
+            className="absolute right-1/2 top-3 z-40 w-[min(440px,92%)] translate-x-1/2 space-y-3 rounded-2xl border bg-card/95 p-4 text-right shadow-2xl backdrop-blur"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-black">إضافة عنصر إلى الصفحة</h3>
+                <p className="mt-1 text-[10px] text-muted-foreground">{selected ? "الموضع محدد من معاينة التطبيق الفعلية." : "انقر على موضع في الصفحة أولًا."}</p>
+              </div>
+              <Button type="button" variant="ghost" size="sm" className="h-7 px-2" onClick={() => setShowAddItem(false)}>إغلاق</Button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="text-xs font-bold">نوع العنصر
+                <select value={addedType} onChange={(event) => setAddedType(event.target.value as StudioDomAddedItem["type"])} className="mt-1 h-9 w-full rounded-lg border bg-background px-2 font-normal">
+                  <option value="text">نص</option><option value="button">زر</option><option value="input">حقل إدخال</option><option value="card">بطاقة</option><option value="divider">فاصل</option><option value="link">رابط</option>
+                </select>
+              </label>
+              <label className="text-xs font-bold">مكان الإضافة
+                <select value={addedPlacement} onChange={(event) => setAddedPlacement(event.target.value as StudioDomAddedItem["placement"])} className="mt-1 h-9 w-full rounded-lg border bg-background px-2 font-normal">
+                  <option value="after">بعد العنصر المحدد</option><option value="inside">داخل العنصر المحدد</option>
+                </select>
+              </label>
+            </div>
+            <label className="block text-xs font-bold">اسم العنصر
+              <input value={addedName} onChange={(event) => setAddedName(event.target.value)} className="mt-1 h-9 w-full rounded-lg border bg-background px-3 font-normal" placeholder="مثال: زر فتح التقارير" />
+            </label>
+            {addedType !== "divider" && <label className="block text-xs font-bold">النص أو التسمية
+              <input value={addedText} onChange={(event) => setAddedText(event.target.value)} className="mt-1 h-9 w-full rounded-lg border bg-background px-3 font-normal" placeholder="النص الظاهر للمستخدم" />
+            </label>}
+            {(addedType === "button" || addedType === "link") && (
+              <>
+                <label className="block text-xs font-bold">وظيفة العنصر
+                  <select value={addedAction} onChange={(event) => setAddedAction(event.target.value as NonNullable<StudioDomAddedItem["action"]>)} className="mt-1 h-9 w-full rounded-lg border bg-background px-2 font-normal">
+                    <option value="none">دون ربط حتى الآن</option><option value="message">إظهار رسالة</option><option value="navigate">فتح صفحة داخل التطبيق</option><option value="external">فتح موقع خارجي</option>
+                  </select>
+                </label>
+                {(addedAction === "navigate" || addedAction === "external") && <label className="block text-xs font-bold">المسار أو رابط الوجهة
+                  <input value={addedUrl} onChange={(event) => setAddedUrl(event.target.value)} className="mt-1 h-9 w-full rounded-lg border bg-background px-3 font-normal" placeholder={addedAction === "navigate" ? "/admin/reports" : "https://example.com"} />
+                </label>}
+                {addedAction === "message" && <label className="block text-xs font-bold">الرسالة
+                  <input value={addedMessage} onChange={(event) => setAddedMessage(event.target.value)} className="mt-1 h-9 w-full rounded-lg border bg-background px-3 font-normal" />
+                </label>}
+              </>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button type="button" size="sm" variant="outline" onClick={() => setShowAddItem(false)}>إلغاء</Button>
+              <Button type="submit" size="sm" disabled={!selected}>إضافة للمعاينة</Button>
+            </div>
+          </form>
+        )}
         {showExplorer && (
-          <aside className="absolute right-0 top-[112px] bottom-0 z-20 flex w-[230px] max-w-[28vw] min-w-[190px] flex-col overflow-hidden rounded-tl-xl border-l border-t bg-card/95 shadow-2xl backdrop-blur">
+          <aside dir="rtl" className="relative z-10 flex w-[min(320px,25vw)] min-w-[250px] max-w-[380px] shrink-0 flex-col overflow-hidden border-r border-y bg-card shadow-lg">
             <div className="shrink-0 border-b p-3">
               <div className="flex items-center justify-between gap-2">
                 <h3 className="text-sm font-black">صفحات ومكونات التطبيق</h3>
@@ -598,7 +968,13 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
               </div>
               <p className="mt-1 text-[10px] leading-5 text-muted-foreground">الصفحات من روابط التطبيق الحقيقي، والشجرة من عناصر الصفحة المفتوحة.</p>
             </div>
-            <section className="max-h-[34%] shrink-0 overflow-y-auto border-b p-2">
+            <div className="grid shrink-0 grid-cols-2 gap-1 border-b bg-muted/30 p-2">
+              <button type="button" onClick={() => setLeftPanelTab("app")} className={"rounded-lg px-2 py-2 text-xs font-bold transition " + (leftPanelTab === "app" ? "bg-primary text-primary-foreground shadow" : "text-foreground hover:bg-accent")}>صفحات التطبيق</button>
+              <button type="button" onClick={() => setLeftPanelTab("elements")} className={"rounded-lg px-2 py-2 text-xs font-bold transition " + (leftPanelTab === "elements" ? "bg-primary text-primary-foreground shadow" : "text-foreground hover:bg-accent")}>مصمم العناصر</button>
+            </div>
+            {leftPanelTab === "app" ? (
+              <>
+            <section className="max-h-[30%] shrink-0 overflow-y-auto border-b p-2">
               <h4 className="mb-1.5 text-[11px] font-black">الصفحات المكتشفة</h4>
               <div className="space-y-1">
                 {(pageLinks.length ? pageLinks : [{ href: safeRoute, label: "الصفحة الحالية" }]).map((page) => (
@@ -610,34 +986,75 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
                     className={"flex min-h-8 w-full items-center gap-2 rounded-lg px-2 py-1.5 text-right text-[11px] " + (page.href === safeRoute ? "bg-primary/10 font-black text-primary" : "hover:bg-accent")}
                   >
                     <span className="min-w-0 flex-1 truncate">{page.label || page.href}</span>
-                    <span className="max-w-[92px] truncate font-mono text-[9px] text-muted-foreground">{page.href}</span>
+                    
                   </button>
                 ))}
               </div>
             </section>
             <section className="flex min-h-0 flex-1 flex-col p-2">
               <h4 className="mb-1.5 shrink-0 text-[11px] font-black">شجرة المكونات الفعلية</h4>
-              <input aria-label="بحث في شجرة المكونات" value={treeFilter} onChange={(event) => setTreeFilter(event.target.value)} placeholder="ابحث عن عنصر أو وسم..." className="mb-2 h-8 shrink-0 rounded-lg border bg-background px-2 text-[11px] outline-none focus:ring-2 focus:ring-primary" />
+              <input aria-label="بحث في شجرة المكونات" value={treeFilter} onChange={(event) => setTreeFilter(event.target.value)} placeholder="ابحث عن عنصر أو وظيفة..." className="mb-2 h-8 shrink-0 rounded-lg border bg-background px-2 text-[11px] outline-none focus:ring-2 focus:ring-primary" />
               <div className="min-h-0 flex-1 overflow-auto">
                 {visibleTreeNodes.length ? renderTreeNodes(visibleTreeNodes) : <p className="p-2 text-[11px] leading-5 text-muted-foreground">جاري استخراج شجرة عناصر الصفحة…</p>}
               </div>
             </section>
+              </>
+            ) : (
+              <div className="flex min-h-0 flex-1 overflow-hidden bg-background">
+                {draftTreePanel || <p className="m-auto p-4 text-center text-xs leading-6 text-muted-foreground">مصمم العناصر غير متاح في هذه الجلسة.</p>}
+              </div>
+            )}
           </aside>
         )}
-        <div className="absolute inset-0 flex min-h-0 min-w-0 items-stretch justify-center overflow-auto bg-slate-100 p-2 dark:bg-slate-950 sm:p-4">
-          <div className="h-full min-h-0 overflow-hidden rounded-xl border bg-background shadow-xl transition-[width] duration-200" style={{ width: frameWidth, minWidth: previewSize === "desktop" ? 0 : frameWidth, flex: previewSize === "desktop" ? "1 1 auto" : "0 0 " + frameWidth }}>
-            <iframe key={frameKey} ref={iframeRef} src={safeRoute} onLoad={installBridge} title="معاينة حية للتطبيق" className="h-full min-h-0 w-full border-0 bg-background" />
+        <div dir="ltr" className="relative flex min-h-0 min-w-0 flex-1 items-stretch justify-center overflow-auto bg-slate-100 p-0 dark:bg-slate-950 sm:p-0">
+          <div className={"h-full min-h-0 overflow-hidden bg-background transition-[width] duration-200 " + (previewSize === "desktop" ? "w-full rounded-none border-0 shadow-none" : "rounded-xl border shadow-xl")} style={{ width: frameWidth, minWidth: previewSize === "desktop" ? 0 : frameWidth, flex: previewSize === "desktop" ? "1 1 auto" : "0 0 " + frameWidth }}>
+            <iframe key={frameKey} ref={iframeRef} src={previewRoute} onLoad={installBridge} title="معاينة حية للتطبيق" className="h-full min-h-0 w-full border-0 bg-background" />
           </div>
         </div>
         {showProperties && (
-        <aside className="absolute left-0 top-[112px] bottom-0 z-20 flex w-[280px] max-w-[32vw] min-w-[230px] flex-col gap-3 overflow-y-auto rounded-tr-xl border-r border-t bg-card/95 p-3 shadow-2xl backdrop-blur 2xl:w-[320px]">
+        <aside dir="rtl" className="relative z-10 flex w-[min(440px,35vw)] min-w-[350px] max-w-[520px] shrink-0 flex-col overflow-hidden border-l border-y bg-card shadow-lg">
           <div>
             <h3 className="text-sm font-black">خصائص عنصر التطبيق</h3>
-            <p className="mt-1 break-all text-[10px] text-muted-foreground">{selected ? "<" + selected.tag + "> · " + selected.selector : "انقر على عنصر داخل المعاينة"}</p>
+            <p className="mt-1 text-[10px] text-muted-foreground">{selected ? "نوع العنصر: " + getFriendlyElementType(selected.tag) : "انقر على عنصر داخل المعاينة"}</p>
           </div>
-          {selected ? (
+          <div className="grid shrink-0 grid-cols-3 gap-1 border-b bg-muted/30 p-2">
+            <button type="button" onClick={() => setInspectorTab("dom")} className={"rounded-lg px-1.5 py-2 text-[11px] font-bold transition " + (inspectorTab === "dom" ? "bg-primary text-primary-foreground shadow" : "text-foreground hover:bg-accent")}>خصائص التطبيق</button>
+            <button type="button" onClick={() => setInspectorTab("element")} className={"rounded-lg px-1.5 py-2 text-[11px] font-bold transition " + (inspectorTab === "element" ? "bg-primary text-primary-foreground shadow" : "text-foreground hover:bg-accent")}>مصمم العناصر</button>
+            <button type="button" onClick={() => setInspectorTab("workflow")} className={"rounded-lg px-1.5 py-2 text-[11px] font-bold transition " + (inspectorTab === "workflow" ? "bg-primary text-primary-foreground shadow" : "text-foreground hover:bg-accent")}>مسارات العمل</button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          {inspectorTab === "dom" && (selected ? (
             <>
+              <details open className="rounded-xl border bg-background/60 p-2">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-lg px-1 py-1 text-xs font-black">
+                  <span>المحتوى والروابط</span><span className="text-[10px] font-normal text-muted-foreground">النص والوجهة</span>
+                </summary>
+                <div className="mt-2 space-y-2">
+              <div className="space-y-2 rounded-xl border p-3">
+                <h4 className="text-xs font-black">الرابط الحالي والوجهة</h4>
+                {selected.isLink ? (
+                  <>
+                    <input value={linkValue} onChange={(event) => setLinkValue(event.target.value)} placeholder="/مسار-داخلي أو https://..." className="h-9 w-full rounded-lg border bg-background px-2 text-xs font-normal" aria-label="الرابط الحالي" />
+                    <Button type="button" size="sm" variant="outline" className="w-full" onClick={() => {
+                      const value = linkValue.trim();
+                      if (value && !(value.startsWith("/") && !value.startsWith("//")) && !/^https?:\/\//i.test(value)) {
+                        setStatus("الرابط يجب أن يكون مسارًا داخليًا أو HTTP/HTTPS.");
+                        return;
+                      }
+                      send({ action: "href", url: value });
+                      setStatus("تم تحديث الرابط في المعاينة المحلية.");
+                    }}>تحديث الرابط الحالي</Button>
+                  </>
+                ) : <p className="text-[10px] leading-5 text-muted-foreground">العنصر المحدد لا يحتوي على رابط مباشر. لعرض روابط عنصر آخر، حدده من الصفحة. يمكن إضافة زر جديد مرتبط من «إضافة عنصر».</p>}
+              </div>
               {!selectedIsVector && <label className="block text-xs font-bold">النص<textarea value={textValue} onChange={e => editText(e.target.value)} className="mt-1 min-h-16 w-full rounded-lg border bg-background p-2 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>}
+                </div>
+              </details>
+              <details className="rounded-xl border bg-background/60 p-2">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-lg px-1 py-1 text-xs font-black">
+                  <span>المظهر والأبعاد</span><span className="text-[10px] font-normal text-muted-foreground">الألوان والحجم والمحاذاة</span>
+                </summary>
+                <div className="mt-2 space-y-3">
               <div className="grid grid-cols-2 gap-2">
                 {!selectedIsVector && <label className="text-xs">لون النص<input aria-label="لون النص" type="color" value={/^#[0-9a-f]{6}$/i.test(textColor) ? textColor : "#111827"} onChange={e => { setTextColor(e.target.value); applyStyle({ color: e.target.value }); }} className="mt-1 h-9 w-full rounded border bg-background p-1" /></label>}
                 <label className="text-xs">{selectedIsVector ? "خلفية الأيقونة" : "لون الخلفية"}<input aria-label="لون الخلفية" type="color" value={/^#[0-9a-f]{6}$/i.test(backgroundColor) ? backgroundColor : "#ffffff"} onChange={e => { setBackgroundColor(e.target.value); applyStyle({ backgroundColor: e.target.value }); }} className="mt-1 h-9 w-full rounded border bg-background p-1" /></label>
@@ -645,7 +1062,15 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
 
               {selectedIsVector && (
                 <div className="rounded-xl border p-3 space-y-3">
-                  <h4 className="text-xs font-black">تصميم الأيقونة / SVG</h4>
+                  <h4 className="text-xs font-black">مكتبة الأيقونات وتصميم SVG</h4>
+                  <label className="block text-xs font-bold">اختيار أيقونة جديدة
+                    <select value={String(edits[selected.selector]?.iconName || "")} onChange={(event) => chooseStudioIcon(event.target.value)} className="mt-1 h-10 w-full rounded-lg border bg-background px-2 text-xs" aria-label="مكتبة الأيقونات">
+                      <option value="">اختر من مكتبة الأيقونات…</option>
+                      {STUDIO_ICON_LIBRARY.map((entry) => <option key={entry.value} value={entry.value}>{entry.label}</option>)}
+                    </select>
+                  </label>
+                  {SelectedIconComponent &&
+                    React.createElement(SelectedIconComponent, { size: 32, strokeWidth: 2, className: "mx-auto text-primary" })}
                   <div className="grid grid-cols-2 gap-2">
                     <label className="text-xs">لون التعبئة<input aria-label="لون تعبئة الأيقونة" type="color" value={fillColor} onChange={e => { setFillColor(e.target.value); applyStyle({ fill: e.target.value }); }} className="mt-1 h-9 w-full rounded border bg-background p-1" /></label>
                     <label className="text-xs">لون الخط<input aria-label="لون حد الأيقونة" type="color" value={strokeColor} onChange={e => { setStrokeColor(e.target.value); applyStyle({ stroke: e.target.value }); }} className="mt-1 h-9 w-full rounded border bg-background p-1" /></label>
@@ -664,6 +1089,18 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
 
               {!selectedIsVector && <>
                 <label className="block text-xs">حجم الخط (px)<input type="number" min="8" max="120" value={fontSize} onChange={e => { setFontSize(e.target.value); applyStyle({ fontSize: e.target.value + "px" }); }} className="mt-1 w-full rounded-lg border bg-background p-2" /></label>
+                <label className="block text-xs">نوع الخط
+                  <select value={fontFamily} onChange={e => { setFontFamily(e.target.value); applyStyle({ fontFamily: e.target.value }); }} className="mt-1 w-full rounded-lg border bg-background p-2">
+                    <option value="Arial, sans-serif">Arial</option>
+                    <option value="Tahoma, sans-serif">Tahoma</option>
+                    <option value="Cairo, sans-serif">Cairo</option>
+                    <option value="Tajawal, sans-serif">Tajawal</option>
+                    <option value="system-ui, sans-serif">System UI</option>
+                    <option value="'IBM Plex Sans Arabic', sans-serif">IBM Plex Sans Arabic</option>
+                    <option value="Georgia, serif">Georgia</option>
+                    <option value="monospace">Monospace</option>
+                  </select>
+                </label>
                 <label className="block text-xs">سُمك الخط<select value={fontWeight} onChange={e => { setFontWeight(e.target.value); applyStyle({ fontWeight: e.target.value }); }} className="mt-1 w-full rounded-lg border bg-background p-2"><option value="300">خفيف</option><option value="400">عادي</option><option value="500">متوسط</option><option value="600">شبه عريض</option><option value="700">عريض</option><option value="900">ثقيل</option></select></label>
                 <label className="block text-xs">محاذاة النص<select value={textAlign} onChange={e => { setTextAlign(e.target.value); applyStyle({ textAlign: e.target.value }); }} className="mt-1 w-full rounded-lg border bg-background p-2"><option value="right">يمين</option><option value="center">توسيط</option><option value="left">يسار</option><option value="justify">ضبط</option></select></label>
               </>}
@@ -677,19 +1114,39 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
                 <label className="text-xs">استدارة الحواف<input value={borderRadius} placeholder="12px أو 50%" onChange={e => { setBorderRadius(e.target.value); applyStyle({ borderRadius: e.target.value }); }} className="mt-1 w-full rounded-lg border bg-background p-2" /></label>
                 <label className="text-xs">الظل<select value={shadowStyle} onChange={e => { setShadowStyle(e.target.value); applyStyle({ boxShadow: e.target.value }); }} className="mt-1 w-full rounded-lg border bg-background p-2"><option value="none">بدون</option><option value="0 1px 3px rgba(0,0,0,.12)">خفيف</option><option value="0 4px 12px rgba(0,0,0,.16)">متوسط</option><option value="0 12px 32px rgba(0,0,0,.22)">قوي</option><option value="0 0 0 2px rgba(99,102,241,.35)">إطار مضيء</option></select></label>
               </div>
-              <div className="rounded-lg bg-muted/60 p-2 text-[10px] leading-5 text-muted-foreground">حرّك العنصر بالسحب المباشر داخل المعاينة. تُحفظ التغييرات محليًا فورًا وتُزامن مع Supabase عند الضغط على «حفظ ومزامنة».</div>
+                </div>
+              </details>
+              <details className="rounded-xl border bg-background/60 p-2">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-lg px-1 py-1 text-xs font-black">
+                  <span>الترتيب والإجراءات</span><span className="text-[10px] font-normal text-muted-foreground">نسخ، إخفاء، ترتيب</span>
+                </summary>
+                <div className="mt-2 space-y-2">
+              <div className="rounded-lg bg-muted/60 p-2 text-[10px] leading-5 text-muted-foreground">تظهر هذه التعديلات في معاينة المسودة فقط. استخدم «حفظ ومزامنة» لحفظ المسودة، ثم «نشر» لتطبيقها على بقية مستخدمي التطبيق.</div>
               <div className="grid grid-cols-2 gap-2">
                 <Button type="button" size="sm" variant="outline" onClick={() => action("moveUp")}><ArrowUp size={14} /> ترتيب لأعلى</Button>
                 <Button type="button" size="sm" variant="outline" onClick={() => action("moveDown")}><ArrowDown size={14} /> ترتيب لأسفل</Button>
                 <Button type="button" size="sm" variant="outline" onClick={() => action("duplicate", { duplicateCount: Math.min(5, Number(edits[selected.selector]?.duplicateCount || 0) + 1) })}><Copy size={14} /> نسخ العنصر</Button>
                 <Button type="button" size="sm" variant="destructive" onClick={() => action("delete", { deleted: true })}><Trash2 size={14} /> إخفاء العنصر</Button>
               </div>
-              <Button type="button" size="sm" variant="ghost" onClick={() => setSelected(null)}><Check size={14} /> إنهاء التحديد</Button>
+                </div>
+              </details>
+              <Button type="button" size="sm" variant="ghost" onClick={() => { setSelected(null); selectedSelectorRef.current = null; }}><Check size={14} /> إنهاء التحديد</Button>
             </>
           ) : (
             <div className="rounded-xl border border-dashed p-4 text-xs leading-6 text-muted-foreground">انقر على نص أو زر أو بطاقة من التطبيق نفسه. التعديلات تُحفظ محليًا وتظهر على صفحات هذا المتصفح؛ مزامنة Supabase من «حفظ ومزامنة»، والنشر لبقية المستخدمين خطوة منفصلة.</div>
+          ))}
+          {inspectorTab === "element" && (
+            <div className="min-h-full overflow-y-auto">
+              {elementPropertiesPanel || <p className="p-4 text-xs leading-6 text-muted-foreground">اختر عنصرًا من تبويب «مصمم العناصر» في اللوحة اليسرى لفتح خصائصه هنا.</p>}
+            </div>
           )}
-          <div className="mt-auto rounded-lg bg-muted p-2 text-[10px] leading-5 text-muted-foreground">إذا ظهر خطأ مزامنة، تبقى النسخة المحلية موجودة لكن لا تعتبر محفوظة سحابيًا حتى نجاح التأكيد.</div>
+          {inspectorTab === "workflow" && (
+            <div className="min-h-full overflow-y-auto">
+              {workflowPanel || <p className="p-4 text-xs leading-6 text-muted-foreground">اختر عنصرًا من مصمم العناصر لعرض مسارات العمل وتعديل إجراءات العنصر.</p>}
+            </div>
+          )}
+          </div>
+          <div className="mt-auto shrink-0 border-t bg-muted/40 p-2 text-[10px] leading-5 text-muted-foreground">التغييرات تظهر فورًا في المعاينة وتُحفظ مع المسودة. اضغط «حفظ ومزامنة» لتأكيد الحفظ على Supabase ثم «نشر» لتطبيقها على المستخدمين.</div>
         </aside>
         )}
       </div>

@@ -156,13 +156,18 @@ function RootComponent() {
     type StudioRuntimeSnapshot = {
       element: HTMLElement;
       styleAttribute: string | null;
+      svgAttributes: Array<[string, string]> | null;
+      svgInnerHTML: string | null;
       leafTextContent: string | null;
       directTextNodes: Array<{ node: ChildNode; text: string | null }>;
       parent: Node | null;
       nextSibling: Node | null;
+      linkElement: HTMLAnchorElement | null;
+      hrefAttribute: string | null;
     };
     const studioSnapshots = new Map<string, StudioRuntimeSnapshot>();
     const publishedStudioClones = new Set<HTMLElement>();
+    const publishedStudioAdditions = new Set<HTMLElement>();
     let activePublishedStudioEdits: Record<string, any> = {};
     let activeLegacyStudioEdits: Record<string, any> = {};
     let studioObserver: MutationObserver | null = null;
@@ -185,21 +190,28 @@ function RootComponent() {
     const rememberStudioOriginal = (selector: string, element: HTMLElement) => {
       const old = studioSnapshots.get(selector);
       if (old?.element === element) return;
+      const linkElement = element.matches("a") ? element as HTMLAnchorElement : element.closest("a");
       studioSnapshots.set(selector, {
         element,
         styleAttribute: element.getAttribute("style"),
+        svgAttributes: element.matches("svg") ? Array.from(element.attributes).map((attr): [string, string] => [attr.name, attr.value]) : null,
+        svgInnerHTML: element.matches("svg") ? element.innerHTML : null,
         leafTextContent: element.children.length === 0 ? element.textContent ?? "" : null,
         directTextNodes: element.children.length === 0 ? [] : Array.from(element.childNodes)
           .filter((node) => node.nodeType === Node.TEXT_NODE)
           .map((node) => ({ node, text: node.textContent })),
         parent: element.parentNode,
         nextSibling: element.nextSibling,
+        linkElement,
+        hrefAttribute: linkElement?.getAttribute("href") ?? null,
       });
     };
 
     const resetPublishedStudioEdits = () => {
       for (const clone of publishedStudioClones) clone.remove();
       publishedStudioClones.clear();
+      for (const addition of publishedStudioAdditions) addition.remove();
+      publishedStudioAdditions.clear();
 
       for (const snapshot of Array.from(studioSnapshots.values()).reverse()) {
         const element = snapshot.element;
@@ -212,8 +224,17 @@ function RootComponent() {
           }
         }
         delete element.dataset.studioTextApplied;
+        if (snapshot.svgAttributes) {
+          Array.from(element.attributes).forEach((attr) => element.removeAttribute(attr.name));
+          snapshot.svgAttributes.forEach(([name, value]) => element.setAttribute(name, value));
+          element.innerHTML = snapshot.svgInnerHTML || "";
+        }
         if (snapshot.styleAttribute === null) element.removeAttribute("style");
         else element.setAttribute("style", snapshot.styleAttribute);
+        if (snapshot.linkElement?.isConnected) {
+          if (snapshot.hrefAttribute === null) snapshot.linkElement.removeAttribute("href");
+          else snapshot.linkElement.setAttribute("href", snapshot.hrefAttribute);
+        }
         if (snapshot.parent && element.parentNode === snapshot.parent) {
           const next = snapshot.nextSibling;
           if (next && next.parentNode === snapshot.parent) snapshot.parent.insertBefore(element, next);
@@ -221,6 +242,93 @@ function RootComponent() {
         }
       }
       studioSnapshots.clear();
+    };
+
+    const safeStudioAdditionUrl = (value: unknown): string => {
+      const url = String(value || "").trim();
+      return (url.startsWith("/") && !url.startsWith("//")) || /^https?:\/\//i.test(url) ? url : "";
+    };
+
+    const renderPublishedStudioAddition = (item: any, selector: string): HTMLElement | null => {
+      const types: Record<string, string> = {
+        text: "p",
+        button: "button",
+        input: "input",
+        card: "div",
+        divider: "hr",
+        link: "a",
+      };
+      if (!item || typeof item.id !== "string" ||
+          !["text", "button", "input", "card", "divider", "link"].includes(item.type)) return null;
+
+      const node = document.createElement(types[item.type]) as HTMLElement;
+      node.dataset.studioAddedFor = selector;
+      node.dataset.studioAddedId = item.id;
+      node.dataset.studioAddedName = String(item.name || "عنصر جديد").slice(0, 120);
+      node.setAttribute("aria-label", node.dataset.studioAddedName);
+
+      const text = String(item.text || item.name || "عنصر جديد").slice(0, 1000);
+      if (item.type === "input") {
+        const input = node as HTMLInputElement;
+        input.type = "text";
+        input.placeholder = text;
+        input.style.cssText = "display:block;max-width:100%;padding:8px 10px;margin:6px 0;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#111827";
+      } else if (item.type === "divider") {
+        node.style.cssText = "display:block;width:100%;margin:10px 0;border:0;border-top:1px solid #cbd5e1";
+      } else {
+        node.textContent = text;
+        node.style.cssText = item.type === "button"
+          ? "display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 12px;margin:6px 4px;border:1px solid #cbd5e1;border-radius:8px;background:#4f46e5;color:#fff;font-weight:700;cursor:pointer"
+          : item.type === "card"
+            ? "display:block;padding:12px;margin:8px 0;border:1px solid #cbd5e1;border-radius:12px;background:#fff;color:#111827"
+            : item.type === "link"
+              ? "display:inline-block;margin:6px 4px;color:#2563eb;text-decoration:underline;cursor:pointer"
+              : "display:block;margin:6px 0;color:inherit";
+      }
+
+      const safeUrl = safeStudioAdditionUrl(item.url);
+      if (item.type === "link" && safeUrl) node.setAttribute("href", safeUrl);
+      if (item.type === "button") (node as HTMLButtonElement).type = "button";
+
+      if (item.type === "button" || item.type === "link") {
+        node.addEventListener("click", (event) => {
+          const action = ["message", "navigate", "external"].includes(item.action) ? item.action : "none";
+          if (action !== "none") event.preventDefault();
+          if (action === "message") window.alert(String(item.message || "تم تنفيذ الإجراء.").slice(0, 1000));
+          else if (action === "navigate" && safeUrl.startsWith("/") && !safeUrl.startsWith("//")) {
+            window.location.assign(safeUrl);
+          } else if (action === "external" && /^https?:\/\//i.test(safeUrl)) {
+            window.open(safeUrl, "_blank", "noopener,noreferrer");
+          }
+        });
+      }
+      return node;
+    };
+
+    const applyStudioIconMarkup = (element: HTMLElement, markup: string) => {
+      const target = element.matches("svg") ? element as unknown as SVGSVGElement : element.querySelector("svg");
+      if (!target || typeof markup !== "string" || markup.length > 16000) return;
+      const parsed = new DOMParser().parseFromString(markup, "image/svg+xml");
+      const source = parsed.documentElement;
+      if (!source || source.localName.toLowerCase() !== "svg" || parsed.querySelector("parsererror")) return;
+      const tags = new Set(["path", "circle", "rect", "line", "polyline", "polygon", "ellipse"]);
+      const attrs = new Set(["d", "x", "y", "x1", "y1", "x2", "y2", "cx", "cy", "r", "rx", "ry", "width", "height", "points", "transform", "fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin", "fill-rule", "clip-rule", "opacity"]);
+      const safeClone = (node: Element): SVGElement | null => {
+        const tag = node.localName.toLowerCase();
+        if (!tags.has(tag)) return null;
+        const clone = document.createElementNS("http://www.w3.org/2000/svg", tag);
+        Array.from(node.attributes).forEach((attr) => {
+          if (attrs.has(attr.name.toLowerCase()) && !attr.name.toLowerCase().startsWith("on")) clone.setAttribute(attr.name, attr.value);
+        });
+        Array.from(node.children).forEach((child) => { const copy = safeClone(child); if (copy) clone.appendChild(copy); });
+        return clone;
+      };
+      ["viewBox", "fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin"].forEach((attr) => {
+        const value = source.getAttribute(attr);
+        if (value !== null) target.setAttribute(attr, value);
+      });
+      target.querySelectorAll("path,circle,rect,line,polyline,polygon,ellipse").forEach((node) => node.remove());
+      Array.from(source.children).forEach((child) => { const copy = safeClone(child); if (copy) target.appendChild(copy); });
     };
 
     const applyStudioEdits = (edits: Record<string, any>) => {
@@ -238,6 +346,15 @@ function RootComponent() {
           if (node) node.textContent = String(edit.text);
           else if (!html.children.length) html.textContent = String(edit.text);
           html.dataset.studioTextApplied = String(edit.text);
+        }
+        if (typeof edit.iconSvg === "string") applyStudioIconMarkup(html, edit.iconSvg);
+        if (typeof edit.href === "string") {
+          const anchor = html.matches("a") ? html as HTMLAnchorElement : html.closest("a");
+          if (anchor) {
+            const safeHref = safeStudioAdditionUrl(edit.href);
+            if (safeHref) anchor.setAttribute("href", safeHref);
+            else if (!edit.href.trim()) anchor.removeAttribute("href");
+          }
         }
         if (edit.styles && typeof edit.styles === "object") for (const [key, value] of Object.entries(edit.styles)) {
           if (typeof value !== "string") continue;
@@ -273,6 +390,30 @@ function RootComponent() {
             parent.insertBefore(clone, html.nextSibling);
           }
         }
+
+        // Materialize saved additions on the published app, not only inside the editor iframe.
+        // Check by stable draft ID so mutation-observer passes never duplicate an item.
+        if (!edit.deleted && Array.isArray(edit.additions)) {
+          let afterAnchor: Node | null = html.nextSibling;
+          for (const item of edit.additions.slice(0, 100)) {
+            if (!item || typeof item.id !== "string") continue;
+            const exists = Array.from(publishedStudioAdditions).some((addition) =>
+              addition.isConnected &&
+              addition.dataset.studioAddedFor === selector &&
+              addition.dataset.studioAddedId === item.id
+            );
+            if (exists) continue;
+            const added = renderPublishedStudioAddition(item, selector);
+            if (!added) continue;
+            if (item.placement === "inside") {
+              html.appendChild(added);
+            } else if (html.parentElement) {
+              html.parentElement.insertBefore(added, afterAnchor);
+              afterAnchor = added.nextSibling;
+            }
+            publishedStudioAdditions.add(added);
+          }
+        }
       }
     };
 
@@ -303,22 +444,30 @@ function RootComponent() {
     const storageHandler = (event: StorageEvent) => {
       if (event.key === "custom_text_map") legacyEditsUpdatedHandler();
     };
-    refreshLegacyStudioEdits();
-    window.addEventListener("studio_published_updated", publishedHandler);
-    window.addEventListener("studio_legacy_edits_updated", legacyEditsUpdatedHandler);
-    window.addEventListener("storage", storageHandler);
-    void import("@/features/developer-studio/services/studioService")
-      .then(({ studioService }) => studioService.getPublishedConfig())
-      .then(applyPublishedStudioEdits)
-      .catch((error) => console.warn("Published Studio config could not be loaded:", error));
+    // The Studio iframe applies its current draft through LiveAppPreview. Do not
+    // apply published/legacy DOM edits a second time inside that same preview.
+    const isStudioPreviewFrame =
+      window.self !== window.top &&
+      new URLSearchParams(window.location.search).get("studioPreview") === "1";
 
-    const studioObserverInstance = new MutationObserver(() => {
-      studioObserverInstance.disconnect();
-      applyStudioEdits({ ...activeLegacyStudioEdits, ...activePublishedStudioEdits });
-      studioObserverInstance.observe(document.body, { childList: true, subtree: true });
-    });
-    studioObserver = studioObserverInstance;
-    studioObserver.observe(document.body, { childList: true, subtree: true });
+    if (!isStudioPreviewFrame) {
+      refreshLegacyStudioEdits();
+      window.addEventListener("studio_published_updated", publishedHandler);
+      window.addEventListener("studio_legacy_edits_updated", legacyEditsUpdatedHandler);
+      window.addEventListener("storage", storageHandler);
+      void import("@/features/developer-studio/services/studioService")
+        .then(({ studioService }) => studioService.getPublishedConfig())
+        .then(applyPublishedStudioEdits)
+        .catch((error) => console.warn("Published Studio config could not be loaded:", error));
+
+      const studioObserverInstance = new MutationObserver(() => {
+        studioObserverInstance.disconnect();
+        applyStudioEdits({ ...activeLegacyStudioEdits, ...activePublishedStudioEdits });
+        studioObserverInstance.observe(document.body, { childList: true, subtree: true });
+      });
+      studioObserver = studioObserverInstance;
+      studioObserver.observe(document.body, { childList: true, subtree: true });
+    }
     const stopAppSync = createAppSync(queryClient);
     return () => {
       studioObserver?.disconnect();
