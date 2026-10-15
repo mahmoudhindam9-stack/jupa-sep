@@ -139,7 +139,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
       setBorderRadius(item.borderRadius || "8px");
       setIconRotation(item.rotate || "0deg");
       setTextAlign(item.textAlign || "right");
-      setStatus("تم تحديد العنصر: " + item.tag);
+      setStatus("تم تحديد: " + readableElementKind(item.tag));
     } else if (event.data.type === "STUDIO_CHANGE") {
       commitEdits(String(event.data.selector), event.data.patch || {});
       setStatus("تم تعديل المعاينة فقط — اضغط «حفظ ومزامنة» لاعتماد المسودة على الخادم.");
@@ -190,7 +190,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
       return;
     }
     if (win.location.origin !== window.location.origin) {
-      setStatus("المعاينة على نطاق مختلف. ثبّت Coding Studio Bridge داخل المشروع المستهدف.");
+      setStatus("تعذر فتح صفحة التطبيق في المعاينة. افتح الاستوديو من داخل نفس الموقع الذي تريد تعديله.");
       return;
     }
     if (!doc.getElementById("coding-studio-overlay")) {
@@ -766,8 +766,8 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         <div className="flex min-w-0 items-center gap-2">
           <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><Monitor size={16} /></span>
           <div className="min-w-0">
-            <p className="truncate text-sm font-black">{designerMode ? "مصمم العناصر — معاينة التطبيق الفعلية" : "معاينة التطبيق الحقيقية"}</p>
-            <p className="truncate text-[10px] text-muted-foreground" title={safeRoute}>{safeRoute} · {designerMode ? "تعديلات محلية — الحفظ يدوي" : "وضع العرض الفعلي"} · {status}</p>
+            <p className="truncate text-sm font-black">{designerMode ? "تعديل عناصر التطبيق" : "معاينة التطبيق"}</p>
+            <p className="truncate text-[10px] text-muted-foreground" title={readablePageName(safeRoute, "الصفحة الحالية")}>{readablePageName(safeRoute, "الصفحة الحالية")} · {designerMode ? "التغييرات تظهر هنا فقط حتى اعتمادها" : "وضع العرض"} · {status}</p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
@@ -779,8 +779,8 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
           <Button type="button" size="sm" variant={editMode ? "default" : "outline"} className="h-7 gap-1 px-2 text-xs" onClick={() => setEditMode(v => !v)}>
             {editMode ? <EyeOff size={14} /> : <Eye size={14} />}{editMode ? "وضع التحرير" : "وضع التفاعل"}
           </Button>
-          <Button type="button" size="sm" variant={showExplorer ? "default" : "outline"} className="h-7 gap-1 px-2 text-xs" onClick={() => setShowExplorer(v => !v)}><Layers size={14} /> {showExplorer ? "إخفاء الشجرة" : "الصفحات والشجرة"}</Button>
-          <Button type="button" size="sm" variant={showProperties ? "default" : "outline"} className="h-7 gap-1 px-2 text-xs" onClick={() => setShowProperties(v => !v)}><Settings2 size={14} /> {showProperties ? "إخفاء الخصائص" : "الخصائص"}</Button>
+          <Button type="button" size="sm" variant={showExplorer ? "default" : "outline"} className="h-7 gap-1 px-2 text-xs" onClick={() => setShowExplorer(v => !v)}><Layers size={14} /> {showExplorer ? "إخفاء العناصر" : "الصفحات والعناصر"}</Button>
+          <Button type="button" size="sm" variant={showProperties ? "default" : "outline"} className="h-7 gap-1 px-2 text-xs" onClick={() => setShowProperties(v => !v)}><Settings2 size={14} /> {showProperties ? "إخفاء لوحة التحرير" : "التصميم والوظائف"}</Button>
           <Button type="button" size="sm" variant="outline" className="h-7 gap-1 px-2 text-xs" onClick={() => setFrameKey(v => v + 1)}><RefreshCw size={14} /> تحديث</Button>
         </div>
       </div>
@@ -848,7 +848,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
 
               {selectedIsVector && (
                 <div className="rounded-xl border p-3 space-y-3">
-                  <h4 className="text-xs font-black">تصميم الأيقونة / SVG</h4>
+                  <h4 className="text-xs font-black">تصميم الأيقونة</h4>
                   <div className="grid grid-cols-2 gap-2">
                     <label className="text-xs">لون التعبئة<input aria-label="لون تعبئة الأيقونة" type="color" value={fillColor} onChange={e => { setFillColor(e.target.value); applyStyle({ fill: e.target.value }); }} className="mt-1 h-9 w-full rounded border bg-background p-1" /></label>
                     <label className="text-xs">لون الخط<input aria-label="لون حد الأيقونة" type="color" value={strokeColor} onChange={e => { setStrokeColor(e.target.value); applyStyle({ stroke: e.target.value }); }} className="mt-1 h-9 w-full rounded border bg-background p-1" /></label>
