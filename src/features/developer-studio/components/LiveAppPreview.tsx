@@ -218,6 +218,8 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         originalStates.set(selector, {
           el,
           styleAttribute: el.getAttribute("style"),
+          hrefAttribute: el.getAttribute("href"),
+          flowActionAttribute: el.getAttribute("data-studio-flow-action"),
           leafText: el.children.length === 0 ? (el.textContent || "") : null,
           directTextNodes: el.children.length === 0 ? [] : Array.from(el.childNodes)
             .filter((node) => node.nodeType === Node.TEXT_NODE)
@@ -227,7 +229,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         });
       };
       const resetPreviewEdits = () => {
-        document.querySelectorAll("[data-coding-studio-clone-of]").forEach((el) => el.remove());
+        document.querySelectorAll("[data-coding-studio-clone-of], [data-studio-added-button]").forEach((el) => el.remove());
         for (const state of Array.from(originalStates.values()).reverse()) {
           const el = state.el;
           if (!el.isConnected) continue;
@@ -241,6 +243,10 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
           delete el.dataset.codingStudioTextApplied;
           if (state.styleAttribute === null) el.removeAttribute("style");
           else el.setAttribute("style", state.styleAttribute);
+          if (state.hrefAttribute === null) el.removeAttribute("href");
+          else if (state.hrefAttribute !== undefined) el.setAttribute("href", state.hrefAttribute);
+          if (state.flowActionAttribute === null) el.removeAttribute("data-studio-flow-action");
+          else if (state.flowActionAttribute !== undefined) el.setAttribute("data-studio-flow-action", state.flowActionAttribute);
           if (state.parent && el.parentNode === state.parent) {
             if (state.nextSibling && state.nextSibling.parentNode === state.parent) state.parent.insertBefore(el, state.nextSibling);
             else state.parent.appendChild(el);
@@ -289,6 +295,12 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         rememberOriginal(selector, el);
         if (edit.text !== undefined && el.dataset.codingStudioTextApplied !== String(edit.text)) applyText(el, edit.text);
         if (edit.styles && typeof edit.styles === "object") applyStyles(el, edit.styles);
+        if (typeof edit.href === "string") {
+          const anchor = el.matches("a") ? el : el.closest("a[href]") || el.querySelector("a[href]");
+          if (anchor && edit.href.startsWith("/") && !edit.href.startsWith("//")) anchor.setAttribute("href", edit.href);
+        }
+        if (edit.action && edit.action.type && edit.action.type !== "none") el.setAttribute("data-studio-flow-action", JSON.stringify(edit.action));
+        else el.removeAttribute("data-studio-flow-action");
         if (edit.deleted) el.style.display = "none";
         if (typeof edit.order === "number" && el.parentElement) {
           const siblings = Array.from(el.parentElement.children).filter((item) =>
@@ -314,6 +326,41 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
             parent.insertBefore(clone, el.nextSibling);
           }
         }
+        const desiredButtons = Array.isArray(edit.addedButtons) ? edit.addedButtons : [];
+        const wantedButtonIds = new Set(desiredButtons.map((item) => String(item.id)));
+        Array.from(el.querySelectorAll("[data-studio-added-button]"))
+          .filter((button) => !wantedButtonIds.has(button.getAttribute("data-studio-added-button") || ""))
+          .forEach((button) => button.remove());
+        desiredButtons.forEach((item) => {
+          if (!item || !item.id) return;
+          let button = el.querySelector('[data-studio-added-button="' + CSS.escape(String(item.id)) + '"]');
+          if (!(button instanceof HTMLButtonElement)) {
+            button = document.createElement("button");
+            button.type = "button";
+            button.dataset.studioAddedButton = String(item.id);
+            button.style.margin = "4px";
+            button.style.padding = "8px 14px";
+            button.style.borderRadius = "9px";
+            button.style.fontWeight = "700";
+            button.style.cursor = "pointer";
+            button.style.display = "inline-flex";
+            button.style.alignItems = "center";
+            button.style.justifyContent = "center";
+            button.style.gap = "6px";
+            el.appendChild(button);
+          }
+          button.textContent = String(item.label || "زر جديد");
+          const variants = {
+            primary: { background: "#3730a3", color: "#ffffff", border: "1px solid #3730a3" },
+            secondary: { background: "#e2e8f0", color: "#0f172a", border: "1px solid #cbd5e1" },
+            outline: { background: "transparent", color: "inherit", border: "1px solid currentColor" },
+            danger: { background: "#be123c", color: "#ffffff", border: "1px solid #be123c" },
+          };
+          Object.assign(button.style, variants[item.variant] || variants.primary);
+          const action = item.action || { type: "none" };
+          if (action.type && action.type !== "none") button.setAttribute("data-studio-flow-action", JSON.stringify(action));
+          else button.removeAttribute("data-studio-flow-action");
+        });
       };
       let selected = null;
       let enabled = true;
@@ -390,6 +437,111 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         event.stopImmediatePropagation();
         selectElement(el);
       }, true);
+      const readNumber = (selector) => {
+        const target = find(String(selector || ""));
+        if (!target) return 0;
+        const raw = "value" in target ? String(target.value || "") : String(target.textContent || "");
+        const number = Number(raw.replace(/[^0-9.,-]/g, "").replace(/,/g, ""));
+        return Number.isFinite(number) ? number : 0;
+      };
+      const evaluateFormula = (formula, variables) => {
+        const source = String(formula || "").replace(/\\s/g, "");
+        if (!source || source.length > 240) throw new Error("اكتب معادلة قصيرة وصحيحة.");
+        const tokens = source.match(/\\d+(?:\\.\\d*)?|\\.\\d+|[a-zA-Z_][a-zA-Z0-9_]*|[()+\\-*/%]/g) || [];
+        if (tokens.join("") !== source) throw new Error("المعادلة تحتوي على رمز غير مدعوم.");
+        let index = 0;
+        const peek = () => tokens[index];
+        const take = () => tokens[index++];
+        const factor = () => {
+          const token = peek();
+          if (token === "+" || token === "-") { take(); const value = factor(); return token === "-" ? -value : value; }
+          if (token === "(") { take(); const value = expression(); if (take() !== ")") throw new Error("أغلق القوس في المعادلة."); return value; }
+          if (!token) throw new Error("المعادلة غير مكتملة.");
+          take();
+          if (/^(?:\\d+(?:\\.\\d*)?|\\.\\d+)$/.test(token)) return Number(token);
+          if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(token)) {
+            const value = variables[token.toLowerCase()];
+            if (typeof value !== "number" || !Number.isFinite(value)) throw new Error("لم يتم تحديد قيمة المتغير " + token + ".");
+            return value;
+          }
+          throw new Error("جزء غير صالح في المعادلة.");
+        };
+        const term = () => {
+          let value = factor();
+          while (peek() === "*" || peek() === "/" || peek() === "%") {
+            const op = take(), right = factor();
+            if ((op === "/" || op === "%") && right === 0) throw new Error("لا يمكن القسمة على صفر.");
+            value = op === "*" ? value * right : op === "/" ? value / right : value % right;
+          }
+          return value;
+        };
+        const expression = () => {
+          let value = term();
+          while (peek() === "+" || peek() === "-") { const op = take(), right = term(); value = op === "+" ? value + right : value - right; }
+          return value;
+        };
+        const result = expression();
+        if (index !== tokens.length || !Number.isFinite(result)) throw new Error("تعذر حساب المعادلة.");
+        return result;
+      };
+      const runFlowAction = (action) => {
+        if (!action || typeof action !== "object") return;
+        if (action.type === "navigate") {
+          const path = String(action.destination || "");
+          if (path.startsWith("/") && !path.startsWith("//")) window.location.assign(path);
+        } else if (action.type === "message") {
+          window.alert(String(action.message || "تم تنفيذ الإجراء."));
+        } else if (action.type === "toggle") {
+          const target = find(action.targetSelector);
+          if (!target) throw new Error("العنصر المرتبط غير موجود في هذه الصفحة.");
+          if (target.dataset.studioFlowHidden === "true") {
+            target.style.display = target.dataset.studioFlowPreviousDisplay || "";
+            delete target.dataset.studioFlowHidden;
+            delete target.dataset.studioFlowPreviousDisplay;
+          } else {
+            target.dataset.studioFlowPreviousDisplay = target.style.display;
+            target.style.display = "none";
+            target.dataset.studioFlowHidden = "true";
+          }
+        } else if (action.type === "set_value") {
+          const target = find(action.targetSelector);
+          if (!target) throw new Error("العنصر المرتبط غير موجود في هذه الصفحة.");
+          if ("value" in target) {
+            target.value = String(action.value ?? "");
+            target.dispatchEvent(new Event("input", { bubbles: true }));
+            target.dispatchEvent(new Event("change", { bubbles: true }));
+          } else target.textContent = String(action.value ?? "");
+        } else if (action.type === "calculate") {
+          const a = readNumber(action.leftSelector), b = readNumber(action.rightSelector);
+          let result;
+          if (action.formula) result = evaluateFormula(action.formula, { a, b });
+          else {
+            const op = ["+", "-", "*", "/", "%"].includes(action.operator) ? action.operator : "+";
+            if ((op === "/" || op === "%") && b === 0) throw new Error("لا يمكن القسمة على صفر.");
+            result = op === "+" ? a + b : op === "-" ? a - b : op === "*" ? a * b : op === "/" ? a / b : a % b;
+          }
+          const target = find(action.resultSelector);
+          if (!target) throw new Error("اختر مكان ظهور النتيجة من شجرة العناصر.");
+          const output = String(Number(result.toFixed(6)));
+          if ("value" in target) {
+            target.value = output;
+            target.dispatchEvent(new Event("input", { bubbles: true }));
+            target.dispatchEvent(new Event("change", { bubbles: true }));
+          } else target.textContent = output;
+        }
+      };
+      document.addEventListener("click", (event) => {
+        const target = event.target instanceof Element ? event.target.closest("[data-studio-flow-action]") : null;
+        if (!target) return;
+        let action;
+        try { action = JSON.parse(target.getAttribute("data-studio-flow-action") || "{}"); } catch (_) { return; }
+        if (!action.type || action.type === "none") return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        try { runFlowAction(action); } catch (error) { window.alert(String(error?.message || error)); }
+      }, true);
+
       window.addEventListener("message", (event) => {
         if (event.origin !== parentOrigin || event.source !== window.parent || event.data?.type !== "STUDIO_COMMAND") return;
         const data = event.data;
