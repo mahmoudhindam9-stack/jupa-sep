@@ -213,7 +213,7 @@ function RootComponent() {
         delete element.dataset.studioFlowPreviousDisplay;
       });
 
-      for (const snapshot of Array.from(studioSnapshots.values()).reverse())
+      for (const snapshot of Array.from(studioSnapshots.values()).reverse()) {
         const element = snapshot.element;
         if (!element.isConnected) continue;
         if (snapshot.leafTextContent !== null) {
@@ -324,7 +324,7 @@ function RootComponent() {
             html.appendChild(button);
           }
           button.textContent = String(item.label || "زر جديد");
-          const variants: Record<string, React.CSSProperties> = {
+          const variants: Record<string, Record<string, string>> = {
             primary: { background: "#3730a3", color: "#ffffff", border: "1px solid #3730a3" },
             secondary: { background: "#e2e8f0", color: "#0f172a", border: "1px solid #cbd5e1" },
             outline: { background: "transparent", color: "inherit", border: "1px solid currentColor" },
