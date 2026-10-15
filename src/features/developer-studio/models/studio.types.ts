@@ -28,6 +28,7 @@ export interface ButtonContent {
   label: string;
   action?: "link" | "submit" | "alert" | "none";
   url?: string;
+  message?: string;
   variant?: "default" | "secondary" | "outline" | "destructive" | "ghost";
 }
 
