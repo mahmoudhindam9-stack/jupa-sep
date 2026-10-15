@@ -12,7 +12,7 @@ export function useUsers() {
 export function useUpsertProfile() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (profile: Partial<Profile> & { id: string }) => authService.upsertProfile(profile),
+    mutationFn: (profile: Partial<Profile> & { id: string }) => authService.saveManagedProfile(profile),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin", "profiles"] });
     },
