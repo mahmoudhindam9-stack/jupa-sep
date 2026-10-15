@@ -27,6 +27,8 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: npm ci --no-audit --no-fund
+      - name: Managed-user validation tests
+        run: npm test -- --run src/features/auth/services/managedUserValidation.test.ts
       - name: TypeScript diagnostics (the repository has existing unrelated errors)
         continue-on-error: true
         run: npm run typecheck
