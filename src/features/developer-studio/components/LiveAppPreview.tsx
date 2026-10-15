@@ -318,10 +318,12 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         let el = target.closest(editableSelector);
         if (!el || el === document.body || el === document.documentElement) return;
         if (["PATH", "CIRCLE", "RECT", "LINE", "POLYLINE", "POLYGON"].includes(el.tagName)) el = el.closest("svg") || el;
+        if (isProtected(el)) return;
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
         selectElement(el);
+        rememberOriginal(selectorFor(el), el);
         const existingTranslate = getComputedStyle(el).translate || "none";
         const values = existingTranslate === "none" ? [] : existingTranslate.match(/-?\d+(?:\.\d+)?/g) || [];
         const baseX = Number(values[0] || 0);
@@ -362,6 +364,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         let el = target.closest(editableSelector);
         if (!el || el === document.body || el === document.documentElement) return;
         if (["PATH", "CIRCLE", "RECT", "LINE", "POLYLINE", "POLYGON"].includes(el.tagName)) el = el.closest("svg") || el;
+        if (isProtected(el)) return;
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
