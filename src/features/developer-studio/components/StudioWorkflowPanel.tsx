@@ -154,7 +154,7 @@ export function StudioWorkflowPanel({ selected, treeNodes, pageLinks, edits, onU
   const linkTarget = selected ? (selectedEdit.href ?? selected.href ?? "") : "";
   const saveLink = (href: string) => {
     setCustomHref(href);
-    if (selected) onUpdateEdit(selected.selector, { href });
+    if (selected) onUpdateEdit(selected.selector, { href, action: href ? { type: "navigate", destination: href } : { type: "none" } });
   };
 
   return (
