@@ -500,18 +500,15 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
   const applyStyle = (styles: Record<string, string>) => {
     if (!selected) return;
     send({ action: "style", selector: selected.selector, styles });
-    commitEdits(selected.selector, { styles: { ...(editsRef.current[selected.selector]?.styles || {}), ...styles } });
   };
   const editText = (value: string) => {
     setTextValue(value);
     if (!selected) return;
     send({ action: "text", selector: selected.selector, text: value });
-    commitEdits(selected.selector, { text: value });
   };
-  const action = (name: string, patch?: StudioDomEdit) => {
+  const action = (name: string, _patch?: StudioDomEdit) => {
     if (!selected) return;
     send({ action: name, selector: selected.selector });
-    if (patch) commitEdits(selected.selector, patch);
   };
   const frameWidth = previewSize === "mobile" ? "390px" : previewSize === "tablet" ? "820px" : "100%";
   const selectedIsVector = !!selected && ["svg", "path", "circle", "rect", "line", "polyline", "polygon"].includes(selected.tag);
