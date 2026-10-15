@@ -74,7 +74,7 @@ export function CurrencySwitcher({
   compact = false,
 }: CurrencySwitcherProps) {
   const { currency, changeCurrency, exchangeRates, updateExchangeRate } = useSettings(pageKey);
-  const [showRatesModal, setShowRatesModal] = useState(false);
+  const [showRateEditor, setShowRateEditor] = useState(false);
 
   if (compact) {
     return (
@@ -98,11 +98,23 @@ export function CurrencySwitcher({
               </button>
             );
           })}
+          <button
+            type="button"
+            onClick={() => setShowRateEditor((open) => !open)}
+            className={`rounded-lg border px-2 py-1 text-[10px] font-bold transition ${showRateEditor ? "border-primary bg-primary/10 text-primary" : "border-border/70 text-muted-foreground hover:bg-background hover:text-primary"}`}
+            aria-expanded={showRateEditor}
+            title="إظهار أو إخفاء مدخلات أسعار الصرف"
+          >
+            <Settings2 size={12} />
+          </button>
         </div>
-        <div data-studio-preserve="currency-switcher-tools" className="grid grid-cols-2 gap-1.5 bg-muted/40 px-2 py-1.5 rounded-lg border border-border/60">
-          <ExchangeRateField code="EGP" label="ج.م" value={exchangeRates.EGP} onCommit={updateExchangeRate} compact />
-          <ExchangeRateField code="SSP" label="ج.س.ج" value={exchangeRates.SSP} onCommit={updateExchangeRate} compact />
-        </div>
+        {showRateEditor && (
+          <div data-studio-preserve="currency-switcher-tools" className="flex flex-wrap items-center gap-1.5 rounded-lg border border-border/60 bg-muted/40 px-2 py-1.5">
+            <ExchangeRateField code="EGP" label="ج.م" value={exchangeRates.EGP} onCommit={updateExchangeRate} compact />
+            <ExchangeRateField code="SSP" label="ج.س.ج" value={exchangeRates.SSP} onCommit={updateExchangeRate} compact />
+            <button type="button" onClick={() => setShowRateEditor(false)} className="px-1 text-[10px] font-bold text-muted-foreground hover:text-foreground" aria-label="إخفاء معاملات التحويل">إخفاء</button>
+          </div>
+        )}
       </div>
     );
   }
@@ -137,82 +149,26 @@ export function CurrencySwitcher({
         })}
       </div>
 
-      {/* Always-visible exchange-rate controls — protected from accidental visual edits. */}
-      <div data-studio-preserve="currency-switcher-tools" className="flex flex-wrap items-center gap-2 bg-muted/60 px-2.5 py-1.5 rounded-xl border border-border/80 text-xs">
-        <span className="text-[11px] font-black text-muted-foreground shrink-0">المعامل (1$ =)</span>
-        <ExchangeRateField code="EGP" label="ج.م" value={exchangeRates.EGP} onCommit={updateExchangeRate} />
-        <ExchangeRateField code="SSP" label="ج.س.ج" value={exchangeRates.SSP} onCommit={updateExchangeRate} />
-        <button
-          type="button"
-          onClick={() => setShowRatesModal(true)}
-          className="rounded-lg border border-border/70 px-2 py-1 text-[10px] font-bold text-muted-foreground hover:bg-background hover:text-primary"
-          title="فتح نافذة إعدادات أسعار الصرف"
-        >
-          إعدادات المعامل
-        </button>
-      </div>
-
-      {showRatesModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
-          <div className="bg-card border border-border rounded-2xl p-5 w-full max-w-sm space-y-4 shadow-xl text-right animate-scaleIn">
-            <div className="flex items-center justify-between border-b border-border pb-3">
-              <h3 className="font-bold text-sm text-foreground flex items-center gap-2">
-                <Coins size={16} className="text-primary" />
-                تعديل أسعار الصرف اليومية (مقابل 1 دولار)
-              </h3>
-              <button
-                onClick={() => setShowRatesModal(false)}
-                className="text-xs text-muted-foreground hover:text-foreground font-bold p-1 rounded-md"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="space-y-3 text-xs">
-              <div className="flex items-center justify-between gap-3">
-                <span className="font-bold">🇪🇬 سعر الدولار بالمصري (EGP):</span>
-                <div className="flex items-center gap-1">
-                  <input
-                    type="number"
-                    step="any"
-                    value={exchangeRates.EGP || ""}
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value);
-                      if (!isNaN(val) && val > 0) updateExchangeRate("EGP", val);
-                    }}
-                    className="w-20 h-8 px-2 text-center font-mono font-bold bg-background border border-input rounded-md"
-                  />
-                  <span className="font-bold text-muted-foreground">ج.م</span>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between gap-3">
-                <span className="font-bold">🇸🇸 سعر الدولار بالجنوب سوداني (SSP):</span>
-                <div className="flex items-center gap-1">
-                  <input
-                    type="number"
-                    step="any"
-                    value={exchangeRates.SSP || ""}
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value);
-                      if (!isNaN(val) && val > 0) updateExchangeRate("SSP", val);
-                    }}
-                    className="w-20 h-8 px-2 text-center font-mono font-bold bg-background border border-input rounded-md"
-                  />
-                  <span className="font-bold text-muted-foreground">ج.س.ج</span>
-                </div>
-              </div>
-            </div>
-            <div className="pt-2 border-t border-border flex justify-end">
-              <button
-                onClick={() => setShowRatesModal(false)}
-                className="bg-primary text-primary-foreground text-xs font-bold px-4 py-2 rounded-xl"
-              >
-                حفظ وإغلاق
-              </button>
-            </div>
-          </div>
+      <button
+        type="button"
+        onClick={() => setShowRateEditor((open) => !open)}
+        className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition ${showRateEditor ? "border-primary bg-primary/10 text-primary" : "border-border/80 bg-muted/60 text-muted-foreground hover:bg-muted hover:text-primary"}`}
+        aria-expanded={showRateEditor}
+        title="إظهار أو إخفاء مدخلات أسعار الصرف"
+      >
+        <Settings2 size={13} />
+        <span>{showRateEditor ? "إخفاء المعامل" : "تعديل المعامل"}</span>
+      </button>
+      {showRateEditor && (
+        <div data-studio-preserve="currency-switcher-tools" className="flex flex-wrap items-center gap-2 rounded-xl border border-border/80 bg-muted/60 px-2.5 py-1.5 text-xs">
+          <span className="text-[11px] font-black text-muted-foreground shrink-0">المعامل (1$ =)</span>
+          <ExchangeRateField code="EGP" label="ج.م" value={exchangeRates.EGP} onCommit={updateExchangeRate} />
+          <ExchangeRateField code="SSP" label="ج.س.ج" value={exchangeRates.SSP} onCommit={updateExchangeRate} />
+          <button type="button" onClick={() => setShowRateEditor(false)} className="rounded-lg px-1.5 py-1 text-[10px] font-bold text-muted-foreground hover:bg-background" aria-label="إخفاء معاملات التحويل">إخفاء</button>
         </div>
       )}
+
+}
     </div>
   );
 }
