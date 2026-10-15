@@ -42,9 +42,10 @@ interface ElementTreePanelProps {
   activePageId: string;
   elements: Record<string, ElementModel>;
   selectedElementId: string | null;
+  selectedElementIds?: string[];
   onSelectPage: (pageId: string) => void;
   onAddPage: (name: string, route: string) => void;
-  onSelectElement: (elementId: string) => void;
+  onSelectElement: (elementId: string, multiSelect?: boolean) => void;
   onAddElement: (type: ElementType, parentId?: string | null) => void;
   onDeleteElement: (elementId: string) => void;
   onDuplicateElement: (elementId: string) => void;
@@ -84,6 +85,7 @@ export function ElementTreePanel({
   activePageId,
   elements,
   selectedElementId,
+  selectedElementIds,
   onSelectPage,
   onAddPage,
   onSelectElement,
@@ -232,21 +234,24 @@ export function ElementTreePanel({
             {filteredElements.length > 0 ? (
               filteredElements.map((elem) => {
                 const Icon = ELEMENT_TYPE_ICONS[elem.type] || Box;
-                const isSelected = selectedElementId === elem.id;
+                const isPrimarySelected = selectedElementId === elem.id;
+                const isSelected = selectedElementIds ? selectedElementIds.includes(elem.id) : isPrimarySelected;
                 const excerpt = getElementDisplayName(elem);
                 const depth = depthById.get(elem.id) || 0;
 
                 return (
                   <div
                     key={elem.id}
-                    onClick={() => onSelectElement(elem.id)}
+                    onClick={(event) => onSelectElement(elem.id, event.ctrlKey || event.metaKey || event.shiftKey)}
                     style={{ marginRight: `${depth * 12}px` }}
                     className={cn(
                       "group flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer",
                       depth > 0 ? "border-r-2 border-primary/20" : "",
-                      isSelected
+                      isPrimarySelected
                         ? "bg-primary text-primary-foreground shadow-2xs"
-                        : "hover:bg-muted/70 text-foreground",
+                        : isSelected
+                          ? "bg-primary/10 text-foreground ring-1 ring-primary/40"
+                          : "hover:bg-muted/70 text-foreground",
                     )}
                   >
                     <div className="flex items-center gap-2 min-w-0">
