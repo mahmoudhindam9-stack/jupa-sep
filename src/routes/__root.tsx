@@ -408,22 +408,30 @@ function RootComponent() {
     const storageHandler = (event: StorageEvent) => {
       if (event.key === "custom_text_map") legacyEditsUpdatedHandler();
     };
-    refreshLegacyStudioEdits();
-    window.addEventListener("studio_published_updated", publishedHandler);
-    window.addEventListener("studio_legacy_edits_updated", legacyEditsUpdatedHandler);
-    window.addEventListener("storage", storageHandler);
-    void import("@/features/developer-studio/services/studioService")
-      .then(({ studioService }) => studioService.getPublishedConfig())
-      .then(applyPublishedStudioEdits)
-      .catch((error) => console.warn("Published Studio config could not be loaded:", error));
+    // The Studio iframe applies its current draft through LiveAppPreview. Do not
+    // apply published/legacy DOM edits a second time inside that same preview.
+    const isStudioPreviewFrame =
+      window.self !== window.top &&
+      new URLSearchParams(window.location.search).get("studioPreview") === "1";
 
-    const studioObserverInstance = new MutationObserver(() => {
-      studioObserverInstance.disconnect();
-      applyStudioEdits({ ...activeLegacyStudioEdits, ...activePublishedStudioEdits });
-      studioObserverInstance.observe(document.body, { childList: true, subtree: true });
-    });
-    studioObserver = studioObserverInstance;
-    studioObserver.observe(document.body, { childList: true, subtree: true });
+    if (!isStudioPreviewFrame) {
+      refreshLegacyStudioEdits();
+      window.addEventListener("studio_published_updated", publishedHandler);
+      window.addEventListener("studio_legacy_edits_updated", legacyEditsUpdatedHandler);
+      window.addEventListener("storage", storageHandler);
+      void import("@/features/developer-studio/services/studioService")
+        .then(({ studioService }) => studioService.getPublishedConfig())
+        .then(applyPublishedStudioEdits)
+        .catch((error) => console.warn("Published Studio config could not be loaded:", error));
+
+      const studioObserverInstance = new MutationObserver(() => {
+        studioObserverInstance.disconnect();
+        applyStudioEdits({ ...activeLegacyStudioEdits, ...activePublishedStudioEdits });
+        studioObserverInstance.observe(document.body, { childList: true, subtree: true });
+      });
+      studioObserver = studioObserverInstance;
+      studioObserver.observe(document.body, { childList: true, subtree: true });
+    }
     const stopAppSync = createAppSync(queryClient);
     return () => {
       studioObserver?.disconnect();

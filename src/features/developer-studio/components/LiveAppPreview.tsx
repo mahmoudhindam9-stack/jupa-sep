@@ -118,6 +118,12 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
     const value = (currentRoute || "/admin").trim();
     return value.startsWith("/") && !value.startsWith("//") ? value : "/admin";
   }, [currentRoute]);
+  // Mark the iframe so the app shell knows Studio is already handling draft edits.
+  const previewRoute = useMemo(() => {
+    const url = new URL(safeRoute, "https://studio-preview.invalid");
+    url.searchParams.set("studioPreview", "1");
+    return `${url.pathname}${url.search}${url.hash}`;
+  }, [safeRoute]);
   const origin = typeof window !== "undefined" ? window.location.origin : "";
 
   const send = useCallback((data: Record<string, unknown>) => {
@@ -425,10 +431,13 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         const parent = el.parentElement;
         if (parent) {
           const wanted = Math.min(5, Math.max(0, Number(edit.duplicateCount) || 0));
-          const count = Array.from(parent.children).filter((item) =>
+          const clones = Array.from(parent.children).filter((item) =>
             item.getAttribute("data-coding-studio-clone-of") === selector ||
-            item.getAttribute("data-studio-clone-of") === selector).length;
-          for (let i = count; i < wanted; i++) {
+            item.getAttribute("data-studio-clone-of") === selector);
+          // Reconcile to the exact requested count so undoing/removing duplicates
+          // cannot leave stale copies behind in the preview.
+          clones.slice(wanted).forEach((clone) => clone.remove());
+          for (let i = clones.length; i < wanted; i++) {
             const clone = el.cloneNode(true);
             clone.removeAttribute("id");
             clone.removeAttribute("data-coding-studio-selected");
@@ -868,7 +877,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         )}
         <div className="absolute inset-0 flex min-h-0 min-w-0 items-stretch justify-center overflow-auto bg-slate-100 p-0 dark:bg-slate-950 sm:p-0">
           <div className={"h-full min-h-0 overflow-hidden bg-background transition-[width] duration-200 " + (previewSize === "desktop" ? "w-full rounded-none border-0 shadow-none" : "rounded-xl border shadow-xl")} style={{ width: frameWidth, minWidth: previewSize === "desktop" ? 0 : frameWidth, flex: previewSize === "desktop" ? "1 1 auto" : "0 0 " + frameWidth }}>
-            <iframe key={frameKey} ref={iframeRef} src={safeRoute} onLoad={installBridge} title="معاينة حية للتطبيق" className="h-full min-h-0 w-full border-0 bg-background" />
+            <iframe key={frameKey} ref={iframeRef} src={previewRoute} onLoad={installBridge} title="معاينة حية للتطبيق" className="h-full min-h-0 w-full border-0 bg-background" />
           </div>
         </div>
         {showProperties && (
