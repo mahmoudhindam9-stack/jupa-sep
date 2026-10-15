@@ -1066,8 +1066,8 @@ export function UsersPage() {
         toast({
           title: "تم إنشاء المستخدم وتأكيد حفظه في Supabase",
           description: created.session
-            ? `تم إنشاء الحساب ${savedUser.username} وحفظ صلاحياته.`
-            : `تم إنشاء الحساب ${savedUser.username} وحفظ ملفه. قد يحتاج المستخدم إلى تأكيد البريد قبل تسجيل الدخول.`,
+            ? `تم إنشاء الحساب ${savedUser.username} وربطه بالبريد ${savedUser.email}. استخدم هذا البريد لتسجيل الدخول.`
+            : `تم إنشاء الحساب ${savedUser.username} وربطه بالبريد ${savedUser.email}. قد يلزم تأكيد البريد أولًا، ثم تسجيل الدخول بالبريد نفسه.`,
         });
         return;
       }
