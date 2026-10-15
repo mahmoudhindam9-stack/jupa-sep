@@ -104,7 +104,7 @@ export function ElementTreePanel({
 
   // Build a readable parent/child tree and keep each group together.
   const pageElements = Object.values(elements).filter((el) => el.pageId === activePageId);
-  const pageOrder = new Map((activePage?.elementIds || []).map((id, index) => [id, index]));
+  const pageOrder = new Map((activePage?.elementIds || []).map((id, index) => [id, index] as const));
   const sortTreeSiblings = (a: ElementModel, b: ElementModel) =>
     (a.layout?.order ?? pageOrder.get(a.id) ?? 0) - (b.layout?.order ?? pageOrder.get(b.id) ?? 0);
   const orderedPageElements: ElementModel[] = [];
@@ -388,12 +388,12 @@ export function ElementTreePanel({
               </div>
               <div>
                 <label className="text-[11px] font-bold text-muted-foreground block mb-1">
-                  المسار (Route):
+                  رابط الصفحة داخل التطبيق:
                 </label>
                 <Input
                   value={newPageRoute}
                   onChange={(e) => setNewPageRoute(e.target.value)}
-                  placeholder="/admin/custom-page"
+                  placeholder="مثال: /admin/reports"
                   className="h-8 text-xs font-mono bg-background"
                   required
                 />
@@ -434,11 +434,11 @@ export function ElementTreePanel({
                     <div className="font-black truncate">{p.name}</div>
                     <div
                       className={cn(
-                        "text-[10px] font-mono mt-0.5",
+                        "text-[10px] mt-0.5",
                         isActive ? "text-primary-foreground/80" : "text-muted-foreground",
                       )}
                     >
-                      {p.route}
+                      صفحة داخل التطبيق
                     </div>
                   </div>
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-black/10 dark:bg-white/10 font-bold">
