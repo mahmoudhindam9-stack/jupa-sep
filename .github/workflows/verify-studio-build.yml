@@ -7,6 +7,7 @@ on:
     paths:
       - "src/features/developer-studio/**"
       - "src/routes/admin/studio.tsx"
+      - "src/routes/__root.tsx"
       - "src/routes/admin/developer-studio.tsx"
       - "src/routes/admin/system-update.tsx"
       - "src/components/CurrencySwitcher.tsx"
@@ -19,6 +20,7 @@ on:
     paths:
       - "src/features/developer-studio/**"
       - "src/routes/admin/studio.tsx"
+      - "src/routes/__root.tsx"
       - "src/routes/admin/developer-studio.tsx"
       - "src/routes/admin/system-update.tsx"
       - "src/components/CurrencySwitcher.tsx"
