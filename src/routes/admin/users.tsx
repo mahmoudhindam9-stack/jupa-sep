@@ -1162,11 +1162,9 @@ export function UsersPage() {
       user.permissions && Object.keys(user.permissions).length > 0 ? user.permissions : null;
     const currentPermissions =
       profilePermissions || statePermissions || defaultPermissionsForRole(user.role);
-    setEditedPermissions({
-      ...((currentPermissions as any).super_admin_full_access === true
-        ? defaultPermissionsForRole("super_admin")
-        : currentPermissions),
-    });
+    // Show the stored ACL exactly as saved. The super-admin override is a separate
+    // permission and must not silently rewrite every granular flag when the dialog opens.
+    setEditedPermissions({ ...currentPermissions });
   };
 
   const handleSavePermissions = async () => {
