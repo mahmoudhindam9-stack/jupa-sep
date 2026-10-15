@@ -779,6 +779,7 @@ export function UsersPage() {
     email: "",
     phone: "",
     password: "",
+    confirmPassword: "",
     role: "cashier",
   });
   const [editing, setEditing] = useState<SystemUser | null>(null);
@@ -948,9 +949,11 @@ export function UsersPage() {
         email: form.email,
         phone: form.phone,
         password: form.password,
+        passwordConfirmation: form.confirmPassword,
         role: form.role,
         hosted,
         requirePassword: !editing || (!hosted && Boolean(form.password)),
+        requirePasswordConfirmation: !editing || (!hosted && Boolean(form.password)),
       });
       if (editing) {
         const permissions = validatedForm.role !== editing.role
@@ -972,9 +975,9 @@ export function UsersPage() {
           const savedProfile = await authService.saveManagedProfile({
             id: editing.id,
             username: editing.username,
-            full_name: form.full_name.trim(),
-            phone: form.phone.trim(),
-            role: form.role as any,
+            full_name: validatedForm.fullName,
+            phone: validatedForm.phone,
+            role: validatedForm.role as any,
             permissions,
           });
           updated = profileToSystemUser(savedProfile);
@@ -1003,7 +1006,7 @@ export function UsersPage() {
         setLocalUsers(nextUsers);
         setErpState(erpStore.getState());
         setEditing(null);
-        setForm({ full_name: "", username: "", email: "", phone: "", password: "", role: "cashier" });
+        setForm({ full_name: "", username: "", email: "", phone: "", password: "", confirmPassword: "", role: "cashier" });
         setIsConfirmUpsertOpen(false);
         toast({
           title: hosted ? "تم تحديث المستخدم في Supabase" : "تم تحديث المستخدم بنجاح",
@@ -1015,11 +1018,7 @@ export function UsersPage() {
       if (hosted && actorProfile?.id == null) {
         throw new Error("تعذر التحقق من صلاحيات حسابك من Supabase. أعد تحميل الصفحة وسجّل الدخول مجددًا.");
       }
-      if (!form.password || form.password.length < (hosted ? 8 : 4)) {
-        throw new Error(hosted
-          ? "كلمة مرور حساب Supabase يجب ألا تقل عن 8 أحرف."
-          : "أدخل كلمة مرور للحساب الجديد (لا تقل عن 4 خانات).");
-      }
+      // Password policy and confirmation are validated together by validateManagedUserForm.
 
       const duplicate = localUsers.some(
         (user) => String(user.username).trim().toLowerCase() === normalizedUsername,
@@ -1062,7 +1061,7 @@ export function UsersPage() {
         erpStore.replaceManagedUsers(nextUsers);
         setLocalUsers(nextUsers);
         setErpState(erpStore.getState());
-        setForm({ full_name: "", username: "", phone: "", password: "", role: "cashier" });
+        setForm({ full_name: "", username: "", email: "", phone: "", password: "", confirmPassword: "", role: "cashier" });
         setIsConfirmUpsertOpen(false);
         toast({
           title: "تم إنشاء المستخدم وتأكيد حفظه في Supabase",
@@ -1085,13 +1084,13 @@ export function UsersPage() {
         created_at: new Date().toISOString(),
       };
       erpStore.upsertUser(localUser);
-      erpStore.updateUserPermission(username, permissions);
+      erpStore.updateUserPermission(validatedForm.username, permissions);
       setLocalUsers(localLoginUsers());
       setForm({ full_name: "", username: "", phone: "", password: "", role: "cashier" });
       setIsConfirmUpsertOpen(false);
       toast({
         title: "تم إنشاء المستخدم بنجاح",
-        description: `تم حفظ الحساب (${username}) في التخزين المحلي.`,
+        description: `تم حفظ الحساب (${validatedForm.username}) في التخزين المحلي.`,
       });
     } catch (error: any) {
       if (createdAuthUserId) {
@@ -1149,7 +1148,7 @@ export function UsersPage() {
     } catch (error: any) {
       toast({
         title: "تعذر حذف المستخدم",
-        description: error?.message || "لم يؤكد Supabase حذف الحساب؛ لم يتم تحديث القائمة محليًا.",
+        description: userValidationErrorMessage(error),
         variant: "destructive",
       });
     } finally {
@@ -1236,7 +1235,7 @@ export function UsersPage() {
     } catch (error: any) {
       toast({
         title: "تعذر حفظ الصلاحيات",
-        description: error?.message || "لم يؤكد Supabase حفظ تغييرات الصلاحيات؛ لم يتم اعتمادها محليًا.",
+        description: userValidationErrorMessage(error),
         variant: "destructive",
       });
     }
@@ -1412,6 +1411,7 @@ export function UsersPage() {
             <Input
               className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1"
               placeholder="مثال: أحمد محمد"
+              maxLength={120}
               value={form.full_name}
               onChange={(e) => setForm((s) => ({ ...s, full_name: e.target.value }))}
             />
@@ -1451,6 +1451,7 @@ export function UsersPage() {
             <Input
               className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1"
               placeholder="01xxxxxxxxx"
+              maxLength={40}
               value={form.phone}
               onChange={(e) => setForm((s) => ({ ...s, phone: e.target.value }))}
             />
@@ -1463,7 +1464,25 @@ export function UsersPage() {
               placeholder={editing ? "اتركه فارغاً لعدم التغيير" : "الرقم السري"}
               disabled={!!editing && isHostedDeployment()}
               value={form.password}
+              minLength={8}
+              maxLength={128}
+              autoComplete={editing ? "new-password" : "new-password"}
               onChange={(e) => setForm((s) => ({ ...s, password: e.target.value }))}
+            />
+          </div>
+          <div className="md:col-span-2 lg:col-span-1">
+            <Label className="text-xs font-bold">تأكيد كلمة المرور</Label>
+            <Input
+              type="password"
+              className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1"
+              placeholder={editing ? "اتركه فارغًا دون تغيير" : "أعد كتابة كلمة المرور"}
+              disabled={!!editing && isHostedDeployment()}
+              required={!editing}
+              minLength={8}
+              maxLength={128}
+              value={form.confirmPassword}
+              onChange={(e) => setForm((s) => ({ ...s, confirmPassword: e.target.value }))}
+              autoComplete="new-password"
             />
           </div>
           <div className="md:col-span-2 lg:col-span-2">
@@ -1493,6 +1512,7 @@ export function UsersPage() {
                     email: "",
                     phone: "",
                     password: "",
+                    confirmPassword: "",
                     role: "cashier",
                   });
                 }}
@@ -1503,7 +1523,7 @@ export function UsersPage() {
             <Button
               className="h-9 px-6 rounded-xl font-bold gap-2"
               onClick={() => setIsConfirmUpsertOpen(true)}
-              disabled={!form.full_name || !form.username || (!editing && !form.password) ||
+              disabled={!form.full_name || !form.username || (!editing && (!form.password || !form.confirmPassword)) ||
                 (isHostedDeployment() && !form.email && !editing) ||
                 (isHostedDeployment() && userDirectoryStatus !== "ready")}
             >
