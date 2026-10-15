@@ -147,7 +147,7 @@ GRANT SELECT ON public.studio_history TO authenticated;
 
 -- Enable Supabase Realtime delivery for Studio row changes where supported.
 -- RLS still determines which authenticated clients can receive each row.
-DO $
+DO $realtime$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
     IF NOT EXISTS (
@@ -169,6 +169,6 @@ BEGIN
     END IF;
   END IF;
 END;
-$;
+$realtime$;
 
 COMMIT;
