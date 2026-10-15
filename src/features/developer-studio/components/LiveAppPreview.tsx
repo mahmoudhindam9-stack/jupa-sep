@@ -20,6 +20,50 @@ type Props = {
 };
 type PreviewSize = "desktop" | "tablet" | "mobile";
 
+const getFriendlyElementType = (tag: string): string => {
+  const labels: Record<string, string> = {
+    a: "رابط",
+    button: "زر",
+    input: "حقل إدخال",
+    textarea: "حقل نصي",
+    select: "قائمة اختيار",
+    option: "خيار",
+    img: "صورة",
+    h1: "عنوان رئيسي",
+    h2: "عنوان فرعي",
+    h3: "عنوان",
+    h4: "عنوان صغير",
+    p: "نص",
+    span: "جزء نصي",
+    div: "حاوية",
+    section: "قسم",
+    article: "محتوى",
+    main: "منطقة المحتوى",
+    nav: "شريط تنقل",
+    header: "رأس الصفحة",
+    footer: "تذييل الصفحة",
+    form: "نموذج",
+    label: "تسمية",
+    table: "جدول",
+    thead: "رأس الجدول",
+    tbody: "محتوى الجدول",
+    tr: "صف",
+    th: "عنوان عمود",
+    td: "خلية",
+    ul: "قائمة",
+    ol: "قائمة مرتبة",
+    li: "عنصر قائمة",
+    svg: "رسم أو أيقونة",
+    path: "جزء من رسم",
+    circle: "شكل دائري",
+    rect: "شكل مستطيل",
+    line: "خط",
+    polygon: "شكل متعدد الأضلاع",
+    polyline: "خط متعدد النقاط",
+  };
+  return labels[tag.toLowerCase()] || "عنصر";
+};
+
 export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMode = false }: Props) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const editsRef = useRef<Record<string, StudioDomEdit>>(initialEdits || {});
@@ -657,7 +701,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         className={"flex min-h-7 w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-right text-[11px] hover:bg-accent " + (selected?.selector === node.selector ? "bg-primary/10 font-black text-primary" : "text-foreground")}
         style={{ paddingRight: Math.min(18, depth * 7 + 6) + "px" }}
       >
-        <span className="shrink-0 rounded bg-muted px-1 font-mono text-[9px] text-muted-foreground">{node.tag}</span>
+        <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[9px] text-muted-foreground">{getFriendlyElementType(node.tag)}</span>
         <span className="min-w-0 flex-1 truncate">{node.label}</span>
       </button>
       {node.children.length > 0 && <div className="mr-2 border-r border-border/70 pr-1">{renderTreeNodes(node.children, depth + 1)}</div>}
@@ -680,7 +724,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
           <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><Monitor size={16} /></span>
           <div className="min-w-0">
             <p className="truncate text-sm font-black">{designerMode ? "مصمم العناصر — معاينة التطبيق الفعلية" : "معاينة التطبيق الحقيقية"}</p>
-            <p className="truncate text-[10px] text-muted-foreground" title={safeRoute}>{safeRoute} · {designerMode ? "تعديلات محلية — الحفظ يدوي" : "وضع العرض الفعلي"} · {status}</p>
+            <p className="truncate text-[10px] text-muted-foreground" title={safeRoute}>{designerMode ? "تحرير مسودة محلية — الحفظ يدوي" : "معاينة التطبيق"} · {status}</p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
@@ -802,7 +846,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
                     className={"flex min-h-8 w-full items-center gap-2 rounded-lg px-2 py-1.5 text-right text-[11px] " + (page.href === safeRoute ? "bg-primary/10 font-black text-primary" : "hover:bg-accent")}
                   >
                     <span className="min-w-0 flex-1 truncate">{page.label || page.href}</span>
-                    <span className="max-w-[92px] truncate font-mono text-[9px] text-muted-foreground">{page.href}</span>
+                    
                   </button>
                 ))}
               </div>
@@ -825,7 +869,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         <aside className="absolute left-0 top-0 bottom-0 z-20 flex w-[min(340px,34vw)] min-w-[240px] flex-col gap-3 overflow-y-auto rounded-tr-xl border-r border-t bg-card/95 p-3 shadow-2xl backdrop-blur">
           <div>
             <h3 className="text-sm font-black">خصائص عنصر التطبيق</h3>
-            <p className="mt-1 text-[10px] text-muted-foreground">{selected ? "نوع العنصر: " + ({a: "رابط", button: "زر", input: "حقل إدخال", textarea: "حقل نصي", select: "قائمة اختيار", img: "صورة", h1: "عنوان", h2: "عنوان", h3: "عنوان", p: "نص", div: "حاوية", section: "قسم"}[selected.tag] || "عنصر") : "انقر على عنصر داخل المعاينة"}</p>
+            <p className="mt-1 text-[10px] text-muted-foreground">{selected ? "نوع العنصر: " + getFriendlyElementType(selected.tag) : "انقر على عنصر داخل المعاينة"}</p>
           </div>
           {selected ? (
             <>
