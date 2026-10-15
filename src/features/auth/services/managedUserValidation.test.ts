@@ -104,6 +104,11 @@ describe("managed user validation contract", () => {
     ).toThrow(/تأكيد كلمة المرور/);
   });
 
+  it("rejects usernames longer than 32 characters and disallowed characters", () => {
+    expect(() => validateManagedUserForm({ fullName: "A User", username: "a".repeat(33), role: "cashier", hosted: false })).toThrow(/اسم المستخدم/);
+    expect(() => validateManagedUserForm({ fullName: "A User", username: "Bad Name", role: "cashier", hosted: false })).toThrow(/اسم المستخدم/);
+  });
+
   it("rejects unsupported roles and oversized profile fields", () => {
     expect(() =>
       validateManagedUserForm({
@@ -124,10 +129,22 @@ describe("managed user validation contract", () => {
     ).toThrow(/120 حرفًا/);
   });
 
+  it("rejects unsupported permission keys before sending them to Supabase", () => {
+    expect(() => validateManagedProfilePayload({
+      id: "00000000-0000-4000-8000-000000000001", username: "cashier.1", full_name: "Cashier One",
+      role: "cashier", permissions: { unknown_admin_override: true },
+    })).toThrow(/صلاحية غير معتمدة/);
+  });
+
+  it("rejects invalid Supabase Auth IDs", () => {
+    expect(() => validateManagedProfilePayload({ id: "not-a-uuid", username: "cashier.1", full_name: "Cashier One", role: "cashier", permissions: {} }))
+      .toThrow(/UUID/);
+  });
+
   it("rejects non-boolean permission values before sending them to Supabase", () => {
     expect(() =>
       validateManagedProfilePayload({
-        id: "auth-user-id",
+        id: "00000000-0000-4000-8000-000000000001",
         username: "cashier.1",
         full_name: "Cashier One",
         phone: "",
