@@ -103,7 +103,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
     } else if (event.data.type === "STUDIO_SELECTED") {
       const item = event.data.element as SelectedDomElement;
       // Clicking the currently selected item toggles its property panel closed.
-      const toggledOff = selectedSelectorRef.current === item.selector;
+      const toggledOff = selectedSelectorRef.current === item.selector && showProperties;
       selectedSelectorRef.current = toggledOff ? null : item.selector;
       setSelected(toggledOff ? null : item);
       setLinkValue(item.href || "");
@@ -136,7 +136,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
       send({ action: "setMode", enabled: editMode });
       send({ action: "restore", edits: editsRef.current });
     }
-  }, [commitEdits, editMode, send]);
+  }, [commitEdits, editMode, send, showProperties]);
 
   useEffect(() => {
     window.addEventListener("message", onMessage);
@@ -893,7 +893,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
                 <Button type="button" size="sm" variant="outline" onClick={() => action("duplicate", { duplicateCount: Math.min(5, Number(edits[selected.selector]?.duplicateCount || 0) + 1) })}><Copy size={14} /> نسخ العنصر</Button>
                 <Button type="button" size="sm" variant="destructive" onClick={() => action("delete", { deleted: true })}><Trash2 size={14} /> إخفاء العنصر</Button>
               </div>
-              <Button type="button" size="sm" variant="ghost" onClick={() => setSelected(null)}><Check size={14} /> إنهاء التحديد</Button>
+              <Button type="button" size="sm" variant="ghost" onClick={() => { setSelected(null); selectedSelectorRef.current = null; }}><Check size={14} /> إنهاء التحديد</Button>
             </>
           ) : (
             <div className="rounded-xl border border-dashed p-4 text-xs leading-6 text-muted-foreground">انقر على نص أو زر أو بطاقة من التطبيق نفسه. التعديلات تُحفظ محليًا وتظهر على صفحات هذا المتصفح؛ مزامنة Supabase من «حفظ ومزامنة»، والنشر لبقية المستخدمين خطوة منفصلة.</div>
