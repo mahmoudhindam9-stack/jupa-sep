@@ -1,5 +1,5 @@
 import { useSettings, Currency } from "@/hooks/use-settings";
-import { DollarSign, Coins, Globe, ArrowRightLeft, Settings2 } from "lucide-react";
+import { Coins, Settings2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 interface CurrencySwitcherProps {
