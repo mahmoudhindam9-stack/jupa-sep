@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { Profile } from "@/shared/types";
 import {
   normalizeManagedEmail,
+  normalizeManagedUsername,
   validateManagedProfilePayload,
   validateManagedUserForm,
   userValidationErrorMessage,
@@ -117,7 +118,7 @@ export const authService = {
 
     const { data, error } = await (supabase as any).rpc("upsert_managed_user_profile", {
       p_user_id: profile.id,
-      p_username: profile.username.trim().toLowerCase(),
+      p_username: normalizeManagedUsername(profile.username),
       p_full_name: String(profile.full_name || "").trim(),
       p_phone: String(profile.phone || "").trim(),
       p_role: String(profile.role).trim().toLowerCase(),
@@ -138,8 +139,8 @@ export const authService = {
     const { data, error } = await (supabase as any).rpc("delete_managed_user", {
       target_user_id: id,
     });
-    if (error) throw error;
-    if (data !== true) throw new Error("Account deletion was not confirmed by Supabase.");
+    if (error) throw new Error(userValidationErrorMessage(error), { cause: error });
+    if (data !== true) throw new Error("أكد Supabase حذف الحساب؟ لا؛ لم يتم تأكيد الحذف.");
   },
 
   async signUpNewUser(email: string, password: string, profileData: any) {
