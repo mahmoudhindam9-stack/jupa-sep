@@ -519,6 +519,69 @@ class StudioService {
       return { success: true, updatedAt: confirmedDraft.updatedAt };
     } catch (e: any) {
       const raw = String(e?.message || e?.details || "تعذر تأكيد حفظ المسودة على الخادم.");
+
+      if (/permission denied for function developer_studio_save_draft/i.test(raw)) {
+        try {
+          const payload = {
+            base_revision: updatedDraft.baseRevision,
+            schema_version: updatedDraft.schemaVersion,
+            pages: updatedDraft.pages,
+            elements: updatedDraft.elements,
+            dom_edits: updatedDraft.domEdits || {},
+            updated_at: new Date().toISOString(),
+          };
+          let savedRow: any = null;
+          if (updatedDraft.serverUpdatedAt) {
+            const { data, error: directError } = (await supabase
+              .from("studio_drafts" as any)
+              .update(payload as any)
+              .eq("owner", updatedDraft.owner)
+              .eq("updated_at", updatedDraft.serverUpdatedAt)
+              .select("id, updated_at")
+              .maybeSingle()) as any;
+            if (directError) throw directError;
+            if (!data) throw new Error("تغيرت المسودة على الخادم أثناء الحفظ؛ أعد فحص التوافق قبل المحاولة.");
+            savedRow = data;
+          } else {
+            const now = payload.updated_at;
+            const { data, error: directError } = (await supabase
+              .from("studio_drafts" as any)
+              .insert({
+                id: updatedDraft.id || "draft_" + updatedDraft.owner,
+                owner: updatedDraft.owner,
+                ...payload,
+                created_at: now,
+              } as any)
+              .select("id, updated_at")
+              .maybeSingle()) as any;
+            if (directError) throw directError;
+            if (!data) throw new Error("لم يؤكد الخادم إنشاء المسودة الجديدة.");
+            savedRow = data;
+          }
+
+          const confirmedAt = String(savedRow.updated_at || payload.updated_at);
+          const confirmedDraft: StudioDraft = {
+            ...updatedDraft,
+            id: String(savedRow.id || updatedDraft.id),
+            updatedAt: confirmedAt,
+            serverUpdatedAt: confirmedAt,
+            hasUnsavedLocalChanges: false,
+          };
+          if (!hasNewerLocalChanges(this.inMemoryDraft)) {
+            this.inMemoryDraft = confirmedDraft;
+            this.persistLocalDraft(confirmedDraft);
+          }
+          return { success: true, updatedAt: confirmedAt };
+        } catch (fallbackError: any) {
+          return {
+            success: false,
+            updatedAt,
+            error: "تعذر حفظ المسودة عبر دالة RPC، وفشلت محاولة الحفظ المباشر الآمنة. طبّق ترحيل صلاحيات الاستوديو. التفاصيل: " +
+              raw + " | " + String(fallbackError?.message || fallbackError || "فشل الحفظ المباشر"),
+          };
+        }
+      }
+
       let actionable = raw;
       if (/developer_studio_save_draft|function .* does not exist|schema cache/i.test(raw)) {
         actionable = "قاعدة البيانات تحتاج إلى دوال المزامنة الآمنة. نفّذ ملف supabase/migrations/20261015100000_studio_local_first_sync_rpcs.sql في Supabase SQL Editor ثم أعد المحاولة. التفاصيل: " + raw;
@@ -603,11 +666,69 @@ class StudioService {
       };
     } catch (error: any) {
       const raw = String(error?.message || error?.details || "تعذر فحص توافق المسودة.");
-      const migrationHint = /permission denied for function developer_studio_check_draft_sync/i.test(raw)
-        ? "صلاحيات تنفيذ دالة مزامنة الاستوديو غير مكتملة. نفّذ supabase/migrations/20261015170000_repair_developer_studio_sync_function_grants.sql في Supabase SQL Editor ثم أعد المحاولة."
-        : /developer_studio_check_draft_sync|function .* does not exist|schema cache/i.test(raw)
-          ? "دالة فحص مزامنة المسودة غير موجودة أو لم تُحدّث. نفّذ supabase/migrations/20261015100000_studio_local_first_sync_rpcs.sql في Supabase SQL Editor ثم أعد المحاولة."
-          : "";
+      if (/permission denied for function developer_studio_check_draft_sync/i.test(raw)) {
+        // Older deployments may have the table RLS grants but miss EXECUTE on the
+        // compatibility RPC. Read the same admin-protected row directly as a safe fallback.
+        try {
+          const { data, error: fallbackError } = (await supabase
+            .from("studio_drafts" as any)
+            .select("*")
+            .eq("owner", draft.owner)
+            .maybeSingle()) as any;
+          if (fallbackError) throw fallbackError;
+
+          if (!data) {
+            return draft.serverUpdatedAt
+              ? { compatible: false, error: "لم تعد المسودة السحابية موجودة؛ احتفظنا بالنسخة المحلية ولم نكتب فوق أي نسخة." }
+              : { compatible: true, needsRebase: false, message: "لا توجد مسودة بعيدة؛ يمكن إنشاء أول نسخة محفوظة." };
+          }
+
+          const serverUpdatedAt = String(data.updated_at || "");
+          const serverDraft: StudioDraft = {
+            id: String(data.id || "draft_" + draft.owner),
+            owner: String(data.owner || draft.owner),
+            baseRevision: Number(data.base_revision || 1),
+            schemaVersion: Number(data.schema_version || CURRENT_SCHEMA_VERSION),
+            pages: data.pages || {},
+            elements: data.elements || {},
+            domEdits: data.dom_edits || {},
+            updatedAt: serverUpdatedAt || new Date().toISOString(),
+            serverUpdatedAt,
+            createdAt: String(data.created_at || serverUpdatedAt || new Date().toISOString()),
+            hasUnpublishedChanges: true,
+            hasUnsavedLocalChanges: false,
+          };
+
+          if (!draft.serverUpdatedAt) {
+            return {
+              compatible: true,
+              needsRebase: true,
+              serverUpdatedAt,
+              serverDraft,
+              message: "تمت قراءة المسودة المحفوظة مباشرة بسبب نقص صلاحية RPC؛ ستُدمج تعديلاتك محليًا قبل الحفظ.",
+            };
+          }
+          if (Date.parse(serverUpdatedAt) !== Date.parse(draft.serverUpdatedAt)) {
+            return {
+              compatible: false,
+              serverUpdatedAt,
+              serverDraft,
+              error: "تغيرت المسودة السحابية من جلسة أخرى. احتفظنا بتعديلاتك المحلية ولم نستبدل النسخة البعيدة.",
+            };
+          }
+          return { compatible: true, needsRebase: false, serverUpdatedAt };
+        } catch (fallbackError: any) {
+          return {
+            compatible: false,
+            error: "تعذر فحص توافق المسودة عبر RPC أو القراءة المباشرة؛ احتفظنا بالتعديلات محليًا. طبّق ترحيل صلاحيات الاستوديو. التفاصيل: " +
+              raw + " | " + String(fallbackError?.message || fallbackError || "فشل الفحص المباشر"),
+          };
+        }
+      }
+
+      const migrationHint = /developer_studio_check_draft_sync|function .* does not exist|schema cache/i.test(raw)
+        ? "دالة فحص مزامنة المسودة غير موجودة أو لم تُحدّث. نفّذ supabase/migrations/20261015100000_studio_local_first_sync_rpcs.sql ثم ترحيل إصلاح الصلاحيات."
+        : "";
       return {
         compatible: false,
         error: "تعذر تأكيد توافق نسخة المسودة مع Supabase؛ احتفظنا بالتعديلات محليًا ولم تتم المزامنة. " + migrationHint + " " + raw,

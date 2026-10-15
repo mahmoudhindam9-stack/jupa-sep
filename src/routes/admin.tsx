@@ -613,7 +613,7 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
 
         {/* Left side in RTL: Tools, User Profile & Logout */}
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-          <div className="hidden md:flex items-center gap-2">
+          <div data-studio-preserve="currency-switcher-tools" className="hidden md:flex items-center gap-2">
             <LanguageSwitcher compact />
             <CurrencySwitcher compact />
           </div>

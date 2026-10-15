@@ -151,88 +151,179 @@ function RootComponent() {
     } catch (e) {
       console.error("Failed to start translator:", e);
     }
-    // Persist visual editor changes across all routes in this browser.
-    const applySavedStudioEdits = () => {
-      try {
-        const legacySaved = JSON.parse(localStorage.getItem("custom_text_map") || "{}");
-        const localStudioSaved = JSON.parse(localStorage.getItem("restocash_studio_local_dom_edits_v1") || "{}");
-        const saved = { ...legacySaved, ...localStudioSaved };
-        for (const [selector, edit] of Object.entries(saved) as Array<[string, any]>) {
-          if (!edit || typeof edit !== "object") continue;
-          let element: Element | null = null;
-          try { element = document.querySelector(selector); } catch { continue; }
-          if (!element) continue;
-          const html = element as HTMLElement;
-          if (edit.text !== undefined && html.dataset.studioTextApplied !== String(edit.text)) {
-            const node = Array.from(html.childNodes).find((n) => n.nodeType === Node.TEXT_NODE && n.textContent?.trim());
-            if (node) node.textContent = String(edit.text);
-            else if (!html.children.length) html.textContent = String(edit.text);
-            html.dataset.studioTextApplied = String(edit.text);
-          }
-          if (edit.styles && typeof edit.styles === "object") for (const [key, value] of Object.entries(edit.styles)) {
-            if (typeof value !== "string") continue;
-            if (key in html.style) (html.style as any)[key] = value;
-            // SVG paths often define their own stroke/fill attributes. Mirror published
-            // vector styles onto the drawing primitives so icon edits survive reloads.
-            if (html.tagName.toLowerCase() === "svg" && ["fill", "stroke", "strokeWidth", "color"].includes(key)) {
-              html.querySelectorAll("path,circle,rect,line,polyline,polygon,ellipse").forEach((node) => {
-                if (key in (node as HTMLElement).style) ((node as HTMLElement).style as any)[key] = value;
-              });
-            }
-          }
-          if (edit.deleted) html.style.display = "none";
-          if (typeof edit.order === "number" && html.parentElement) {
-            const siblings = Array.from(html.parentElement.children).filter((el) => el !== html && !(el as HTMLElement).dataset.studioCloneOf);
-            const currentIndex = Array.from(html.parentElement.children).indexOf(html);
-            const targetIndex = Math.max(0, Math.min(edit.order, siblings.length));
-            if (targetIndex < currentIndex && siblings[targetIndex]) html.parentElement.insertBefore(html, siblings[targetIndex]);
-            else if (targetIndex > currentIndex && siblings[targetIndex]) html.parentElement.insertBefore(html, siblings[targetIndex].nextSibling);
-            else if (targetIndex > currentIndex && !siblings[targetIndex]) html.parentElement.appendChild(html);
-          }
-          const wanted = Math.min(5, Math.max(0, Number(edit.duplicateCount) || 0));
-          const present = html.parentElement ? Array.from(html.parentElement.children).filter((el) => (el as HTMLElement).dataset.studioCloneOf === selector).length : 0;
-          for (let n = present; n < wanted; n++) {
-            const clone = html.cloneNode(true) as HTMLElement;
-            clone.removeAttribute("id"); clone.removeAttribute("data-studio-selected"); clone.dataset.studioCloneOf = selector;
-            html.parentElement?.insertBefore(clone, html.nextSibling);
+    // Unpublished Pro drafts are never read by the real app. Only a confirmed published
+    // configuration or the legacy editor's explicitly saved map can be applied here.
+    type StudioRuntimeSnapshot = {
+      element: HTMLElement;
+      styleAttribute: string | null;
+      leafTextContent: string | null;
+      directTextNodes: Array<{ node: ChildNode; text: string | null }>;
+      parent: Node | null;
+      nextSibling: Node | null;
+    };
+    const studioSnapshots = new Map<string, StudioRuntimeSnapshot>();
+    const publishedStudioClones = new Set<HTMLElement>();
+    let activePublishedStudioEdits: Record<string, any> = {};
+    let activeLegacyStudioEdits: Record<string, any> = {};
+    let studioObserver: MutationObserver | null = null;
+
+    const preservedStudioSelector = '[data-studio-preserve="currency-switcher-tools"], [data-studio-preserve="currency-switcher"]';
+    const isStudioPreserved = (element: Element) => !!element.closest(preservedStudioSelector);
+    const containsStudioPreserved = (element: Element) => !!element.querySelector(preservedStudioSelector);
+    const hidesPreservedStudioUi = (edit: any) => {
+      if (edit?.deleted) return true;
+      const styles = edit?.styles || {};
+      return styles.display === "none" ||
+        styles.visibility === "hidden" ||
+        Number(styles.opacity) === 0 ||
+        ["0", "0px"].includes(String(styles.height || "")) ||
+        ["0", "0px"].includes(String(styles.width || "")) ||
+        ["0", "0px"].includes(String(styles.maxHeight || "")) ||
+        ["0", "0px"].includes(String(styles.maxWidth || ""));
+    };
+
+    const rememberStudioOriginal = (selector: string, element: HTMLElement) => {
+      const old = studioSnapshots.get(selector);
+      if (old?.element === element) return;
+      studioSnapshots.set(selector, {
+        element,
+        styleAttribute: element.getAttribute("style"),
+        leafTextContent: element.children.length === 0 ? element.textContent ?? "" : null,
+        directTextNodes: element.children.length === 0 ? [] : Array.from(element.childNodes)
+          .filter((node) => node.nodeType === Node.TEXT_NODE)
+          .map((node) => ({ node, text: node.textContent })),
+        parent: element.parentNode,
+        nextSibling: element.nextSibling,
+      });
+    };
+
+    const resetPublishedStudioEdits = () => {
+      for (const clone of publishedStudioClones) clone.remove();
+      publishedStudioClones.clear();
+
+      for (const snapshot of Array.from(studioSnapshots.values()).reverse()) {
+        const element = snapshot.element;
+        if (!element.isConnected) continue;
+        if (snapshot.leafTextContent !== null) {
+          element.textContent = snapshot.leafTextContent;
+        } else {
+          for (const entry of snapshot.directTextNodes) {
+            if (entry.node.parentNode === element) entry.node.textContent = entry.text;
           }
         }
-      } catch (error) { console.error("Developer Studio edits could not be applied:", error); }
+        delete element.dataset.studioTextApplied;
+        if (snapshot.styleAttribute === null) element.removeAttribute("style");
+        else element.setAttribute("style", snapshot.styleAttribute);
+        if (snapshot.parent && element.parentNode === snapshot.parent) {
+          const next = snapshot.nextSibling;
+          if (next && next.parentNode === snapshot.parent) snapshot.parent.insertBefore(element, next);
+          else snapshot.parent.appendChild(element);
+        }
+      }
+      studioSnapshots.clear();
+    };
+
+    const applyStudioEdits = (edits: Record<string, any>) => {
+      for (const [selector, edit] of Object.entries(edits || {}) as Array<[string, any]>) {
+        if (!edit || typeof edit !== "object") continue;
+        let element: Element | null = null;
+        try { element = document.querySelector(selector); } catch { continue; }
+        if (!element || isStudioPreserved(element)) continue;
+        if (containsStudioPreserved(element) && hidesPreservedStudioUi(edit)) continue;
+
+        const html = element as HTMLElement;
+        rememberStudioOriginal(selector, html);
+        if (edit.text !== undefined && html.dataset.studioTextApplied !== String(edit.text)) {
+          const node = Array.from(html.childNodes).find((child) => child.nodeType === Node.TEXT_NODE && child.textContent?.trim());
+          if (node) node.textContent = String(edit.text);
+          else if (!html.children.length) html.textContent = String(edit.text);
+          html.dataset.studioTextApplied = String(edit.text);
+        }
+        if (edit.styles && typeof edit.styles === "object") for (const [key, value] of Object.entries(edit.styles)) {
+          if (typeof value !== "string") continue;
+          if (key in html.style) (html.style as any)[key] = value;
+          // SVG paths often define their own stroke/fill attributes. Mirror published
+          // vector styles onto the drawing primitives so icon edits survive reloads.
+          if (html.tagName.toLowerCase() === "svg" && ["fill", "stroke", "strokeWidth", "color"].includes(key)) {
+            html.querySelectorAll("path,circle,rect,line,polyline,polygon,ellipse").forEach((node) => {
+              if (key in (node as HTMLElement).style) ((node as HTMLElement).style as any)[key] = value;
+            });
+          }
+        }
+        if (edit.deleted) html.style.display = "none";
+        if (typeof edit.order === "number" && html.parentElement) {
+          const siblings = Array.from(html.parentElement.children).filter((item) =>
+            item !== html && !(item as HTMLElement).dataset.studioCloneOf);
+          const currentIndex = Array.from(html.parentElement.children).indexOf(html);
+          const targetIndex = Math.max(0, Math.min(edit.order, siblings.length));
+          if (targetIndex < currentIndex && siblings[targetIndex]) html.parentElement.insertBefore(html, siblings[targetIndex]);
+          else if (targetIndex > currentIndex && siblings[targetIndex]) html.parentElement.insertBefore(html, siblings[targetIndex].nextSibling);
+          else if (targetIndex > currentIndex && !siblings[targetIndex]) html.parentElement.appendChild(html);
+        }
+        const parent = html.parentElement;
+        if (parent) {
+          const wanted = Math.min(5, Math.max(0, Number(edit.duplicateCount) || 0));
+          const present = Array.from(parent.children).filter((item) => (item as HTMLElement).dataset.studioCloneOf === selector).length;
+          for (let n = present; n < wanted; n++) {
+            const clone = html.cloneNode(true) as HTMLElement;
+            clone.removeAttribute("id");
+            clone.removeAttribute("data-studio-selected");
+            clone.dataset.studioCloneOf = selector;
+            publishedStudioClones.add(clone);
+            parent.insertBefore(clone, html.nextSibling);
+          }
+        }
+      }
+    };
+
+    const refreshLegacyStudioEdits = () => {
+      try {
+        const stored = JSON.parse(localStorage.getItem("custom_text_map") || "{}");
+        activeLegacyStudioEdits = stored && typeof stored === "object" ? stored : {};
+      } catch {
+        activeLegacyStudioEdits = {};
+      }
+    };
+    const rebuildRuntimeStudioEdits = () => {
+      studioObserver?.disconnect();
+      resetPublishedStudioEdits();
+      applyStudioEdits({ ...activeLegacyStudioEdits, ...activePublishedStudioEdits });
+      studioObserver?.observe(document.body, { childList: true, subtree: true });
     };
     const applyPublishedStudioEdits = (config: any) => {
       const remoteEdits = config?.domEdits;
-      if (!remoteEdits || typeof remoteEdits !== "object" || !Object.keys(remoteEdits).length) return;
-      try {
-        const local = JSON.parse(localStorage.getItem("custom_text_map") || "{}");
-        localStorage.setItem("custom_text_map", JSON.stringify({ ...local, ...remoteEdits }));
-        applySavedStudioEdits();
-      } catch (error) {
-        console.error("Could not apply published Studio edits:", error);
-      }
+      activePublishedStudioEdits = remoteEdits && typeof remoteEdits === "object" ? remoteEdits : {};
+      rebuildRuntimeStudioEdits();
     };
     const publishedHandler = (event: Event) => applyPublishedStudioEdits((event as CustomEvent).detail);
-    const localStudioHandler = () => applySavedStudioEdits();
-    const storageHandler = (event: StorageEvent) => {
-      if (event.key === "custom_text_map" || event.key === "restocash_studio_local_dom_edits_v1") applySavedStudioEdits();
+    const legacyEditsUpdatedHandler = () => {
+      refreshLegacyStudioEdits();
+      rebuildRuntimeStudioEdits();
     };
+    const storageHandler = (event: StorageEvent) => {
+      if (event.key === "custom_text_map") legacyEditsUpdatedHandler();
+    };
+    refreshLegacyStudioEdits();
     window.addEventListener("studio_published_updated", publishedHandler);
-    window.addEventListener("studio_local_edits_updated", localStudioHandler);
+    window.addEventListener("studio_legacy_edits_updated", legacyEditsUpdatedHandler);
     window.addEventListener("storage", storageHandler);
     void import("@/features/developer-studio/services/studioService")
       .then(({ studioService }) => studioService.getPublishedConfig())
       .then(applyPublishedStudioEdits)
       .catch((error) => console.warn("Published Studio config could not be loaded:", error));
 
-    applySavedStudioEdits();
-    const studioObserver = new MutationObserver(() => {
-      studioObserver.disconnect(); applySavedStudioEdits(); studioObserver.observe(document.body, { childList: true, subtree: true });
+    const studioObserverInstance = new MutationObserver(() => {
+      studioObserverInstance.disconnect();
+      applyStudioEdits({ ...activeLegacyStudioEdits, ...activePublishedStudioEdits });
+      studioObserverInstance.observe(document.body, { childList: true, subtree: true });
     });
+    studioObserver = studioObserverInstance;
     studioObserver.observe(document.body, { childList: true, subtree: true });
     const stopAppSync = createAppSync(queryClient);
     return () => {
-      studioObserver.disconnect();
+      studioObserver?.disconnect();
       window.removeEventListener("studio_published_updated", publishedHandler);
-      window.removeEventListener("studio_local_edits_updated", localStudioHandler);
+      window.removeEventListener("studio_legacy_edits_updated", legacyEditsUpdatedHandler);
       window.removeEventListener("storage", storageHandler);
       stopAppSync?.();
     };

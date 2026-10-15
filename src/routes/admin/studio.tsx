@@ -116,7 +116,6 @@ export function DeveloperStudioProPage() {
         const loadedDraft = await studioService.getDraft("admin");
         if (mounted) {
           setDraft(loadedDraft);
-          studioService.applyLocalDomEditsToRuntime(loadedDraft.domEdits || {});
           const firstPageId = Object.keys(loadedDraft.pages || {})[0] || "page_dashboard";
           setActivePageId(firstPageId);
           setHistoryStack([JSON.parse(JSON.stringify(loadedDraft))]);
@@ -200,7 +199,6 @@ export function DeveloperStudioProPage() {
         if (current?.updatedAt && Date.parse(current.updatedAt) >= Date.parse(incoming.updatedAt)) return;
 
         studioService.acceptRealtimeDraft(incoming);
-        studioService.applyLocalDomEditsToRuntime(incoming.domEdits || {});
         setDraft(incoming);
         setLastSavedAt(incoming.updatedAt);
         setSaveStatus("saved");
@@ -341,59 +339,60 @@ export function DeveloperStudioProPage() {
     return queued;
   }, [toast]);
 
-  // First persist each change locally for recovery; do not write to Supabase while editing.
+  // Keep edits isolated in the Studio draft and its history. They are not persisted
+  // or applied to real application routes until the user explicitly saves/publishes.
   const commitDraftChange = useCallback(
     (changedDraft: StudioDraft) => {
-      const changed = { ...changedDraft, hasUnsavedLocalChanges: true };
-      const local = studioService.saveLocalDraft(changed);
-      const newDraft = { ...changed, updatedAt: local.updatedAt };
-      const runtime = studioService.applyLocalDomEditsToRuntime(newDraft.domEdits || {});
-      const localOk = local.success && runtime.success;
-      const localError = local.error || runtime.error;
+      const changed: StudioDraft = {
+        ...changedDraft,
+        updatedAt: new Date().toISOString(),
+        hasUnsavedLocalChanges: true,
+      };
       draftVersionRef.current += 1;
-      setDraft(newDraft);
-      setSaveError(localOk ? null : localError || "تعذر حفظ النسخة المحلية أو تطبيقها.");
-      setSaveStatus(syncWorkflowInFlightRef.current ? "saving" : (localOk ? "unsaved" : "error"));
-      if (!localOk) {
-        saveErrorRef.current = localError || "local-save-failed";
-      } else {
-        saveErrorRef.current = null;
-      }
+      setDraft(changed);
+      setSaveError(null);
+      saveErrorRef.current = null;
+      setSaveStatus(syncWorkflowInFlightRef.current ? "saving" : "unsaved");
 
       setHistoryStack((prev) => {
         const truncated = prev.slice(0, historyPointer + 1);
-        return [...truncated, JSON.parse(JSON.stringify(newDraft))].slice(-25);
+        return [...truncated, JSON.parse(JSON.stringify(changed))].slice(-25);
       });
       setHistoryPointer((prev) => Math.min(prev + 1, 24));
     },
     [historyPointer],
   );
 
-  // Undo and redo update the local recovery copy; neither writes to Supabase.
+  // Undo and redo restore the preview snapshot only. The live application and
+  // the last server-confirmed draft remain untouched until Save & Sync / Publish.
   const handleUndo = useCallback(() => {
     if (historyPointer <= 0) return;
-    const targetState = { ...JSON.parse(JSON.stringify(historyStack[historyPointer - 1])), hasUnsavedLocalChanges: true };
-    const local = studioService.saveLocalDraft(targetState);
-    studioService.applyLocalDomEditsToRuntime(targetState.domEdits || {});
-    const restored = { ...targetState, updatedAt: local.updatedAt };
+    const targetState: StudioDraft = {
+      ...JSON.parse(JSON.stringify(historyStack[historyPointer - 1])),
+      updatedAt: new Date().toISOString(),
+      hasUnsavedLocalChanges: true,
+    };
     draftVersionRef.current += 1;
     setHistoryPointer(historyPointer - 1);
-    setDraft(restored);
-    setSaveStatus(syncWorkflowInFlightRef.current ? "saving" : (local.success ? "unsaved" : "error"));
-    setSaveError(local.success ? null : local.error || "تعذر حفظ التراجع محليًا.");
+    setDraft(targetState);
+    setSaveStatus(syncWorkflowInFlightRef.current ? "saving" : "unsaved");
+    setSaveError(null);
+    saveErrorRef.current = null;
   }, [historyPointer, historyStack]);
 
   const handleRedo = useCallback(() => {
     if (historyPointer >= historyStack.length - 1) return;
-    const targetState = { ...JSON.parse(JSON.stringify(historyStack[historyPointer + 1])), hasUnsavedLocalChanges: true };
-    const local = studioService.saveLocalDraft(targetState);
-    studioService.applyLocalDomEditsToRuntime(targetState.domEdits || {});
-    const restored = { ...targetState, updatedAt: local.updatedAt };
+    const targetState: StudioDraft = {
+      ...JSON.parse(JSON.stringify(historyStack[historyPointer + 1])),
+      updatedAt: new Date().toISOString(),
+      hasUnsavedLocalChanges: true,
+    };
     draftVersionRef.current += 1;
     setHistoryPointer(historyPointer + 1);
-    setDraft(restored);
-    setSaveStatus(syncWorkflowInFlightRef.current ? "saving" : (local.success ? "unsaved" : "error"));
-    setSaveError(local.success ? null : local.error || "تعذر حفظ الإعادة محليًا.");
+    setDraft(targetState);
+    setSaveStatus(syncWorkflowInFlightRef.current ? "saving" : "unsaved");
+    setSaveError(null);
+    saveErrorRef.current = null;
   }, [historyPointer, historyStack]);
 
   const handleSaveDraft = useCallback(async () => {
@@ -491,7 +490,6 @@ export function DeveloperStudioProPage() {
           return;
         }
         snapshot = { ...snapshot, updatedAt: rebasedLocal.updatedAt };
-        studioService.applyLocalDomEditsToRuntime(snapshot.domEdits || {});
         setDraft(snapshot);
         toast({
           title: "تمت مواءمة المسودة المحلية",
@@ -927,7 +925,6 @@ export function DeveloperStudioProPage() {
     try {
       setIsLoading(true);
       const fresh = await studioService.discardDraft("admin");
-      studioService.applyLocalDomEditsToRuntime(fresh.domEdits || {});
       draftVersionRef.current += 1;
       setDraft(fresh);
       setActivePageId(Object.keys(fresh.pages || {})[0] || "page_dashboard");
@@ -1047,7 +1044,7 @@ export function DeveloperStudioProPage() {
             )}
             {saveStatus === "unsaved" && (
               <Badge variant="outline" className="gap-1 text-[11px] bg-blue-500/10 text-blue-700 border-blue-500/30">
-                <span>محفوظ محليًا — بانتظار المزامنة</span>
+                <span>تعديلات غير محفوظة — في المعاينة</span>
               </Badge>
             )}
             {saveStatus === "error" && (
@@ -1218,7 +1215,6 @@ export function DeveloperStudioProPage() {
               hasUnsavedLocalChanges: false,
             };
             setDraft(publishedDraft);
-            studioService.applyLocalDomEditsToRuntime(publishedDraft.domEdits || {});
             setHistoryStack([JSON.parse(JSON.stringify(publishedDraft))]);
             setHistoryPointer(0);
             setLastSavedAt(publishedDraft.updatedAt);
