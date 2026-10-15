@@ -7,6 +7,7 @@ import {
   ElementModel,
   PageModel,
   ElementType,
+  getElementDisplayName,
 } from "../models/studio.types";
 import { cn } from "@/lib/utils";
 import {
@@ -66,16 +67,16 @@ const ELEMENT_TYPE_ICONS: Record<ElementType, React.ElementType> = {
 };
 
 const ELEMENT_TYPE_LABELS: Record<ElementType, string> = {
-  heading: "عنوان (Heading)",
-  text: "نص (Text)",
-  button: "زر (Button)",
-  image: "صورة (Image)",
-  card: "بطاقة (Card)",
-  container: "حاوية (Container)",
-  table: "جدول بيانات (Table)",
-  input: "حقل إدخال (Input)",
-  badge: "شارة (Badge)",
-  divider: "فاصل (Divider)",
+  heading: "عنوان",
+  text: "نص وصفي",
+  button: "زر وإجراء",
+  image: "صورة",
+  card: "بطاقة",
+  container: "مجموعة عناصر",
+  table: "جدول بيانات",
+  input: "حقل إدخال",
+  badge: "حالة",
+  divider: "فاصل",
 };
 
 export function ElementTreePanel({
@@ -101,20 +102,50 @@ export function ElementTreePanel({
 
   const activePage = pages[activePageId];
 
-  // Elements for active page
-  const pageElements = Object.values(elements).filter(
-    (el) => el.pageId === activePageId,
-  );
+  // Build a readable parent/child tree and keep each group together.
+  const pageElements = Object.values(elements).filter((el) => el.pageId === activePageId);
+  const pageOrder = new Map((activePage?.elementIds || []).map((id, index) => [id, index]));
+  const sortTreeSiblings = (a: ElementModel, b: ElementModel) =>
+    (a.layout?.order ?? pageOrder.get(a.id) ?? 0) - (b.layout?.order ?? pageOrder.get(b.id) ?? 0);
+  const orderedPageElements: ElementModel[] = [];
+  const visited = new Set<string>();
+  const appendChildren = (parentId: string | null) => {
+    pageElements
+      .filter((element) => element.parentId === parentId && !visited.has(element.id))
+      .sort(sortTreeSiblings)
+      .forEach((element) => {
+        visited.add(element.id);
+        orderedPageElements.push(element);
+        appendChildren(element.id);
+      });
+  };
+  appendChildren(null);
+  pageElements.filter((element) => !visited.has(element.id)).sort(sortTreeSiblings).forEach((element) => {
+    visited.add(element.id);
+    orderedPageElements.push(element);
+    appendChildren(element.id);
+  });
+  const depthById = new Map<string, number>();
+  orderedPageElements.forEach((element) => {
+    let depth = 0;
+    let parentId = element.parentId;
+    const seenParents = new Set<string>();
+    while (parentId && !seenParents.has(parentId)) {
+      seenParents.add(parentId);
+      depth += 1;
+      parentId = elements[parentId]?.parentId || null;
+    }
+    depthById.set(element.id, Math.min(depth, 6));
+  });
 
-  // Filter elements by search
-  const filteredElements = pageElements.filter((el) => {
+  // Search matches user-facing labels and content; internal identifiers are not shown.
+  const filteredElements = orderedPageElements.filter((el) => {
     if (!searchQuery.trim()) return true;
-    const matchType = el.type.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchId = el.id.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchText = JSON.stringify(el.content || {})
-      .toLowerCase()
-      .includes(searchQuery.toLowerCase());
-    return matchType || matchId || matchText;
+    const query = searchQuery.toLowerCase();
+    const matchLabel = getElementDisplayName(el).toLowerCase().includes(query);
+    const matchType = ELEMENT_TYPE_LABELS[el.type].toLowerCase().includes(query);
+    const matchText = JSON.stringify(el.content || {}).toLowerCase().includes(query);
+    return matchLabel || matchType || matchText;
   });
 
   const handleCreatePage = (e: React.FormEvent) => {
@@ -179,10 +210,10 @@ export function ElementTreePanel({
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {/* Active Page Indicator & Search Bar */}
           <div className="p-3 border-b border-border/60 space-y-2">
-            <div className="flex items-center justify-between text-xs font-bold text-foreground">
+            <div className="flex items-center justify-between gap-2 text-xs font-bold text-foreground">
               <span className="truncate">{activePage?.name || "الصفحة الحالية"}</span>
-              <span className="font-mono text-[10px] text-muted-foreground bg-muted px-2 py-0.5 rounded-md">
-                {activePage?.route}
+              <span className="text-[10px] text-muted-foreground bg-muted px-2 py-0.5 rounded-md shrink-0">
+                {pageElements.length} عناصر
               </span>
             </div>
             <div className="relative">
@@ -202,19 +233,17 @@ export function ElementTreePanel({
               filteredElements.map((elem) => {
                 const Icon = ELEMENT_TYPE_ICONS[elem.type] || Box;
                 const isSelected = selectedElementId === elem.id;
-                const excerpt =
-                  elem.content?.title ||
-                  elem.content?.text ||
-                  elem.content?.label ||
-                  elem.id;
+                const excerpt = getElementDisplayName(elem);
+                const depth = depthById.get(elem.id) || 0;
 
                 return (
                   <div
                     key={elem.id}
                     onClick={() => onSelectElement(elem.id)}
+                    style={{ marginRight: `${depth * 12}px` }}
                     className={cn(
                       "group flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer",
-                      elem.parentId ? "mr-4 border-r-2 border-primary/20" : "",
+                      depth > 0 ? "border-r-2 border-primary/20" : "",
                       isSelected
                         ? "bg-primary text-primary-foreground shadow-2xs"
                         : "hover:bg-muted/70 text-foreground",
