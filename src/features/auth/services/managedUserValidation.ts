@@ -10,6 +10,81 @@ const MANAGED_USER_ROLES = new Set([
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
+const MANAGED_PERMISSION_KEYS = new Set([
+  "orders",
+  "orders_view",
+  "orders_create_custom",
+  "orders_cancel_modify",
+  "orders_manage_carts",
+  "orders_generate_qr",
+  "pos",
+  "pos_access",
+  "pos_create_custom_order",
+  "pos_apply_discounts",
+  "pos_void_items",
+  "restaurant_open_shift",
+  "restaurant_returns",
+  "captain",
+  "captain_access",
+  "captain_create_order",
+  "captain_transfer_tables",
+  "captain_modify_items",
+  "kitchen",
+  "kitchen_view",
+  "kitchen_change_status",
+  "kitchen_modify_order",
+  "delivery",
+  "delivery_view",
+  "delivery_update_status",
+  "inventory",
+  "inventory_view",
+  "inventory_adjust_transfer",
+  "inventory_waste_dispose",
+  "purchasing",
+  "purchasing_view",
+  "purchasing_add_invoice",
+  "purchasing_returns",
+  "production",
+  "production_view",
+  "production_execute",
+  "hr",
+  "hr_view_attendance",
+  "hr_manage_payroll_loans",
+  "treasury",
+  "treasury_view",
+  "treasury_open_close",
+  "treasury_transfer_reconcile",
+  "accounting",
+  "accounting_view",
+  "accounting_post_journal",
+  "accounting_lock_period",
+  "journal_approval",
+  "expense_approval",
+  "revenue_approval",
+  "cost_centers",
+  "mall_manage_shops",
+  "mall_garden_finance",
+  "reports",
+  "reports_view_sales",
+  "reports_view_financials",
+  "super_admin_full_access",
+  "users_roles",
+  "system_manage_users",
+  "branch_mgmt",
+  "developer_options",
+  "system_backup_update",
+  "audit_logs",
+  "system_audit_logs",
+  "manage_park_shifts",
+  "delete_park_shifts",
+  "park_reports",
+  "park_open_shift",
+  "park_returns",
+  "approval_journals",
+  "approval_expenses",
+  "approval_revenues",
+]);
+
 export function normalizeManagedDigits(value: string): string {
   return String(value ?? "")
     .replace(/[٠۰]/g, "0")
@@ -144,32 +219,36 @@ export function userValidationErrorMessage(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error ?? "");
   const message = raw.toLowerCase();
 
-  if (message.includes("username_already_exists") || message.includes("profiles_username_lower_uidx") || message.includes("duplicate key") && message.includes("username")) {
+  if (
+    message.includes("username_already_exists") ||
+    message.includes("profiles_username_lower_uidx") ||
+    (message.includes("duplicate key") && message.includes("username"))
+  ) {
     return "اسم المستخدم مستخدم بالفعل. اختر اسمًا آخر.";
   }
-  if (message.includes("email_already_exists") || message.includes("profiles_email_lower_uidx")) {
+  if (
+    message.includes("email_already_exists") ||
+    message.includes("profiles_email_lower_uidx")
+  ) {
     return "البريد الإلكتروني مرتبط بحساب آخر. استخدم بريدًا مختلفًا.";
   }
-  if (message.includes("already registered") || message.includes("user already registered") || message.includes("identities")) {
+  if (
+    message.includes("already registered") ||
+    message.includes("user already registered") ||
+    message.includes("identities")
+  ) {
     return "هذا البريد الإلكتروني مسجّل بالفعل في Supabase. استخدم بريدًا آخر.";
   }
-  if (message.includes("not_authorized") || message.includes("insufficient permission") || message.includes("cannot grant permission") || message.includes("only a super administrator")) {
-    return "تم رفض العملية: حسابك لا يملك صلاحية منح هذا الدور أو الصلاحيات المطلوبة.";
-  }
   if (message.includes("initial_admin_setup_closed")) {
-    return "تم إنشاء المدير الأول بالفعل أو توجد حسابات سابقة؛ أوقف التسجيل الأولي وسجّل الدخول بالحساب الموجود."; 
+    return "تم إنشاء المدير الأول بالفعل أو توجد حسابات سابقة؛ سجّل الدخول بالحساب الموجود بدلًا من إعادة التسجيل الأولي.";
   }
-  if (message.includes("email_already_exists") || message.includes("profiles_email_lower_uidx")) {
-    return "البريد الإلكتروني مرتبط بحساب آخر. استخدم بريدًا مختلفًا.";
-  }
-  if (message.includes("username_already_exists") || message.includes("profiles_username_lower_uidx") || (message.includes("duplicate key") && message.includes("username"))) {
-    return "اسم المستخدم مستخدم بالفعل. اختر اسمًا آخر.";
-  }
-  if (message.includes("invalid_permission_key")) {
-    return "تم رفض الحفظ لأن النموذج يحتوي على صلاحية غير معتمدة في النظام. حدّث قائمة الصلاحيات ثم أعد المحاولة.";
-  }
-  if (message.includes("email_invalid") || message.includes("invalid_email")) {
-    return "البريد الإلكتروني المرتبط بحساب Supabase غير صالح. صحّح البريد من إعدادات Auth قبل حفظ الملف.";
+  if (
+    message.includes("not_authorized") ||
+    message.includes("insufficient permission") ||
+    message.includes("cannot grant permission") ||
+    message.includes("only a super administrator")
+  ) {
+    return "تم رفض العملية: حسابك لا يملك صلاحية منح هذا الدور أو الصلاحيات المطلوبة.";
   }
   if (message.includes("invalid_username")) {
     return "اسم المستخدم غير صالح. استخدم 3–32 حرفًا إنجليزيًا صغيرًا أو رقمًا، مع النقطة أو الشرطة أو الشرطة السفلية فقط.";
@@ -180,8 +259,20 @@ export function userValidationErrorMessage(error: unknown): string {
   if (message.includes("phone_too_long")) {
     return "رقم الهاتف لا يمكن أن يتجاوز 40 حرفًا.";
   }
-  if (message.includes("invalid_email")) {
-    return "البريد الإلكتروني غير صالح أو لا يتطابق مع حساب Supabase Auth.";
+  if (message.includes("email_invalid") || message.includes("invalid_email")) {
+    return "البريد الإلكتروني المرتبط بحساب Supabase غير صالح. صحّح البريد قبل حفظ الملف.";
+  }
+  if (message.includes("invalid_permission_key")) {
+    return "تم رفض الحفظ لأن النموذج يحتوي على صلاحية غير معتمدة في النظام. حدّث التطبيق ثم أعد المحاولة.";
+  }
+  if (message.includes("invalid_permissions")) {
+    return "صيغة الصلاحيات غير مطابقة لقاعدة البيانات. يجب أن تكون كائنًا، وكل قيمة فيه true أو false فقط.";
+  }
+  if (message.includes("user_id_invalid")) {
+    return "معرّف المستخدم ليس UUID صالحًا من Supabase Auth؛ لم يتم الحفظ.";
+  }
+  if (message.includes("auth_user_not_found")) {
+    return "لم يوجد حساب Auth مطابق في Supabase؛ لم يُحفظ ملف المستخدم.";
   }
   if (message.includes("cannot delete the account you are currently using")) {
     return "لا يمكن حذف الحساب الذي تستخدمه حاليًا. سجّل الدخول بحساب مدير آخر أولًا.";
@@ -189,26 +280,18 @@ export function userValidationErrorMessage(error: unknown): string {
   if (message.includes("invalid_role")) {
     return "الدور الوظيفي غير معتمد في قاعدة البيانات. اختر دورًا من القائمة.";
   }
-  if (message.includes("user_id_invalid")) {
-    return "معرّف المستخدم ليس UUID صالحًا من Supabase Auth؛ لم يتم الحفظ.";
-  }
-  if (message.includes("invalid_permissions")) {
-    return "صيغة الصلاحيات غير مطابقة لقاعدة البيانات. يجب أن تكون كل صلاحية true أو false.";
-  }
-  if (message.includes("auth_user_not_found")) {
-    return "لم يوجد حساب Auth مطابق في Supabase؛ لم يُحفظ ملف المستخدم.";
-  }
   if (
     message.includes("database error saving new user") ||
     message.includes("database error updating user")
   ) {
-    return "رفضت قاعدة البيانات تسجيل الحساب أثناء التحقق النهائي. تأكد من الاسم الكامل والبريد الصحيح واسم المستخدم المسموح والدور المحدد. إذا كانت البيانات صحيحة، راجع Supabase Auth Logs لمعرفة سبب الرفض التفصيلي.";
+    return "رفضت قاعدة البيانات تسجيل الحساب أثناء التحقق النهائي. تأكد من صحة الاسم والبريد واسم المستخدم والدور. إذا كانت البيانات صحيحة، راجع Supabase Auth Logs لمعرفة السبب التفصيلي.";
   }
   if (message.includes("email address") && (message.includes("invalid") || message.includes("valid"))) {
     return "صيغة البريد الإلكتروني غير صحيحة. أدخل بريدًا صالحًا مثل name@example.com.";
   }
   if (message.includes("weak_password") || message.includes("password should") || message.includes("password is")) {
-    return "رفض Supabase كلمة المرور. استخدم كلمة مرور أطول وأقوى وتوافق مع سياسة المشروع.";
+    return "رفض Supabase كلمة المرور. استخدم كلمة مرور أقوى تتوافق مع سياسة المشروع.";
   }
+
   return raw || "تعذر حفظ المستخدم. لم تعتمد الواجهة التغيير لأن قاعدة البيانات لم تؤكده.";
 }
