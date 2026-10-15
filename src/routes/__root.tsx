@@ -160,6 +160,8 @@ function RootComponent() {
       directTextNodes: Array<{ node: ChildNode; text: string | null }>;
       parent: Node | null;
       nextSibling: Node | null;
+      linkElement: HTMLAnchorElement | null;
+      hrefAttribute: string | null;
     };
     const studioSnapshots = new Map<string, StudioRuntimeSnapshot>();
     const publishedStudioClones = new Set<HTMLElement>();
@@ -186,6 +188,7 @@ function RootComponent() {
     const rememberStudioOriginal = (selector: string, element: HTMLElement) => {
       const old = studioSnapshots.get(selector);
       if (old?.element === element) return;
+      const linkElement = element.matches("a") ? element as HTMLAnchorElement : element.closest("a");
       studioSnapshots.set(selector, {
         element,
         styleAttribute: element.getAttribute("style"),
@@ -195,6 +198,8 @@ function RootComponent() {
           .map((node) => ({ node, text: node.textContent })),
         parent: element.parentNode,
         nextSibling: element.nextSibling,
+        linkElement,
+        hrefAttribute: linkElement?.getAttribute("href") ?? null,
       });
     };
 
@@ -217,6 +222,10 @@ function RootComponent() {
         delete element.dataset.studioTextApplied;
         if (snapshot.styleAttribute === null) element.removeAttribute("style");
         else element.setAttribute("style", snapshot.styleAttribute);
+        if (snapshot.linkElement?.isConnected) {
+          if (snapshot.hrefAttribute === null) snapshot.linkElement.removeAttribute("href");
+          else snapshot.linkElement.setAttribute("href", snapshot.hrefAttribute);
+        }
         if (snapshot.parent && element.parentNode === snapshot.parent) {
           const next = snapshot.nextSibling;
           if (next && next.parentNode === snapshot.parent) snapshot.parent.insertBefore(element, next);
@@ -302,6 +311,14 @@ function RootComponent() {
           if (node) node.textContent = String(edit.text);
           else if (!html.children.length) html.textContent = String(edit.text);
           html.dataset.studioTextApplied = String(edit.text);
+        }
+        if (typeof edit.href === "string") {
+          const anchor = html.matches("a") ? html as HTMLAnchorElement : html.closest("a");
+          if (anchor) {
+            const safeHref = safeStudioAdditionUrl(edit.href);
+            if (safeHref) anchor.setAttribute("href", safeHref);
+            else if (!edit.href.trim()) anchor.removeAttribute("href");
+          }
         }
         if (edit.styles && typeof edit.styles === "object") for (const [key, value] of Object.entries(edit.styles)) {
           if (typeof value !== "string") continue;
