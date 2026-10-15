@@ -14,6 +14,76 @@ UPDATE public.profiles AS p
    AND NULLIF(trim(u.email), '') IS NOT NULL
    AND p.email IS DISTINCT FROM lower(trim(u.email));
 
+-- Remove the historical temporary development RLS bypass policies.
+-- The 20260723000000 migration intentionally made these policies permissive; those
+-- policies must not remain in a deployed application after the permission model is restored.
+DO $remove_temp_dev_policies$
+DECLARE
+  v_policy RECORD;
+BEGIN
+  FOR v_policy IN
+    SELECT schemaname, tablename, policyname
+      FROM pg_policies
+     WHERE schemaname = 'public'
+       AND left(policyname, 13) = 'TEMP_DEV_ALL_'
+  LOOP
+    EXECUTE format(
+      'DROP POLICY IF EXISTS %I ON %I.%I',
+      v_policy.policyname,
+      v_policy.schemaname,
+      v_policy.tablename
+    );
+  END LOOP;
+END;
+$remove_temp_dev_policies$;
+
+-- Restore real role-aware helpers that were overwritten to SELECT true in dev mode.
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $restore_is_admin$
+  SELECT COALESCE((
+    SELECT
+      p.role IN ('admin', 'super_admin')
+      OR COALESCE(p.permissions ->> 'super_admin_full_access', 'false') = 'true'
+    FROM public.profiles AS p
+    WHERE p.id = auth.uid()
+  ), false);
+$restore_is_admin$;
+
+CREATE OR REPLACE FUNCTION public.is_manager_or_admin()
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $restore_is_manager$
+  SELECT COALESCE((
+    SELECT
+      p.role IN ('admin', 'super_admin', 'manager')
+      OR COALESCE(p.permissions ->> 'super_admin_full_access', 'false') = 'true'
+    FROM public.profiles AS p
+    WHERE p.id = auth.uid()
+  ), false);
+$restore_is_manager$;
+
+CREATE OR REPLACE FUNCTION public.is_staff()
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY INVOKER
+SET search_path = pg_catalog, auth
+AS $restore_is_staff$
+  SELECT auth.role() = 'authenticated';
+$restore_is_staff$;
+
+-- This development-only test RPC should not be callable by public client roles.
+REVOKE EXECUTE ON FUNCTION public.run_e2e_inventory_test() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.run_e2e_inventory_test() TO service_role;
+
 -- The browser must not directly upsert user ACLs and then report success regardless
 -- of server-side RLS/trigger errors. All managed profile writes go through this RPC.
 CREATE OR REPLACE FUNCTION public.upsert_managed_user_profile(
