@@ -147,7 +147,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
     } else if (event.data.type === "STUDIO_SELECTED") {
       const item = event.data.element as SelectedDomElement;
       // Clicking the currently selected item toggles its property panel closed.
-      const toggledOff = selectedSelectorRef.current === item.selector && showProperties;
+      const toggledOff = event.data.toggle === true && selectedSelectorRef.current === item.selector && showProperties;
       selectedSelectorRef.current = toggledOff ? null : item.selector;
       setSelected(toggledOff ? null : item);
       setLinkValue(item.href || "");
@@ -469,16 +469,17 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         if (!el || el === document.body || el === document.documentElement) return;
         if (["PATH", "CIRCLE", "RECT", "LINE", "POLYLINE", "POLYGON"].includes(el.tagName)) el = el.closest("svg") || el;
         if (isProtected(el)) return;
+        const wasSelected = selected === el;
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
-        selectElement(el);
+        if (!wasSelected) selectElement(el);
         rememberOriginal(selectorFor(el), el);
         const existingTranslate = getComputedStyle(el).translate || "none";
         const values = existingTranslate === "none" ? [] : existingTranslate.match(/-?\d+(?:\.\d+)?/g) || [];
         const baseX = Number(values[0] || 0);
         const baseY = Number(values[1] || 0);
-        dragState = { el, selector: selectorFor(el), pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, baseX, baseY, x: baseX, y: baseY, moved: false };
+        dragState = { el, selector: selectorFor(el), pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, baseX, baseY, x: baseX, y: baseY, moved: false, wasSelected };
         try { el.setPointerCapture(event.pointerId); } catch { /* pointer capture is optional */ }
       }, true);
       document.addEventListener("pointermove", (event) => {
@@ -505,6 +506,10 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
             patch: { styles: { translate: finished.x + "px " + finished.y + "px", zIndex: finished.el.style.zIndex } }
           });
           send("STUDIO_SELECTED", { element: describe(finished.el) });
+        } else if (finished.wasSelected) {
+          // A deliberate second click on the selected element toggles its inspector.
+          // A drag must never close the inspector just because the element stayed selected.
+          send("STUDIO_SELECTED", { element: describe(finished.el), toggle: true });
         }
       }, true);
       document.addEventListener("click", (event) => {
@@ -514,7 +519,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         let el = target.closest(editableSelector);
         if (!el || el === document.body || el === document.documentElement) return;
         if (["PATH", "CIRCLE", "RECT", "LINE", "POLYLINE", "POLYGON"].includes(el.tagName)) el = el.closest("svg") || el;
-        if (isProtected(el)) return;
+        if (isProtected(el) || selected === el) return;
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
