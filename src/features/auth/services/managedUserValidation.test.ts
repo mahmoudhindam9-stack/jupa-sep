@@ -133,7 +133,7 @@ describe("managed user validation contract", () => {
     expect(() => validateManagedProfilePayload({
       id: "00000000-0000-4000-8000-000000000001", username: "cashier.1", full_name: "Cashier One",
       role: "cashier", permissions: { unknown_admin_override: true },
-    })).toThrow(/صلاحية غير معتمدة/);
+    })).toThrow(/اسم الصلاحية غير معتمد/);
   });
 
   it("rejects invalid Supabase Auth IDs", () => {
