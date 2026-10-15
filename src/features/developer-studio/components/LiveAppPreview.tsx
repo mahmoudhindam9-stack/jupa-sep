@@ -719,7 +719,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-background" dir="rtl">
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-card px-3 py-2">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b bg-card px-4 py-3">
         <div className="flex min-w-0 items-center gap-2">
           <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><Monitor size={16} /></span>
           <div className="min-w-0">
@@ -729,21 +729,21 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <div className="flex rounded-lg border bg-background p-0.5">
-            <Button type="button" size="sm" variant={previewSize === "desktop" ? "default" : "ghost"} className="h-7 px-2" onClick={() => setPreviewSize("desktop")} title="سطح المكتب"><Monitor size={14} /></Button>
-            <Button type="button" size="sm" variant={previewSize === "tablet" ? "default" : "ghost"} className="h-7 px-2" onClick={() => setPreviewSize("tablet")} title="جهاز لوحي"><Tablet size={14} /></Button>
-            <Button type="button" size="sm" variant={previewSize === "mobile" ? "default" : "ghost"} className="h-7 px-2" onClick={() => setPreviewSize("mobile")} title="هاتف"><Smartphone size={14} /></Button>
+            <Button type="button" size="sm" variant={previewSize === "desktop" ? "default" : "ghost"} className="h-8 px-3" onClick={() => setPreviewSize("desktop")} title="سطح المكتب"><Monitor size={14} /></Button>
+            <Button type="button" size="sm" variant={previewSize === "tablet" ? "default" : "ghost"} className="h-8 px-3" onClick={() => setPreviewSize("tablet")} title="جهاز لوحي"><Tablet size={14} /></Button>
+            <Button type="button" size="sm" variant={previewSize === "mobile" ? "default" : "ghost"} className="h-8 px-3" onClick={() => setPreviewSize("mobile")} title="هاتف"><Smartphone size={14} /></Button>
           </div>
-          <Button type="button" size="sm" variant={editMode ? "default" : "outline"} className="h-7 gap-1 px-2 text-xs" onClick={() => setEditMode(v => !v)}>
+          <Button type="button" size="sm" variant={editMode ? "default" : "outline"} className="h-8 gap-1.5 px-3 text-xs" onClick={() => setEditMode(v => !v)}>
             {editMode ? <EyeOff size={14} /> : <Eye size={14} />}{editMode ? "وضع التحرير" : "وضع التفاعل"}
           </Button>
           {designerMode && (
-            <Button type="button" size="sm" variant={showAddItem ? "default" : "outline"} className="h-7 gap-1 px-2 text-xs" disabled={!selected} onClick={() => setShowAddItem(v => !v)} title={selected ? "إضافة عنصر في الموضع المحدد داخل الصفحة الفعلية" : "حدد الموضع أولًا داخل المعاينة"}>
+            <Button type="button" size="sm" variant={showAddItem ? "default" : "outline"} className="h-8 gap-1.5 px-3 text-xs" disabled={!selected} onClick={() => setShowAddItem(v => !v)} title={selected ? "إضافة عنصر في الموضع المحدد داخل الصفحة الفعلية" : "حدد الموضع أولًا داخل المعاينة"}>
               <Plus size={14} /> إضافة عنصر
             </Button>
           )}
-          <Button type="button" size="sm" variant={showExplorer ? "default" : "outline"} className="h-7 gap-1 px-2 text-xs" onClick={() => setShowExplorer(v => !v)}><Layers size={14} /> {showExplorer ? "إخفاء الشجرة" : "الصفحات والشجرة"}</Button>
-          <Button type="button" size="sm" variant={showProperties ? "default" : "outline"} className="h-7 gap-1 px-2 text-xs" onClick={() => setShowProperties(v => !v)}><Settings2 size={14} /> {showProperties ? "إخفاء الخصائص" : "الخصائص"}</Button>
-          <Button type="button" size="sm" variant="outline" className="h-7 gap-1 px-2 text-xs" onClick={() => setFrameKey(v => v + 1)}><RefreshCw size={14} /> تحديث</Button>
+          <Button type="button" size="sm" variant={showExplorer ? "default" : "outline"} className="h-8 gap-1.5 px-3 text-xs" onClick={() => setShowExplorer(v => !v)}><Layers size={14} /> {showExplorer ? "إخفاء الشجرة" : "الصفحات والشجرة"}</Button>
+          <Button type="button" size="sm" variant={showProperties ? "default" : "outline"} className="h-8 gap-1.5 px-3 text-xs" onClick={() => setShowProperties(v => !v)}><Settings2 size={14} /> {showProperties ? "إخفاء الخصائص" : "الخصائص"}</Button>
+          <Button type="button" size="sm" variant="outline" className="h-8 gap-1.5 px-3 text-xs" onClick={() => setFrameKey(v => v + 1)}><RefreshCw size={14} /> تحديث</Button>
         </div>
       </div>
 
