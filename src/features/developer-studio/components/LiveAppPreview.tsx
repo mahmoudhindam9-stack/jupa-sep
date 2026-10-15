@@ -21,6 +21,37 @@ type Props = {
 };
 type PreviewSize = "desktop" | "tablet" | "mobile";
 
+const ELEMENT_NAMES: Record<string, string> = {
+  button: "زر", a: "رابط", input: "حقل إدخال", textarea: "مربع كتابة", select: "قائمة اختيار",
+  label: "عنوان حقل", h1: "عنوان رئيسي", h2: "عنوان", h3: "عنوان فرعي", h4: "عنوان فرعي",
+  h5: "عنوان فرعي", h6: "عنوان فرعي", p: "فقرة نصية", span: "نص", div: "منطقة",
+  section: "قسم", article: "بطاقة محتوى", main: "المحتوى الرئيسي", nav: "قائمة التنقل",
+  aside: "لوحة جانبية", header: "رأس الصفحة", footer: "تذييل الصفحة", li: "عنصر قائمة",
+  ul: "قائمة", ol: "قائمة مرقمة", td: "خلية جدول", th: "عنوان جدول", table: "جدول",
+  img: "صورة", svg: "أيقونة", form: "نموذج", strong: "نص بارز", small: "نص صغير",
+};
+const readableElementKind = (tag: string) => ELEMENT_NAMES[String(tag || "").toLowerCase()] || "عنصر";
+const readablePageName = (href: string, label: string) => {
+  const path = String(href || "").split("?")[0];
+  const known: Record<string, string> = {
+    "/admin": "لوحة الإدارة الرئيسية", "/admin/ledger": "الإدارة المالية",
+    "/admin/hr": "الموارد البشرية", "/admin/inventory": "المخزون والمستودعات",
+    "/admin/restaurant": "إدارة المطعم", "/admin/mall": "إدارة المول",
+    "/admin/park": "إدارة الحديقة", "/admin/system-update": "خيارات المطوّر",
+    "/admin/orders": "الطلبات", "/admin/menu": "قائمة الطعام", "/login": "تسجيل الدخول",
+  };
+  if (known[path]) return known[path];
+  const friendlyLabel = String(label || "").trim();
+  if (friendlyLabel && friendlyLabel !== href && !friendlyLabel.startsWith("/")) return friendlyLabel;
+  return path.split("/").filter(Boolean).pop()?.replace(/[-_]/g, " ") || "الصفحة الحالية";
+};
+const readableTreeLabel = (node: LiveTreeNode) => {
+  const label = String(node.label || "").trim();
+  const tag = String(node.tag || "").toLowerCase();
+  if (label && label.toLowerCase() !== tag && !/^[A-Z][A-Z0-9-]*$/.test(label)) return label;
+  return readableElementKind(tag);
+};
+
 export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMode = false }: Props) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const editsRef = useRef<Record<string, StudioDomEdit>>(initialEdits || {});
@@ -710,13 +741,13 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
     <div key={node.selector} className="min-w-0">
       <button
         type="button"
-        title={node.selector}
+        aria-label={"تحديد " + readableTreeLabel(node)}
         onClick={() => send({ action: "select", selector: node.selector })}
-        className={"flex min-h-7 w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-right text-[11px] hover:bg-accent " + (selected?.selector === node.selector ? "bg-primary/10 font-black text-primary" : "text-foreground")}
-        style={{ paddingRight: Math.min(18, depth * 7 + 6) + "px" }}
+        className={"flex min-h-8 w-full items-center gap-1.5 rounded-md px-1.5 py-1.5 text-right text-[11px] hover:bg-accent " + (selected?.selector === node.selector ? "bg-primary/10 font-black text-primary" : "text-foreground")}
+        style={{ paddingRight: Math.min(22, depth * 8 + 6) + "px" }}
       >
-        <span className="shrink-0 rounded bg-muted px-1 font-mono text-[9px] text-muted-foreground">{node.tag}</span>
-        <span className="min-w-0 flex-1 truncate">{node.label}</span>
+        <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[9px] text-muted-foreground">{readableElementKind(node.tag)}</span>
+        <span className="min-w-0 flex-1 truncate">{readableTreeLabel(node)}</span>
       </button>
       {node.children.length > 0 && <div className="mr-2 border-r border-border/70 pr-1">{renderTreeNodes(node.children, depth + 1)}</div>}
     </div>
@@ -771,19 +802,18 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
                   <button
                     key={page.href}
                     type="button"
-                    title={page.href}
+                    aria-label={"فتح " + readablePageName(page.href, page.label)}
                     onClick={() => navigatePreview(page.href)}
                     className={"flex min-h-8 w-full items-center gap-2 rounded-lg px-2 py-1.5 text-right text-[11px] " + (page.href === safeRoute ? "bg-primary/10 font-black text-primary" : "hover:bg-accent")}
                   >
-                    <span className="min-w-0 flex-1 truncate">{page.label || page.href}</span>
-                    <span className="max-w-[92px] truncate font-mono text-[9px] text-muted-foreground">{page.href}</span>
+                    <span className="min-w-0 flex-1 truncate">{readablePageName(page.href, page.label)}</span>
                   </button>
                 ))}
               </div>
             </section>
             <section className="flex min-h-0 flex-1 flex-col p-2">
-              <h4 className="mb-1.5 shrink-0 text-[11px] font-black">شجرة المكونات الفعلية</h4>
-              <input aria-label="بحث في شجرة المكونات" value={treeFilter} onChange={(event) => setTreeFilter(event.target.value)} placeholder="ابحث عن عنصر أو وسم..." className="mb-2 h-8 shrink-0 rounded-lg border bg-background px-2 text-[11px] outline-none focus:ring-2 focus:ring-primary" />
+              <h4 className="mb-1.5 shrink-0 text-[11px] font-black">عناصر الصفحة وترتيبها</h4>
+              <input aria-label="بحث في شجرة المكونات" value={treeFilter} onChange={(event) => setTreeFilter(event.target.value)} placeholder="ابحث باسم العنصر أو النص الظاهر..." className="mb-2 h-8 shrink-0 rounded-lg border bg-background px-2 text-[11px] outline-none focus:ring-2 focus:ring-primary" />
               <div className="min-h-0 flex-1 overflow-auto">
                 {visibleTreeNodes.length ? renderTreeNodes(visibleTreeNodes) : <p className="p-2 text-[11px] leading-5 text-muted-foreground">جاري استخراج شجرة عناصر الصفحة…</p>}
               </div>
@@ -798,9 +828,16 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         {showProperties && (
         <aside className="absolute left-0 top-[112px] bottom-0 z-20 flex w-[280px] max-w-[32vw] min-w-[230px] flex-col gap-3 overflow-y-auto rounded-tr-xl border-r border-t bg-card/95 p-3 shadow-2xl backdrop-blur 2xl:w-[320px]">
           <div>
-            <h3 className="text-sm font-black">خصائص عنصر التطبيق</h3>
-            <p className="mt-1 break-all text-[10px] text-muted-foreground">{selected ? "<" + selected.tag + "> · " + selected.selector : "انقر على عنصر داخل المعاينة"}</p>
+            <h3 className="text-sm font-black">تعديل العنصر المحدد</h3>
+            <p className="mt-1 text-[10px] text-muted-foreground">{selected ? (selected.text?.trim() || readableElementKind(selected.tag)) + " · " + readableElementKind(selected.tag) : "اختر عنصرًا من المعاينة"}</p>
           </div>
+          <StudioWorkflowPanel
+            selected={selected}
+            treeNodes={treeNodes}
+            pageLinks={pageLinks}
+            edits={edits}
+            onUpdateEdit={(selector, patch) => commitEdits(selector, patch)}
+          />
           {selected ? (
             <>
               {!selectedIsVector && <label className="block text-xs font-bold">النص<textarea value={textValue} onChange={e => editText(e.target.value)} className="mt-1 min-h-16 w-full rounded-lg border bg-background p-2 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>}
@@ -843,7 +880,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
                 <label className="text-xs">استدارة الحواف<input value={borderRadius} placeholder="12px أو 50%" onChange={e => { setBorderRadius(e.target.value); applyStyle({ borderRadius: e.target.value }); }} className="mt-1 w-full rounded-lg border bg-background p-2" /></label>
                 <label className="text-xs">الظل<select value={shadowStyle} onChange={e => { setShadowStyle(e.target.value); applyStyle({ boxShadow: e.target.value }); }} className="mt-1 w-full rounded-lg border bg-background p-2"><option value="none">بدون</option><option value="0 1px 3px rgba(0,0,0,.12)">خفيف</option><option value="0 4px 12px rgba(0,0,0,.16)">متوسط</option><option value="0 12px 32px rgba(0,0,0,.22)">قوي</option><option value="0 0 0 2px rgba(99,102,241,.35)">إطار مضيء</option></select></label>
               </div>
-              <div className="rounded-lg bg-muted/60 p-2 text-[10px] leading-5 text-muted-foreground">حرّك العنصر بالسحب المباشر داخل المعاينة. تُحفظ التغييرات محليًا فورًا وتُزامن مع Supabase عند الضغط على «حفظ ومزامنة».</div>
+              <div className="rounded-lg bg-muted/60 p-2 text-[10px] leading-5 text-muted-foreground">حرّك العنصر بالسحب داخل المعاينة. التغييرات تبقى في المسودة إلى أن تضغط «حفظ ومزامنة».</div>
               <div className="grid grid-cols-2 gap-2">
                 <Button type="button" size="sm" variant="outline" onClick={() => action("moveUp")}><ArrowUp size={14} /> ترتيب لأعلى</Button>
                 <Button type="button" size="sm" variant="outline" onClick={() => action("moveDown")}><ArrowDown size={14} /> ترتيب لأسفل</Button>
@@ -853,7 +890,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
               <Button type="button" size="sm" variant="ghost" onClick={() => setSelected(null)}><Check size={14} /> إنهاء التحديد</Button>
             </>
           ) : (
-            <div className="rounded-xl border border-dashed p-4 text-xs leading-6 text-muted-foreground">انقر على نص أو زر أو بطاقة من التطبيق نفسه. التعديلات تُحفظ محليًا وتظهر على صفحات هذا المتصفح؛ مزامنة Supabase من «حفظ ومزامنة»، والنشر لبقية المستخدمين خطوة منفصلة.</div>
+            <div className="rounded-xl border border-dashed p-4 text-xs leading-6 text-muted-foreground">اختر نصًا أو زرًا أو منطقة من التطبيق. جرّب الشكل والوظيفة هنا، ثم احفظ المسودة أو انشرها عند الانتهاء.</div>
           )}
           <div className="mt-auto rounded-lg bg-muted p-2 text-[10px] leading-5 text-muted-foreground">إذا ظهر خطأ مزامنة، تبقى النسخة المحلية موجودة لكن لا تعتبر محفوظة سحابيًا حتى نجاح التأكيد.</div>
         </aside>
