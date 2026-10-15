@@ -227,6 +227,9 @@ export function ElementTreePanel({
                 className="h-8 text-xs pr-8 rounded-lg bg-background"
               />
             </div>
+            <p className="text-[10px] leading-5 text-muted-foreground">
+              لتحديد أكثر من عنصر: اضغط Ctrl أو ⌘ مع النقر. بعد ذلك استخدم «تجميع المحدد» أو «فصل المجموعة».
+            </p>
           </div>
 
           {/* Tree list */}
