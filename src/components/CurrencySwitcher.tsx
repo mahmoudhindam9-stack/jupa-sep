@@ -102,7 +102,7 @@ export function CurrencySwitcher({
         <div data-studio-preserve="currency-switcher-tools" className="grid grid-cols-2 gap-1.5 bg-muted/40 px-2 py-1.5 rounded-lg border border-border/60">
           <ExchangeRateField code="EGP" label="ج.م" value={exchangeRates.EGP} onCommit={updateExchangeRate} compact />
           <ExchangeRateField code="SSP" label="ج.س.ج" value={exchangeRates.SSP} onCommit={updateExchangeRate} compact />
-        </div>}
+        </div>
       </div>
     );
   }
