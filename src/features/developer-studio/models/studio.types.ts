@@ -233,6 +233,9 @@ export interface StudioDomEdit {
   order?: number;
   /** An editable existing link destination, limited to relative paths or HTTP(S). */
   href?: string;
+  /** Icon selected from Studio; sanitized SVG markup survives reload/publish. */
+  iconName?: string;
+  iconSvg?: string;
   /** User-created preview elements anchored to an existing real DOM element. */
   additions?: StudioDomAddedItem[];
 }

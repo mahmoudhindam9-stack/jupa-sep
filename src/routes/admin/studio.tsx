@@ -112,7 +112,7 @@ export function DeveloperStudioProPage() {
   const [historyPointer, setHistoryPointer] = useState<number>(-1);
 
   // Open on the real application by default; the component builder is available separately.
-  const [workspaceMode, setWorkspaceMode] = useState<"builder" | "live" | "workflow" | "app-editor">("app-editor");
+  // One unified workspace combines live preview, element design and workflows in side docks.
 
   // Modals
   const [showPublishModal, setShowPublishModal] = useState(false);
@@ -1198,32 +1198,16 @@ export function DeveloperStudioProPage() {
             <span className="hidden lg:inline">إعادة</span>
           </Button>
 
-          {(workspaceMode === "builder" || workspaceMode === "workflow") && selectedElementIds.length > 1 && (
+          {selectedElementIds.length > 1 && (
             <Button type="button" variant="outline" size="sm" onClick={handleGroupSelected} className="h-8 px-2 text-xs gap-1 cursor-pointer font-bold" title="تجميع العناصر المحددة في مجموعة واحدة">
               <Layers className="w-3.5 h-3.5" /><span>تجميع المحدد</span>
             </Button>
           )}
-          {(workspaceMode === "builder" || workspaceMode === "workflow") && selectedElement?.type === "container" && (
+          {selectedElement?.type === "container" && (
             <Button type="button" variant="outline" size="sm" onClick={handleUngroupSelected} className="h-8 px-2 text-xs gap-1 cursor-pointer font-bold" title="فصل عناصر هذه المجموعة">
               <Layers className="w-3.5 h-3.5" /><span>فصل المجموعة</span>
             </Button>
           )}
-          <div className="flex h-9 items-center gap-2 rounded-xl border border-border/80 bg-muted/40 px-2 shadow-sm" title="اختر مساحة العمل">
-            <Settings2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <label htmlFor="studio-workspace-mode" className="sr-only">مساحة العمل</label>
-            <select
-              id="studio-workspace-mode"
-              aria-label="مساحة العمل"
-              value={workspaceMode}
-              onChange={(event) => setWorkspaceMode(event.target.value as "builder" | "live" | "workflow" | "app-editor")}
-              className="h-8 max-w-[190px] cursor-pointer bg-transparent px-1 text-xs font-bold text-foreground outline-none"
-            >
-              <option value="app-editor">تحرير واجهة التطبيق</option>
-              <option value="builder">مصمم العناصر</option>
-              <option value="workflow">مسارات العمل</option>
-              <option value="live">عرض التطبيق</option>
-            </select>
-          </div>
           <Button
             type="button"
             variant="outline"
@@ -1291,24 +1275,23 @@ export function DeveloperStudioProPage() {
       {/* MAIN WORKSPACE BODY                                       */}
       {/* ========================================================= */}
       <div className="min-h-0 flex-1 overflow-hidden">
-        {workspaceMode === "live" || workspaceMode === "app-editor" ? (
-          <LiveAppPreview
-            route={activePage?.route || "/admin"}
-            designerMode={workspaceMode === "app-editor"}
-            initialEdits={draft.domEdits || {}}
-            onEditsChange={(domEdits) => {
-              if (!draft) return;
-              commitDraftChange({ ...draft, domEdits, hasUnpublishedChanges: true });
-            }}
-          />
-        ) : (
-          <div className="h-full min-w-0 flex overflow-hidden">
+        <LiveAppPreview
+          route={activePage?.route || "/admin"}
+          designerMode={true}
+          initialEdits={draft.domEdits || {}}
+          selectedDraftElementId={selectedElementId}
+          onEditsChange={(domEdits) => {
+            if (!draft) return;
+            commitDraftChange({ ...draft, domEdits, hasUnpublishedChanges: true });
+          }}
+          draftTreePanel={
             <ElementTreePanel
               pages={draft.pages}
               activePageId={activePageId}
               elements={draft.elements}
               selectedElementId={selectedElementId}
               selectedElementIds={selectedElementIds}
+              className="!h-full !w-full !min-w-0 !border-0"
               onSelectPage={(pageId) => {
                 setActivePageId(pageId);
                 setSelectedElementId(null);
@@ -1328,29 +1311,8 @@ export function DeveloperStudioProPage() {
                 if (target) handleUpdateElement(elementId, { locked: !target.locked });
               }}
             />
-            <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
-              <div className="flex-1 min-h-0 overflow-hidden">
-                <LiveAppPreview
-                  route={activePage?.route || "/admin"}
-                  designerMode={true}
-                  initialEdits={draft.domEdits || {}}
-                  onEditsChange={(domEdits) => {
-                    if (!draft) return;
-                    commitDraftChange({ ...draft, domEdits, hasUnpublishedChanges: true });
-                  }}
-                />
-              </div>
-              {workspaceMode === "workflow" && (
-                <div className="h-[38%] min-h-[210px] max-h-[390px] shrink-0 overflow-hidden border-t border-border bg-card">
-                  <WorkflowEditorPanel
-                    element={selectedElement}
-                    elements={draft.elements}
-                    onUpdateElement={handleUpdateElement}
-                    onAddButton={() => handleAddElement("button")}
-                  />
-                </div>
-              )}
-            </div>
+          }
+          elementPropertiesPanel={
             <PropertiesPanel
               element={selectedElement}
               pages={draft.pages}
@@ -1358,9 +1320,18 @@ export function DeveloperStudioProPage() {
               onUpdateElement={handleUpdateElement}
               onDeleteElement={handleDeleteElement}
               onDuplicateElement={handleDuplicateElement}
+              className="!h-full !w-full !min-w-0 !border-0"
             />
-          </div>
-        )}
+          }
+          workflowPanel={
+            <WorkflowEditorPanel
+              element={selectedElement}
+              elements={draft.elements}
+              onUpdateElement={handleUpdateElement}
+              onAddButton={() => handleAddElement("button")}
+            />
+          }
+        />
       </div>
 
       {/* ========================================================= */}

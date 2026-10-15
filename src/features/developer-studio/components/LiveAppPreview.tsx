@@ -1,5 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, Check, Copy, Eye, EyeOff, Layers, Monitor, Plus, RefreshCw, Settings2, Smartphone, Tablet, Trash2 } from "lucide-react";
+import { renderToStaticMarkup } from "react-dom/server";
+import {
+  ArrowDown, ArrowUp, BarChart3, Bell, CalendarDays, Check, CheckCircle2, CircleDollarSign,
+  ClipboardList, Coffee, Copy, CreditCard, Download, Eye, EyeOff, FileText, Home, Layers,
+  Mail, Monitor, Package, Plus, Printer, RefreshCw, Search, Settings, Settings2, ShieldCheck,
+  Smartphone, Tablet, Trash2, Truck, UserRound, Users, Wallet,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { StudioDomAddedItem, StudioDomEdit } from "../models/studio.types";
 
@@ -7,7 +13,7 @@ type SelectedDomElement = {
   selector: string; tag: string; text: string; color: string; backgroundColor: string;
   fontSize: string; fontWeight: string; width: string; height: string;
   fill: string; stroke: string; strokeWidth: string; opacity: string;
-  borderRadius: string; rotate: string; textAlign: string; href: string; isLink: boolean;
+  borderRadius: string; rotate: string; textAlign: string; fontFamily: string; href: string; isLink: boolean;
 };
 type LiveTreeNode = { selector: string; tag: string; label: string; children: LiveTreeNode[] };
 type LiveRoute = { href: string; label: string };
@@ -15,10 +21,45 @@ type Props = {
   route: string;
   initialEdits: Record<string, StudioDomEdit>;
   onEditsChange: (edits: Record<string, StudioDomEdit>) => void;
-  /** Enable direct DOM editing only while the Element Designer workspace is active. */
+  /** Enable direct DOM editing only while the unified Studio workspace is active. */
   designerMode?: boolean;
+  draftTreePanel?: React.ReactNode;
+  elementPropertiesPanel?: React.ReactNode;
+  workflowPanel?: React.ReactNode;
+  selectedDraftElementId?: string | null;
 };
 type PreviewSize = "desktop" | "tablet" | "mobile";
+type LeftPanelTab = "app" | "elements";
+type InspectorTab = "dom" | "element" | "workflow";
+
+const STUDIO_ICON_LIBRARY = [
+  { value: "home", label: "الرئيسية", icon: Home },
+  { value: "search", label: "بحث", icon: Search },
+  { value: "settings", label: "إعدادات", icon: Settings },
+  { value: "plus", label: "إضافة", icon: Plus },
+  { value: "check", label: "تأكيد", icon: Check },
+  { value: "check-circle", label: "اعتماد", icon: CheckCircle2 },
+  { value: "file", label: "ملف أو تقرير", icon: FileText },
+  { value: "download", label: "تحميل", icon: Download },
+  { value: "mail", label: "رسالة", icon: Mail },
+  { value: "printer", label: "طباعة", icon: Printer },
+  { value: "calculator", label: "آلة حاسبة", icon: CircleDollarSign },
+  { value: "calendar", label: "تقويم", icon: CalendarDays },
+  { value: "coffee", label: "قهوة", icon: Coffee },
+  { value: "wallet", label: "محفظة", icon: Wallet },
+  { value: "card", label: "بطاقة دفع", icon: CreditCard },
+  { value: "package", label: "صندوق ومخزون", icon: Package },
+  { value: "truck", label: "شحن ونقل", icon: Truck },
+  { value: "user", label: "مستخدم", icon: UserRound },
+  { value: "users", label: "المستخدمون", icon: Users },
+  { value: "chart", label: "تقارير ورسوم", icon: BarChart3 },
+  { value: "bell", label: "تنبيهات", icon: Bell },
+  { value: "clipboard", label: "قائمة مهام", icon: ClipboardList },
+  { value: "shield", label: "حماية", icon: ShieldCheck },
+] as const;
+const STUDIO_ICON_COMPONENTS: Record<string, React.ComponentType<any>> = Object.fromEntries(
+  STUDIO_ICON_LIBRARY.map((entry) => [entry.value, entry.icon]),
+);
 
 const getFriendlyElementType = (tag: string): string => {
   const labels: Record<string, string> = {
@@ -64,7 +105,10 @@ const getFriendlyElementType = (tag: string): string => {
   return labels[tag.toLowerCase()] || "عنصر";
 };
 
-export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMode = false }: Props) {
+export function LiveAppPreview({
+  route, initialEdits, onEditsChange, designerMode = false,
+  draftTreePanel, elementPropertiesPanel, workflowPanel, selectedDraftElementId,
+}: Props) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const editsRef = useRef<Record<string, StudioDomEdit>>(initialEdits || {});
   const changeCallbackRef = useRef(onEditsChange);
@@ -84,6 +128,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
   const [backgroundColor, setBackgroundColor] = useState("#ffffff");
   const [fontSize, setFontSize] = useState("16");
   const [fontWeight, setFontWeight] = useState("400");
+  const [fontFamily, setFontFamily] = useState("Arial, sans-serif");
   const [width, setWidth] = useState("");
   const [height, setHeight] = useState("");
   const [fillColor, setFillColor] = useState("#6366f1");
@@ -103,8 +148,10 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
   const [treeNodes, setTreeNodes] = useState<LiveTreeNode[]>([]);
   const [pageLinks, setPageLinks] = useState<LiveRoute[]>([]);
   // Keep the real app at its natural width by default; side panels are optional overlays.
-  const [showExplorer, setShowExplorer] = useState(false);
-  const [showProperties, setShowProperties] = useState(false);
+  const [showExplorer, setShowExplorer] = useState(designerMode);
+  const [showProperties, setShowProperties] = useState(designerMode);
+  const [leftPanelTab, setLeftPanelTab] = useState<LeftPanelTab>("app");
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>("dom");
   const [treeFilter, setTreeFilter] = useState("");
   const [edits, setEdits] = useState<Record<string, StudioDomEdit>>(initialEdits || {});
   editsRef.current = edits;
@@ -157,7 +204,10 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
       selectedSelectorRef.current = toggledOff ? null : item.selector;
       setSelected(toggledOff ? null : item);
       setLinkValue(item.href || "");
-      if (editMode) setShowProperties(!toggledOff);
+      if (editMode) {
+        setShowProperties(true);
+        setInspectorTab("dom");
+      }
       setTextValue(item.text || "");
       setTextColor(item.color || "#111827");
       setBackgroundColor(item.backgroundColor || "#ffffff");
@@ -172,6 +222,9 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
       setBorderRadius(item.borderRadius || "8px");
       setIconRotation(item.rotate || "0deg");
       setTextAlign(item.textAlign || "right");
+      setFontFamily(item.fontFamily || "Arial, sans-serif");
+      setInspectorTab("dom");
+      setShowProperties(true);
       setStatus("تم تحديد: " + getFriendlyElementType(item.tag));
     } else if (event.data.type === "STUDIO_CHANGE") {
       commitEdits(String(event.data.selector), event.data.patch || {});
@@ -205,12 +258,22 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
   useEffect(() => {
     setEditMode(designerMode);
     // Keep the application canvas unobstructed until the user opens the explorer.
-    setShowExplorer(false);
+    setShowExplorer(designerMode);
+    setShowProperties(designerMode);
     if (!designerMode) {
       setShowProperties(false);
       setShowAddItem(false);
     }
   }, [designerMode]);
+
+  useEffect(() => {
+    if (selectedDraftElementId) {
+      setShowExplorer(true);
+      setLeftPanelTab("elements");
+      setInspectorTab("element");
+      setShowProperties(true);
+    }
+  }, [selectedDraftElementId]);
 
   useEffect(() => {
     if (ready) send({ action: "setMode", enabled: editMode });
@@ -291,6 +354,8 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         originalStates.set(selector, {
           el,
           styleAttribute: el.getAttribute("style"),
+          svgAttributes: el.matches("svg") ? Array.from(el.attributes).map((attr) => [attr.name, attr.value]) : null,
+          svgInnerHTML: el.matches("svg") ? el.innerHTML : null,
           leafText: el.children.length === 0 ? (el.textContent || "") : null,
           directTextNodes: el.children.length === 0 ? [] : Array.from(el.childNodes)
             .filter((node) => node.nodeType === Node.TEXT_NODE)
@@ -315,6 +380,11 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
             }
           }
           delete el.dataset.codingStudioTextApplied;
+          if (state.svgAttributes) {
+            Array.from(el.attributes).forEach((attr) => el.removeAttribute(attr.name));
+            state.svgAttributes.forEach(([name, value]) => el.setAttribute(name, value));
+            el.innerHTML = state.svgInnerHTML || "";
+          }
           if (state.styleAttribute === null) el.removeAttribute("style");
           else el.setAttribute("style", state.styleAttribute);
           if (state.linkEl?.isConnected) {
@@ -337,6 +407,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
           fill: css.fill || el.getAttribute("fill") || "", stroke: css.stroke || el.getAttribute("stroke") || "",
           strokeWidth: css.strokeWidth || el.getAttribute("stroke-width") || "2", opacity: css.opacity || "1",
           borderRadius: css.borderRadius || "0px", rotate: css.rotate || "0deg", textAlign: css.textAlign || "right",
+          fontFamily: css.fontFamily || "Arial, sans-serif",
           href: (el.matches("a[href]") ? el : el.closest("a[href]"))?.getAttribute("href") || "",
           isLink: !!(el.matches("a") || el.closest("a")) };
       };
@@ -402,6 +473,32 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         }
         return node;
       };
+      const applyStudioIconMarkup = (element, markup) => {
+        const target = element?.matches?.("svg") ? element : element?.querySelector?.("svg");
+        if (!target || typeof markup !== "string" || markup.length > 16000) return false;
+        const parsed = new DOMParser().parseFromString(markup, "image/svg+xml");
+        const source = parsed.documentElement;
+        if (!source || source.localName.toLowerCase() !== "svg" || parsed.querySelector("parsererror")) return false;
+        const tags = new Set(["path", "circle", "rect", "line", "polyline", "polygon", "ellipse"]);
+        const attrs = new Set(["d", "x", "y", "x1", "y1", "x2", "y2", "cx", "cy", "r", "rx", "ry", "width", "height", "points", "transform", "fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin", "fill-rule", "clip-rule", "opacity"]);
+        const safeClone = (node) => {
+          const tag = node.localName?.toLowerCase();
+          if (!tags.has(tag)) return null;
+          const clone = document.createElementNS("http://www.w3.org/2000/svg", tag);
+          Array.from(node.attributes || []).forEach((attr) => {
+            if (attrs.has(attr.name.toLowerCase()) && !attr.name.toLowerCase().startsWith("on")) clone.setAttribute(attr.name, attr.value);
+          });
+          Array.from(node.children || []).forEach((child) => { const copy = safeClone(child); if (copy) clone.appendChild(copy); });
+          return clone;
+        };
+        ["viewBox", "fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin"].forEach((attr) => {
+          const value = source.getAttribute(attr);
+          if (value !== null) target.setAttribute(attr, value);
+        });
+        target.querySelectorAll("path,circle,rect,line,polyline,polygon,ellipse").forEach((node) => node.remove());
+        Array.from(source.children).forEach((child) => { const copy = safeClone(child); if (copy) target.appendChild(copy); });
+        return true;
+      };
       const applyEdit = (selector, edit) => {
         const el = find(selector);
         if (!el || !edit || isProtected(el)) return;
@@ -409,6 +506,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         rememberOriginal(selector, el);
         if (edit.text !== undefined && el.dataset.codingStudioTextApplied !== String(edit.text)) applyText(el, edit.text);
         if (edit.styles && typeof edit.styles === "object") applyStyles(el, edit.styles);
+        if (typeof edit.iconSvg === "string") applyStudioIconMarkup(el, edit.iconSvg);
         if (typeof edit.href === "string") {
           const anchor = el.matches("a") ? el : el.closest("a");
           if (anchor) {
@@ -569,7 +667,15 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         const selector = selectorFor(el);
         rememberOriginal(selector, el);
         const notify = (patch) => send("STUDIO_CHANGE", { selector, patch });
-        if (data.action === "style") {
+        if (data.action === "icon") {
+          const iconSvg = String(data.iconSvg || "");
+          if (!applyStudioIconMarkup(el, iconSvg)) {
+            send("STUDIO_LINK_UNAVAILABLE", { message: "تعذر تطبيق الأيقونة المحددة على هذا العنصر." });
+            return;
+          }
+          notify({ iconSvg, iconName: String(data.iconName || "") });
+          send("STUDIO_SELECTED", { element: describe(el) });
+        } else if (data.action === "style") {
           applyStyles(el, data.styles || {});
           notify({ styles: data.styles || {} });
         } else if (data.action === "text") {
@@ -693,9 +799,20 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
     if (!selected) return;
     send({ action: "text", selector: selected.selector, text: value });
   };
-  const action = (name: string, _patch?: StudioDomEdit) => {
+  const action = (name: string, patch?: Record<string, unknown>) => {
     if (!selected) return;
-    send({ action: name, selector: selected.selector });
+    send({ action: name, selector: selected.selector, ...(patch || {}) });
+  };
+
+  const chooseStudioIcon = (name: string) => {
+    if (!selected || !selectedIsVector) return;
+    const Icon = STUDIO_ICON_COMPONENTS[name];
+    if (!Icon) return;
+    const iconSvg = renderToStaticMarkup(React.createElement(Icon, {
+      size: 24, strokeWidth: 2, "aria-hidden": true,
+    }));
+    action("icon", { iconName: name, iconSvg });
+    setStatus("تم تغيير الأيقونة مباشرة في المعاينة؛ سيُحفظ الاختيار مع المسودة.");
   };
   const frameWidth = previewSize === "mobile" ? "390px" : previewSize === "tablet" ? "820px" : "100%";
   const selectedIsVector = !!selected && ["svg", "path", "circle", "rect", "line", "polyline", "polygon"].includes(selected.tag);
@@ -762,7 +879,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         </div>
       </div>
 
-      <div className="relative min-h-0 flex-1 overflow-hidden">
+      <div className="relative flex min-h-0 flex-1 overflow-hidden" dir="ltr">
         {showAddItem && designerMode && (
           <form
             onSubmit={(event) => {
@@ -841,7 +958,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
           </form>
         )}
         {showExplorer && (
-          <aside className="absolute right-0 top-0 bottom-0 z-20 flex w-[min(300px,30vw)] min-w-[220px] flex-col overflow-hidden rounded-tl-xl border-l border-t bg-card/95 shadow-2xl backdrop-blur">
+          <aside dir="rtl" className="relative z-10 flex w-[min(320px,25vw)] min-w-[250px] max-w-[380px] shrink-0 flex-col overflow-hidden border-r border-y bg-card shadow-lg">
             <div className="shrink-0 border-b p-3">
               <div className="flex items-center justify-between gap-2">
                 <h3 className="text-sm font-black">صفحات ومكونات التطبيق</h3>
@@ -849,7 +966,13 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
               </div>
               <p className="mt-1 text-[10px] leading-5 text-muted-foreground">الصفحات من روابط التطبيق الحقيقي، والشجرة من عناصر الصفحة المفتوحة.</p>
             </div>
-            <section className="max-h-[34%] shrink-0 overflow-y-auto border-b p-2">
+            <div className="grid shrink-0 grid-cols-2 gap-1 border-b bg-muted/30 p-2">
+              <button type="button" onClick={() => setLeftPanelTab("app")} className={"rounded-lg px-2 py-2 text-xs font-bold transition " + (leftPanelTab === "app" ? "bg-primary text-primary-foreground shadow" : "text-foreground hover:bg-accent")}>صفحات التطبيق</button>
+              <button type="button" onClick={() => setLeftPanelTab("elements")} className={"rounded-lg px-2 py-2 text-xs font-bold transition " + (leftPanelTab === "elements" ? "bg-primary text-primary-foreground shadow" : "text-foreground hover:bg-accent")}>مصمم العناصر</button>
+            </div>
+            {leftPanelTab === "app" ? (
+              <>
+            <section className="max-h-[30%] shrink-0 overflow-y-auto border-b p-2">
               <h4 className="mb-1.5 text-[11px] font-black">الصفحات المكتشفة</h4>
               <div className="space-y-1">
                 {(pageLinks.length ? pageLinks : [{ href: safeRoute, label: "الصفحة الحالية" }]).map((page) => (
@@ -873,20 +996,32 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
                 {visibleTreeNodes.length ? renderTreeNodes(visibleTreeNodes) : <p className="p-2 text-[11px] leading-5 text-muted-foreground">جاري استخراج شجرة عناصر الصفحة…</p>}
               </div>
             </section>
+              </>
+            ) : (
+              <div className="flex min-h-0 flex-1 overflow-hidden bg-background">
+                {draftTreePanel || <p className="m-auto p-4 text-center text-xs leading-6 text-muted-foreground">مصمم العناصر غير متاح في هذه الجلسة.</p>}
+              </div>
+            )}
           </aside>
         )}
-        <div className="absolute inset-0 flex min-h-0 min-w-0 items-stretch justify-center overflow-auto bg-slate-100 p-0 dark:bg-slate-950 sm:p-0">
+        <div dir="ltr" className="relative flex min-h-0 min-w-0 flex-1 items-stretch justify-center overflow-auto bg-slate-100 p-0 dark:bg-slate-950 sm:p-0">
           <div className={"h-full min-h-0 overflow-hidden bg-background transition-[width] duration-200 " + (previewSize === "desktop" ? "w-full rounded-none border-0 shadow-none" : "rounded-xl border shadow-xl")} style={{ width: frameWidth, minWidth: previewSize === "desktop" ? 0 : frameWidth, flex: previewSize === "desktop" ? "1 1 auto" : "0 0 " + frameWidth }}>
             <iframe key={frameKey} ref={iframeRef} src={previewRoute} onLoad={installBridge} title="معاينة حية للتطبيق" className="h-full min-h-0 w-full border-0 bg-background" />
           </div>
         </div>
         {showProperties && (
-        <aside className="absolute left-0 top-0 bottom-0 z-20 flex w-[min(340px,34vw)] min-w-[240px] flex-col gap-3 overflow-y-auto rounded-tr-xl border-r border-t bg-card/95 p-3 shadow-2xl backdrop-blur">
+        <aside dir="rtl" className="relative z-10 flex w-[min(440px,35vw)] min-w-[350px] max-w-[520px] shrink-0 flex-col overflow-hidden border-l border-y bg-card shadow-lg">
           <div>
             <h3 className="text-sm font-black">خصائص عنصر التطبيق</h3>
             <p className="mt-1 text-[10px] text-muted-foreground">{selected ? "نوع العنصر: " + getFriendlyElementType(selected.tag) : "انقر على عنصر داخل المعاينة"}</p>
           </div>
-          {selected ? (
+          <div className="grid shrink-0 grid-cols-3 gap-1 border-b bg-muted/30 p-2">
+            <button type="button" onClick={() => setInspectorTab("dom")} className={"rounded-lg px-1.5 py-2 text-[11px] font-bold transition " + (inspectorTab === "dom" ? "bg-primary text-primary-foreground shadow" : "text-foreground hover:bg-accent")}>خصائص التطبيق</button>
+            <button type="button" onClick={() => setInspectorTab("element")} className={"rounded-lg px-1.5 py-2 text-[11px] font-bold transition " + (inspectorTab === "element" ? "bg-primary text-primary-foreground shadow" : "text-foreground hover:bg-accent")}>مصمم العناصر</button>
+            <button type="button" onClick={() => setInspectorTab("workflow")} className={"rounded-lg px-1.5 py-2 text-[11px] font-bold transition " + (inspectorTab === "workflow" ? "bg-primary text-primary-foreground shadow" : "text-foreground hover:bg-accent")}>مسارات العمل</button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          {inspectorTab === "dom" && (selected ? (
             <>
               <details open className="rounded-xl border bg-background/60 p-2">
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-lg px-1 py-1 text-xs font-black">
@@ -925,7 +1060,15 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
 
               {selectedIsVector && (
                 <div className="rounded-xl border p-3 space-y-3">
-                  <h4 className="text-xs font-black">تصميم الأيقونة / SVG</h4>
+                  <h4 className="text-xs font-black">مكتبة الأيقونات وتصميم SVG</h4>
+                  <label className="block text-xs font-bold">اختيار أيقونة جديدة
+                    <select value={String(edits[selected.selector]?.iconName || "")} onChange={(event) => chooseStudioIcon(event.target.value)} className="mt-1 h-10 w-full rounded-lg border bg-background px-2 text-xs" aria-label="مكتبة الأيقونات">
+                      <option value="">اختر من مكتبة الأيقونات…</option>
+                      {STUDIO_ICON_LIBRARY.map((entry) => <option key={entry.value} value={entry.value}>{entry.label}</option>)}
+                    </select>
+                  </label>
+                  {edits[selected.selector]?.iconName && STUDIO_ICON_COMPONENTS[edits[selected.selector].iconName] &&
+                    React.createElement(STUDIO_ICON_COMPONENTS[edits[selected.selector].iconName], { size: 32, strokeWidth: 2, className: "mx-auto text-primary" })}
                   <div className="grid grid-cols-2 gap-2">
                     <label className="text-xs">لون التعبئة<input aria-label="لون تعبئة الأيقونة" type="color" value={fillColor} onChange={e => { setFillColor(e.target.value); applyStyle({ fill: e.target.value }); }} className="mt-1 h-9 w-full rounded border bg-background p-1" /></label>
                     <label className="text-xs">لون الخط<input aria-label="لون حد الأيقونة" type="color" value={strokeColor} onChange={e => { setStrokeColor(e.target.value); applyStyle({ stroke: e.target.value }); }} className="mt-1 h-9 w-full rounded border bg-background p-1" /></label>
@@ -944,6 +1087,18 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
 
               {!selectedIsVector && <>
                 <label className="block text-xs">حجم الخط (px)<input type="number" min="8" max="120" value={fontSize} onChange={e => { setFontSize(e.target.value); applyStyle({ fontSize: e.target.value + "px" }); }} className="mt-1 w-full rounded-lg border bg-background p-2" /></label>
+                <label className="block text-xs">نوع الخط
+                  <select value={fontFamily} onChange={e => { setFontFamily(e.target.value); applyStyle({ fontFamily: e.target.value }); }} className="mt-1 w-full rounded-lg border bg-background p-2">
+                    <option value="Arial, sans-serif">Arial</option>
+                    <option value="Tahoma, sans-serif">Tahoma</option>
+                    <option value="Cairo, sans-serif">Cairo</option>
+                    <option value="Tajawal, sans-serif">Tajawal</option>
+                    <option value="system-ui, sans-serif">System UI</option>
+                    <option value="'IBM Plex Sans Arabic', sans-serif">IBM Plex Sans Arabic</option>
+                    <option value="Georgia, serif">Georgia</option>
+                    <option value="monospace">Monospace</option>
+                  </select>
+                </label>
                 <label className="block text-xs">سُمك الخط<select value={fontWeight} onChange={e => { setFontWeight(e.target.value); applyStyle({ fontWeight: e.target.value }); }} className="mt-1 w-full rounded-lg border bg-background p-2"><option value="300">خفيف</option><option value="400">عادي</option><option value="500">متوسط</option><option value="600">شبه عريض</option><option value="700">عريض</option><option value="900">ثقيل</option></select></label>
                 <label className="block text-xs">محاذاة النص<select value={textAlign} onChange={e => { setTextAlign(e.target.value); applyStyle({ textAlign: e.target.value }); }} className="mt-1 w-full rounded-lg border bg-background p-2"><option value="right">يمين</option><option value="center">توسيط</option><option value="left">يسار</option><option value="justify">ضبط</option></select></label>
               </>}
@@ -977,8 +1132,19 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
             </>
           ) : (
             <div className="rounded-xl border border-dashed p-4 text-xs leading-6 text-muted-foreground">انقر على نص أو زر أو بطاقة من التطبيق نفسه. التعديلات تُحفظ محليًا وتظهر على صفحات هذا المتصفح؛ مزامنة Supabase من «حفظ ومزامنة»، والنشر لبقية المستخدمين خطوة منفصلة.</div>
+          ))}
+          {inspectorTab === "element" && (
+            <div className="min-h-full overflow-y-auto">
+              {elementPropertiesPanel || <p className="p-4 text-xs leading-6 text-muted-foreground">اختر عنصرًا من تبويب «مصمم العناصر» في اللوحة اليسرى لفتح خصائصه هنا.</p>}
+            </div>
           )}
-          <div className="mt-auto rounded-lg bg-muted p-2 text-[10px] leading-5 text-muted-foreground">إذا ظهر خطأ مزامنة، تبقى النسخة المحلية موجودة لكن لا تعتبر محفوظة سحابيًا حتى نجاح التأكيد.</div>
+          {inspectorTab === "workflow" && (
+            <div className="min-h-full overflow-y-auto">
+              {workflowPanel || <p className="p-4 text-xs leading-6 text-muted-foreground">اختر عنصرًا من مصمم العناصر لعرض مسارات العمل وتعديل إجراءات العنصر.</p>}
+            </div>
+          )}
+          </div>
+          <div className="mt-auto shrink-0 border-t bg-muted/40 p-2 text-[10px] leading-5 text-muted-foreground">التغييرات تظهر فورًا في المعاينة وتُحفظ مع المسودة. اضغط «حفظ ومزامنة» لتأكيد الحفظ على Supabase ثم «نشر» لتطبيقها على المستخدمين.</div>إذا ظهر خطأ مزامنة، تبقى النسخة المحلية موجودة لكن لا تعتبر محفوظة سحابيًا حتى نجاح التأكيد.</div>
         </aside>
         )}
       </div>

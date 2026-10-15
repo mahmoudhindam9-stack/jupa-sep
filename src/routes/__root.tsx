@@ -192,6 +192,8 @@ function RootComponent() {
       studioSnapshots.set(selector, {
         element,
         styleAttribute: element.getAttribute("style"),
+        svgAttributes: element.matches("svg") ? Array.from(element.attributes).map((attr) => [attr.name, attr.value]) : null,
+        svgInnerHTML: element.matches("svg") ? element.innerHTML : null,
         leafTextContent: element.children.length === 0 ? element.textContent ?? "" : null,
         directTextNodes: element.children.length === 0 ? [] : Array.from(element.childNodes)
           .filter((node) => node.nodeType === Node.TEXT_NODE)
@@ -220,6 +222,11 @@ function RootComponent() {
           }
         }
         delete element.dataset.studioTextApplied;
+        if (snapshot.svgAttributes) {
+          Array.from(element.attributes).forEach((attr) => element.removeAttribute(attr.name));
+          snapshot.svgAttributes.forEach(([name, value]) => element.setAttribute(name, value));
+          element.innerHTML = snapshot.svgInnerHTML || "";
+        }
         if (snapshot.styleAttribute === null) element.removeAttribute("style");
         else element.setAttribute("style", snapshot.styleAttribute);
         if (snapshot.linkElement?.isConnected) {
@@ -296,6 +303,32 @@ function RootComponent() {
       return node;
     };
 
+    const applyStudioIconMarkup = (element: HTMLElement, markup: string) => {
+      const target = element.matches("svg") ? element as unknown as SVGSVGElement : element.querySelector("svg");
+      if (!target || typeof markup !== "string" || markup.length > 16000) return;
+      const parsed = new DOMParser().parseFromString(markup, "image/svg+xml");
+      const source = parsed.documentElement;
+      if (!source || source.localName.toLowerCase() !== "svg" || parsed.querySelector("parsererror")) return;
+      const tags = new Set(["path", "circle", "rect", "line", "polyline", "polygon", "ellipse"]);
+      const attrs = new Set(["d", "x", "y", "x1", "y1", "x2", "y2", "cx", "cy", "r", "rx", "ry", "width", "height", "points", "transform", "fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin", "fill-rule", "clip-rule", "opacity"]);
+      const safeClone = (node: Element): SVGElement | null => {
+        const tag = node.localName.toLowerCase();
+        if (!tags.has(tag)) return null;
+        const clone = document.createElementNS("http://www.w3.org/2000/svg", tag);
+        Array.from(node.attributes).forEach((attr) => {
+          if (attrs.has(attr.name.toLowerCase()) && !attr.name.toLowerCase().startsWith("on")) clone.setAttribute(attr.name, attr.value);
+        });
+        Array.from(node.children).forEach((child) => { const copy = safeClone(child); if (copy) clone.appendChild(copy); });
+        return clone;
+      };
+      ["viewBox", "fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin"].forEach((attr) => {
+        const value = source.getAttribute(attr);
+        if (value !== null) target.setAttribute(attr, value);
+      });
+      target.querySelectorAll("path,circle,rect,line,polyline,polygon,ellipse").forEach((node) => node.remove());
+      Array.from(source.children).forEach((child) => { const copy = safeClone(child); if (copy) target.appendChild(copy); });
+    };
+
     const applyStudioEdits = (edits: Record<string, any>) => {
       for (const [selector, edit] of Object.entries(edits || {}) as Array<[string, any]>) {
         if (!edit || typeof edit !== "object") continue;
@@ -312,6 +345,7 @@ function RootComponent() {
           else if (!html.children.length) html.textContent = String(edit.text);
           html.dataset.studioTextApplied = String(edit.text);
         }
+        if (typeof edit.iconSvg === "string") applyStudioIconMarkup(html, edit.iconSvg);
         if (typeof edit.href === "string") {
           const anchor = html.matches("a") ? html as HTMLAnchorElement : html.closest("a");
           if (anchor) {

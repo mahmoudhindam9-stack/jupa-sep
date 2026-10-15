@@ -576,7 +576,7 @@ class StudioService {
           return {
             success: false,
             updatedAt,
-            error: "تعذر حفظ المسودة عبر دالة RPC، وفشلت محاولة الحفظ المباشر الآمنة. طبّق ترحيل صلاحيات الاستوديو. التفاصيل: " +
+            error: "تعذر حفظ المسودة عبر دالة RPC، وفشلت محاولة الحفظ المباشر الآمنة. نفّذ supabase/migrations/20261015210000_repair_developer_studio_permissions.sql في Supabase SQL Editor ثم أعد المحاولة. التفاصيل: " +
               raw + " | " + String(fallbackError?.message || fallbackError || "فشل الحفظ المباشر"),
           };
         }
@@ -720,14 +720,14 @@ class StudioService {
         } catch (fallbackError: any) {
           return {
             compatible: false,
-            error: "تعذر فحص توافق المسودة عبر RPC أو القراءة المباشرة؛ احتفظنا بالتعديلات محليًا. طبّق ترحيل صلاحيات الاستوديو. التفاصيل: " +
+            error: "تعذر فحص توافق المسودة عبر RPC أو القراءة المباشرة؛ احتفظنا بالتعديلات محليًا. نفّذ supabase/migrations/20261015210000_repair_developer_studio_permissions.sql في Supabase SQL Editor ثم أعد المحاولة. التفاصيل: " +
               raw + " | " + String(fallbackError?.message || fallbackError || "فشل الفحص المباشر"),
           };
         }
       }
 
       const migrationHint = /developer_studio_check_draft_sync|function .* does not exist|schema cache/i.test(raw)
-        ? "دالة فحص مزامنة المسودة غير موجودة أو لم تُحدّث. نفّذ supabase/migrations/20261015100000_studio_local_first_sync_rpcs.sql ثم ترحيل إصلاح الصلاحيات."
+        ? "دالة فحص مزامنة المسودة غير موجودة أو صلاحياتها غير مطبقة. نفّذ supabase/migrations/20261015210000_repair_developer_studio_permissions.sql ثم أعد المحاولة."
         : "";
       return {
         compatible: false,

@@ -8,7 +8,12 @@ import { Link } from "@tanstack/react-router";
 import { ElementModel, getElementDisplayName } from "../models/studio.types";
 import { evaluateArithmeticExpression, formatArithmeticResult } from "../utils/arithmetic";
 import { cn } from "@/lib/utils";
-import { Lock, EyeOff, Home, FileText, Search, Settings, Plus, Download, CheckCircle2, Link2, Mail, Printer, Calculator } from "lucide-react";
+import {
+  Lock, EyeOff, Home, FileText, Search, Settings, Plus, Download, CheckCircle2,
+  Link2, Mail, Printer, Calculator, Bell, CalendarDays, Coffee, CreditCard,
+  Package, Truck, UserRound, Users, Wallet, BarChart3, ClipboardList, ShieldCheck,
+  CircleDollarSign,
+} from "lucide-react";
 
 type RuntimeFlowNode = {
   id: string;
@@ -324,6 +329,19 @@ export function StudioElementRenderer({
           : iconName === "mail" ? Mail
           : iconName === "print" ? Printer
           : iconName === "calculator" ? Calculator
+          : iconName === "bell" ? Bell
+          : iconName === "calendar" ? CalendarDays
+          : iconName === "coffee" ? Coffee
+          : iconName === "card" ? CreditCard
+          : iconName === "package" ? Package
+          : iconName === "truck" ? Truck
+          : iconName === "user" ? UserRound
+          : iconName === "users" ? Users
+          : iconName === "wallet" ? Wallet
+          : iconName === "chart" ? BarChart3
+          : iconName === "clipboard" ? ClipboardList
+          : iconName === "shield" ? ShieldCheck
+          : iconName === "money" ? CircleDollarSign
           : null;
         const btnContent = (
           <button

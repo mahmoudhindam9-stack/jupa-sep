@@ -341,6 +341,19 @@ export function PropertiesPanel({
                   <option value="mail">رسالة</option>
                   <option value="print">طباعة</option>
                   <option value="calculator">آلة حاسبة</option>
+                  <option value="bell">تنبيهات</option>
+                  <option value="calendar">تقويم</option>
+                  <option value="coffee">قهوة</option>
+                  <option value="card">بطاقة دفع</option>
+                  <option value="package">صندوق ومخزون</option>
+                  <option value="truck">شحن ونقل</option>
+                  <option value="user">مستخدم</option>
+                  <option value="users">المستخدمون</option>
+                  <option value="wallet">محفظة</option>
+                  <option value="chart">تقارير ورسوم</option>
+                  <option value="clipboard">قائمة مهام</option>
+                  <option value="shield">حماية</option>
+                  <option value="money">مبالغ مالية</option>
                 </select>
                 <p className="mt-1 text-[10px] text-muted-foreground">يمكنك اختيار رمز جاهز ليظهر قبل نص الزر.</p>
               </div>
