@@ -729,7 +729,7 @@ export function DeveloperStudioProPage() {
         type,
         content: defaultContent,
         styles: defaultStyles,
-        layout: { position: "static", order: (draft.pages[activePageId]?.elementIds?.length || 0) + 1, visibility: true },
+        layout: { position: "static", order: parentId ? Object.values(draft.elements).filter((item) => item.parentId === parentId).length + 1 : (draft.pages[activePageId]?.elementIds?.length || 0) + 1, visibility: true },
         attributes: {},
         locked: false,
         schemaVersion: CURRENT_SCHEMA_VERSION,
@@ -739,7 +739,7 @@ export function DeveloperStudioProPage() {
       };
 
       const activePage = draft.pages[activePageId];
-      const updatedElementIds = [...(activePage?.elementIds || []), newId];
+      const updatedElementIds = parentId ? [...(activePage?.elementIds || [])] : [...(activePage?.elementIds || []), newId];
 
       const newDraft: StudioDraft = {
         ...draft,
@@ -811,7 +811,6 @@ export function DeveloperStudioProPage() {
       setSelectedElementIds(remainingSelection);
       if (selectedElementId === elementId) {
         setSelectedElementId(remainingSelection[remainingSelection.length - 1] || null);
-                setSelectedElementIds([]);
       }
       toast({ title: "تم حذف العنصر بنجاح" });
     },
@@ -836,7 +835,9 @@ export function DeveloperStudioProPage() {
       const activePage = draft.pages[source.pageId];
       const sourceIndex = (activePage?.elementIds || []).indexOf(elementId);
       const updatedElementIds = [...(activePage?.elementIds || [])];
-      updatedElementIds.splice(sourceIndex + 1, 0, newId);
+      if (source.parentId === null) {
+        updatedElementIds.splice(sourceIndex + 1, 0, newId);
+      }
 
       const newDraft: StudioDraft = {
         ...draft,
