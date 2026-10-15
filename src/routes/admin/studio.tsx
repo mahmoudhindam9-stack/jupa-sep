@@ -293,10 +293,26 @@ export function DeveloperStudioProPage() {
               : current);
             toast({ title: "تم حفظ المسودة على Supabase", description: "تم تأكيد حفظ التغييرات على الخادم." });
           } else {
+            // The server has now confirmed the submitted snapshot. Advance the baseline
+            // on the newer local edits so the next save compares against that confirmed row.
+            const current = draftRef.current;
+            if (current?.hasUnsavedLocalChanges) {
+              const rebasedNewer = {
+                ...current,
+                serverUpdatedAt: result.updatedAt,
+                hasUnsavedLocalChanges: true,
+              };
+              const savedLocal = studioService.saveLocalDraft(rebasedNewer);
+              const latestLocal = { ...rebasedNewer, updatedAt: savedLocal.updatedAt };
+              setDraft(latestLocal);
+              if (!savedLocal.success) {
+                setSaveError(savedLocal.error || "تعذر الاحتفاظ بالتعديلات الأحدث محليًا.");
+              }
+            }
             setSaveStatus("unsaved");
             toast({
-              title: "تم حفظ النسخة السابقة",
-              description: "أجريت تعديلات جديدة أثناء الحفظ؛ ما زالت هناك تغييرات غير محفوظة. اضغط «حفظ ومزامنة» مرة أخرى.",
+              title: "تمت مزامنة النسخة السابقة",
+              description: "حفظ الخادم اللقطة السابقة فقط، واحتفظنا بالتعديلات الأحدث محليًا. يمكنك الضغط على «حفظ ومزامنة» مرة أخرى.",
             });
           }
         } else {
