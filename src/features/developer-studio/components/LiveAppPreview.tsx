@@ -225,6 +225,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
               if (item.node.parentNode === el) item.node.textContent = item.text;
             }
           }
+          delete el.dataset.codingStudioTextApplied;
           if (state.styleAttribute === null) el.removeAttribute("style");
           else el.setAttribute("style", state.styleAttribute);
           if (state.parent && el.parentNode === state.parent) {
