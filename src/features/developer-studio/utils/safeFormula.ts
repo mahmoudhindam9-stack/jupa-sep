@@ -121,6 +121,10 @@ export function writeStudioResult(selector: string | undefined, value: string): 
 
 export function runStudioAction(action: any): void {
   if (!action || typeof action !== "object") return;
+  if (action.type === "sequence" && Array.isArray(action.steps)) {
+    action.steps.forEach((step: any) => runStudioAction(step));
+    return;
+  }
   switch (action.type) {
     case "navigate": {
       const destination = String(action.destination || "");
