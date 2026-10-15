@@ -106,7 +106,7 @@ export function validateManagedProfilePayload(profile: {
 }): void {
   if (!String(profile.id ?? "").trim()) throw new Error("معرّف حساب Supabase مطلوب.");
 
-  const validated = validateManagedUserForm({
+  validateManagedUserForm({
     fullName: String(profile.full_name ?? ""),
     username: String(profile.username ?? ""),
     phone: String(profile.phone ?? ""),
