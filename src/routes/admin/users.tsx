@@ -1478,7 +1478,7 @@ export function UsersPage() {
             <thead className="bg-muted text-muted-foreground">
               <tr>
                 <th className="text-right p-3 font-bold">الاسم الكامل</th>
-                <th className="text-right p-3 font-bold">اسم الدخول</th>
+                <th className="text-right p-3 font-bold">اسم المستخدم / البريد الإلكتروني</th>
                 <th className="text-right p-3 font-bold">رقم الهاتف</th>
                 <th className="text-right p-3 font-bold">الدور الوظيفي</th>
                 <th className="text-center p-3 font-bold w-40">الإجراءات</th>
@@ -1488,7 +1488,14 @@ export function UsersPage() {
               {localUsers.map((u) => (
                 <tr key={u.id} className="hover:bg-muted/30 transition-colors">
                   <td className="p-3 font-bold text-foreground">{u.full_name || "-"}</td>
-                  <td className="p-3 font-mono">{u.username || "-"}</td>
+                  <td className="p-3">
+                    <div className="font-mono font-bold">{u.username || "-"}</div>
+                    {u.email && (
+                      <div className="font-mono text-[10px] text-muted-foreground mt-1" dir="ltr">
+                        {u.email}
+                      </div>
+                    )}
+                  </td>
                   <td className="p-3 font-mono">{u.phone || "-"}</td>
                   <td className="p-3">
                     <span className="bg-primary/10 text-primary border border-primary/20 px-2.5 py-0.5 rounded-full font-black text-[10px]">
