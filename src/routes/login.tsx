@@ -51,8 +51,12 @@ function safeInternalRedirect(value: string | null): string {
 
 async function signInHostedUser(username: string, password: string) {
   const normalized = username.trim().toLowerCase();
-  // Hosted Supabase accounts always authenticate with their real Auth email.
-  const candidates = normalized.includes("@") ? [normalized] : [];
+  // Auth always uses the real email stored in Supabase Auth. Users created by the
+  // Users page from a username alone use the established @restocash.com login alias.
+  // Legacy users can still enter their actual email shown in the Users directory.
+  const candidates = normalized.includes("@")
+    ? [normalized]
+    : [`${normalized}@restocash.com`, `${normalized}@restocash.local`];
 
   for (const email of Array.from(new Set(candidates))) {
     try {
@@ -693,15 +697,15 @@ function LoginPage() {
         <p className="text-sm text-muted-foreground text-center">تسجيل الدخول للإدارة</p>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <Label>{isHostedDeployment(isMounted) ? "البريد الإلكتروني" : "اسم المستخدم"}</Label>
+            <Label>{isHostedDeployment(isMounted) ? "اسم المستخدم أو البريد الإلكتروني" : "اسم المستخدم"}</Label>
             <Input
-              type={isHostedDeployment(isMounted) ? "email" : "text"}
+              type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
-              placeholder={isHostedDeployment(isMounted) ? "name@example.com" : "admin"}
-              autoComplete={isHostedDeployment(isMounted) ? "email" : "username"}
-              dir={isHostedDeployment(isMounted) ? "ltr" : undefined}
+              placeholder={isHostedDeployment(isMounted) ? "admin أو name@example.com" : "admin"}
+              autoComplete="username"
+              dir="ltr"
               className="mt-1"
               autoFocus
             />
