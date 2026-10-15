@@ -48,6 +48,55 @@ $canmanage$;
 REVOKE ALL ON FUNCTION public.can_manage_developer_studio() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.can_manage_developer_studio() TO authenticated;
 
+CREATE OR REPLACE FUNCTION public.developer_studio_access_status()
+RETURNS JSONB
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $accessstatus$
+DECLARE
+  v_user_id UUID := auth.uid();
+  v_profile JSONB;
+  v_role TEXT := '';
+  v_developer_options BOOLEAN := false;
+  v_allowed BOOLEAN := false;
+BEGIN
+  IF v_user_id IS NULL THEN
+    RETURN jsonb_build_object('authenticated', false, 'profile_found', false, 'developer_options', false, 'allowed', false, 'reason', 'no_authenticated_session');
+  END IF;
+
+  SELECT to_jsonb(p) INTO v_profile
+    FROM public.profiles AS p
+   WHERE p.id = v_user_id
+   LIMIT 1;
+
+  IF v_profile IS NULL THEN
+    RETURN jsonb_build_object('authenticated', true, 'user_id', v_user_id, 'profile_found', false, 'developer_options', false, 'allowed', false, 'reason', 'profile_missing');
+  END IF;
+
+  v_role := lower(COALESCE(v_profile->>'role', ''));
+  v_developer_options :=
+    lower(COALESCE(v_profile->>'developer_options', 'false')) = 'true'
+    OR COALESCE(v_profile->'permissions', '{}'::jsonb) @> '{"developer_options": true}'::jsonb
+    OR COALESCE(v_profile->'permissions', '{}'::jsonb) @> '{"super_admin_full_access": true}'::jsonb;
+  v_allowed := v_role IN ('admin', 'super_admin') OR v_developer_options;
+
+  RETURN jsonb_build_object(
+    'authenticated', true,
+    'user_id', v_user_id,
+    'profile_found', true,
+    'role', v_role,
+    'developer_options', v_developer_options,
+    'allowed', v_allowed,
+    'reason', CASE WHEN v_allowed THEN 'authorized' ELSE 'missing_developer_studio_permission' END
+  );
+END;
+$accessstatus$;
+
+REVOKE ALL ON FUNCTION public.developer_studio_access_status() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.developer_studio_access_status() TO authenticated;
+
 -- Replace stale Studio policies with least-privilege policies.
 DO $policies$
 DECLARE v_policy RECORD;
