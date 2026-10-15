@@ -878,8 +878,10 @@ export function UsersPage() {
         if (!hasLoadedDirectory) {
           setActorProfile(null);
           setLocalUsers([]);
-          setUserDirectoryStatus("error");
         }
+        // Retain the last confirmed list for visibility, but disable writes until
+        // the directory can be read again successfully.
+        setUserDirectoryStatus("error");
         console.error("Hosted users directory load failed:", err);
       }
     };
