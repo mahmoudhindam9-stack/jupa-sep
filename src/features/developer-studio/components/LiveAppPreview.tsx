@@ -166,7 +166,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
       setBorderRadius(item.borderRadius || "8px");
       setIconRotation(item.rotate || "0deg");
       setTextAlign(item.textAlign || "right");
-      setStatus("تم تحديد العنصر: " + item.tag);
+      setStatus("تم تحديد: " + getFriendlyElementType(item.tag));
     } else if (event.data.type === "STUDIO_CHANGE") {
       commitEdits(String(event.data.selector), event.data.patch || {});
       setStatus("تم تعديل المعاينة فقط — اضغط «حفظ ومزامنة» لاعتماد المسودة على الخادم.");
@@ -689,7 +689,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
     if (!query) return treeNodes;
     const filterNodes = (nodes: LiveTreeNode[]): LiveTreeNode[] => nodes
       .map((node) => ({ ...node, children: filterNodes(node.children || []) }))
-      .filter((node) => node.label.toLocaleLowerCase().includes(query) || node.tag.toLocaleLowerCase().includes(query) || node.children.length > 0);
+      .filter((node) => node.label.toLocaleLowerCase().includes(query) || getFriendlyElementType(node.tag).toLocaleLowerCase().includes(query) || node.tag.toLocaleLowerCase().includes(query) || node.children.length > 0);
     return filterNodes(treeNodes);
   }, [treeNodes, treeFilter]);
   const renderTreeNodes = (nodes: LiveTreeNode[], depth = 0): React.ReactNode => nodes.map((node) => (
@@ -853,7 +853,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
             </section>
             <section className="flex min-h-0 flex-1 flex-col p-2">
               <h4 className="mb-1.5 shrink-0 text-[11px] font-black">شجرة المكونات الفعلية</h4>
-              <input aria-label="بحث في شجرة المكونات" value={treeFilter} onChange={(event) => setTreeFilter(event.target.value)} placeholder="ابحث عن عنصر أو وسم..." className="mb-2 h-8 shrink-0 rounded-lg border bg-background px-2 text-[11px] outline-none focus:ring-2 focus:ring-primary" />
+              <input aria-label="بحث في شجرة المكونات" value={treeFilter} onChange={(event) => setTreeFilter(event.target.value)} placeholder="ابحث عن عنصر أو وظيفة..." className="mb-2 h-8 shrink-0 rounded-lg border bg-background px-2 text-[11px] outline-none focus:ring-2 focus:ring-primary" />
               <div className="min-h-0 flex-1 overflow-auto">
                 {visibleTreeNodes.length ? renderTreeNodes(visibleTreeNodes) : <p className="p-2 text-[11px] leading-5 text-muted-foreground">جاري استخراج شجرة عناصر الصفحة…</p>}
               </div>
