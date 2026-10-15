@@ -170,6 +170,12 @@ export function userValidationErrorMessage(error: unknown): string {
   if (message.includes("auth_user_not_found")) {
     return "لم يوجد حساب Auth مطابق في Supabase؛ لم يُحفظ ملف المستخدم.";
   }
+  if (
+    message.includes("database error saving new user") ||
+    message.includes("database error updating user")
+  ) {
+    return "رفضت قاعدة البيانات تسجيل الحساب أثناء التحقق النهائي. تأكد من الاسم الكامل والبريد الصحيح واسم المستخدم المسموح والدور المحدد. إذا كانت البيانات صحيحة، راجع Supabase Auth Logs لمعرفة سبب الرفض التفصيلي.";
+  }
   if (message.includes("weak_password") || message.includes("password should") || message.includes("password is")) {
     return "رفض Supabase كلمة المرور. استخدم كلمة مرور أطول وأقوى وتوافق مع سياسة المشروع.";
   }
