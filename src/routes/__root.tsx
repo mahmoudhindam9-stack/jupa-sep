@@ -200,6 +200,7 @@ function RootComponent() {
             if (entry.node.parentNode === element) entry.node.textContent = entry.text;
           }
         }
+        delete element.dataset.studioTextApplied;
         if (snapshot.styleAttribute === null) element.removeAttribute("style");
         else element.setAttribute("style", snapshot.styleAttribute);
         if (snapshot.parent && element.parentNode === snapshot.parent) {
