@@ -81,8 +81,14 @@ AS $restore_is_staff$
 $restore_is_staff$;
 
 -- This development-only test RPC should not be callable by public client roles.
-REVOKE EXECUTE ON FUNCTION public.run_e2e_inventory_test() FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.run_e2e_inventory_test() TO service_role;
+DO $restrict_test_rpc$
+BEGIN
+  IF to_regprocedure('public.run_e2e_inventory_test()') IS NOT NULL THEN
+    EXECUTE 'REVOKE EXECUTE ON FUNCTION public.run_e2e_inventory_test() FROM PUBLIC, anon, authenticated';
+    EXECUTE 'GRANT EXECUTE ON FUNCTION public.run_e2e_inventory_test() TO service_role';
+  END IF;
+END;
+$restrict_test_rpc$;
 
 -- The browser must not directly upsert user ACLs and then report success regardless
 -- of server-side RLS/trigger errors. All managed profile writes go through this RPC.
