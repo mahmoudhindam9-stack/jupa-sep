@@ -18,7 +18,6 @@ import {
 import { studioService } from "@/features/developer-studio/services/studioService";
 import { supabase } from "@/integrations/supabase/client";
 import { ElementTreePanel } from "@/features/developer-studio/components/ElementTreePanel";
-import { VisualEditorCanvas } from "@/features/developer-studio/components/VisualEditorCanvas";
 import { PropertiesPanel } from "@/features/developer-studio/components/PropertiesPanel";
 import { PublishModal } from "@/features/developer-studio/components/PublishModal";
 import { ConflictResolutionModal } from "@/features/developer-studio/components/ConflictResolutionModal";
@@ -79,6 +78,20 @@ export function DeveloperStudioProPage() {
   const latestRealtimePublishedRevisionRef = useRef(0);
   const [activePageId, setActivePageId] = useState<string>("page_dashboard");
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
+  const [selectedElementIds, setSelectedElementIds] = useState<string[]>([]);
+  const handleSelectElement = useCallback((elementId: string, multiSelect = false) => {
+    if (!multiSelect) {
+      setSelectedElementId(elementId);
+      setSelectedElementIds([elementId]);
+      return;
+    }
+    const isSelected = selectedElementIds.includes(elementId);
+    const next = isSelected
+      ? (selectedElementIds.length > 1 ? selectedElementIds.filter((id) => id !== elementId) : selectedElementIds)
+      : [...selectedElementIds, elementId];
+    setSelectedElementIds(next);
+    setSelectedElementId(isSelected && next.length > 0 ? next[next.length - 1] : elementId);
+  }, [selectedElementIds]);
   const [isLoading, setIsLoading] = useState(true);
   const [isMounted, setIsMounted] = useState(false);
 
@@ -212,6 +225,7 @@ export function DeveloperStudioProPage() {
         const firstPageId = Object.keys(incoming.pages || {})[0] || "page_dashboard";
         setActivePageId(firstPageId);
         setSelectedElementId(null);
+                setSelectedElementIds([]);
       })
       .on("postgres_changes", {
         event: "*",
@@ -746,6 +760,7 @@ export function DeveloperStudioProPage() {
 
       commitDraftChange(newDraft);
       setSelectedElementId(newId);
+      setSelectedElementIds([newId]);
       toast({ title: `تمت إضافة عنصر (${type}) جديد` });
     },
     [draft, activePageId, commitDraftChange],
@@ -792,12 +807,15 @@ export function DeveloperStudioProPage() {
       };
 
       commitDraftChange(newDraft);
+      const remainingSelection = selectedElementIds.filter((id) => id !== elementId);
+      setSelectedElementIds(remainingSelection);
       if (selectedElementId === elementId) {
-        setSelectedElementId(null);
+        setSelectedElementId(remainingSelection[remainingSelection.length - 1] || null);
+                setSelectedElementIds([]);
       }
       toast({ title: "تم حذف العنصر بنجاح" });
     },
-    [draft, selectedElementId, commitDraftChange],
+    [draft, selectedElementId, selectedElementIds, commitDraftChange],
   );
 
   // Duplicate element
@@ -839,6 +857,7 @@ export function DeveloperStudioProPage() {
 
       commitDraftChange(newDraft);
       setSelectedElementId(newId);
+      setSelectedElementIds([newId]);
       toast({ title: "تم تكرار العنصر بنجاح" });
     },
     [draft, commitDraftChange],
@@ -883,6 +902,74 @@ export function DeveloperStudioProPage() {
     },
     [draft, commitDraftChange],
   );
+
+  // Group selected siblings into a container without moving them to another page.
+  const handleGroupSelected = useCallback(() => {
+    if (!draft || selectedElementIds.length < 2) return;
+    const selected = selectedElementIds.map((id) => draft.elements[id]).filter((item): item is ElementModel => !!item);
+    if (selected.length < 2) return;
+    const first = selected[0];
+    if (!selected.every((item) => item.pageId === first.pageId && item.parentId === first.parentId)) {
+      toast({ title: "لا يمكن تجميع العناصر المحددة", description: "اختر عناصر من الصفحة والمجموعة الأب نفسيهما.", variant: "destructive" });
+      return;
+    }
+    const page = draft.pages[first.pageId];
+    if (!page) return;
+    const now = new Date().toISOString();
+    const groupId = "elem_container_group_" + Date.now().toString(36);
+    const selectedIds = new Set(selected.map((item) => item.id));
+    const pageIndexes = (page.elementIds || []).map((id, index) => selectedIds.has(id) ? index : -1).filter((index) => index >= 0);
+    const insertAt = pageIndexes.length ? Math.min(...pageIndexes) : (page.elementIds || []).length;
+    const group: ElementModel = {
+      id: groupId, pageId: first.pageId, parentId: first.parentId, type: "container",
+      content: { direction: "column", wrap: true, title: "مجموعة عناصر جديدة" },
+      styles: { display: "flex", flexDirection: "column", gap: "12px", paddingTop: "12px", paddingRight: "12px", paddingBottom: "12px", paddingLeft: "12px", borderWidth: "1px", borderStyle: "dashed", borderColor: "#cbd5e1", borderRadius: "12px" },
+      layout: { position: "static", order: Math.min(...selected.map((item) => item.layout?.order ?? 0)), visibility: selected.every((item) => item.layout.visibility) },
+      attributes: {}, locked: false, schemaVersion: CURRENT_SCHEMA_VERSION, revision: draft.baseRevision, updatedAt: now, updatedBy: "admin",
+    };
+    const elements: Record<string, ElementModel> = { ...draft.elements, [groupId]: group };
+    selected.slice().sort((a, b) => (a.layout?.order ?? 0) - (b.layout?.order ?? 0)).forEach((item, index) => {
+      elements[item.id] = { ...item, parentId: groupId, layout: { ...item.layout, order: index + 1 }, updatedAt: now };
+    });
+    let updatedPage = page;
+    if (first.parentId === null) {
+      const elementIds = (page.elementIds || []).filter((id) => !selectedIds.has(id));
+      elementIds.splice(Math.min(insertAt, elementIds.length), 0, groupId);
+      updatedPage = { ...page, elementIds, updatedAt: now };
+    }
+    commitDraftChange({ ...draft, pages: { ...draft.pages, [first.pageId]: updatedPage }, elements, hasUnpublishedChanges: true });
+    setSelectedElementId(groupId);
+    setSelectedElementIds([groupId]);
+    toast({ title: "تم تجميع العناصر المحددة" });
+  }, [draft, selectedElementIds, commitDraftChange, toast]);
+
+  const handleUngroupSelected = useCallback(() => {
+    if (!draft || !selectedElementId) return;
+    const group = draft.elements[selectedElementId];
+    if (!group || group.type !== "container") return;
+    const children = Object.values(draft.elements).filter((item) => item.parentId === group.id).sort((a, b) => (a.layout?.order ?? 0) - (b.layout?.order ?? 0));
+    if (!children.length) {
+      toast({ title: "المجموعة فارغة", description: "أضف عناصر إلى المجموعة قبل فصلها.", variant: "destructive" });
+      return;
+    }
+    const now = new Date().toISOString();
+    const elements: Record<string, ElementModel> = { ...draft.elements };
+    delete elements[group.id];
+    children.forEach((item, index) => {
+      elements[item.id] = { ...item, parentId: group.parentId, layout: { ...item.layout, order: (group.layout?.order ?? 0) + index / 100 }, updatedAt: now };
+    });
+    let updatedPage = draft.pages[group.pageId];
+    if (updatedPage && group.parentId === null) {
+      const oldIndex = (updatedPage.elementIds || []).indexOf(group.id);
+      const elementIds = (updatedPage.elementIds || []).filter((id) => id !== group.id);
+      elementIds.splice(oldIndex < 0 ? elementIds.length : oldIndex, 0, ...children.map((item) => item.id));
+      updatedPage = { ...updatedPage, elementIds, updatedAt: now };
+    }
+    commitDraftChange({ ...draft, pages: updatedPage ? { ...draft.pages, [group.pageId]: updatedPage } : draft.pages, elements, hasUnpublishedChanges: true });
+    setSelectedElementId(children[0].id);
+    setSelectedElementIds(children.map((item) => item.id));
+    toast({ title: "تم فصل المجموعة" });
+  }, [draft, selectedElementId, commitDraftChange, toast]);
 
   // Add new page to draft
   const handleAddPage = useCallback(
@@ -931,6 +1018,7 @@ export function DeveloperStudioProPage() {
       setDraft(fresh);
       setActivePageId(Object.keys(fresh.pages || {})[0] || "page_dashboard");
       setSelectedElementId(null);
+                setSelectedElementIds([]);
       setHistoryStack([JSON.parse(JSON.stringify(fresh))]);
       setHistoryPointer(0);
       setSaveStatus("saved");
@@ -1019,6 +1107,7 @@ export function DeveloperStudioProPage() {
               onChange={(e) => {
                 setActivePageId(e.target.value);
                 setSelectedElementId(null);
+                setSelectedElementIds([]);
               }}
               className="text-xs font-bold bg-muted/80 hover:bg-muted border border-border/80 rounded-lg px-2.5 py-1.5 cursor-pointer max-w-[160px] truncate"
             >
@@ -1101,6 +1190,16 @@ export function DeveloperStudioProPage() {
             <span className="hidden lg:inline">إعادة</span>
           </Button>
 
+          {(workspaceMode === "builder" || workspaceMode === "workflow") && selectedElementIds.length > 1 && (
+            <Button type="button" variant="outline" size="sm" onClick={handleGroupSelected} className="h-8 px-2 text-xs gap-1 cursor-pointer font-bold" title="تجميع العناصر المحددة في مجموعة واحدة">
+              <Layers className="w-3.5 h-3.5" /><span>تجميع المحدد</span>
+            </Button>
+          )}
+          {(workspaceMode === "builder" || workspaceMode === "workflow") && selectedElement?.type === "container" && (
+            <Button type="button" variant="outline" size="sm" onClick={handleUngroupSelected} className="h-8 px-2 text-xs gap-1 cursor-pointer font-bold" title="فصل عناصر هذه المجموعة">
+              <Layers className="w-3.5 h-3.5" /><span>فصل المجموعة</span>
+            </Button>
+          )}
           <Button
             type="button"
             variant={workspaceMode === "builder" ? "default" : "outline"}
@@ -1220,53 +1319,6 @@ export function DeveloperStudioProPage() {
               commitDraftChange({ ...draft, domEdits, hasUnpublishedChanges: true });
             }}
           />
-        ) : workspaceMode === "builder" ? (
-          <div className="h-full min-w-0 flex overflow-hidden">
-            <ElementTreePanel
-              pages={draft.pages}
-              activePageId={activePageId}
-              elements={draft.elements}
-              selectedElementId={selectedElementId}
-              onSelectPage={(pageId) => { setActivePageId(pageId); setSelectedElementId(null); }}
-              onAddPage={handleAddPage}
-              onSelectElement={setSelectedElementId}
-              onAddElement={handleAddElement}
-              onDeleteElement={handleDeleteElement}
-              onDuplicateElement={handleDuplicateElement}
-              onToggleVisibility={(elementId) => {
-                const target = draft.elements[elementId];
-                if (target) handleUpdateElement(elementId, { layout: { ...target.layout, visibility: !target.layout.visibility } });
-              }}
-              onToggleLock={(elementId) => {
-                const target = draft.elements[elementId];
-                if (target) handleUpdateElement(elementId, { locked: !target.locked });
-              }}
-            />
-            {activePage ? (
-              <VisualEditorCanvas
-                page={activePage}
-                elements={draft.elements}
-                selectedElementId={selectedElementId}
-                onSelectElement={setSelectedElementId}
-                onUpdateElement={handleUpdateElement}
-                onDeleteElement={handleDeleteElement}
-                onDuplicateElement={handleDuplicateElement}
-                onMoveElement={handleMoveElement}
-                onAddElement={handleAddElement}
-                className="min-w-0"
-              />
-            ) : (
-              <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">لا توجد صفحة محددة للتصميم.</div>
-            )}
-            <PropertiesPanel
-              element={selectedElement}
-              pages={draft.pages}
-              elements={draft.elements}
-              onUpdateElement={handleUpdateElement}
-              onDeleteElement={handleDeleteElement}
-              onDuplicateElement={handleDuplicateElement}
-            />
-          </div>
         ) : (
           <div className="h-full min-w-0 flex overflow-hidden">
             <ElementTreePanel
@@ -1274,9 +1326,14 @@ export function DeveloperStudioProPage() {
               activePageId={activePageId}
               elements={draft.elements}
               selectedElementId={selectedElementId}
-              onSelectPage={(pageId) => { setActivePageId(pageId); setSelectedElementId(null); }}
+              selectedElementIds={selectedElementIds}
+              onSelectPage={(pageId) => {
+                setActivePageId(pageId);
+                setSelectedElementId(null);
+                setSelectedElementIds([]);
+              }}
               onAddPage={handleAddPage}
-              onSelectElement={setSelectedElementId}
+              onSelectElement={handleSelectElement}
               onAddElement={handleAddElement}
               onDeleteElement={handleDeleteElement}
               onDuplicateElement={handleDuplicateElement}
@@ -1289,12 +1346,29 @@ export function DeveloperStudioProPage() {
                 if (target) handleUpdateElement(elementId, { locked: !target.locked });
               }}
             />
-            <WorkflowEditorPanel
-              element={selectedElement}
-              elements={draft.elements}
-              onUpdateElement={handleUpdateElement}
-              onAddButton={() => handleAddElement("button")}
-            />
+            <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
+              <div className="flex-1 min-h-0 overflow-hidden">
+                <LiveAppPreview
+                  route={activePage?.route || "/admin"}
+                  designerMode={true}
+                  initialEdits={draft.domEdits || {}}
+                  onEditsChange={(domEdits) => {
+                    if (!draft) return;
+                    commitDraftChange({ ...draft, domEdits, hasUnpublishedChanges: true });
+                  }}
+                />
+              </div>
+              {workspaceMode === "workflow" && (
+                <div className="h-[38%] min-h-[210px] max-h-[390px] shrink-0 overflow-hidden border-t border-border bg-card">
+                  <WorkflowEditorPanel
+                    element={selectedElement}
+                    elements={draft.elements}
+                    onUpdateElement={handleUpdateElement}
+                    onAddButton={() => handleAddElement("button")}
+                  />
+                </div>
+              )}
+            </div>
             <PropertiesPanel
               element={selectedElement}
               pages={draft.pages}
@@ -1363,6 +1437,7 @@ export function DeveloperStudioProPage() {
             setDraft(updatedDraft);
             setActivePageId(Object.keys(updatedDraft.pages || {})[0] || "page_dashboard");
             setSelectedElementId(null);
+                setSelectedElementIds([]);
             setHistoryStack([JSON.parse(JSON.stringify(updatedDraft))]);
             setHistoryPointer(0);
             setSaveStatus("saved");
