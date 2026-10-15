@@ -12,6 +12,7 @@ import { Chatbot } from "@/components/Chatbot";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { translator } from "../shared/services/translationService";
 import { createAppSync } from "../shared/services/appSync";
+import { runStudioAction } from "@/features/developer-studio/utils/safeFormula";
 import appCss from "../styles.css?url";
 
 function NotFoundComponent() {
@@ -156,6 +157,8 @@ function RootComponent() {
     type StudioRuntimeSnapshot = {
       element: HTMLElement;
       styleAttribute: string | null;
+      hrefAttribute: string | null;
+      flowActionAttribute: string | null;
       leafTextContent: string | null;
       directTextNodes: Array<{ node: ChildNode; text: string | null }>;
       parent: Node | null;
@@ -188,6 +191,8 @@ function RootComponent() {
       studioSnapshots.set(selector, {
         element,
         styleAttribute: element.getAttribute("style"),
+        hrefAttribute: element.getAttribute("href"),
+        flowActionAttribute: element.getAttribute("data-studio-flow-action"),
         leafTextContent: element.children.length === 0 ? element.textContent ?? "" : null,
         directTextNodes: element.children.length === 0 ? [] : Array.from(element.childNodes)
           .filter((node) => node.nodeType === Node.TEXT_NODE)
@@ -200,8 +205,15 @@ function RootComponent() {
     const resetPublishedStudioEdits = () => {
       for (const clone of publishedStudioClones) clone.remove();
       publishedStudioClones.clear();
+      document.querySelectorAll("[data-studio-added-button]").forEach((button) => button.remove());
+      document.querySelectorAll('[data-studio-flow-hidden="true"]').forEach((node) => {
+        const element = node as HTMLElement;
+        element.style.display = element.dataset.studioFlowPreviousDisplay || "";
+        delete element.dataset.studioFlowHidden;
+        delete element.dataset.studioFlowPreviousDisplay;
+      });
 
-      for (const snapshot of Array.from(studioSnapshots.values()).reverse()) {
+      for (const snapshot of Array.from(studioSnapshots.values()).reverse())
         const element = snapshot.element;
         if (!element.isConnected) continue;
         if (snapshot.leafTextContent !== null) {
@@ -214,6 +226,10 @@ function RootComponent() {
         delete element.dataset.studioTextApplied;
         if (snapshot.styleAttribute === null) element.removeAttribute("style");
         else element.setAttribute("style", snapshot.styleAttribute);
+        if (snapshot.hrefAttribute === null) element.removeAttribute("href");
+        else if (snapshot.hrefAttribute !== undefined) element.setAttribute("href", snapshot.hrefAttribute);
+        if (snapshot.flowActionAttribute === null) element.removeAttribute("data-studio-flow-action");
+        else if (snapshot.flowActionAttribute !== undefined) element.setAttribute("data-studio-flow-action", snapshot.flowActionAttribute);
         if (snapshot.parent && element.parentNode === snapshot.parent) {
           const next = snapshot.nextSibling;
           if (next && next.parentNode === snapshot.parent) snapshot.parent.insertBefore(element, next);
@@ -250,6 +266,15 @@ function RootComponent() {
             });
           }
         }
+        if (typeof edit.href === "string" && edit.href.startsWith("/") && !edit.href.startsWith("//")) {
+          const anchor = html.matches("a") ? html : html.closest("a[href]") || html.querySelector("a[href]");
+          if (anchor) anchor.setAttribute("href", edit.href);
+        }
+        if (edit.action && edit.action.type && edit.action.type !== "none") {
+          html.setAttribute("data-studio-flow-action", JSON.stringify(edit.action));
+        } else {
+          html.removeAttribute("data-studio-flow-action");
+        }
         if (edit.deleted) html.style.display = "none";
         if (typeof edit.order === "number" && html.parentElement) {
           const siblings = Array.from(html.parentElement.children).filter((item) =>
@@ -273,6 +298,43 @@ function RootComponent() {
             parent.insertBefore(clone, html.nextSibling);
           }
         }
+
+        const desiredButtons = Array.isArray(edit.addedButtons) ? edit.addedButtons : [];
+        const desiredButtonIds = new Set(desiredButtons.map((item: any) => String(item.id)));
+        Array.from(html.querySelectorAll("[data-studio-added-button]"))
+          .filter((button) => !desiredButtonIds.has((button as HTMLElement).dataset.studioAddedButton || ""))
+          .forEach((button) => button.remove());
+        desiredButtons.forEach((item: any) => {
+          if (!item || !item.id) return;
+          const escapedId = CSS.escape(String(item.id));
+          let button = html.querySelector('[data-studio-added-button="' + escapedId + '"]') as HTMLButtonElement | null;
+          if (!button) {
+            button = document.createElement("button");
+            button.type = "button";
+            button.dataset.studioAddedButton = String(item.id);
+            button.style.margin = "4px";
+            button.style.padding = "8px 14px";
+            button.style.borderRadius = "9px";
+            button.style.fontWeight = "700";
+            button.style.cursor = "pointer";
+            button.style.display = "inline-flex";
+            button.style.alignItems = "center";
+            button.style.justifyContent = "center";
+            button.style.gap = "6px";
+            html.appendChild(button);
+          }
+          button.textContent = String(item.label || "زر جديد");
+          const variants: Record<string, React.CSSProperties> = {
+            primary: { background: "#3730a3", color: "#ffffff", border: "1px solid #3730a3" },
+            secondary: { background: "#e2e8f0", color: "#0f172a", border: "1px solid #cbd5e1" },
+            outline: { background: "transparent", color: "inherit", border: "1px solid currentColor" },
+            danger: { background: "#be123c", color: "#ffffff", border: "1px solid #be123c" },
+          };
+          Object.assign(button.style, variants[item.variant] || variants.primary);
+          const action = item.action || { type: "none" };
+          if (action.type && action.type !== "none") button.setAttribute("data-studio-flow-action", JSON.stringify(action));
+          else button.removeAttribute("data-studio-flow-action");
+        });
       }
     };
 
@@ -296,6 +358,20 @@ function RootComponent() {
       rebuildRuntimeStudioEdits();
     };
     const publishedHandler = (event: Event) => applyPublishedStudioEdits((event as CustomEvent).detail);
+    const studioActionHandler = (event: Event) => {
+      const target = event.target instanceof Element ? event.target.closest("[data-studio-flow-action]") : null;
+      if (!target) return;
+      let action: any;
+      try { action = JSON.parse(target.getAttribute("data-studio-flow-action") || "{}"); } catch { return; }
+      if (!action?.type || action.type === "none") return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      try { runStudioAction(action); } catch (error: any) {
+        window.alert(String(error?.message || error || "تعذر تنفيذ الوظيفة المحددة."));
+      }
+    };
+    document.addEventListener("click", studioActionHandler, true);
     const legacyEditsUpdatedHandler = () => {
       refreshLegacyStudioEdits();
       rebuildRuntimeStudioEdits();
@@ -323,6 +399,7 @@ function RootComponent() {
     return () => {
       studioObserver?.disconnect();
       window.removeEventListener("studio_published_updated", publishedHandler);
+      document.removeEventListener("click", studioActionHandler, true);
       window.removeEventListener("studio_legacy_edits_updated", legacyEditsUpdatedHandler);
       window.removeEventListener("storage", storageHandler);
       stopAppSync?.();
