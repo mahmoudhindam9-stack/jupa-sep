@@ -1,6 +1,12 @@
 import { supabase } from "@/integrations/supabase/client";
 import { createClient } from "@supabase/supabase-js";
 import { Profile } from "@/shared/types";
+import {
+  normalizeManagedEmail,
+  validateManagedProfilePayload,
+  validateManagedUserForm,
+  userValidationErrorMessage,
+} from "./managedUserValidation";
 
 const getSecondaryClient = () => {
   const DEFAULT_SUPABASE_URL = "https://myqtvbfibvgxkqwxvuru.supabase.co";
@@ -35,7 +41,7 @@ const getSecondaryClient = () => {
   });
 };
 
-const normalizeEmail = (email: string) => email.trim().toLowerCase();
+const normalizeEmail = normalizeManagedEmail;
 
 const assertCredentials = (email: string, password: string) => {
   const normalizedEmail = normalizeEmail(email);
@@ -107,9 +113,7 @@ export const authService = {
   },
 
   async saveManagedProfile(profile: Partial<Profile> & { id: string }): Promise<Profile> {
-    if (!profile?.id?.trim()) throw new Error("Profile id is required.");
-    if (!profile.username?.trim()) throw new Error("اسم المستخدم مطلوب.");
-    if (!profile.role) throw new Error("دور المستخدم مطلوب.");
+    validateManagedProfilePayload(profile);
 
     const { data, error } = await (supabase as any).rpc("upsert_managed_user_profile", {
       p_user_id: profile.id,
@@ -121,7 +125,7 @@ export const authService = {
     });
 
     if (error) {
-      throw new Error(error.message || "تعذر حفظ ملف المستخدم وصلاحياته في Supabase.", { cause: error });
+      throw new Error(userValidationErrorMessage(error), { cause: error });
     }
     if (!data || typeof data !== "object" || !data.id) {
       throw new Error("لم يؤكد Supabase حفظ ملف المستخدم. لم يتم اعتماد التغيير.");
@@ -139,7 +143,17 @@ export const authService = {
   },
 
   async signUpNewUser(email: string, password: string, profileData: any) {
-    const normalizedEmail = assertCredentials(email, password);
+    const normalizedEmail = normalizeEmail(email);
+    validateManagedUserForm({
+      fullName: String(profileData?.full_name ?? ""),
+      username: String(profileData?.username ?? ""),
+      email: normalizedEmail,
+      phone: String(profileData?.phone ?? ""),
+      password,
+      role: String(profileData?.role ?? ""),
+      hosted: true,
+      requirePassword: true,
+    });
     const secondaryClient = getSecondaryClient();
     const { data, error } = await secondaryClient.auth.signUp({
       email: normalizedEmail,
@@ -148,7 +162,7 @@ export const authService = {
         data: profileData,
       },
     });
-    if (error) throw error;
+    if (error) throw new Error(userValidationErrorMessage(error), { cause: error });
 
     // Supabase can return an obfuscated "existing user" response instead of an error
     // when email enumeration protection is enabled. Do not treat that as a new account.
