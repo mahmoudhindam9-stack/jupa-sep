@@ -328,7 +328,11 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         if (edit.styles && typeof edit.styles === "object") applyStyles(el, edit.styles);
         if (typeof edit.href === "string") {
           const anchor = el.matches("a") ? el : el.closest("a[href]") || el.querySelector("a[href]");
-          if (anchor && edit.href.startsWith("/") && !edit.href.startsWith("//")) anchor.setAttribute("href", edit.href);
+          if (anchor) {
+            if (anchor !== el) rememberOriginal(selector + "__studio_link", anchor);
+            if (edit.href === "") anchor.removeAttribute("href");
+            else if (edit.href.startsWith("/") && !edit.href.startsWith("//")) anchor.setAttribute("href", edit.href);
+          }
         }
         if (edit.action && edit.action.type && edit.action.type !== "none") el.setAttribute("data-studio-flow-action", JSON.stringify(edit.action));
         else el.removeAttribute("data-studio-flow-action");
