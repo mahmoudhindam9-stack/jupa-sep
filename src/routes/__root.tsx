@@ -151,8 +151,8 @@ function RootComponent() {
     } catch (e) {
       console.error("Failed to start translator:", e);
     }
-    // Only server-confirmed published Studio edits may touch the real app.
-    // Local drafts are rendered in the isolated Studio iframe and are never read here.
+    // Unpublished Pro drafts are never read by the real app. Only a confirmed published
+    // configuration or the legacy editor's explicitly saved map can be applied here.
     type StudioRuntimeSnapshot = {
       element: HTMLElement;
       styleAttribute: string | null;
@@ -164,6 +164,7 @@ function RootComponent() {
     const studioSnapshots = new Map<string, StudioRuntimeSnapshot>();
     const publishedStudioClones = new Set<HTMLElement>();
     let activePublishedStudioEdits: Record<string, any> = {};
+    let activeLegacyStudioEdits: Record<string, any> = {};
     let studioObserver: MutationObserver | null = null;
 
     const isStudioPreserved = (element: Element) => {
@@ -264,16 +265,37 @@ function RootComponent() {
       }
     };
 
-    const applyPublishedStudioEdits = (config: any) => {
+    const refreshLegacyStudioEdits = () => {
+      try {
+        const stored = JSON.parse(localStorage.getItem("custom_text_map") || "{}");
+        activeLegacyStudioEdits = stored && typeof stored === "object" ? stored : {};
+      } catch {
+        activeLegacyStudioEdits = {};
+      }
+    };
+    const rebuildRuntimeStudioEdits = () => {
       studioObserver?.disconnect();
       resetPublishedStudioEdits();
-      const remoteEdits = config?.domEdits;
-      activePublishedStudioEdits = remoteEdits && typeof remoteEdits === "object" ? remoteEdits : {};
-      applyStudioEdits(activePublishedStudioEdits);
+      applyStudioEdits({ ...activeLegacyStudioEdits, ...activePublishedStudioEdits });
       studioObserver?.observe(document.body, { childList: true, subtree: true });
     };
+    const applyPublishedStudioEdits = (config: any) => {
+      const remoteEdits = config?.domEdits;
+      activePublishedStudioEdits = remoteEdits && typeof remoteEdits === "object" ? remoteEdits : {};
+      rebuildRuntimeStudioEdits();
+    };
     const publishedHandler = (event: Event) => applyPublishedStudioEdits((event as CustomEvent).detail);
+    const legacyEditsUpdatedHandler = () => {
+      refreshLegacyStudioEdits();
+      rebuildRuntimeStudioEdits();
+    };
+    const storageHandler = (event: StorageEvent) => {
+      if (event.key === "custom_text_map") legacyEditsUpdatedHandler();
+    };
+    refreshLegacyStudioEdits();
     window.addEventListener("studio_published_updated", publishedHandler);
+    window.addEventListener("studio_legacy_edits_updated", legacyEditsUpdatedHandler);
+    window.addEventListener("storage", storageHandler);
     void import("@/features/developer-studio/services/studioService")
       .then(({ studioService }) => studioService.getPublishedConfig())
       .then(applyPublishedStudioEdits)
@@ -281,7 +303,7 @@ function RootComponent() {
 
     const studioObserverInstance = new MutationObserver(() => {
       studioObserverInstance.disconnect();
-      applyStudioEdits(activePublishedStudioEdits);
+      applyStudioEdits({ ...activeLegacyStudioEdits, ...activePublishedStudioEdits });
       studioObserverInstance.observe(document.body, { childList: true, subtree: true });
     });
     studioObserver = studioObserverInstance;
@@ -290,6 +312,8 @@ function RootComponent() {
     return () => {
       studioObserver?.disconnect();
       window.removeEventListener("studio_published_updated", publishedHandler);
+      window.removeEventListener("studio_legacy_edits_updated", legacyEditsUpdatedHandler);
+      window.removeEventListener("storage", storageHandler);
       stopAppSync?.();
     };
   }, [queryClient]);
