@@ -109,8 +109,9 @@ function runStudioWorkflow(raw: unknown, event: React.MouseEvent<HTMLButtonEleme
           const target = targetId ? document.getElementById("studio-elem-" + targetId) : null;
           if (!target) window.alert("لم يتم العثور على العنصر المطلوب إظهاره أو إخفاؤه.");
           else {
-            target.classList.toggle("hidden");
-            target.setAttribute("aria-hidden", target.classList.contains("hidden") ? "true" : "false");
+            const isHidden = target.style.display === "none";
+            target.style.display = isHidden ? "contents" : "none";
+            target.setAttribute("aria-hidden", isHidden ? "false" : "true");
           }
         } else if (action === "submit") {
           const form = event.currentTarget.closest("form");
@@ -361,8 +362,9 @@ export function StudioElementRenderer({
                 if (!target) {
                   window.alert("اختر العنصر المطلوب أولًا من إعدادات الزر.");
                 } else {
-                  target.classList.toggle("hidden");
-                  target.setAttribute("aria-hidden", target.classList.contains("hidden") ? "true" : "false");
+                  const isHidden = target.style.display === "none";
+                  target.style.display = isHidden ? "contents" : "none";
+                  target.setAttribute("aria-hidden", isHidden ? "false" : "true");
                 }
               } else if (c.action === "submit") {
                 const form = (e.currentTarget as HTMLButtonElement).closest("form");
@@ -604,6 +606,15 @@ export function StudioElementRenderer({
     );
   }
 
-  // Live Runtime Mode
-  return renderContent();
+  // Live Runtime Mode — keep a stable target for show/hide workflow actions without
+  // imposing an extra layout box on the actual rendered element.
+  return (
+    <div
+      id={`studio-elem-${element.id}`}
+      data-studio-element-id={element.id}
+      style={{ display: element.layout.visibility ? "contents" : "none" }}
+    >
+      {renderContent()}
+    </div>
+  );
 }
