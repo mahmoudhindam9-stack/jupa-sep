@@ -9,6 +9,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { erpStore, SystemUser, ROOT_DEFAULT_ADMIN } from "@/shared/services/erpStore";
 import { authService } from "@/features/auth/services/authService";
+import {
+  validateManagedUserForm,
+  userValidationErrorMessage,
+} from "@/features/auth/services/managedUserValidation";
 import { resetLocalManagedUserDirectoryForBootstrap } from "@/features/auth/services/userDirectorySync";
 import { useSettings } from "@/hooks/use-settings";
 import { isAiStudioPreview } from "@/shared/services/previewAccess";
@@ -216,16 +220,19 @@ function LoginPage() {
     const newUsername = normalizeDigits(bootstrapUsername.trim().toLowerCase());
     const newPassword = normalizeDigits(bootstrapPassword);
     const confirmation = normalizeDigits(bootstrapConfirm);
-    if (!fullName || !newUsername || newPassword.length < 8) {
-      setError("أدخل الاسم واسم المستخدم وكلمة مرور لا تقل عن 8 أحرف أو أرقام.");
-      return;
-    }
-    if (newPassword !== confirmation) {
-      setError("تأكيد كلمة المرور غير مطابق.");
-      return;
-    }
-    if (newUsername.includes("@") || /\s/.test(newUsername)) {
-      setError("استخدم اسم مستخدم بدون مسافات أو بريد إلكتروني.");
+    try {
+      validateManagedUserForm({
+        fullName,
+        username: newUsername,
+        password: newPassword,
+        passwordConfirmation: confirmation,
+        role: "admin",
+        hosted: false,
+        requirePassword: true,
+        requirePasswordConfirmation: true,
+      });
+    } catch (validationError) {
+      setError(userValidationErrorMessage(validationError));
       return;
     }
 
@@ -268,22 +275,17 @@ function LoginPage() {
     const confirmation = normalizeDigits(bootstrapConfirm);
 
     try {
-      if (!fullName || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        throw new Error("أدخل الاسم الكامل وبريدًا إلكترونيًا حقيقيًا وصالحًا.");
-      }
-      if (!/^[a-z0-9._-]{3,32}$/.test(newUsername)) {
-        throw new Error(
-          "اسم المستخدم يجب أن يكون من 3 إلى 32 حرفًا أو رقمًا، ويمكن استخدام النقطة والشرطة فقط.",
-        );
-      }
-      if (newPassword.length < 8) {
-        throw new Error(
-          "كلمة المرور يجب ألا تقل عن 8 أحرف، وقد يفرض مشروع Supabase شروطًا إضافية.",
-        );
-      }
-      if (newPassword !== confirmation) {
-        throw new Error("تأكيد كلمة المرور غير مطابق.");
-      }
+      validateManagedUserForm({
+        fullName,
+        username: newUsername,
+        email,
+        password: newPassword,
+        passwordConfirmation: confirmation,
+        role: "admin",
+        hosted: true,
+        requirePassword: true,
+        requirePasswordConfirmation: true,
+      });
 
       // Re-check at submit time. The database trigger also serializes first-user creation.
       if (!(await authService.isInitialAdminSetupAvailable())) {
@@ -307,6 +309,9 @@ function LoginPage() {
       if (signUpError) throw signUpError;
       if (!data.user?.id) {
         throw new Error("لم تُرجع Supabase معرّف الحساب. لم يتم تأكيد إنشاء المدير الأول.");
+      }
+      if (Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+        throw new Error("هذا البريد الإلكتروني مسجّل بالفعل في Supabase. استخدم بريدًا آخر.");
       }
 
       setBootstrapAvailable(false);
@@ -362,7 +367,7 @@ function LoginPage() {
       erpStore.setCurrentUser(activeUsername);
       navigate({ to: "/admin/users" });
     } catch (cause: any) {
-      setError(cause?.message || "تعذر إنشاء المدير الأول في Supabase.");
+      setError(userValidationErrorMessage(cause) || "تعذر إنشاء المدير الأول في Supabase.");
     } finally {
       setLoading(false);
     }
