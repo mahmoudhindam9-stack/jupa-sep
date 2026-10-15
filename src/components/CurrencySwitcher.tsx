@@ -168,7 +168,6 @@ export function CurrencySwitcher({
         </div>
       )}
 
-}
     </div>
   );
 }
