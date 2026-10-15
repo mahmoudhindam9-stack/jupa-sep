@@ -191,10 +191,12 @@ export type StudioActionType =
   | "message"
   | "toggle"
   | "set_value"
-  | "calculate";
+  | "calculate"
+  | "sequence";
 
-export interface StudioActionConfig {
-  type: StudioActionType;
+export interface StudioActionStep {
+  id: string;
+  type: Exclude<StudioActionType, "sequence">;
   destination?: string;
   message?: string;
   targetSelector?: string;
@@ -204,6 +206,10 @@ export interface StudioActionConfig {
   rightSelector?: string;
   operator?: "+" | "-" | "*" | "/" | "%";
   resultSelector?: string;
+}
+
+export interface StudioActionConfig extends Omit<StudioActionStep, "id"> {
+  steps?: StudioActionStep[];
 }
 
 export interface StudioAddedButton {
