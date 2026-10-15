@@ -3168,6 +3168,25 @@ export class ERPStore {
   getUsers() {
     return this.state.users || [];
   }
+  replaceManagedUsers(users: SystemUser[]) {
+    // Used only after Supabase confirms the authoritative hosted directory.
+    // Replace stale local identities and ACL cache without generating fake audit
+    // entries for every profile merely because a page was opened or refreshed.
+    const cleanUsers = (Array.isArray(users) ? users : [])
+      .filter((user) => Boolean(user?.id && user?.username))
+      .map((user) => ({
+        ...user,
+        username: String(user.username).trim().toLowerCase(),
+        email: String(user.email || "").trim().toLowerCase(),
+        permissions: { ...(user.permissions || {}) },
+        password: undefined,
+      }));
+    this.state.users = cleanUsers;
+    this.state.userPermissions = Object.fromEntries(
+      cleanUsers.map((user) => [user.username, { ...(user.permissions || {}) }]),
+    );
+    this.saveState();
+  }
   upsertUser(user) {
     if (!this.state.users) this.state.users = [];
     const idx = this.state.users.findIndex((u) => u.id === user.id);
