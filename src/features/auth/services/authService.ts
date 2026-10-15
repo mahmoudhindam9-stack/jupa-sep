@@ -102,14 +102,8 @@ export const authService = {
   },
 
   async upsertProfile(profile: Partial<Profile> & { id: string }): Promise<Profile> {
-    if (!profile?.id?.trim()) throw new Error("Profile id is required.");
-    const { data, error } = await supabase
-      .from("profiles")
-      .upsert(profile as any)
-      .select()
-      .single();
-    if (error) throw error;
-    return data as Profile;
+    // Keep every managed-profile write on the same permission-checked server path.
+    return await this.saveManagedProfile(profile);
   },
 
   async saveManagedProfile(profile: Partial<Profile> & { id: string }): Promise<Profile> {
