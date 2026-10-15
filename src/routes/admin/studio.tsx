@@ -394,7 +394,7 @@ export function DeveloperStudioProPage() {
         toast({ title: "فشل الحفظ المحلي", description: local.error, variant: "destructive" });
         return;
       }
-      const snapshot: StudioDraft = { ...draft, updatedAt: local.updatedAt, hasUnsavedLocalChanges: true };
+      let snapshot: StudioDraft = { ...draft, updatedAt: local.updatedAt, hasUnsavedLocalChanges: true };
       setDraft(snapshot);
       setSaveStatus("saving");
 
@@ -440,6 +440,47 @@ export function DeveloperStudioProPage() {
           variant: "destructive",
         });
         return;
+      }
+
+      // If this browser has a legacy local draft without a trustworthy server version,
+      // merge server-side DOM edits first while local values win per selector/style.
+      // The RPC returns this snapshot securely without requiring a direct table SELECT.
+      if (draftSyncCompatibility.needsRebase && draftSyncCompatibility.serverDraft) {
+        const serverDraft = draftSyncCompatibility.serverDraft;
+        const serverEdits = serverDraft.domEdits || {};
+        const localEdits = snapshot.domEdits || {};
+        const mergedEdits: Record<string, any> = { ...serverEdits };
+        for (const [selector, localEdit] of Object.entries(localEdits) as Array<[string, any]>) {
+          const serverEdit = mergedEdits[selector] || {};
+          mergedEdits[selector] = {
+            ...serverEdit,
+            ...localEdit,
+            ...(serverEdit.styles || localEdit.styles
+              ? { styles: { ...(serverEdit.styles || {}), ...(localEdit.styles || {}) } }
+              : {}),
+          };
+        }
+        snapshot = {
+          ...snapshot,
+          id: serverDraft.id || snapshot.id,
+          serverUpdatedAt: draftSyncCompatibility.serverUpdatedAt || serverDraft.updatedAt,
+          domEdits: mergedEdits,
+          hasUnsavedLocalChanges: true,
+        };
+        const rebasedLocal = studioService.saveLocalDraft(snapshot);
+        if (!rebasedLocal.success) {
+          setSaveStatus("error");
+          setSaveError(rebasedLocal.error || "تعذر حفظ المسودة المدمجة محليًا.");
+          toast({ title: "فشل حفظ النسخة المدمجة محليًا", description: rebasedLocal.error, variant: "destructive" });
+          return;
+        }
+        snapshot = { ...snapshot, updatedAt: rebasedLocal.updatedAt };
+        studioService.applyLocalDomEditsToRuntime(snapshot.domEdits || {});
+        setDraft(snapshot);
+        toast({
+          title: "تمت مواءمة المسودة المحلية",
+          description: draftSyncCompatibility.message || "تم دمج تنسيقات المسودة السحابية مع تغييراتك المحلية قبل المزامنة.",
+        });
       }
 
       // A UI edit made while compatibility was being checked must never be replaced
