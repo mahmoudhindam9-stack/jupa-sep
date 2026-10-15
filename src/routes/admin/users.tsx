@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { erpStore, UserPermission, SystemUser } from "@/shared/services/erpStore";
 import { authService } from "@/features/auth/services/authService";
+import { supabase } from "@/integrations/supabase/client";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -829,13 +830,13 @@ export function UsersPage() {
 
   useEffect(() => {
     let mounted = true;
+    let hasLoadedDirectory = false;
     const hosted = isHostedDeployment();
 
     const unsubscribe = erpStore.subscribe(() => {
       if (!mounted) return;
       setErpState(erpStore.getState());
-      // On the hosted app Supabase is the directory of record. Local-store events
-      // must not replace the remote directory with a password-filtered local list.
+      // Supabase remains the source of truth on hosted environments.
       if (!hosted) setLocalUsers(localLoginUsers());
     });
 
@@ -848,7 +849,7 @@ export function UsersPage() {
         return;
       }
 
-      setUserDirectoryStatus("loading");
+      if (!hasLoadedDirectory) setUserDirectoryStatus("loading");
       setUserDirectoryError("");
       try {
         const authUser = await authService.getCurrentUser();
@@ -860,34 +861,49 @@ export function UsersPage() {
 
         setActorProfile(actor);
         const cloudUsers = (profiles || [])
-          .filter((profile) => Boolean(profile?.id))
-          .map(profileToSystemUser);
+          .filter((profile) => Boolean(profile?.id && profile?.username))
+          .map(profileToSystemUser)
+          .sort((a, b) => a.username.localeCompare(b.username));
 
-        // Keep the ERP compatibility cache in sync, but never use it as the hosted
-        // user directory or as proof that a cloud write succeeded.
-        for (const user of cloudUsers) {
-          erpStore.upsertUser(user);
-          erpStore.updateUserPermission(user.username, user.permissions || {});
-        }
-
+        // Replace the complete local compatibility cache only after a confirmed
+        // remote read, removing deleted/stale browser identities and old ACL copies.
+        erpStore.replaceManagedUsers(cloudUsers);
         setLocalUsers(cloudUsers);
         setUserDirectoryStatus("ready");
+        hasLoadedDirectory = true;
       } catch (err: any) {
         if (!mounted) return;
         const message = String(err?.message || "تعذر تحميل دليل المستخدمين من Supabase.");
-        setActorProfile(null);
-        setLocalUsers([]);
         setUserDirectoryError(message);
-        setUserDirectoryStatus("error");
+        if (!hasLoadedDirectory) {
+          setActorProfile(null);
+          setLocalUsers([]);
+          setUserDirectoryStatus("error");
+        }
         console.error("Hosted users directory load failed:", err);
       }
     };
 
     void loadUsersDirectory();
 
+    // Refresh the directory when another authorized session changes a profile.
+    // The migration adds public.profiles to supabase_realtime; until then the
+    // initial read and post-write reads still work normally.
+    const channel = hosted
+      ? supabase
+          .channel("managed-users-directory")
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "profiles" },
+            () => { void loadUsersDirectory(); },
+          )
+          .subscribe()
+      : null;
+
     return () => {
       mounted = false;
       unsubscribe();
+      if (channel) void supabase.removeChannel(channel);
     };
   }, []);
 
@@ -957,12 +973,15 @@ export function UsersPage() {
         }
 
         // Update the local compatibility cache only after the hosted write is confirmed.
-        erpStore.upsertUser(updated);
-        erpStore.updateUserPermission(updated.username, updated.permissions || {});
-        setLocalUsers((current) => {
-          const next = current.filter((user) => user.id !== updated.id);
-          return [...next, updated].sort((a, b) => a.username.localeCompare(b.username));
-        });
+        const nextUsers = [...localUsers.filter((user) => user.id !== updated.id), updated]
+          .sort((a, b) => a.username.localeCompare(b.username));
+        if (hosted) {
+          erpStore.replaceManagedUsers(nextUsers);
+        } else {
+          erpStore.upsertUser(updated);
+          erpStore.updateUserPermission(updated.username, updated.permissions || {});
+        }
+        setLocalUsers(nextUsers);
         setErpState(erpStore.getState());
         setEditing(null);
         setForm({ full_name: "", username: "", phone: "", password: "", role: "cashier" });
@@ -1020,12 +1039,10 @@ export function UsersPage() {
         const savedUser = profileToSystemUser(savedProfile);
         createdAuthUserId = null;
 
-        erpStore.upsertUser(savedUser);
-        erpStore.updateUserPermission(savedUser.username, savedUser.permissions || {});
-        setLocalUsers((current) =>
-          [...current.filter((user) => user.id !== savedUser.id), savedUser]
-            .sort((a, b) => a.username.localeCompare(b.username)),
-        );
+        const nextUsers = [...localUsers.filter((user) => user.id !== savedUser.id), savedUser]
+          .sort((a, b) => a.username.localeCompare(b.username));
+        erpStore.replaceManagedUsers(nextUsers);
+        setLocalUsers(nextUsers);
         setErpState(erpStore.getState());
         setForm({ full_name: "", username: "", phone: "", password: "", role: "cashier" });
         setIsConfirmUpsertOpen(false);
@@ -1098,8 +1115,13 @@ export function UsersPage() {
         await authService.deleteUser(userToDelete);
       }
 
-      erpStore.deleteUser(userToDelete);
-      setLocalUsers((current) => current.filter((user) => user.id !== userToDelete));
+      const nextUsers = localUsers.filter((user) => user.id !== userToDelete);
+      if (hosted) {
+        erpStore.replaceManagedUsers(nextUsers);
+      } else {
+        erpStore.deleteUser(userToDelete);
+      }
+      setLocalUsers(nextUsers);
       setErpState(erpStore.getState());
       toast({
         title: hosted ? "تم حذف المستخدم من Supabase" : "تم حذف المستخدم بنجاح",
@@ -1175,11 +1197,16 @@ export function UsersPage() {
       }
 
       // Only update the UI and local mirror after Supabase has confirmed the write.
-      erpStore.updateUserPermission(updatedUser.username, updatedUser.permissions || {});
-      erpStore.upsertUser(updatedUser);
-      setLocalUsers((current) =>
-        current.map((user) => user.id === updatedUser.id ? updatedUser : user),
+      const nextUsers = localUsers.map((user) =>
+        user.id === updatedUser.id ? updatedUser : user,
       );
+      if (hosted) {
+        erpStore.replaceManagedUsers(nextUsers);
+      } else {
+        erpStore.updateUserPermission(updatedUser.username, updatedUser.permissions || {});
+        erpStore.upsertUser(updatedUser);
+      }
+      setLocalUsers(nextUsers);
       setErpState(erpStore.getState());
       setIsConfirmSavePermsOpen(false);
       setPermissionsUser(null);
