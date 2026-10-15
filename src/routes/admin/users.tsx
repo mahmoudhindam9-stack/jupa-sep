@@ -684,6 +684,10 @@ function defaultPermissionsForRole(role: string): UserPermission {
         permissions[permission.key] = true;
       });
     });
+    // Super Admin is the only default role allowed to receive the privilege override.
+    // A regular Admin can still receive the listed operational permissions but cannot
+    // elevate itself or create another super administrator through the UI.
+    if (role === "admin") permissions.super_admin_full_access = false;
     return permissions as UserPermission;
   }
   if (role === "manager") {
