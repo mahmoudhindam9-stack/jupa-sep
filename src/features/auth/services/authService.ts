@@ -140,7 +140,7 @@ export const authService = {
       target_user_id: id,
     });
     if (error) throw new Error(userValidationErrorMessage(error), { cause: error });
-    if (data !== true) throw new Error("أكد Supabase حذف الحساب؟ لا؛ لم يتم تأكيد الحذف.");
+    if (data !== true) throw new Error("لم يؤكد Supabase حذف الحساب؛ لم يتم اعتماد العملية.");
   },
 
   async signUpNewUser(email: string, password: string, profileData: any) {
