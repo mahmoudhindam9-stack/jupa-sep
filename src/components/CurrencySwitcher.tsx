@@ -24,7 +24,7 @@ export function CurrencySwitcher({
 
   if (compact) {
     return (
-      <div className={`space-y-1.5 ${className}`}>
+      <div data-studio-preserve="currency-switcher" className={`space-y-1.5 ${className}`}>
         <div className="flex items-center gap-1 bg-muted/60 border border-border p-1 rounded-xl">
           {currencies.map((c) => {
             const isActive = currency === c.code;
@@ -72,6 +72,7 @@ export function CurrencySwitcher({
 
   return (
     <div
+      data-studio-preserve="currency-switcher"
       className={`flex flex-wrap items-center gap-2 bg-card border border-border px-3 py-1.5 rounded-2xl shadow-sm ${className}`}
     >
       <div className="flex items-center gap-1.5 text-xs font-black text-muted-foreground shrink-0">
