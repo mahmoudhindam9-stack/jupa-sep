@@ -287,10 +287,8 @@ function RootComponent() {
     studioObserver.observe(document.body, { childList: true, subtree: true });
     const stopAppSync = createAppSync(queryClient);
     return () => {
-      studioObserver.disconnect();
+      studioObserver?.disconnect();
       window.removeEventListener("studio_published_updated", publishedHandler);
-      window.removeEventListener("studio_local_edits_updated", localStudioHandler);
-      window.removeEventListener("storage", storageHandler);
       stopAppSync?.();
     };
   }, [queryClient]);
