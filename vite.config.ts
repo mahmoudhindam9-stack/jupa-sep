@@ -35,17 +35,15 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
-  // The hosted preview can restart Vite while preserving a browser page with
-  // old optimized-dependency URLs. Force a fresh pre-bundle on each dev-server
-  // start and explicitly include the client-critical React/TanStack modules.
+  // Keep TanStack Start/Router packages under the Start plugin's dependency
+  // resolution. Forcing them into Vite's pre-bundle can create a second router
+  // context in hosted previews, leaving StartClient with an undefined router.
+  // React and ordinary leaf dependencies may still be optimized normally.
   optimizeDeps: {
     include: [
       "react",
       "react-dom",
       "react-dom/client",
-      "@tanstack/react-start",
-      "@tanstack/react-start/client",
-      "@tanstack/react-router",
       "@tanstack/react-query",
       "@supabase/supabase-js",
       "lucide-react",
