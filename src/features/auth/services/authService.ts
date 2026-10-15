@@ -112,6 +112,29 @@ export const authService = {
     return data as Profile;
   },
 
+  async saveManagedProfile(profile: Partial<Profile> & { id: string }): Promise<Profile> {
+    if (!profile?.id?.trim()) throw new Error("Profile id is required.");
+    if (!profile.username?.trim()) throw new Error("اسم المستخدم مطلوب.");
+    if (!profile.role) throw new Error("دور المستخدم مطلوب.");
+
+    const { data, error } = await (supabase as any).rpc("upsert_managed_user_profile", {
+      p_user_id: profile.id,
+      p_username: profile.username.trim().toLowerCase(),
+      p_full_name: String(profile.full_name || "").trim(),
+      p_phone: String(profile.phone || "").trim(),
+      p_role: String(profile.role).trim().toLowerCase(),
+      p_permissions: profile.permissions || {},
+    });
+
+    if (error) {
+      throw new Error(error.message || "تعذر حفظ ملف المستخدم وصلاحياته في Supabase.", { cause: error });
+    }
+    if (!data || typeof data !== "object" || !data.id) {
+      throw new Error("لم يؤكد Supabase حفظ ملف المستخدم. لم يتم اعتماد التغيير.");
+    }
+    return data as Profile;
+  },
+
   async deleteUser(id: string): Promise<void> {
     if (!id?.trim()) throw new Error("User id is required.");
     const { data, error } = await (supabase as any).rpc("delete_managed_user", {
