@@ -1109,7 +1109,7 @@ export function DeveloperStudioProPage() {
           <div className="h-5 w-px bg-border/80 hidden sm:block" />
 
           {/* Page Selector dropdown */}
-          <div className="flex flex-wrap items-center justify-center gap-2 rounded-xl border border-border/70 bg-muted/20 p-1.5">
+          <div className="flex items-center gap-1.5">
             <select
               value={activePageId}
               onChange={(e) => {
@@ -1171,7 +1171,7 @@ export function DeveloperStudioProPage() {
         </div>
 
         {/* Center: Undo / Redo & Preview Toggle */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center justify-center gap-2 rounded-xl border border-border/70 bg-muted/20 p-1.5">
           <Button
             type="button"
             variant="outline"
@@ -1239,7 +1239,7 @@ export function DeveloperStudioProPage() {
         </div>
 
         {/* Left side (RTL): History, Discard, Publish Action */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/70 bg-muted/20 p-1.5">
           <Button
             type="button"
             variant="ghost"
