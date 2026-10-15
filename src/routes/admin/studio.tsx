@@ -116,6 +116,7 @@ export function DeveloperStudioProPage() {
         const loadedDraft = await studioService.getDraft("admin");
         if (mounted) {
           setDraft(loadedDraft);
+          studioService.applyLocalDomEditsToRuntime(loadedDraft.domEdits || {});
           const firstPageId = Object.keys(loadedDraft.pages || {})[0] || "page_dashboard";
           setActivePageId(firstPageId);
           setHistoryStack([JSON.parse(JSON.stringify(loadedDraft))]);
@@ -199,6 +200,7 @@ export function DeveloperStudioProPage() {
         if (current?.updatedAt && Date.parse(current.updatedAt) >= Date.parse(incoming.updatedAt)) return;
 
         studioService.acceptRealtimeDraft(incoming);
+        studioService.applyLocalDomEditsToRuntime(incoming.domEdits || {});
         setDraft(incoming);
         setLastSavedAt(incoming.updatedAt);
         setSaveStatus("saved");
@@ -329,12 +331,15 @@ export function DeveloperStudioProPage() {
       const changed = { ...changedDraft, hasUnsavedLocalChanges: true };
       const local = studioService.saveLocalDraft(changed);
       const newDraft = { ...changed, updatedAt: local.updatedAt };
+      const runtime = studioService.applyLocalDomEditsToRuntime(newDraft.domEdits || {});
+      const localOk = local.success && runtime.success;
+      const localError = local.error || runtime.error;
       draftVersionRef.current += 1;
       setDraft(newDraft);
-      setSaveError(local.success ? null : local.error || "تعذر حفظ النسخة المحلية.");
-      setSaveStatus(syncWorkflowInFlightRef.current ? "saving" : (local.success ? "unsaved" : "error"));
-      if (!local.success) {
-        saveErrorRef.current = local.error || "local-save-failed";
+      setSaveError(localOk ? null : localError || "تعذر حفظ النسخة المحلية أو تطبيقها.");
+      setSaveStatus(syncWorkflowInFlightRef.current ? "saving" : (localOk ? "unsaved" : "error"));
+      if (!localOk) {
+        saveErrorRef.current = localError || "local-save-failed";
       } else {
         saveErrorRef.current = null;
       }
@@ -353,6 +358,7 @@ export function DeveloperStudioProPage() {
     if (historyPointer <= 0) return;
     const targetState = { ...JSON.parse(JSON.stringify(historyStack[historyPointer - 1])), hasUnsavedLocalChanges: true };
     const local = studioService.saveLocalDraft(targetState);
+    studioService.applyLocalDomEditsToRuntime(targetState.domEdits || {});
     const restored = { ...targetState, updatedAt: local.updatedAt };
     draftVersionRef.current += 1;
     setHistoryPointer(historyPointer - 1);
@@ -365,6 +371,7 @@ export function DeveloperStudioProPage() {
     if (historyPointer >= historyStack.length - 1) return;
     const targetState = { ...JSON.parse(JSON.stringify(historyStack[historyPointer + 1])), hasUnsavedLocalChanges: true };
     const local = studioService.saveLocalDraft(targetState);
+    studioService.applyLocalDomEditsToRuntime(targetState.domEdits || {});
     const restored = { ...targetState, updatedAt: local.updatedAt };
     draftVersionRef.current += 1;
     setHistoryPointer(historyPointer + 1);
@@ -863,6 +870,7 @@ export function DeveloperStudioProPage() {
     try {
       setIsLoading(true);
       const fresh = await studioService.discardDraft("admin");
+      studioService.applyLocalDomEditsToRuntime(fresh.domEdits || {});
       draftVersionRef.current += 1;
       setDraft(fresh);
       setActivePageId(Object.keys(fresh.pages || {})[0] || "page_dashboard");
@@ -1153,6 +1161,7 @@ export function DeveloperStudioProPage() {
               hasUnsavedLocalChanges: false,
             };
             setDraft(publishedDraft);
+            studioService.applyLocalDomEditsToRuntime(publishedDraft.domEdits || {});
             setHistoryStack([JSON.parse(JSON.stringify(publishedDraft))]);
             setHistoryPointer(0);
             setLastSavedAt(publishedDraft.updatedAt);
