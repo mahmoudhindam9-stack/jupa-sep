@@ -919,10 +919,11 @@ export function UsersPage() {
 
     try {
       if (editing) {
-        const permissions =
-          editing.permissions ||
-          erpState.userPermissions[editing.username] ||
-          defaultPermissionsForRole(form.role);
+        const permissions = form.role !== editing.role
+          ? limitPermissionsToActor(defaultPermissionsForRole(form.role), actorPermissions)
+          : editing.permissions ||
+            erpState.userPermissions[editing.username] ||
+            defaultPermissionsForRole(form.role);
         assertNoPrivilegeEscalation(permissions as any, form.role, actorPermissions);
 
         if (hosted && form.password.trim()) {
