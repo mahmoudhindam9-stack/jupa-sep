@@ -26,8 +26,15 @@ export interface TextContent {
 
 export interface ButtonContent {
   label: string;
-  action?: "link" | "submit" | "alert" | "none";
+  action?: "link" | "submit" | "alert" | "none" | "external" | "formula" | "toggle";
+  /** Internal app route or external URL, depending on the chosen action. */
   url?: string;
+  /** Friendly message shown when the button is clicked. */
+  message?: string;
+  /** Arithmetic expression used by the calculation action. */
+  formula?: string;
+  /** Existing visual element affected by the show/hide action. */
+  targetElementId?: string;
   variant?: "default" | "secondary" | "outline" | "destructive" | "ghost";
 }
 
@@ -182,6 +189,29 @@ export interface PageModel {
   revision: number;
   updatedAt: string;
   updatedBy: string;
+}
+
+/** Arabic, user-facing names used instead of internal component/type names. */
+export const ELEMENT_TYPE_LABELS: Record<ElementType, string> = {
+  heading: "عنوان",
+  text: "نص وصفي",
+  button: "زر وإجراء",
+  image: "صورة",
+  card: "بطاقة",
+  container: "مجموعة عناصر",
+  table: "جدول بيانات",
+  input: "حقل إدخال",
+  badge: "حالة",
+  divider: "فاصل",
+};
+
+export function getElementDisplayName(element: Pick<ElementModel, "type" | "content">): string {
+  const content = element.content || {};
+  const value = content.title || content.text || content.label || content.alt || content.placeholder;
+  if (typeof value === "string" && value.trim()) {
+    return value.trim().replace(/\\s+/g, " ").slice(0, 42);
+  }
+  return ELEMENT_TYPE_LABELS[element.type] || "عنصر";
 }
 
 export interface StudioDomEdit {
