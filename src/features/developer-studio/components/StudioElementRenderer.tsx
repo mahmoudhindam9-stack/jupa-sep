@@ -5,7 +5,8 @@
 
 import React, { CSSProperties } from "react";
 import { Link } from "@tanstack/react-router";
-import { ElementModel } from "../models/studio.types";
+import { ElementModel, getElementDisplayName } from "../models/studio.types";
+import { evaluateArithmeticExpression, formatArithmeticResult } from "../utils/arithmetic";
 import { cn } from "@/lib/utils";
 import { Lock, EyeOff } from "lucide-react";
 
@@ -177,8 +178,30 @@ export function StudioElementRenderer({
             onClick={(e) => {
               if (isEditorMode) {
                 e.preventDefault();
-              } else if (c.action === "alert") {
-                alert(label);
+                return;
+              }
+              if (c.action === "alert") {
+                window.alert(c.message || label);
+              } else if (c.action === "formula") {
+                try {
+                  const result = evaluateArithmeticExpression(c.formula || "");
+                  window.alert(`نتيجة المعادلة: ${formatArithmeticResult(result)}`);
+                } catch (error) {
+                  window.alert(error instanceof Error ? error.message : "تحقق من المعادلة الحسابية.");
+                }
+              } else if (c.action === "toggle") {
+                const targetId = String(c.targetElementId || "");
+                const target = targetId ? document.getElementById(`studio-elem-${targetId}`) : null;
+                if (!target) {
+                  window.alert("اختر العنصر المطلوب أولًا من إعدادات الزر.");
+                } else {
+                  target.classList.toggle("hidden");
+                  target.setAttribute("aria-hidden", target.classList.contains("hidden") ? "true" : "false");
+                }
+              } else if (c.action === "submit") {
+                const form = (e.currentTarget as HTMLButtonElement).closest("form");
+                if (form) form.requestSubmit();
+                else window.alert("ضع الزر داخل نموذج حتى يتمكن من إرسال البيانات.");
               }
             }}
           >
@@ -191,6 +214,13 @@ export function StudioElementRenderer({
             <Link to={c.url} className="inline-block">
               {btnContent}
             </Link>
+          );
+        }
+        if (!isEditorMode && c.action === "external" && c.url) {
+          return (
+            <a href={c.url} target="_blank" rel="noreferrer noopener" className="inline-block">
+              {btnContent}
+            </a>
           );
         }
         return btnContent;
@@ -389,6 +419,7 @@ export function StudioElementRenderer({
     return (
       <div
         id={`studio-elem-${element.id}`}
+        data-studio-element-id={element.id}
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
         className={cn(editorWrapperClass, "cursor-pointer")}
@@ -396,7 +427,7 @@ export function StudioElementRenderer({
         {/* Editor badges (Type, Locked, Hidden) */}
         {isSelected && (
           <div className="absolute -top-3.5 right-2 z-20 flex items-center gap-1 bg-primary text-primary-foreground text-[10px] font-black px-2 py-0.5 rounded-full shadow-md select-none pointer-events-none">
-            <span>{element.type}</span>
+            <span>{getElementDisplayName(element)}</span>
             {element.locked && <Lock size={10} className="text-amber-300" />}
             {!element.layout.visibility && <EyeOff size={10} className="text-rose-300" />}
           </div>
