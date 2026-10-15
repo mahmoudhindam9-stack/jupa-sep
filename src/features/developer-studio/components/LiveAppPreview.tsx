@@ -413,7 +413,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         if (!enabled || document.body.dataset.codingStudio !== "on" || event.button !== 0) return;
         const target = event.target instanceof Element ? event.target : null;
         if (!target) return;
-        let el = target.closest(editableSelector);
+        let el = target.closest("button,a,input,textarea,select,label") || target.closest(editableSelector);
         if (!el || el === document.body || el === document.documentElement) return;
         if (["PATH", "CIRCLE", "RECT", "LINE", "POLYLINE", "POLYGON"].includes(el.tagName)) el = el.closest("svg") || el;
         if (isProtected(el)) return;
@@ -459,7 +459,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         if (!enabled || document.body.dataset.codingStudio !== "on") return;
         const target = event.target instanceof Element ? event.target : null;
         if (!target) return;
-        let el = target.closest(editableSelector);
+        let el = target.closest("button,a,input,textarea,select,label") || target.closest(editableSelector);
         if (!el || el === document.body || el === document.documentElement) return;
         if (["PATH", "CIRCLE", "RECT", "LINE", "POLYLINE", "POLYGON"].includes(el.tagName)) el = el.closest("svg") || el;
         if (isProtected(el)) return;
