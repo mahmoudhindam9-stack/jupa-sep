@@ -197,7 +197,19 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
       const send = (type, data) => window.parent.postMessage({ type, ...data }, parentOrigin);
       const find = (selector) => { try { return document.querySelector(selector); } catch (_) { return null; } };
       const preservedSelector = '[data-studio-preserve="currency-switcher-tools"], [data-studio-preserve="currency-switcher"]';
-      const isProtected = (el) => !!(el && (el.closest(preservedSelector) || el.querySelector(preservedSelector)));
+      const isProtected = (el) => !!(el && el.closest(preservedSelector));
+      const containsProtected = (el) => !!(el && el.querySelector(preservedSelector));
+      const hidesProtected = (edit) => {
+        if (edit?.deleted) return true;
+        const styles = edit?.styles || {};
+        return styles.display === "none" ||
+          styles.visibility === "hidden" ||
+          Number(styles.opacity) === 0 ||
+          ["0", "0px"].includes(String(styles.height || "")) ||
+          ["0", "0px"].includes(String(styles.width || "")) ||
+          ["0", "0px"].includes(String(styles.maxHeight || "")) ||
+          ["0", "0px"].includes(String(styles.maxWidth || ""));
+      };
       const originalStates = new Map();
       const rememberOriginal = (selector, el) => {
         const existing = originalStates.get(selector);
@@ -267,6 +279,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
       const applyEdit = (selector, edit) => {
         const el = find(selector);
         if (!el || !edit || isProtected(el)) return;
+        if (containsProtected(el) && hidesProtected(edit)) return;
         rememberOriginal(selector, el);
         if (edit.text !== undefined && el.dataset.codingStudioTextApplied !== String(edit.text)) applyText(el, edit.text);
         if (edit.styles && typeof edit.styles === "object") applyStyles(el, edit.styles);
@@ -395,7 +408,10 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
           selectElement(el);
           return;
         }
-        if (isProtected(el)) {
+        if (isProtected(el) || (containsProtected(el) && (
+          data.action === "delete" ||
+          (data.action === "style" && hidesProtected({ styles: data.styles || {} }))
+        ))) {
           send("STUDIO_PROTECTED_ELEMENT", { message: "مربع تغيير العملات محمي للحفاظ على وظائفه الأصلية." });
           return;
         }
