@@ -17,13 +17,9 @@ import {
 } from "@/features/developer-studio/models/studio.types";
 import { studioService } from "@/features/developer-studio/services/studioService";
 import { supabase } from "@/integrations/supabase/client";
-import { ElementTreePanel } from "@/features/developer-studio/components/ElementTreePanel";
-import { VisualEditorCanvas } from "@/features/developer-studio/components/VisualEditorCanvas";
-import { PropertiesPanel } from "@/features/developer-studio/components/PropertiesPanel";
 import { PublishModal } from "@/features/developer-studio/components/PublishModal";
 import { ConflictResolutionModal } from "@/features/developer-studio/components/ConflictResolutionModal";
 import { HistoryRollbackModal } from "@/features/developer-studio/components/HistoryRollbackModal";
-import { StudioElementRenderer } from "@/features/developer-studio/components/StudioElementRenderer";
 import { LiveAppPreview } from "@/features/developer-studio/components/LiveAppPreview";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -34,14 +30,12 @@ import {
   RotateCcw,
   Undo2,
   Redo2,
-  Eye,
   EyeOff,
   UploadCloud,
   History,
   CheckCircle2,
   AlertCircle,
   Loader2,
-  Layers,
   Settings2,
   Maximize2,
   ArrowRight,
@@ -97,7 +91,7 @@ export function DeveloperStudioProPage() {
   const [historyPointer, setHistoryPointer] = useState<number>(-1);
 
   // Open on the real application by default; the component builder is available separately.
-  const [workspaceMode, setWorkspaceMode] = useState<"builder" | "live">("live");
+
 
   // Modals
   const [showPublishModal, setShowPublishModal] = useState(false);
@@ -1101,26 +1095,6 @@ export function DeveloperStudioProPage() {
 
           <Button
             type="button"
-            variant={workspaceMode === "builder" ? "default" : "outline"}
-            size="sm"
-            onClick={() => setWorkspaceMode("builder")}
-            className="h-8 px-2.5 text-xs gap-1.5 cursor-pointer font-bold"
-          >
-            <Layers className="w-3.5 h-3.5" />
-            <span>مصمم العناصر</span>
-          </Button>
-          <Button
-            type="button"
-            variant={workspaceMode === "live" ? "default" : "outline"}
-            size="sm"
-            onClick={() => setWorkspaceMode("live")}
-            className="h-8 px-2.5 text-xs gap-1.5 cursor-pointer font-bold"
-          >
-            <Eye className="w-3.5 h-3.5" />
-            <span>التطبيق الحقيقي</span>
-          </Button>
-          <Button
-            type="button"
             variant="outline"
             size="sm"
             onClick={() => void handleSaveDraft()}
@@ -1188,7 +1162,6 @@ export function DeveloperStudioProPage() {
       <div className="min-h-0 flex-1 overflow-hidden">
         <LiveAppPreview
           route={activePage?.route || "/admin"}
-          designerMode={workspaceMode === "builder"}
           initialEdits={draft.domEdits || {}}
           onEditsChange={(domEdits) => {
             if (!draft) return;
