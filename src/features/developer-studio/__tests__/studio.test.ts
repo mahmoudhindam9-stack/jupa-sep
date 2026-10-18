@@ -285,9 +285,10 @@ describe("Developer Studio Pro — Draft, Publish & Concurrency Service", () => 
     expect(pubRes.error).toContain("CONCURRENCY_CONFLICT");
   });
 
-  it("merges non-conflicting changes with latest published config safely", async () => {
+  it("merges local-only page additions against the current published baseline", async () => {
     const draft = await studioService.getDraft("tester");
-    draft.baseRevision = 0;
+    const latest = await studioService.getPublishedConfig();
+    draft.baseRevision = latest.revision;
     draft.pages["page_merge_unique"] = {
       id: "page_merge_unique",
       name: "صفحة فريدة مدمجة",
@@ -295,13 +296,12 @@ describe("Developer Studio Pro — Draft, Publish & Concurrency Service", () => 
       elementIds: [],
       styles: {},
       schemaVersion: 1,
-      revision: 1,
+      revision: latest.revision,
       updatedAt: new Date().toISOString(),
       updatedBy: "tester",
     };
 
     const merged = await studioService.mergeWithLatest(draft);
-    const latest = await studioService.getPublishedConfig();
     expect(merged.baseRevision).toBe(latest.revision);
     expect(merged.pages["page_merge_unique"]).toBeDefined();
   });
