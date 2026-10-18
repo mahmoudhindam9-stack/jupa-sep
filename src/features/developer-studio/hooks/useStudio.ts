@@ -10,6 +10,7 @@ import {
   PageModel,
   ElementType,
   uniquePageElementIds,
+  isUnmodifiedStudioStarterElement,
 } from "../models/studio.types";
 import { studioService, DEFAULT_STUDIO_PUBLISHED_CONFIG } from "../services/studioService";
 
@@ -58,8 +59,9 @@ export function useStudioPublishedPage(route: string) {
       .filter((el): el is ElementModel =>
         !!el &&
         el.pageId === page.id &&
-        el.parentId === null &&
-        el.layout?.visibility !== false,
+        el.parentId == null &&
+        el.layout?.visibility !== false &&
+        !isUnmodifiedStudioStarterElement(el, DEFAULT_STUDIO_PUBLISHED_CONFIG.elements[el.id]),
       );
   }, [page, published]);
 

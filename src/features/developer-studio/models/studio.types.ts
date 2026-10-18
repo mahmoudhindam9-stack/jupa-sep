@@ -204,6 +204,35 @@ export function uniquePageElementIds(ids: readonly string[] | null | undefined):
   });
 }
 
+function stableStudioValue(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? String(value);
+  if (Array.isArray(value)) return "[" + value.map(stableStudioValue).join(",") + "]";
+  const record = value as Record<string, unknown>;
+  return "{" + Object.keys(record).sort().map((key) =>
+    JSON.stringify(key) + ":" + stableStudioValue(record[key]),
+  ).join(",") + "}";
+}
+
+/**
+ * The initial database migration seeds demo cards/headings as an editor example.
+ * Do not inject those untouched examples into real application pages alongside their
+ * existing production UI. A deliberately customized seed is still rendered normally.
+ */
+export function isUnmodifiedStudioStarterElement(
+  element: ElementModel,
+  starter: ElementModel | undefined,
+): boolean {
+  if (!starter) return false;
+  return element.id === starter.id &&
+    element.pageId === starter.pageId &&
+    element.parentId === starter.parentId &&
+    element.type === starter.type &&
+    stableStudioValue(element.content || {}) === stableStudioValue(starter.content || {}) &&
+    stableStudioValue(element.styles || {}) === stableStudioValue(starter.styles || {}) &&
+    stableStudioValue(element.layout || {}) === stableStudioValue(starter.layout || {}) &&
+    stableStudioValue(element.attributes || {}) === stableStudioValue(starter.attributes || {});
+}
+
 /** Generate collision-resistant IDs for new pages and elements, even on rapid repeated clicks. */
 export function createStudioId(prefix: string, reservedIds: Iterable<string> = []): string {
   const reserved = new Set(reservedIds);

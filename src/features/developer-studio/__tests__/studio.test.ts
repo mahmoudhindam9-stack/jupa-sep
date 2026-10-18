@@ -15,6 +15,7 @@ import {
   createStudioId,
   uniquePageElementIds,
   normalizeStudioDraftPageReferences,
+  isUnmodifiedStudioStarterElement,
   detectCycle,
   CURRENT_SCHEMA_VERSION,
 } from "../models/studio.types";
@@ -81,6 +82,15 @@ describe("Developer Studio Pro — Data Models & Runtime Validation", () => {
     };
     const hierarchy = validateDraftHierarchy(duplicateRouteDraft);
     expect(hierarchy.errors.some((error) => error.includes("مكرر بين الصفحتين"))).toBe(true);
+  });
+
+  it("filters unchanged starter demo elements but keeps a customized version", () => {
+    const starter = DEFAULT_STUDIO_PUBLISHED_CONFIG.elements.elem_banner_1;
+    expect(isUnmodifiedStudioStarterElement({ ...starter, updatedAt: "2026-10-18T00:00:00.000Z" }, starter)).toBe(true);
+    expect(isUnmodifiedStudioStarterElement({
+      ...starter,
+      styles: { ...starter.styles, backgroundColor: "#111111" },
+    }, starter)).toBe(false);
   });
 
   it("validates valid elements successfully", () => {

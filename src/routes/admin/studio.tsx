@@ -862,7 +862,8 @@ export function DeveloperStudioProPage() {
     [draft, commitDraftChange],
   );
 
-  // Move element Up/Down in order
+  // Move an element among siblings only. Root order is stored in page.elementIds;
+  // nested order is stored in layout.order and rendered by the parent container.
   const handleMoveElement = useCallback(
     (elementId: string, direction: "up" | "down") => {
       if (!draft) return;
@@ -871,18 +872,56 @@ export function DeveloperStudioProPage() {
 
       const activePage = draft.pages[el.pageId];
       if (!activePage) return;
+      const pageIds = uniquePageElementIds(activePage.elementIds);
+      const pageOrder = new Map(pageIds.map((id, index) => [id, index]));
+      const siblings = Object.values(draft.elements)
+        .filter((candidate) =>
+          candidate.pageId === el.pageId &&
+          (candidate.parentId || null) === (el.parentId || null),
+        )
+        .sort((a, b) => {
+          if (el.parentId === null) {
+            return (pageOrder.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+              (pageOrder.get(b.id) ?? Number.MAX_SAFE_INTEGER);
+          }
+          return (a.layout?.order ?? pageOrder.get(a.id) ?? 0) -
+            (b.layout?.order ?? pageOrder.get(b.id) ?? 0);
+        });
 
-      const list = [...activePage.elementIds];
-      const index = list.indexOf(elementId);
-      if (index === -1) return;
-
+      const index = siblings.findIndex((candidate) => candidate.id === elementId);
+      if (index < 0) return;
       const targetIndex = direction === "up" ? index - 1 : index + 1;
-      if (targetIndex < 0 || targetIndex >= list.length) return;
+      if (targetIndex < 0 || targetIndex >= siblings.length) return;
 
-      // Swap
-      const temp = list[index];
-      list[index] = list[targetIndex];
-      list[targetIndex] = temp;
+      const nextElements = { ...draft.elements };
+      if (el.parentId === null) {
+        const targetId = siblings[targetIndex].id;
+        const from = pageIds.indexOf(elementId);
+        const to = pageIds.indexOf(targetId);
+        if (from < 0 || to < 0) return;
+        [pageIds[from], pageIds[to]] = [pageIds[to], pageIds[from]];
+
+        // Keep root layout order consistent with its actual rendered order.
+        const orderedRoots = pageIds.filter((id) =>
+          nextElements[id]?.pageId === el.pageId &&
+          nextElements[id]?.parentId == null,
+        );
+        orderedRoots.forEach((id, rootIndex) => {
+          nextElements[id] = {
+            ...nextElements[id],
+            layout: { ...nextElements[id].layout, order: rootIndex + 1 },
+          };
+        });
+      } else {
+        const reordered = [...siblings];
+        [reordered[index], reordered[targetIndex]] = [reordered[targetIndex], reordered[index]];
+        reordered.forEach((sibling, siblingIndex) => {
+          nextElements[sibling.id] = {
+            ...sibling,
+            layout: { ...sibling.layout, order: siblingIndex + 1 },
+          };
+        });
+      }
 
       const newDraft: StudioDraft = {
         ...draft,
@@ -890,10 +929,11 @@ export function DeveloperStudioProPage() {
           ...draft.pages,
           [el.pageId]: {
             ...activePage,
-            elementIds: list,
+            elementIds: pageIds,
             updatedAt: new Date().toISOString(),
           },
         },
+        elements: nextElements,
         hasUnpublishedChanges: true,
       };
 
