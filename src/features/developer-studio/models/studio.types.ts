@@ -191,6 +191,64 @@ export interface PageModel {
   updatedBy: string;
 }
 
+/**
+ * Return a page's element references in first-seen order, removing repeated IDs.
+ * A duplicate reference must never render the same card/table twice.
+ */
+export function uniquePageElementIds(ids: readonly string[] | null | undefined): string[] {
+  const seen = new Set<string>();
+  return (Array.isArray(ids) ? ids : []).filter((id): id is string => {
+    if (typeof id !== "string" || !id.trim() || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
+function stableStudioValue(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? String(value);
+  if (Array.isArray(value)) return "[" + value.map(stableStudioValue).join(",") + "]";
+  const record = value as Record<string, unknown>;
+  return "{" + Object.keys(record).sort().map((key) =>
+    JSON.stringify(key) + ":" + stableStudioValue(record[key]),
+  ).join(",") + "}";
+}
+
+/**
+ * The initial database migration seeds demo cards/headings as an editor example.
+ * Do not inject those untouched examples into real application pages alongside their
+ * existing production UI. A deliberately customized seed is still rendered normally.
+ */
+export function isUnmodifiedStudioStarterElement(
+  element: ElementModel,
+  starter: ElementModel | undefined,
+): boolean {
+  if (!starter) return false;
+  return element.id === starter.id &&
+    element.pageId === starter.pageId &&
+    element.parentId === starter.parentId &&
+    element.type === starter.type &&
+    stableStudioValue(element.content || {}) === stableStudioValue(starter.content || {}) &&
+    stableStudioValue(element.styles || {}) === stableStudioValue(starter.styles || {}) &&
+    stableStudioValue(element.layout || {}) === stableStudioValue(starter.layout || {}) &&
+    stableStudioValue(element.attributes || {}) === stableStudioValue(starter.attributes || {});
+}
+
+/** Generate collision-resistant IDs for new pages and elements, even on rapid repeated clicks. */
+export function createStudioId(prefix: string, reservedIds: Iterable<string> = []): string {
+  const reserved = new Set(reservedIds);
+  const randomPart =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID().replace(/-/g, "")
+      : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+  const base = `${prefix}_${randomPart}`;
+  let candidate = base;
+  let suffix = 1;
+  while (reserved.has(candidate)) {
+    candidate = `${base}_${suffix++}`;
+  }
+  return candidate;
+}
+
 /** Arabic, user-facing names used instead of internal component/type names. */
 export const ELEMENT_TYPE_LABELS: Record<ElementType, string> = {
   heading: "عنوان",
@@ -237,6 +295,28 @@ export interface StudioDraft {
   /** True only when the current browser has edits that were not confirmed by Supabase. */
   hasUnsavedLocalChanges?: boolean;
   hasUnpublishedChanges: boolean;
+}
+
+/**
+ * Repair only repeated references to the exact same element ID. It deliberately does
+ * not delete distinct elements that happen to have similar text or styling.
+ */
+export function normalizeStudioDraftPageReferences(draft: StudioDraft): {
+  draft: StudioDraft;
+  changed: boolean;
+} {
+  let changed = false;
+  const pages = Object.fromEntries(
+    Object.entries(draft.pages || {}).map(([pageKey, page]) => {
+      const originalIds = Array.isArray(page.elementIds) ? page.elementIds : [];
+      const elementIds = uniquePageElementIds(originalIds);
+      const hasChanged = elementIds.length !== originalIds.length ||
+        elementIds.some((id, index) => id !== originalIds[index]);
+      if (hasChanged) changed = true;
+      return [pageKey, hasChanged ? { ...page, elementIds } : page];
+    }),
+  );
+  return { draft: changed ? { ...draft, pages } : draft, changed };
 }
 
 export interface StudioPublishedConfig {
@@ -373,6 +453,9 @@ export function validatePage(
   if (!Array.isArray(p.elementIds)) {
     errors.push("قائمة معرفات العناصر (elementIds) يجب أن تكون مصفوفة");
   } else {
+    if (uniquePageElementIds(p.elementIds).length !== p.elementIds.length) {
+      errors.push("قائمة عناصر الصفحة تحتوي على معرفات مكررة؛ يجب أن يظهر كل عنصر مرة واحدة فقط.");
+    }
     // Check that all elementIds exist
     p.elementIds.forEach((elemId) => {
       if (!elements[elemId]) {
@@ -399,10 +482,21 @@ export function validateDraftHierarchy(draft: StudioDraft): {
     errors.push("لا توجد أي صفحات معرّفة في المسودة");
   }
 
-  // Validate all pages
-  Object.values(draft.pages).forEach((page) => {
+  // Validate all pages and prohibit two page records from claiming the same route.
+  const routeOwners = new Map<string, string>();
+  Object.entries(draft.pages).forEach(([pageKey, page]) => {
     const pageValidation = validatePage(page, draft.elements);
     errors.push(...pageValidation.errors);
+
+    if (typeof page.route === "string" && page.route.startsWith("/")) {
+      const normalizedRoute = (page.route.trim().replace(/\/+$/, "") || "/").toLocaleLowerCase();
+      const otherPage = routeOwners.get(normalizedRoute);
+      if (otherPage) {
+        errors.push(`المسار ${page.route} مكرر بين الصفحتين ${otherPage} و${pageKey}.`);
+      } else {
+        routeOwners.set(normalizedRoute, pageKey);
+      }
+    }
   });
 
   // Validate all elements
@@ -415,8 +509,13 @@ export function validateDraftHierarchy(draft: StudioDraft): {
       const parent = draft.elements[elem.parentId];
       if (!parent) {
         errors.push(`العنصر #${elem.id} يشير إلى عنصر أب غير موجود (${elem.parentId})`);
-      } else if (!["container", "card"].includes(parent.type)) {
-        warnings.push(`العنصر الأب #${elem.parentId} ليس حاوية (container أو card)`);
+      } else {
+        if (parent.pageId !== elem.pageId) {
+          errors.push(`العنصر #${elem.id} مرتبط بأب من صفحة أخرى (${parent.pageId}).`);
+        }
+        if (!["container", "card"].includes(parent.type)) {
+          warnings.push(`العنصر الأب #${elem.parentId} ليس حاوية (container أو card)`);
+        }
       }
 
       // Check cycles

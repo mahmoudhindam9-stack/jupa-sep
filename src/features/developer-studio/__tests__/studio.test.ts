@@ -12,12 +12,87 @@ import {
   validateElement,
   validatePage,
   validateDraftHierarchy,
+  createStudioId,
+  uniquePageElementIds,
+  normalizeStudioDraftPageReferences,
+  isUnmodifiedStudioStarterElement,
   detectCycle,
   CURRENT_SCHEMA_VERSION,
 } from "../models/studio.types";
 import { studioService, DEFAULT_STUDIO_PUBLISHED_CONFIG } from "../services/studioService";
 
 describe("Developer Studio Pro — Data Models & Runtime Validation", () => {
+  it("creates unique IDs when existing IDs or rapid repeated clicks could collide", () => {
+    const first = createStudioId("elem_card", ["elem_card_fixed"]);
+    const second = createStudioId("elem_card", [first]);
+    expect(first.startsWith("elem_card_")).toBe(true);
+    expect(second).not.toBe(first);
+  });
+
+  it("removes repeated element references while preserving the original order", () => {
+    expect(uniquePageElementIds(["elem_a", "elem_b", "elem_a", "elem_c", "elem_b"])).toEqual([
+      "elem_a",
+      "elem_b",
+      "elem_c",
+    ]);
+  });
+
+  it("repairs duplicate element references without deleting distinct elements", () => {
+    const draft: StudioDraft = {
+      id: "draft_dedupe",
+      owner: "tester",
+      baseRevision: 1,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      pages: {
+        page_one: {
+          id: "page_one",
+          name: "اختبار",
+          route: "/admin/test",
+          elementIds: ["elem_one", "elem_one", "elem_two"],
+          styles: {},
+          schemaVersion: CURRENT_SCHEMA_VERSION,
+          revision: 1,
+          updatedAt: "",
+          updatedBy: "tester",
+        },
+      },
+      elements: {} as Record<string, ElementModel>,
+      domEdits: {},
+      updatedAt: "",
+      createdAt: "",
+      hasUnpublishedChanges: false,
+    };
+    const result = normalizeStudioDraftPageReferences(draft);
+    expect(result.changed).toBe(true);
+    expect(result.draft.pages.page_one.elementIds).toEqual(["elem_one", "elem_two"]);
+    expect(draft.pages.page_one.elementIds).toEqual(["elem_one", "elem_one", "elem_two"]);
+
+    const duplicateRouteDraft: StudioDraft = {
+      ...result.draft,
+      pages: {
+        ...result.draft.pages,
+        page_two: {
+          ...result.draft.pages.page_one,
+          id: "page_two",
+          name: "اختبار مسار مكرر",
+          route: "/admin/test/",
+          elementIds: [],
+        },
+      },
+    };
+    const hierarchy = validateDraftHierarchy(duplicateRouteDraft);
+    expect(hierarchy.errors.some((error) => error.includes("مكرر بين الصفحتين"))).toBe(true);
+  });
+
+  it("filters unchanged starter demo elements but keeps a customized version", () => {
+    const starter = DEFAULT_STUDIO_PUBLISHED_CONFIG.elements.elem_banner_1;
+    expect(isUnmodifiedStudioStarterElement({ ...starter, updatedAt: "2026-10-18T00:00:00.000Z" }, starter)).toBe(true);
+    expect(isUnmodifiedStudioStarterElement({
+      ...starter,
+      styles: { ...starter.styles, backgroundColor: "#111111" },
+    }, starter)).toBe(false);
+  });
+
   it("validates valid elements successfully", () => {
     const validElement: ElementModel = {
       id: "elem_test_1",
@@ -128,6 +203,11 @@ describe("Developer Studio Pro — Data Models & Runtime Validation", () => {
     const badPage = { ...validPage, elementIds: ["elem_non_existent"] };
     const badRes = validatePage(badPage, elements);
     expect(badRes.valid).toBe(false);
+
+    const repeatedPage = { ...validPage, elementIds: ["elem_1", "elem_1"] };
+    const repeatedRes = validatePage(repeatedPage, elements);
+    expect(repeatedRes.valid).toBe(false);
+    expect(repeatedRes.errors.some((error) => error.includes("معرفات مكررة"))).toBe(true);
   });
 });
 
@@ -205,9 +285,10 @@ describe("Developer Studio Pro — Draft, Publish & Concurrency Service", () => 
     expect(pubRes.error).toContain("CONCURRENCY_CONFLICT");
   });
 
-  it("merges non-conflicting changes with latest published config safely", async () => {
+  it("merges local-only page additions against the current published baseline", async () => {
     const draft = await studioService.getDraft("tester");
-    draft.baseRevision = 0;
+    const latest = await studioService.getPublishedConfig();
+    draft.baseRevision = latest.revision;
     draft.pages["page_merge_unique"] = {
       id: "page_merge_unique",
       name: "صفحة فريدة مدمجة",
@@ -215,13 +296,12 @@ describe("Developer Studio Pro — Draft, Publish & Concurrency Service", () => 
       elementIds: [],
       styles: {},
       schemaVersion: 1,
-      revision: 1,
+      revision: latest.revision,
       updatedAt: new Date().toISOString(),
       updatedBy: "tester",
     };
 
     const merged = await studioService.mergeWithLatest(draft);
-    const latest = await studioService.getPublishedConfig();
     expect(merged.baseRevision).toBe(latest.revision);
     expect(merged.pages["page_merge_unique"]).toBeDefined();
   });
