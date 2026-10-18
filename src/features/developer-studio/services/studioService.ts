@@ -10,6 +10,7 @@ import {
   ConflictDetail,
   PageModel,
   ElementModel,
+  StudioDomEdit,
   validateDraftHierarchy,
   CURRENT_SCHEMA_VERSION,
 } from "../models/studio.types";
