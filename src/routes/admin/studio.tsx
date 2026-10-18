@@ -14,16 +14,15 @@ import {
   CURRENT_SCHEMA_VERSION,
   validateDraftHierarchy,
   ConflictDetail,
+  createStudioId,
+  normalizeStudioDraftPageReferences,
+  uniquePageElementIds,
 } from "@/features/developer-studio/models/studio.types";
 import { studioService } from "@/features/developer-studio/services/studioService";
 import { supabase } from "@/integrations/supabase/client";
-import { ElementTreePanel } from "@/features/developer-studio/components/ElementTreePanel";
-import { VisualEditorCanvas } from "@/features/developer-studio/components/VisualEditorCanvas";
-import { PropertiesPanel } from "@/features/developer-studio/components/PropertiesPanel";
 import { PublishModal } from "@/features/developer-studio/components/PublishModal";
 import { ConflictResolutionModal } from "@/features/developer-studio/components/ConflictResolutionModal";
 import { HistoryRollbackModal } from "@/features/developer-studio/components/HistoryRollbackModal";
-import { StudioElementRenderer } from "@/features/developer-studio/components/StudioElementRenderer";
 import { LiveAppPreview } from "@/features/developer-studio/components/LiveAppPreview";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -34,14 +33,12 @@ import {
   RotateCcw,
   Undo2,
   Redo2,
-  Eye,
   EyeOff,
   UploadCloud,
   History,
   CheckCircle2,
   AlertCircle,
   Loader2,
-  Layers,
   Settings2,
   Maximize2,
   ArrowRight,
@@ -97,7 +94,7 @@ export function DeveloperStudioProPage() {
   const [historyPointer, setHistoryPointer] = useState<number>(-1);
 
   // Open on the real application by default; the component builder is available separately.
-  const [workspaceMode, setWorkspaceMode] = useState<"builder" | "live">("live");
+
 
   // Modals
   const [showPublishModal, setShowPublishModal] = useState(false);
@@ -113,7 +110,21 @@ export function DeveloperStudioProPage() {
     async function init() {
       try {
         setIsLoading(true);
-        const loadedDraft = await studioService.getDraft("admin");
+        const serverOrLocalDraft = await studioService.getDraft("admin");
+        const normalized = normalizeStudioDraftPageReferences(serverOrLocalDraft);
+        const loadedDraft: StudioDraft = normalized.changed
+          ? {
+              ...normalized.draft,
+              updatedAt: new Date().toISOString(),
+              hasUnpublishedChanges: true,
+              hasUnsavedLocalChanges: true,
+            }
+          : normalized.draft;
+        if (normalized.changed) {
+          // Keep the repaired references in local recovery storage immediately. The
+          // user can then explicitly sync the normalized draft to Supabase.
+          studioService.saveLocalDraft(loadedDraft);
+        }
         if (mounted) {
           setDraft(loadedDraft);
           const firstPageId = Object.keys(loadedDraft.pages || {})[0] || "page_dashboard";
@@ -122,6 +133,12 @@ export function DeveloperStudioProPage() {
           setHistoryPointer(0);
           setLastSavedAt(loadedDraft.hasUnsavedLocalChanges ? "" : loadedDraft.updatedAt);
           setSaveStatus(loadedDraft.hasUnsavedLocalChanges ? "unsaved" : "saved");
+          if (normalized.changed) {
+            toast({
+              title: "تم تنظيف مراجع العناصر المكررة",
+              description: "أزلنا التكرار في قوائم العناصر دون حذف أي عنصر مستقل. اضغط «حفظ ومزامنة» لتأكيد الإصلاح على الخادم.",
+            });
+          }
         }
       } catch (err: any) {
         toast({
@@ -635,7 +652,7 @@ export function DeveloperStudioProPage() {
   const handleAddElement = useCallback(
     (type: ElementType, parentId: string | null = null) => {
       if (!draft) return;
-      const newId = `elem_${type}_${Date.now().toString(36)}`;
+      const newId = createStudioId(`elem_${type}`, Object.keys(draft.elements));
 
       // Default content tailored by type
       let defaultContent: Record<string, any> = {};
@@ -723,7 +740,7 @@ export function DeveloperStudioProPage() {
       };
 
       const activePage = draft.pages[activePageId];
-      const updatedElementIds = [...(activePage?.elementIds || []), newId];
+      const updatedElementIds = uniquePageElementIds([...(activePage?.elementIds || []), newId]);
 
       const newDraft: StudioDraft = {
         ...draft,
@@ -805,7 +822,7 @@ export function DeveloperStudioProPage() {
       const source = draft.elements[elementId];
       if (!source) return;
 
-      const newId = `elem_${source.type}_${Date.now().toString(36)}`;
+      const newId = createStudioId(`elem_${source.type}`, Object.keys(draft.elements));
       const duplicated: ElementModel = {
         ...JSON.parse(JSON.stringify(source)),
         id: newId,
@@ -814,9 +831,12 @@ export function DeveloperStudioProPage() {
       };
 
       const activePage = draft.pages[source.pageId];
-      const sourceIndex = (activePage?.elementIds || []).indexOf(elementId);
-      const updatedElementIds = [...(activePage?.elementIds || [])];
-      updatedElementIds.splice(sourceIndex + 1, 0, newId);
+      if (!activePage) return;
+      const uniqueIds = uniquePageElementIds(activePage.elementIds);
+      const sourceIndex = uniqueIds.indexOf(elementId);
+      const updatedElementIds = [...uniqueIds];
+      if (sourceIndex >= 0) updatedElementIds.splice(sourceIndex + 1, 0, newId);
+      else updatedElementIds.push(newId);
 
       const newDraft: StudioDraft = {
         ...draft,
@@ -842,7 +862,8 @@ export function DeveloperStudioProPage() {
     [draft, commitDraftChange],
   );
 
-  // Move element Up/Down in order
+  // Move an element among siblings only. Root order is stored in page.elementIds;
+  // nested order is stored in layout.order and rendered by the parent container.
   const handleMoveElement = useCallback(
     (elementId: string, direction: "up" | "down") => {
       if (!draft) return;
@@ -851,18 +872,56 @@ export function DeveloperStudioProPage() {
 
       const activePage = draft.pages[el.pageId];
       if (!activePage) return;
+      const pageIds = uniquePageElementIds(activePage.elementIds);
+      const pageOrder = new Map(pageIds.map((id, index) => [id, index]));
+      const siblings = Object.values(draft.elements)
+        .filter((candidate) =>
+          candidate.pageId === el.pageId &&
+          (candidate.parentId || null) === (el.parentId || null),
+        )
+        .sort((a, b) => {
+          if (el.parentId === null) {
+            return (pageOrder.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+              (pageOrder.get(b.id) ?? Number.MAX_SAFE_INTEGER);
+          }
+          return (a.layout?.order ?? pageOrder.get(a.id) ?? 0) -
+            (b.layout?.order ?? pageOrder.get(b.id) ?? 0);
+        });
 
-      const list = [...activePage.elementIds];
-      const index = list.indexOf(elementId);
-      if (index === -1) return;
-
+      const index = siblings.findIndex((candidate) => candidate.id === elementId);
+      if (index < 0) return;
       const targetIndex = direction === "up" ? index - 1 : index + 1;
-      if (targetIndex < 0 || targetIndex >= list.length) return;
+      if (targetIndex < 0 || targetIndex >= siblings.length) return;
 
-      // Swap
-      const temp = list[index];
-      list[index] = list[targetIndex];
-      list[targetIndex] = temp;
+      const nextElements = { ...draft.elements };
+      if (el.parentId === null) {
+        const targetId = siblings[targetIndex].id;
+        const from = pageIds.indexOf(elementId);
+        const to = pageIds.indexOf(targetId);
+        if (from < 0 || to < 0) return;
+        [pageIds[from], pageIds[to]] = [pageIds[to], pageIds[from]];
+
+        // Keep root layout order consistent with its actual rendered order.
+        const orderedRoots = pageIds.filter((id) =>
+          nextElements[id]?.pageId === el.pageId &&
+          nextElements[id]?.parentId == null,
+        );
+        orderedRoots.forEach((id, rootIndex) => {
+          nextElements[id] = {
+            ...nextElements[id],
+            layout: { ...nextElements[id].layout, order: rootIndex + 1 },
+          };
+        });
+      } else {
+        const reordered = [...siblings];
+        [reordered[index], reordered[targetIndex]] = [reordered[targetIndex], reordered[index]];
+        reordered.forEach((sibling, siblingIndex) => {
+          nextElements[sibling.id] = {
+            ...sibling,
+            layout: { ...sibling.layout, order: siblingIndex + 1 },
+          };
+        });
+      }
 
       const newDraft: StudioDraft = {
         ...draft,
@@ -870,10 +929,11 @@ export function DeveloperStudioProPage() {
           ...draft.pages,
           [el.pageId]: {
             ...activePage,
-            elementIds: list,
+            elementIds: pageIds,
             updatedAt: new Date().toISOString(),
           },
         },
+        elements: nextElements,
         hasUnpublishedChanges: true,
       };
 
@@ -886,11 +946,23 @@ export function DeveloperStudioProPage() {
   const handleAddPage = useCallback(
     (name: string, route: string) => {
       if (!draft) return;
-      const pageId = `page_${Date.now().toString(36)}`;
+      const normalizedRoute = (route.trim().startsWith("/") ? route.trim() : `/${route.trim()}`).replace(/\/+$/, "") || "/";
+      const duplicateRoute = Object.values(draft.pages).find((page) =>
+        ((page.route || "").trim().replace(/\/+$/, "") || "/").toLocaleLowerCase() === normalizedRoute.toLocaleLowerCase()
+      );
+      if (duplicateRoute) {
+        toast({
+          title: "مسار الصفحة مستخدم بالفعل",
+          description: `المسار ${duplicateRoute.route} مرتبط بالصفحة «${duplicateRoute.name}». اختر مسارًا مختلفًا لمنع تكرار الصفحات.`,
+          variant: "destructive",
+        });
+        return;
+      }
+      const pageId = createStudioId("page", Object.keys(draft.pages));
       const newPage: PageModel = {
         id: pageId,
         name,
-        route,
+        route: normalizedRoute,
         elementIds: [],
         styles: { padding: "16px" },
         schemaVersion: CURRENT_SCHEMA_VERSION,
@@ -1101,26 +1173,6 @@ export function DeveloperStudioProPage() {
 
           <Button
             type="button"
-            variant={workspaceMode === "builder" ? "default" : "outline"}
-            size="sm"
-            onClick={() => setWorkspaceMode("builder")}
-            className="h-8 px-2.5 text-xs gap-1.5 cursor-pointer font-bold"
-          >
-            <Layers className="w-3.5 h-3.5" />
-            <span>مصمم العناصر</span>
-          </Button>
-          <Button
-            type="button"
-            variant={workspaceMode === "live" ? "default" : "outline"}
-            size="sm"
-            onClick={() => setWorkspaceMode("live")}
-            className="h-8 px-2.5 text-xs gap-1.5 cursor-pointer font-bold"
-          >
-            <Eye className="w-3.5 h-3.5" />
-            <span>التطبيق الحقيقي</span>
-          </Button>
-          <Button
-            type="button"
             variant="outline"
             size="sm"
             onClick={() => void handleSaveDraft()}
@@ -1188,7 +1240,6 @@ export function DeveloperStudioProPage() {
       <div className="min-h-0 flex-1 overflow-hidden">
         <LiveAppPreview
           route={activePage?.route || "/admin"}
-          designerMode={workspaceMode === "builder"}
           initialEdits={draft.domEdits || {}}
           onEditsChange={(domEdits) => {
             if (!draft) return;

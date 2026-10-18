@@ -64,6 +64,13 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
     const value = (currentRoute || "/admin").trim();
     return value.startsWith("/") && !value.startsWith("//") ? value : "/admin";
   }, [currentRoute]);
+  // The app shell normally applies persisted DOM edits itself. In the Studio iframe,
+  // mark the route so the preview bridge is the only code path applying draft edits.
+  const previewRoute = useMemo(() => {
+    const [pathAndSearch, hash = ""] = safeRoute.split("#", 2);
+    const separator = pathAndSearch.includes("?") ? "&" : "?";
+    return pathAndSearch + separator + "__studio_preview=1" + (hash ? "#" + hash : "");
+  }, [safeRoute]);
   const origin = typeof window !== "undefined" ? window.location.origin : "";
 
   const send = useCallback((data: Record<string, unknown>) => {
@@ -71,10 +78,15 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
   }, [origin]);
 
   const commitEdits = useCallback((selector: string, patch: StudioDomEdit) => {
-    const next = {
-      ...editsRef.current,
-      [selector]: { ...(editsRef.current[selector] || {}), ...patch },
+    const previous = editsRef.current[selector] || {};
+    const mergedEdit: StudioDomEdit = {
+      ...previous,
+      ...patch,
+      ...(patch.styles
+        ? { styles: { ...(previous.styles || {}), ...patch.styles } }
+        : {}),
     };
+    const next = { ...editsRef.current, [selector]: mergedEdit };
     editsRef.current = next;
     setEdits(next);
     changeCallbackRef.current(next);
@@ -226,7 +238,8 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         });
       };
       const resetPreviewEdits = () => {
-        document.querySelectorAll("[data-coding-studio-clone-of]").forEach((el) => el.remove());
+        // Remove both current and legacy preview clones on undo/restore.
+        document.querySelectorAll("[data-coding-studio-clone-of], [data-studio-clone-of]").forEach((el) => el.remove());
         for (const state of Array.from(originalStates.values()).reverse()) {
           const el = state.el;
           if (!el.isConnected) continue;
@@ -626,7 +639,7 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         )}
         <div className="absolute inset-0 flex min-h-0 min-w-0 items-stretch justify-center overflow-auto bg-slate-100 p-2 dark:bg-slate-950 sm:p-4">
           <div className="h-full min-h-0 overflow-hidden rounded-xl border bg-background shadow-xl transition-[width] duration-200" style={{ width: frameWidth, minWidth: previewSize === "desktop" ? 0 : frameWidth, flex: previewSize === "desktop" ? "1 1 auto" : "0 0 " + frameWidth }}>
-            <iframe key={frameKey} ref={iframeRef} src={safeRoute} onLoad={installBridge} title="معاينة حية للتطبيق" className="h-full min-h-0 w-full border-0 bg-background" />
+            <iframe key={frameKey} ref={iframeRef} src={previewRoute} onLoad={installBridge} title="معاينة حية للتطبيق" className="h-full min-h-0 w-full border-0 bg-background" />
           </div>
         </div>
         {showProperties && (

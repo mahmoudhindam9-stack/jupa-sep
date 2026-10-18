@@ -95,12 +95,10 @@ function SystemUpdatePage() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const accessPackageInputRef = useRef<HTMLInputElement>(null);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const searchParams = new URLSearchParams(location.search);
   const tabParam = searchParams.get("tab");
 
-  const [devModeOpen, setDevModeOpen] = useState(false);
   const [currentTab, setCurrentTab] = useState(tabParam || "system");
 
   useEffect(() => {
@@ -118,7 +116,6 @@ function SystemUpdatePage() {
       search: newTab === "system" ? {} : { tab: newTab },
     });
   };
-  const [editedStrings, setEditedStrings] = useState<Record<string, string>>({});
   const [isLiveSynced, setIsLiveSynced] = useState(true);
   const [lastSyncTime, setLastSyncTime] = useState<string>(new Date().toLocaleTimeString("ar-EG"));
   const [isDownloadingAccess, setIsDownloadingAccess] = useState(false);
@@ -480,88 +477,6 @@ function SystemUpdatePage() {
     };
   }, [syncSystemData]);
 
-  // Dev mode message handler
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === "TEXT_EDITED") {
-        setEditedStrings((prev) => ({
-          ...prev,
-          [event.data.original]: event.data.newText,
-        }));
-      }
-    };
-    window.addEventListener("message", handleMessage);
-    return () => window.removeEventListener("message", handleMessage);
-  }, []);
-
-  const handleIframeLoad = () => {
-    const iframe = iframeRef.current;
-    if (!iframe || !iframe.contentWindow || !iframe.contentDocument) return;
-
-    const style = iframe.contentDocument.createElement("style");
-    style.textContent = `
-      * { cursor: crosshair !important; }
-      *:hover { outline: 1px dashed #ef4444 !important; outline-offset: -1px; }
-    `;
-    iframe.contentDocument.head.appendChild(style);
-
-    const script = iframe.contentDocument.createElement("script");
-    script.textContent = `
-      window.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        
-        let targetNode = null;
-        if (document.caretPositionFromPoint) {
-          const range = document.caretPositionFromPoint(e.clientX, e.clientY);
-          if (range) targetNode = range.offsetNode;
-        } else if (document.caretRangeFromPoint) {
-          const range = document.caretRangeFromPoint(e.clientX, e.clientY);
-          if (range) targetNode = range.startContainer;
-        }
-        
-        if (targetNode && targetNode.nodeType === Node.TEXT_NODE) {
-          const originalText = targetNode.nodeValue.trim();
-          if (!originalText) return;
-          
-          const newText = prompt('تعديل النص:', originalText);
-          if (newText !== null && newText !== originalText) {
-            targetNode.nodeValue = targetNode.nodeValue.replace(originalText, newText);
-            window.parent.postMessage({ type: 'TEXT_EDITED', original: originalText, newText: newText }, '*');
-          }
-        }
-      }, true);
-    `;
-    iframe.contentDocument.body.appendChild(script);
-  };
-
-  const applyDevChanges = () => {
-    if (Object.keys(editedStrings).length > 0) {
-      const existing = JSON.parse(localStorage.getItem("custom_text_map") || "{}");
-      localStorage.setItem("custom_text_map", JSON.stringify({ ...existing, ...editedStrings }));
-      toast({ title: "تم التطبيق", description: "تم تطبيق التعديلات بنجاح", variant: "default" });
-      setTimeout(() => window.location.reload(), 500);
-    } else {
-      toast({ title: "لا توجد تعديلات", description: "لم تقم بأي تعديلات", variant: "default" });
-      setDevModeOpen(false);
-    }
-  };
-
-  const saveDevChangesOnly = () => {
-    if (Object.keys(editedStrings).length > 0) {
-      const existing = JSON.parse(localStorage.getItem("custom_text_map") || "{}");
-      localStorage.setItem("custom_text_map", JSON.stringify({ ...existing, ...editedStrings }));
-      toast({ title: "تم الحفظ", description: "تم حفظ التعديلات", variant: "default" });
-      setEditedStrings({});
-    } else {
-      toast({
-        title: "لا توجد تعديلات",
-        description: "لم تقم بأي تعديلات لحفظها",
-        variant: "default",
-      });
-    }
-  };
-
   const saveDataToDatabase = async () => {
     try {
       const stateToSave = erpStore.getState();
@@ -840,12 +755,12 @@ function SystemUpdatePage() {
             </Button>
 
             <Button
-              onClick={() => { const popup = window.open("/admin/developer-studio", "_blank"); if (popup) { try { popup.opener = null; } catch {} } else setDevModeOpen(true); }}
+              onClick={() => navigate({ to: "/admin/studio" })}
               variant="outline"
               className="gap-2 font-bold text-xs sm:text-sm border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-400 bg-indigo-50/50 hover:bg-indigo-100 dark:bg-indigo-950/20 dark:hover:bg-indigo-900/40 h-11 rounded-xl shrink-0"
             >
-              <Settings size={18} />
-              خيارات المطور
+              <Sparkles size={18} />
+              استوديو المطور Pro
             </Button>
           </div>
         </div>
@@ -1985,77 +1900,7 @@ vercel --prod`}
         </DialogContent>
       </Dialog>
 
-      {/* Dev Mode Dialog */}
-      <Dialog open={devModeOpen} onOpenChange={setDevModeOpen}>
-        <DialogContent className="max-w-[95vw] sm:max-w-[90vw] w-full h-[90vh] flex flex-col p-0 gap-0 rounded-2xl overflow-hidden">
-          <DialogHeader className="p-4 border-b shrink-0 flex flex-row items-center justify-between bg-background">
-            <div>
-              <DialogTitle className="text-lg font-bold flex items-center gap-2">
-                <Settings className="text-indigo-500" />
-                خيارات المطور - تعديل النصوص المباشر
-              </DialogTitle>
-              <CardDescription className="text-xs mt-1">
-                اضغط على أي نص في الشاشة لتعديله فورياً. التعديلات المعلقة:{" "}
-                {Object.keys(editedStrings).length}
-              </CardDescription>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <Badge
-                variant="outline"
-                className="font-mono text-xs font-bold border-purple-300 text-purple-700 bg-purple-50 dark:bg-purple-950/40 dark:border-purple-800 dark:text-purple-300"
-              >
-                v{CURRENT_VERSION}
-              </Badge>
-              <Button
-                onClick={handleCheckGitHubUpdates}
-                disabled={isCheckingUpdate}
-                variant="outline"
-                size="sm"
-                className="gap-1.5 text-xs font-bold border-purple-200 text-purple-700 hover:bg-purple-50 dark:border-purple-800 dark:text-purple-300"
-              >
-                <RefreshCw size={13} className={isCheckingUpdate ? "animate-spin" : ""} />
-                {isCheckingUpdate ? "جاري الفحص..." : "البحث عن تحديثات"}
-              </Button>
-              <Button
-                onClick={() => setDevModeOpen(false)}
-                variant="outline"
-                size="sm"
-                className="gap-1 text-xs"
-              >
-                <X size={15} />
-                تجاهل
-              </Button>
-              <Button
-                onClick={saveDevChangesOnly}
-                variant="secondary"
-                size="sm"
-                className="gap-1 text-xs bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-300"
-              >
-                <Save size={15} />
-                حفظ
-              </Button>
-              <Button onClick={applyDevChanges} size="sm" className="gap-1 text-xs">
-                <Check size={15} />
-                تطبيق
-              </Button>
-            </div>
-          </DialogHeader>
-          <div className="flex-1 bg-muted relative overflow-hidden">
-            {devModeOpen && (
-              <iframe
-                ref={iframeRef}
-                src="/admin"
-                className="w-full h-full bg-background border-0"
-                onLoad={handleIframeLoad}
-                title="Admin Preview"
-              />
-            )}
-            <div className="absolute top-2 right-2 bg-background/90 backdrop-blur text-xs font-bold px-3 py-1.5 rounded-full border shadow-sm pointer-events-none text-foreground">
-              وضع التعديل مفعل
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+
 
       {/* Confirmation Dialog 1: Download Access Package */}
       <AlertDialog open={showConfirmDownloadAccess} onOpenChange={setShowConfirmDownloadAccess}>

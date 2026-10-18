@@ -151,6 +151,17 @@ function RootComponent() {
     } catch (e) {
       console.error("Failed to start translator:", e);
     }
+
+    // A Studio iframe has a draft-specific preview bridge. Skip the global DOM-edit
+    // applier there to avoid applying duplicateCount twice (for example duplicating
+    // the same card, table, or layout box in the preview).
+    if (new URLSearchParams(window.location.search).get("__studio_preview") === "1") {
+      const stopAppSync = createAppSync(queryClient);
+      return () => {
+        stopAppSync?.();
+      };
+    }
+
     // Unpublished Pro drafts are never read by the real app. Only a confirmed published
     // configuration or the legacy editor's explicitly saved map can be applied here.
     type StudioRuntimeSnapshot = {

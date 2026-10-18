@@ -15,6 +15,8 @@ interface StudioElementRendererProps {
   allElements?: Record<string, ElementModel>;
   isEditorMode?: boolean;
   isSelected?: boolean;
+  /** Global selection ID used to highlight only the selected node in a nested tree. */
+  selectedElementId?: string | null;
   isHovered?: boolean;
   onSelect?: (elementId: string, event: React.MouseEvent) => void;
   onDoubleClick?: (elementId: string, event: React.MouseEvent) => void;
@@ -26,6 +28,7 @@ export function StudioElementRenderer({
   allElements = {},
   isEditorMode = false,
   isSelected = false,
+  selectedElementId,
   isHovered = false,
   onSelect,
   onDoubleClick,
@@ -87,11 +90,17 @@ export function StudioElementRenderer({
   const shadowClass =
     s.boxShadow && s.boxShadow !== "none" ? `shadow-${s.boxShadow}` : "";
 
+  // Resolve selection against this exact node; never paint every descendant as selected
+  // merely because its parent container is selected.
+  const selectedForThisElement = selectedElementId !== undefined
+    ? selectedElementId === element.id
+    : isSelected;
+
   // Editor selection outline
   const editorWrapperClass = isEditorMode
     ? cn(
         "relative transition-all duration-150 group/editor-elem",
-        isSelected
+        selectedForThisElement
           ? "ring-2 ring-primary ring-offset-2 z-10"
           : isHovered
             ? "ring-1 ring-primary/60 ring-offset-1"
@@ -117,7 +126,7 @@ export function StudioElementRenderer({
 
   // Find child elements if container or card
   const childElements = Object.values(allElements)
-    .filter((el) => el.parentId === element.id)
+    .filter((el) => el.parentId === element.id && el.pageId === element.pageId)
     .sort((a, b) => (a.layout.order || 0) - (b.layout.order || 0));
 
   // Render element content based on its type
@@ -265,7 +274,8 @@ export function StudioElementRenderer({
                     element={child}
                     allElements={allElements}
                     isEditorMode={isEditorMode}
-                    isSelected={isSelected}
+                    selectedElementId={selectedElementId}
+                    isSelected={selectedElementId === undefined ? false : selectedElementId === child.id}
                     onSelect={onSelect}
                     onDoubleClick={onDoubleClick}
                   />
@@ -295,6 +305,8 @@ export function StudioElementRenderer({
                   element={child}
                   allElements={allElements}
                   isEditorMode={isEditorMode}
+                  selectedElementId={selectedElementId}
+                  isSelected={selectedElementId === undefined ? false : selectedElementId === child.id}
                   onSelect={onSelect}
                   onDoubleClick={onDoubleClick}
                 />
@@ -425,7 +437,7 @@ export function StudioElementRenderer({
         className={cn(editorWrapperClass, "cursor-pointer")}
       >
         {/* Editor badges (Type, Locked, Hidden) */}
-        {isSelected && (
+        {selectedForThisElement && (
           <div className="absolute -top-3.5 right-2 z-20 flex items-center gap-1 bg-primary text-primary-foreground text-[10px] font-black px-2 py-0.5 rounded-full shadow-md select-none pointer-events-none">
             <span>{getElementDisplayName(element)}</span>
             {element.locked && <Lock size={10} className="text-amber-300" />}

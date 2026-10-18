@@ -10,6 +10,7 @@ import {
   ConflictDetail,
   PageModel,
   ElementModel,
+  StudioDomEdit,
   validateDraftHierarchy,
   CURRENT_SCHEMA_VERSION,
 } from "../models/studio.types";
@@ -916,25 +917,193 @@ class StudioService {
    * Merge non-conflicting changes from latest published server version into local draft
    */
   async mergeWithLatest(draft: StudioDraft): Promise<StudioDraft> {
-    const latest = await this.getPublishedConfig();
-    const mergedPages: Record<string, PageModel> = {
-      ...latest.pages,
-      ...draft.pages,
+    const latest = await this.fetchRemotePublishedConfig();
+    if (draft.baseRevision > latest.revision) {
+      throw new Error("الإصدار المرجعي للمسودة أحدث من الإصدار المنشور على الخادم؛ أعد تحميل المسودة قبل الدمج.");
+    }
+
+    // Use the exact published version the draft started from. A merge without this
+    // baseline cannot distinguish a local edit from a stale copy of a remote edit.
+    let baseSnapshot: {
+      pages: Record<string, PageModel>;
+      elements: Record<string, ElementModel>;
+      domEdits?: Record<string, StudioDomEdit>;
     };
-    const mergedElements: Record<string, ElementModel> = {
-      ...latest.elements,
-      ...draft.elements,
+    if (draft.baseRevision === latest.revision) {
+      baseSnapshot = {
+        pages: latest.pages,
+        elements: latest.elements,
+        domEdits: latest.domEdits || {},
+      };
+    } else {
+      const history = await this.getHistory();
+      const baseRecord = history.find((record) => record.revision === draft.baseRevision);
+      if (!baseRecord?.snapshot?.pages || !baseRecord.snapshot.elements) {
+        throw new Error(
+          "تعذر العثور على لقطة الإصدار الأصلي للمسودة؛ أوقفنا الدمج كي لا نكتب فوق تعديلات مستخدم آخر. " +
+          "استخدم المقارنة اليدوية أو استعد أحدث نسخة بعد حفظ نسخة من تعديلاتك المحلية.",
+        );
+      }
+      baseSnapshot = baseRecord.snapshot;
+    }
+
+    const conflicts: string[] = [];
+    const stableValue = (value: any): string => {
+      if (value === undefined) return "__studio_undefined__";
+      if (value === null || typeof value !== "object") return JSON.stringify(value) ?? String(value);
+      if (Array.isArray(value)) return "[" + value.map(stableValue).join(",") + "]";
+      return "{" + Object.keys(value).sort().map((key) =>
+        JSON.stringify(key) + ":" + stableValue(value[key]),
+      ).join(",") + "}";
     };
+    const sameValue = (left: any, right: any) => stableValue(left) === stableValue(right);
+    const isRecord = (value: any): value is Record<string, any> =>
+      !!value && typeof value === "object" && !Array.isArray(value);
+    const stripEntityMetadata = (value: any) => {
+      if (!isRecord(value)) return value;
+      const { revision: _revision, updatedAt: _updatedAt, updatedBy: _updatedBy, ...data } = value;
+      return data;
+    };
+
+    const mergeValue = (base: any, local: any, remote: any, path: string): any => {
+      if (sameValue(local, base)) return remote;
+      if (sameValue(remote, base)) return local;
+      if (sameValue(local, remote)) return local;
+
+      if (path.endsWith(".elementIds") &&
+          Array.isArray(base) && Array.isArray(local) && Array.isArray(remote)) {
+        const baseSet = new Set(base);
+        const localSet = new Set(local);
+        const remoteSet = new Set(remote);
+        const baseKeptInLocalOrder = local.filter((id) => baseSet.has(id));
+        const baseKeptInRemoteOrder = remote.filter((id) => baseSet.has(id));
+        const baseInLocalOrder = base.filter((id) => localSet.has(id));
+        const baseInRemoteOrder = base.filter((id) => remoteSet.has(id));
+        const localReordered = !sameValue(baseKeptInLocalOrder, baseInLocalOrder);
+        const remoteReordered = !sameValue(baseKeptInRemoteOrder, baseInRemoteOrder);
+        if (localReordered && remoteReordered &&
+            !sameValue(baseKeptInLocalOrder.filter((id) => remoteSet.has(id)),
+              baseKeptInRemoteOrder.filter((id) => localSet.has(id)))) {
+          conflicts.push(path + " (تعارض ترتيب العناصر)");
+          return remote;
+        }
+
+        // Preserve the latest server order, apply independent deletions from either
+        // side, and append non-conflicting elements added by either side.
+        const keptBaseIds = base.filter((id) => localSet.has(id) && remoteSet.has(id));
+        const localAddedIds = local.filter((id) => !baseSet.has(id));
+        const remoteAddedIds = remote.filter((id) => !baseSet.has(id));
+        const allowed = new Set([...keptBaseIds, ...localAddedIds, ...remoteAddedIds]);
+        const preferredOrder = localReordered && !remoteReordered ? local : remote;
+        const merged = preferredOrder.filter((id) => allowed.has(id));
+        for (const id of [...remoteAddedIds, ...localAddedIds, ...keptBaseIds]) {
+          if (!merged.includes(id)) merged.push(id);
+        }
+        return merged;
+      }
+
+      if (isRecord(base) && isRecord(local) && isRecord(remote)) {
+        const merged: Record<string, any> = {};
+        const keys = new Set([...Object.keys(base), ...Object.keys(local), ...Object.keys(remote)]);
+        for (const key of keys) {
+          const value = mergeValue(base[key], local[key], remote[key], path + "." + key);
+          if (value !== undefined) merged[key] = value;
+        }
+        return merged;
+      }
+
+      conflicts.push(path);
+      // Keep the server value for this leaf while collecting all conflicting paths.
+      // The merge will be rejected below, so the local draft itself remains untouched.
+      return remote;
+    };
+
+    const mergeMap = <T extends Record<string, any>>(
+      label: string,
+      baseMap: Record<string, T>,
+      localMap: Record<string, T>,
+      remoteMap: Record<string, T>,
+      versionedEntities: boolean,
+    ): Record<string, T> => {
+      const result: Record<string, T> = {};
+      const keys = new Set([...Object.keys(baseMap || {}), ...Object.keys(localMap || {}), ...Object.keys(remoteMap || {})]);
+      for (const id of keys) {
+        const base = baseMap?.[id];
+        const local = localMap?.[id];
+        const remote = remoteMap?.[id];
+        const comparableBase = versionedEntities ? stripEntityMetadata(base) : base;
+        const comparableLocal = versionedEntities ? stripEntityMetadata(local) : local;
+        const comparableRemote = versionedEntities ? stripEntityMetadata(remote) : remote;
+        const path = label + "[" + id + "]";
+
+        if (base === undefined) {
+          if (local !== undefined && remote !== undefined) {
+            if (!sameValue(comparableLocal, comparableRemote)) conflicts.push(path + " (معرّف جديد متعارض)");
+            result[id] = remote;
+          } else if (local !== undefined) {
+            result[id] = local;
+          } else if (remote !== undefined) {
+            result[id] = remote;
+          }
+          continue;
+        }
+
+        if (local === undefined && remote === undefined) continue;
+        if (local === undefined) {
+          if (!sameValue(comparableRemote, comparableBase)) {
+            conflicts.push(path + " (حذف محلي مقابل تعديل بعيد)");
+            result[id] = remote as T;
+          }
+          continue;
+        }
+        if (remote === undefined) {
+          if (!sameValue(comparableLocal, comparableBase)) {
+            conflicts.push(path + " (تعديل محلي مقابل حذف بعيد)");
+          }
+          continue;
+        }
+
+        const mergedData = mergeValue(comparableBase, comparableLocal, comparableRemote, path);
+        result[id] = versionedEntities
+          ? {
+              ...(remote as T),
+              ...(mergedData as T),
+              // Preserve server metadata until a confirmed publication stamps a new revision.
+              revision: (remote as any).revision,
+              updatedAt: (local as any).updatedAt || (remote as any).updatedAt,
+              updatedBy: (local as any).updatedBy || (remote as any).updatedBy,
+            } as T
+          : mergedData as T;
+      }
+      return result;
+    };
+
+    const mergedPages = mergeMap<PageModel>("pages", baseSnapshot.pages, draft.pages, latest.pages, true);
+    const mergedElements = mergeMap<ElementModel>("elements", baseSnapshot.elements, draft.elements, latest.elements, true);
+    const mergedDomEdits = mergeMap<StudioDomEdit>("domEdits", baseSnapshot.domEdits || {}, draft.domEdits || {}, latest.domEdits || {}, false);
+
+    if (conflicts.length > 0) {
+      throw new Error(
+        "توقف الدمج الآلي الآمن لأن الطرفين عدّلا نفس البيانات. احتفظنا بالمسودة المحلية ولم نكتب فوق الخادم. " +
+        "راجع المقارنة اليدوية أو استخدم الاستعادة/التجاوز بعد مراجعة العناصر التالية: " +
+        conflicts.slice(0, 6).join("، "),
+      );
+    }
 
     const mergedDraft: StudioDraft = {
       ...draft,
       baseRevision: latest.revision,
       pages: mergedPages,
       elements: mergedElements,
+      domEdits: mergedDomEdits,
       updatedAt: new Date().toISOString(),
       hasUnpublishedChanges: true,
       hasUnsavedLocalChanges: true,
     };
+    const validation = validateDraftHierarchy(mergedDraft);
+    if (!validation.valid) {
+      throw new Error("توقف الدمج الآلي لأن النسخة المدمجة تحتاج إلى إصلاح بنية: " + validation.errors.slice(0, 5).join(" • "));
+    }
 
     // Smart merge prepares an in-memory draft; only Save Draft may persist it.
     this.inMemoryDraft = mergedDraft;
