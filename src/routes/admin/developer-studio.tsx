@@ -39,7 +39,21 @@ function DeveloperStudioPage() {
       setHeight(item.height === "auto" ? "" : item.height || "");
     }
     if (event.data.type === "STUDIO_CHANGE") {
-      setEdits((prev) => ({ ...prev, [event.data.selector]: { ...(prev[event.data.selector] || {}), ...event.data.patch } }));
+      const selector = String(event.data.selector || "");
+      const patch = event.data.patch || {};
+      setEdits((prev) => {
+        const previous = prev[selector] || {};
+        return {
+          ...prev,
+          [selector]: {
+            ...previous,
+            ...patch,
+            ...(patch.styles
+              ? { styles: { ...(previous.styles || {}), ...patch.styles } }
+              : {}),
+          },
+        };
+      });
     }
   };
   useEffect(() => {
@@ -54,7 +68,13 @@ function DeveloperStudioPage() {
   const applyStyles = (styles: Record<string, string>) => {
     if (!selected) return;
     command({ action: "style", selector: selected.selector, styles });
-    setEdits((prev) => ({ ...prev, [selected.selector]: { ...(prev[selected.selector] || {}), styles } }));
+    setEdits((prev) => ({
+      ...prev,
+      [selected.selector]: {
+        ...(prev[selected.selector] || {}),
+        styles: { ...(prev[selected.selector]?.styles || {}), ...styles },
+      },
+    }));
   };
   const applyText = (value: string) => {
     if (!selected) return;

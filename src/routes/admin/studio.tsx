@@ -14,6 +14,9 @@ import {
   CURRENT_SCHEMA_VERSION,
   validateDraftHierarchy,
   ConflictDetail,
+  createStudioId,
+  normalizeStudioDraftPageReferences,
+  uniquePageElementIds,
 } from "@/features/developer-studio/models/studio.types";
 import { studioService } from "@/features/developer-studio/services/studioService";
 import { supabase } from "@/integrations/supabase/client";
@@ -107,7 +110,21 @@ export function DeveloperStudioProPage() {
     async function init() {
       try {
         setIsLoading(true);
-        const loadedDraft = await studioService.getDraft("admin");
+        const serverOrLocalDraft = await studioService.getDraft("admin");
+        const normalized = normalizeStudioDraftPageReferences(serverOrLocalDraft);
+        const loadedDraft: StudioDraft = normalized.changed
+          ? {
+              ...normalized.draft,
+              updatedAt: new Date().toISOString(),
+              hasUnpublishedChanges: true,
+              hasUnsavedLocalChanges: true,
+            }
+          : normalized.draft;
+        if (normalized.changed) {
+          // Keep the repaired references in local recovery storage immediately. The
+          // user can then explicitly sync the normalized draft to Supabase.
+          studioService.saveLocalDraft(loadedDraft);
+        }
         if (mounted) {
           setDraft(loadedDraft);
           const firstPageId = Object.keys(loadedDraft.pages || {})[0] || "page_dashboard";
@@ -116,6 +133,12 @@ export function DeveloperStudioProPage() {
           setHistoryPointer(0);
           setLastSavedAt(loadedDraft.hasUnsavedLocalChanges ? "" : loadedDraft.updatedAt);
           setSaveStatus(loadedDraft.hasUnsavedLocalChanges ? "unsaved" : "saved");
+          if (normalized.changed) {
+            toast({
+              title: "تم تنظيف مراجع العناصر المكررة",
+              description: "أزلنا التكرار في قوائم العناصر دون حذف أي عنصر مستقل. اضغط «حفظ ومزامنة» لتأكيد الإصلاح على الخادم.",
+            });
+          }
         }
       } catch (err: any) {
         toast({
@@ -629,7 +652,7 @@ export function DeveloperStudioProPage() {
   const handleAddElement = useCallback(
     (type: ElementType, parentId: string | null = null) => {
       if (!draft) return;
-      const newId = `elem_${type}_${Date.now().toString(36)}`;
+      const newId = createStudioId(`elem_${type}`, Object.keys(draft.elements));
 
       // Default content tailored by type
       let defaultContent: Record<string, any> = {};
@@ -717,7 +740,7 @@ export function DeveloperStudioProPage() {
       };
 
       const activePage = draft.pages[activePageId];
-      const updatedElementIds = [...(activePage?.elementIds || []), newId];
+      const updatedElementIds = uniquePageElementIds([...(activePage?.elementIds || []), newId]);
 
       const newDraft: StudioDraft = {
         ...draft,
@@ -799,7 +822,7 @@ export function DeveloperStudioProPage() {
       const source = draft.elements[elementId];
       if (!source) return;
 
-      const newId = `elem_${source.type}_${Date.now().toString(36)}`;
+      const newId = createStudioId(`elem_${source.type}`, Object.keys(draft.elements));
       const duplicated: ElementModel = {
         ...JSON.parse(JSON.stringify(source)),
         id: newId,
@@ -808,9 +831,12 @@ export function DeveloperStudioProPage() {
       };
 
       const activePage = draft.pages[source.pageId];
-      const sourceIndex = (activePage?.elementIds || []).indexOf(elementId);
-      const updatedElementIds = [...(activePage?.elementIds || [])];
-      updatedElementIds.splice(sourceIndex + 1, 0, newId);
+      if (!activePage) return;
+      const uniqueIds = uniquePageElementIds(activePage.elementIds);
+      const sourceIndex = uniqueIds.indexOf(elementId);
+      const updatedElementIds = [...uniqueIds];
+      if (sourceIndex >= 0) updatedElementIds.splice(sourceIndex + 1, 0, newId);
+      else updatedElementIds.push(newId);
 
       const newDraft: StudioDraft = {
         ...draft,
@@ -880,11 +906,23 @@ export function DeveloperStudioProPage() {
   const handleAddPage = useCallback(
     (name: string, route: string) => {
       if (!draft) return;
-      const pageId = `page_${Date.now().toString(36)}`;
+      const normalizedRoute = (route.trim().startsWith("/") ? route.trim() : `/${route.trim()}`).replace(/\/+$/, "") || "/";
+      const duplicateRoute = Object.values(draft.pages).find((page) =>
+        ((page.route || "").trim().replace(/\/+$/, "") || "/").toLocaleLowerCase() === normalizedRoute.toLocaleLowerCase()
+      );
+      if (duplicateRoute) {
+        toast({
+          title: "مسار الصفحة مستخدم بالفعل",
+          description: `المسار ${duplicateRoute.route} مرتبط بالصفحة «${duplicateRoute.name}». اختر مسارًا مختلفًا لمنع تكرار الصفحات.`,
+          variant: "destructive",
+        });
+        return;
+      }
+      const pageId = createStudioId("page", Object.keys(draft.pages));
       const newPage: PageModel = {
         id: pageId,
         name,
-        route,
+        route: normalizedRoute,
         elementIds: [],
         styles: { padding: "16px" },
         schemaVersion: CURRENT_SCHEMA_VERSION,

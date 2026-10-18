@@ -9,6 +9,7 @@ import {
   ElementModel,
   PageModel,
   ElementType,
+  uniquePageElementIds,
 } from "../models/studio.types";
 import { studioService, DEFAULT_STUDIO_PUBLISHED_CONFIG } from "../services/studioService";
 
@@ -49,9 +50,17 @@ export function useStudioPublishedPage(route: string) {
 
   const elements = useMemo(() => {
     if (!page || !page.elementIds) return [];
-    return page.elementIds
+    // elementIds stores both parent and child references. Rendering every ID here
+    // duplicates each child: the parent renderer already renders its descendants.
+    // Render only unique, visible roots and let StudioElementRenderer recurse once.
+    return uniquePageElementIds(page.elementIds)
       .map((id) => published.elements[id])
-      .filter((el): el is ElementModel => !!el && el.layout.visibility !== false);
+      .filter((el): el is ElementModel =>
+        !!el &&
+        el.pageId === page.id &&
+        el.parentId === null &&
+        el.layout?.visibility !== false,
+      );
   }, [page, published]);
 
   return {

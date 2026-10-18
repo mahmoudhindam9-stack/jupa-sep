@@ -78,10 +78,15 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
   }, [origin]);
 
   const commitEdits = useCallback((selector: string, patch: StudioDomEdit) => {
-    const next = {
-      ...editsRef.current,
-      [selector]: { ...(editsRef.current[selector] || {}), ...patch },
+    const previous = editsRef.current[selector] || {};
+    const mergedEdit: StudioDomEdit = {
+      ...previous,
+      ...patch,
+      ...(patch.styles
+        ? { styles: { ...(previous.styles || {}), ...patch.styles } }
+        : {}),
     };
+    const next = { ...editsRef.current, [selector]: mergedEdit };
     editsRef.current = next;
     setEdits(next);
     changeCallbackRef.current(next);
@@ -233,7 +238,8 @@ export function LiveAppPreview({ route, initialEdits, onEditsChange, designerMod
         });
       };
       const resetPreviewEdits = () => {
-        document.querySelectorAll("[data-coding-studio-clone-of]").forEach((el) => el.remove());
+        // Remove both current and legacy preview clones on undo/restore.
+        document.querySelectorAll("[data-coding-studio-clone-of], [data-studio-clone-of]").forEach((el) => el.remove());
         for (const state of Array.from(originalStates.values()).reverse()) {
           const el = state.el;
           if (!el.isConnected) continue;

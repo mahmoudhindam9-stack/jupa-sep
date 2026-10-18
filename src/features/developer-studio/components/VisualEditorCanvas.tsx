@@ -9,6 +9,7 @@ import {
   ElementModel,
   PageModel,
   ElementType,
+  uniquePageElementIds,
 } from "../models/studio.types";
 import { StudioElementRenderer } from "./StudioElementRenderer";
 import { cn } from "@/lib/utils";
@@ -66,9 +67,11 @@ export function VisualEditorCanvas({
   const selectedElement = selectedElementId ? elements[selectedElementId] : null;
 
   // Root elements for this page (parentId === null) ordered by page.elementIds
-  const rootElements = (page.elementIds || [])
+  const rootElements = uniquePageElementIds(page.elementIds)
     .map((id) => elements[id])
-    .filter((el): el is ElementModel => !!el && el.parentId === null);
+    .filter((el): el is ElementModel =>
+      !!el && el.pageId === page.id && el.parentId === null,
+    );
 
   // Viewport width styling
   const getViewportWidth = () => {
@@ -289,6 +292,7 @@ export function VisualEditorCanvas({
                     allElements={elements}
                     isEditorMode={true}
                     isSelected={selectedElementId === elem.id}
+                    selectedElementId={selectedElementId}
                     isHovered={hoveredElementId === elem.id}
                     onSelect={(id) => onSelectElement(id)}
                   />
