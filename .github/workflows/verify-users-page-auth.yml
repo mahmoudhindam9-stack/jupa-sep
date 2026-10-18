@@ -1,4 +1,4 @@
-name: Verify managed users and permissions
+name: Verify managed users and Developer Studio integrity
 
 on:
   push:
@@ -27,8 +27,8 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: npm ci --no-audit --no-fund
-      - name: Managed-user validation tests
-        run: npm test -- --run src/features/auth/services/managedUserValidation.test.ts
+      - name: Managed-user and Developer Studio regression tests
+        run: npm test -- --run src/features/auth/services/managedUserValidation.test.ts src/features/developer-studio/__tests__/studio.test.ts
       - name: TypeScript typecheck
         run: npm run typecheck
       - name: Production build
