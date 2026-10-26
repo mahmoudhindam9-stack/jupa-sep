@@ -45,6 +45,7 @@ import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { CURRENT_VERSION } from "@/shared/config/version";
 import { GitHubUpdateBanner } from "@/components/admin/GitHubUpdateBanner";
+import { AppMainNavbar } from "@/components/navigation/AppMainNavbar";
 import { AppBreadcrumbBar } from "@/components/navigation/AppBreadcrumbBar";
 import { isAiStudioPreview } from "@/shared/services/previewAccess";
 
@@ -594,67 +595,20 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
       {/* GitHub Auto-Update Notification Banner */}
       <GitHubUpdateBanner />
 
-      {/* Top Navigation Header - Modern & Minimal (Clean Top Bar) */}
-      <header className="shrink-0 z-30 bg-card/95 backdrop-blur border-b border-border px-4 sm:px-6 py-2.5 flex items-center justify-between gap-4">
-        {/* Right side in RTL: Brand */}
-        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-          <Link to="/admin" className="flex items-center gap-2 shrink-0 group">
-            <RestocashLogo size={24} />
-            <div className="text-right">
-              <span className="font-black text-sm tracking-tight text-foreground block group-hover:text-primary transition leading-none">
-                Restocash ERP
-              </span>
-              <span className="text-[10px] text-muted-foreground font-semibold leading-none">
-                نظام الإدارة المتكامل
-              </span>
-            </div>
-          </Link>
-        </div>
+      {/* 1. Permanent Fixed Main Top Bar (Brand, Quick Departments, Language, Currency, Theme, User) */}
+      <AppMainNavbar
+        user={user}
+        onSignOut={handleSignOut}
+        hasDepartmentPermission={(dept) =>
+          !dept.permissionKeys || hasAnyPermission(user, dept.permissionKeys)
+        }
+        showSystemVersionLink={hasAnyPermission(user, [
+          "system_backup_update",
+          "developer_options",
+        ])}
+      />
 
-        {/* Left side in RTL: Tools, User Profile & Logout */}
-        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-          <div data-studio-preserve="currency-switcher-tools" className="hidden md:flex items-center gap-2">
-            <LanguageSwitcher compact />
-            <CurrencySwitcher compact />
-          </div>
-
-          {/* System version badge if permitted */}
-          {hasAnyPermission(user, ["system_backup_update", "developer_options"]) && (
-            <Link
-              to="/admin/system-update"
-              className="hidden lg:inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground font-mono bg-muted/50 px-2 py-1 rounded-lg border border-border/60"
-              title="تحديثات النظام"
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />v
-              {CURRENT_VERSION}
-            </Link>
-          )}
-
-          {/* User profile & Logout */}
-          <div className="flex items-center gap-2 bg-muted/60 border border-border/80 px-2.5 py-1 rounded-xl">
-            <div className="text-right hidden sm:block max-w-[130px]">
-              <p className="text-[11px] font-black text-foreground truncate leading-tight">
-                {user?.email?.split("@")[0] || "المسؤول"}
-              </p>
-              <p className="text-[9px] text-muted-foreground font-semibold leading-tight">
-                {user?.role || "مشرف"}
-              </p>
-            </div>
-
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-              onClick={handleSignOut}
-              title="تسجيل الخروج"
-            >
-              <LogOut size={15} />
-            </Button>
-          </div>
-        </div>
-      </header>
-
-      {/* Secondary Hierarchical Navigation Bar (Appears only inside sections/subsections) */}
+      {/* 2. Contextual Breadcrumb Bar (Appears ONLY inside sections/subsections, zero duplication) */}
       <AppBreadcrumbBar />
 
       {/* Main Content Area - Full width, no sidebar margins */}

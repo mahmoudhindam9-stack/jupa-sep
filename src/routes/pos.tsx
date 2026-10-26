@@ -46,6 +46,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useTableOrders } from "@/shared/hooks/useTableOrders";
 import { tableOrdersStore, TableOrder } from "@/shared/services/tableOrdersStore";
 import { MenuExportModal } from "@/components/MenuExportModal";
+import { AppMainNavbar } from "@/components/navigation/AppMainNavbar";
 import { AppBreadcrumbBar } from "@/components/navigation/AppBreadcrumbBar";
 import {
   AlertDialog,
@@ -982,162 +983,74 @@ function Index() {
       style={{ fontFamily: '"Tajawal", "Cairo", system-ui, sans-serif' }}
     >
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Unified Navigation Breadcrumb Bar */}
+        {/* 1. Permanent Fixed Main Top Bar */}
+        <AppMainNavbar user={user} />
+
+        {/* 2. Contextual Breadcrumb Bar */}
         <AppBreadcrumbBar />
-        <header
-          className="px-8 py-5 border-b border-border flex items-center justify-between gap-6"
-          style={{ background: "var(--gradient-primary)" }}
-        >
-          <div className="flex items-center gap-3 text-primary-foreground">
-            <RestocashLogo size={32} variant="white" />
-            <div className="mr-2">
-              <h1 className="text-xl font-black tracking-tight leading-none">{t.title}</h1>
-              <p className="text-xs opacity-80 mt-1" suppressHydrationWarning>
-                {t.pos} • {new Date().toLocaleDateString(lang === "ar" ? "ar-EG" : "en-US")}
-              </p>
+
+        {/* Contextual POS Search & Quick Operational Actions Toolbar */}
+        <div className="px-4 sm:px-6 py-2.5 bg-card/95 backdrop-blur border-b border-border flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0 flex-1 max-w-xl">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search
+                className={`absolute ${lang === "ar" ? "right-3.5" : "left-3.5"} top-1/2 -translate-y-1/2 text-muted-foreground`}
+                size={16}
+              />
+              <input
+                type="text"
+                placeholder={t.search}
+                className={`w-full bg-background border border-border rounded-xl h-9 ${lang === "ar" ? "pr-10 pl-3" : "pl-10 pr-3"} text-xs sm:text-sm text-foreground placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition`}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
             </div>
           </div>
-          <div className="flex-1 max-w-md relative">
-            <Search
-              className={`absolute ${lang === "ar" ? "right-4" : "left-4"} top-1/2 -translate-y-1/2 text-primary-foreground/70`}
-              size={18}
-            />
-            <input
-              type="text"
-              placeholder={t.search}
-              className={`w-full bg-primary-foreground/15 backdrop-blur border border-primary-foreground/20 rounded-2xl py-3 ${lang === "ar" ? "pr-11 pl-4" : "pl-11 pr-4"} text-sm text-primary-foreground placeholder:text-primary-foreground/60 outline-none focus:border-primary-foreground/60 transition`}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-        </header>
 
-        {/* Separated Interfaces & Quick Settings Bar */}
-        <div className="px-8 py-3 bg-slate-900 border-b border-border flex flex-wrap items-center justify-between gap-4 text-white">
-          {/* 4 Separated Interfaces */}
-          <div className="flex items-center gap-2.5 flex-wrap">
-            <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">
-              {lang === "ar" ? "الواجهات:" : "Interfaces:"}
-            </span>
+          <div className="flex items-center gap-2 flex-wrap shrink-0">
             <Link
-              to="/"
-              className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-bold shadow-sm"
+              to="/cashier-treasury"
+              className="inline-flex items-center gap-1.5 bg-emerald-500/10 hover:bg-emerald-500/15 border border-emerald-500/30 rounded-lg px-3 h-8 transition text-xs font-bold text-emerald-700 dark:text-emerald-300 whitespace-nowrap shrink-0"
             >
-              {lang === "ar" ? "الكاشير (نقطة البيع)" : "Cashier (POS)"}
+              <Wallet size={14} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span>{lang === "ar" ? "خزينة الكاشير" : "Cashier Treasury"}</span>
             </Link>
-            <Link
-              to="/oven"
-              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition border border-slate-700"
-            >
-              {lang === "ar" ? "الفرن" : "Oven"}
-            </Link>
-            <Link
-              to="/captain"
-              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition border border-slate-700"
-            >
-              Captain Order
-            </Link>
-            <Link
-              to="/admin"
-              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition border border-slate-700"
-            >
-              {lang === "ar" ? "لوحة الإدارة" : "Admin Panel"}
-            </Link>
-          </div>
 
-          {/* Quick Settings (Treasury Interface, Lang & Currency) */}
-          <Link
-            to="/cashier-treasury"
-            className="flex items-center gap-2 bg-slate-800/90 hover:bg-slate-800 border border-emerald-500/30 rounded-xl px-3 py-1.5 transition shadow-sm text-xs font-bold text-emerald-300"
-          >
-            <Wallet size={14} className="text-emerald-400" />
-            <span>{lang === "ar" ? "خزينة الكاشير" : "Cashier Treasury"}</span>
-          </Link>
-          <div className="flex items-center gap-3 flex-wrap">
-            {/* Currency Select & Rates */}
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-400 font-semibold">
-                  {lang === "ar" ? "العملة:" : "Currency:"}
-                </span>
-                <select
-                  value={currency}
-                  onChange={(e) => changeCurrency(e.target.value as any)}
-                  className="bg-slate-800 border border-slate-700 text-white text-xs font-bold px-2.5 py-1 rounded-lg focus:outline-none focus:border-primary cursor-pointer"
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <button
+                  type="button"
+                  className="bg-rose-500/10 hover:bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-500/30 text-xs font-bold px-3 h-8 rounded-lg transition cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                  title={
+                    lang === "ar" ? "تصفير عداد المبيعات وحذف الطلبات المعلقة" : "Reset Sales"
+                  }
                 >
-                  <option value="EGP">{lang === "ar" ? "جنيه مصري (EGP)" : "EGP"}</option>
-                  <option value="USD">{lang === "ar" ? "دولار أمريكي (USD)" : "USD"}</option>
-                  <option value="SSP">{lang === "ar" ? "جنيه ج.س (SSP)" : "SSP"}</option>
-                </select>
-              </div>
-
-              {currency !== "EGP" && (
-                <div className="flex items-center gap-2 bg-slate-800/50 px-3 py-1 rounded-lg border border-slate-700/50 animate-in fade-in slide-in-from-right-2">
-                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-tighter">
-                    {lang === "ar" ? "سعر الصرف:" : "Rate:"}
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] text-slate-400">1 {currency} =</span>
-                    <input
-                      type="number"
-                      step="0.01"
-                      className="bg-slate-700/50 border-none text-[11px] font-black w-16 text-center rounded px-1 focus:ring-1 focus:ring-primary outline-none"
-                      value={exchangeRates[currency]}
-                      onChange={(e) => updateExchangeRate(currency, Number(e.target.value))}
-                    />
-                    <span className="text-[10px] text-slate-400">EGP</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Language Toggle */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-400 font-semibold">
-                {lang === "ar" ? "اللغة:" : "Language:"}
-              </span>
-              <button
-                onClick={() => changeLang(lang === "ar" ? "en" : "ar")}
-                className="bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-3 py-1 rounded-lg border border-slate-700 transition cursor-pointer"
-              >
-                {lang === "ar" ? "English" : "العربية"}
-              </button>
-
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <button
-                    className="bg-rose-950/80 hover:bg-rose-900 text-rose-200 border border-rose-800/80 text-xs font-bold px-3 py-1 rounded-lg transition cursor-pointer flex items-center gap-1.5 ml-2"
-                    title={
-                      lang === "ar" ? "تصفير عداد المبيعات وحذف الطلبات المعلقة" : "Reset Sales"
-                    }
+                  <Trash2 size={13} className="text-rose-500 shrink-0" />
+                  <span>{lang === "ar" ? "تصفير المبيعات" : "Reset Sales"}</span>
+                </button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle className="text-right">
+                    {lang === "ar" ? "تأكيد تصفير المبيعات والطلبات" : "Confirm Sales Reset"}
+                  </AlertDialogTitle>
+                  <AlertDialogDescription className="text-right">
+                    {lang === "ar"
+                      ? "هل أنت متأكد من رغبتك في تصفير عداد المبيعات وحذف كافة الطلبات المعلقة في الكاشير والفرن نهائياً؟ (سيتم حذفها بالكامل من النظام ولن يمكن استرجاعها)."
+                      : "Are you sure you want to reset sales counters and delete all pending cashier and oven orders permanently?"}
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter className="flex-row-reverse sm:justify-start">
+                  <AlertDialogCancel>{lang === "ar" ? "تراجع" : "Cancel"}</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleResetSalesAndPendingOrders}
+                    className="bg-rose-600 hover:bg-rose-700 text-white mr-2 font-bold"
                   >
-                    <Trash2 size={13} className="text-rose-400" />
-                    <span>{lang === "ar" ? "تصفير المبيعات" : "Reset Sales"}</span>
-                  </button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle className="text-right">
-                      {lang === "ar" ? "تأكيد تصفير المبيعات والطلبات" : "Confirm Sales Reset"}
-                    </AlertDialogTitle>
-                    <AlertDialogDescription className="text-right">
-                      {lang === "ar"
-                        ? "هل أنت متأكد من رغبتك في تصفير عداد المبيعات وحذف كافة الطلبات المعلقة في الكاشير والفرن نهائياً؟ (سيتم حذفها بالكامل من النظام ولن يمكن استرجاعها)."
-                        : "Are you sure you want to reset sales counters and delete all pending cashier and oven orders permanently?"}
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter className="flex-row-reverse sm:justify-start">
-                    <AlertDialogCancel>{lang === "ar" ? "تراجع" : "Cancel"}</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={handleResetSalesAndPendingOrders}
-                      className="bg-rose-600 hover:bg-rose-700 text-white mr-2 font-bold"
-                    >
-                      {lang === "ar" ? "نعم، قم بالحذف والتصفير" : "Yes, Reset & Delete"}
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </div>
+                    {lang === "ar" ? "نعم، قم بالحذف والتصفير" : "Yes, Reset & Delete"}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         </div>
 

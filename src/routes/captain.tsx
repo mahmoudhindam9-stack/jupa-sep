@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ArrowRight, UtensilsCrossed, Plus, Settings2, Trash2, Save, X } from "lucide-react";
 import { TableOrderModal } from "@/components/TableOrderModal";
+import { AppMainNavbar } from "@/components/navigation/AppMainNavbar";
 import { AppBreadcrumbBar } from "@/components/navigation/AppBreadcrumbBar";
 import {
   Dialog,
@@ -486,52 +487,46 @@ function CaptainPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-cairo">
-      {/* Unified Navigation Breadcrumb Bar */}
+    <div className="min-h-screen bg-background text-foreground flex flex-col font-cairo">
+      {/* 1. Permanent Fixed Main Top Bar */}
+      <AppMainNavbar />
+
+      {/* 2. Contextual Breadcrumb Bar */}
       <AppBreadcrumbBar />
 
-      {/* Header */}
-      <header className="bg-slate-900 text-white p-4 shadow-md sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
+      {/* Contextual Captain Action Bar */}
+      <div className="bg-card/95 backdrop-blur border-b border-border px-4 sm:px-6 py-2.5">
+        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <UtensilsCrossed size={18} className="text-amber-500 shrink-0" />
             <div>
-              <h1 className="text-xl font-black flex items-center gap-2">
-                <UtensilsCrossed className="text-amber-500" />
-                {lang === "ar" ? "الكابتن (Captain Order)" : "Captain Order"}
+              <h1 className="text-sm sm:text-base font-black text-foreground leading-tight">
+                {lang === "ar" ? "إدارة الصالة وطلبات الكابتن" : "Captain & Dining Hall Orders"}
               </h1>
-              <p className="text-xs text-slate-400">
-                {lang === "ar"
-                  ? "إنشاء طلبات الطاولات وإرسالها وإدارتها"
-                  : "Create, send, and manage table orders"}
-              </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
             <Button
+              size="sm"
               onClick={() => setIsQrModalOpen(true)}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold gap-1.5 shadow-sm"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold gap-1.5 h-8 text-xs shadow-2xs"
             >
-              <QrCode size={16} />
+              <QrCode size={14} />
               {lang === "ar" ? "باركود الطلب الذاتي" : "Self-Order QR"}
             </Button>
             <Button
+              size="sm"
               onClick={() => handleOpenManage()}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-1.5 shadow-sm"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-1.5 h-8 text-xs shadow-2xs"
             >
-              <Plus size={16} />
+              <Plus size={14} />
               {lang === "ar" ? "إضافة طاولة" : "Add Table"}
             </Button>
-            <Link
-              to="/oven"
-              className="px-4 py-2 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-sm font-bold transition flex items-center gap-2"
-            >
-              <UtensilsCrossed size={16} />
-              {lang === "ar" ? "شاشة الفرن" : "Oven"}
-            </Link>
             <Button
+              size="sm"
               variant={isEditMode ? "secondary" : "outline"}
-              className={`gap-2 ${isEditMode ? "bg-amber-500 text-white hover:bg-amber-600 border-amber-500" : "bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700"}`}
+              className={`gap-1.5 h-8 text-xs ${isEditMode ? "bg-amber-500 text-white hover:bg-amber-600 border-amber-500" : ""}`}
               onClick={() => setIsEditMode(!isEditMode)}
             >
               <Settings2 size={16} />
@@ -545,7 +540,7 @@ function CaptainPage() {
             </Button>
           </div>
         </div>
-      </header>
+      </div>
       <CaptainSelfOrderPanel />
 
       <main className="flex-1 max-w-7xl mx-auto w-full p-4 overflow-auto">

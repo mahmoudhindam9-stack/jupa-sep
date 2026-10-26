@@ -1,5 +1,9 @@
 // @ts-nocheck
 import { createFileRoute, useLocation, Link } from "@tanstack/react-router";
+import {
+  extractTabParam,
+  useSyncedSubTab,
+} from "@/components/navigation/navigationRegistry";
 import { useState, useEffect, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useSettings } from "@/hooks/use-settings";
@@ -79,15 +83,18 @@ function HRPage() {
 
   // Active Tab state
   const location = useLocation();
-  const searchParams = new URLSearchParams(location.search);
-  const tabParam = searchParams.get("tab");
+  const tabParam = extractTabParam(location.search, (location as any).searchStr);
   const [activeTab, setActiveTab] = useState(tabParam || "grid");
 
   useEffect(() => {
     if (tabParam) {
       setActiveTab(tabParam);
+    } else {
+      setActiveTab("grid");
     }
   }, [tabParam]);
+
+  useSyncedSubTab("/admin/hr", activeTab, setActiveTab, "grid");
 
   // Search & Filter States
   const [empSearch, setEmpSearch] = useState("");

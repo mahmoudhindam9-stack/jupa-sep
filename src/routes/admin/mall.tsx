@@ -1,6 +1,10 @@
 // @ts-nocheck
 import { toast } from "sonner";
 import { createFileRoute, useLocation, Link } from "@tanstack/react-router";
+import {
+  extractTabParam,
+  useSyncedSubTab,
+} from "@/components/navigation/navigationRegistry";
 import { useState, useMemo, useEffect } from "react";
 import { VouchersLedgerSection } from "@/components/admin/VouchersLedgerSection";
 import {
@@ -137,17 +141,18 @@ function MallManagementPage() {
   }, [shops.length]);
 
   const location = useLocation();
-  const searchParams = new URLSearchParams(location.search);
-  const tabParam = searchParams.get("tab");
+  const tabParam = extractTabParam(location.search, (location as any).searchStr);
 
   const [activeTab, setActiveTab] = useState<
-    "grid" | "shops" | "payments" | "expenses" | "reports"
+    "grid" | "shops" | "payments" | "expenses" | "reports" | "vouchers" | "garden"
   >(() => {
     if (
       tabParam === "payments" ||
       tabParam === "expenses" ||
       tabParam === "reports" ||
-      tabParam === "shops"
+      tabParam === "shops" ||
+      tabParam === "vouchers" ||
+      tabParam === "garden"
     ) {
       return tabParam;
     }
@@ -155,17 +160,21 @@ function MallManagementPage() {
   });
 
   useEffect(() => {
-    if (tabParam) {
-      if (
-        tabParam === "payments" ||
-        tabParam === "expenses" ||
-        tabParam === "reports" ||
-        tabParam === "shops"
-      ) {
-        setActiveTab(tabParam);
-      }
+    if (
+      tabParam === "payments" ||
+      tabParam === "expenses" ||
+      tabParam === "reports" ||
+      tabParam === "shops" ||
+      tabParam === "vouchers" ||
+      tabParam === "garden"
+    ) {
+      setActiveTab(tabParam);
+    } else if (!tabParam || tabParam === "grid") {
+      setActiveTab("grid");
     }
   }, [tabParam]);
+
+  useSyncedSubTab("/admin/mall", activeTab, setActiveTab, "grid");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedYear, setSelectedYear] = useState(2026);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);

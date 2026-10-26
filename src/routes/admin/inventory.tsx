@@ -1,5 +1,9 @@
 // @ts-nocheck
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useLocation } from "@tanstack/react-router";
+import {
+  extractTabParam,
+  useSyncedSubTab,
+} from "@/components/navigation/navigationRegistry";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as XLSX from "xlsx";
 import { useState, useMemo, useEffect, useCallback } from "react";
@@ -128,13 +132,15 @@ function InventoryPage() {
       return { user, profile };
     },
   });
-  const [activeTab, setActiveTab] = useState(() => {
-    if (typeof window !== "undefined") {
-      const tab = new URLSearchParams(window.location.search).get("tab");
-      if (tab) return tab;
-    }
-    return "grid";
-  });
+  const location = useLocation();
+  const tabParam = extractTabParam(location.search, (location as any).searchStr);
+  const [activeTab, setActiveTab] = useState(() => tabParam || "grid");
+
+  useEffect(() => {
+    setActiveTab(tabParam || "grid");
+  }, [tabParam]);
+
+  useSyncedSubTab("/admin/inventory", activeTab, setActiveTab, "grid");
   const [search, setSearch] = useState("");
   const [filterLowStock, setFilterLowStock] = useState(false);
 

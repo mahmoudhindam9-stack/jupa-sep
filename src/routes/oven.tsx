@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { OrderTimer } from "@/components/OrderTimer";
 import { useToast } from "@/hooks/use-toast";
+import { AppMainNavbar } from "@/components/navigation/AppMainNavbar";
 import { AppBreadcrumbBar } from "@/components/navigation/AppBreadcrumbBar";
 
 export const Route = createFileRoute("/oven")({
@@ -272,24 +273,26 @@ function OvenPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 font-cairo">
-      {/* Unified Navigation Breadcrumb Bar */}
+    <div className="min-h-screen bg-background text-foreground font-cairo flex flex-col">
+      {/* 1. Permanent Fixed Main Top Bar */}
+      <AppMainNavbar />
+
+      {/* 2. Contextual Breadcrumb Bar */}
       <AppBreadcrumbBar />
 
-      <header className="bg-slate-900 text-white p-4 shadow-md sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+      <div className="bg-card/95 backdrop-blur border-b border-border px-4 sm:px-6 py-2.5">
+        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <Flame size={18} className="text-orange-500 shrink-0" />
             <div>
-              <h1 className="text-xl font-black flex items-center gap-2">
-                <Flame className="text-orange-500 fill-orange-500 animate-pulse" />
-                شاشة الفرن المباشرة (Oven KDS)
+              <h1 className="text-sm sm:text-base font-black text-foreground leading-tight">
+                شاشة الفرن والمطبخ المباشرة (KDS)
               </h1>
-              <p className="text-xs text-slate-400">إدارة ومتابعة تحضير وجبات الفرن</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 bg-muted/60 px-3 py-1 rounded-lg border border-border">
               <Switch
                 id="filter-oven"
                 checked={filterOvenOnly}
@@ -297,16 +300,16 @@ function OvenPage() {
               />
               <Label
                 htmlFor="filter-oven"
-                className="text-xs font-bold text-slate-200 cursor-pointer"
+                className="text-xs font-bold text-foreground cursor-pointer"
               >
-                أصناف الفرن فقط 🍕
+                أصناف الفرن فقط
               </Label>
             </div>
 
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="destructive" className="gap-2 text-xs font-bold h-9 shadow-xs">
-                  <Trash2 size={16} />
+                <Button variant="destructive" size="sm" className="gap-1.5 text-xs font-bold h-8 shadow-2xs">
+                  <Trash2 size={14} />
                   حذف جميع الطلبات
                 </Button>
               </AlertDialogTrigger>
@@ -333,7 +336,7 @@ function OvenPage() {
             </AlertDialog>
           </div>
         </div>
-      </header>
+      </div>
 
       <main className="p-4 max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {orders.length === 0 && (

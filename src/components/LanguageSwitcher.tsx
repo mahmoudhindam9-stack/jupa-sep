@@ -24,32 +24,30 @@ export function LanguageSwitcher({ className = "", compact = false }: LanguageSw
 
   if (compact) {
     return (
-      <div className={`space-y-1.5 ${className}`}>
-        <div className="flex items-center gap-1 bg-muted/60 border border-border p-1 rounded-xl">
+      <div className={`inline-flex items-center whitespace-nowrap shrink-0 ${className}`}>
+        <div className="inline-flex items-center gap-0.5 bg-muted/70 border border-border/80 p-0.5 rounded-lg">
           <button
             type="button"
             onClick={() => handleSwitch("ar")}
             title="اللغة العربية (Arabic)"
-            className={`flex-1 py-1 px-2 rounded-lg text-[11px] font-black transition flex items-center justify-center gap-1 cursor-pointer ${
+            className={`py-1 px-2 rounded-md text-[11px] font-bold transition-colors flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap shrink-0 ${
               currentLang === "ar"
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                ? "bg-primary text-primary-foreground shadow-2xs"
+                : "text-muted-foreground hover:bg-background/70 hover:text-foreground"
             }`}
           >
-            <span>🇸🇦</span>
             <span>عربي</span>
           </button>
           <button
             type="button"
             onClick={() => handleSwitch("en")}
             title="English Language"
-            className={`flex-1 py-1 px-2 rounded-lg text-[11px] font-black transition flex items-center justify-center gap-1 cursor-pointer ${
+            className={`py-1 px-2 rounded-md text-[11px] font-bold transition-colors flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap shrink-0 ${
               currentLang === "en"
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                ? "bg-primary text-primary-foreground shadow-2xs"
+                : "text-muted-foreground hover:bg-background/70 hover:text-foreground"
             }`}
           >
-            <span>🇬🇧</span>
             <span>EN</span>
           </button>
         </div>

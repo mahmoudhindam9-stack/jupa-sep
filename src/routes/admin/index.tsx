@@ -5,6 +5,10 @@ import { VouchersLedgerSection } from "@/components/admin/VouchersLedgerSection"
 import { DepartmentsGridHub } from "@/components/admin/DepartmentsGridHub";
 import { ComprehensiveFinancialPositionCard } from "@/components/admin/ComprehensiveFinancialPositionCard";
 import { createFileRoute, Link, useLocation } from "@tanstack/react-router";
+import {
+  extractTabParam,
+  useSyncedSubTab,
+} from "@/components/navigation/navigationRegistry";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -101,8 +105,7 @@ function AdminDashboard() {
   const { toast } = useToast();
   const { formatPrice } = useSettings();
   const location = useLocation();
-  const searchParams = new URLSearchParams(location.search);
-  const tabParam = searchParams.get("tab");
+  const tabParam = extractTabParam(location.search, (location as any).searchStr);
 
   const [activeTab, setActiveTab] = useState(tabParam || "grid");
   const [isAuditOperationsOpen, setIsAuditOperationsOpen] = useState(false);
@@ -115,6 +118,8 @@ function AdminDashboard() {
       setActiveTab("grid");
     }
   }, [tabParam]);
+
+  useSyncedSubTab("/admin", activeTab, setActiveTab, "grid");
 
   const [selectedUserEmail, setSelectedUserEmail] = useState("admin@restaurant.com");
 

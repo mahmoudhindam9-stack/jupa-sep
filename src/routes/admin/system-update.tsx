@@ -1,4 +1,8 @@
 import { createFileRoute, useLocation, useNavigate } from "@tanstack/react-router";
+import {
+  extractTabParam,
+  useSyncedSubTab,
+} from "@/components/navigation/navigationRegistry";
 import { useRef, useState, useEffect, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { erpStore } from "@/shared/services/erpStore";
@@ -96,8 +100,7 @@ function SystemUpdatePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const accessPackageInputRef = useRef<HTMLInputElement>(null);
 
-  const searchParams = new URLSearchParams(location.search);
-  const tabParam = searchParams.get("tab");
+  const tabParam = extractTabParam(location.search, (location as any).searchStr);
 
   const [currentTab, setCurrentTab] = useState(tabParam || "system");
 
@@ -108,6 +111,8 @@ function SystemUpdatePage() {
       setCurrentTab("system");
     }
   }, [tabParam]);
+
+  useSyncedSubTab("/admin/system-update", currentTab, setCurrentTab, "system");
 
   const handleTabChange = (newTab: string) => {
     setCurrentTab(newTab);

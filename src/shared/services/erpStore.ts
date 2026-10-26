@@ -2471,6 +2471,7 @@ export class ERPStore {
       }
       this.saveState();
     }
+    this.deduplicateSalesTreasuryTransactions(false);
     this.recalculateAccountBalances();
     this.initIndexedDB();
 
@@ -2501,6 +2502,7 @@ export class ERPStore {
               currentUser: cleanedCurrentUser,
               legacy_users_purged_2026_10_10: true,
             };
+            this.deduplicateSalesTreasuryTransactions(false);
             if (accountsChanged) this.saveState();
             else this.notify();
           } catch (err) {
@@ -2628,6 +2630,7 @@ export class ERPStore {
                     : [],
                   park_sales_hard_zero_reset_v4_2026_09_03: true,
                 };
+                this.deduplicateSalesTreasuryTransactions(false);
                 this.recalculateAccountBalances();
                 this.saveState();
                 this.saveToIDB(this.state);
@@ -3684,9 +3687,30 @@ export class ERPStore {
     relatedId,
     paymentMethod,
     containerId,
+    skipJournal = false,
   ) {
     const tr = this.state.treasuries.find((t) => t.id === treasuryId);
     if (!tr) return;
+    if (
+      relatedId &&
+      (String(relatedId).startsWith("INV-") || String(relatedId).startsWith("SRT-"))
+    ) {
+      const existingTx = (this.state.treasuryTransactions || []).find(
+        (existing) =>
+          existing.treasury_id === treasuryId &&
+          existing.type === type &&
+          (existing.related_entity_id === relatedId ||
+            (note && existing.note === note)),
+      );
+      if (existingTx) {
+        if (existingTx.related_entity_id !== relatedId) {
+          (existingTx as any).journal_reference = existingTx.related_entity_id;
+          existingTx.related_entity_id = relatedId;
+          this.saveState();
+        }
+        return;
+      }
+    }
     const beforeBal = tr.balance;
     if (type === "deposit" || type === "sales" || type === "transfer_in") {
       tr.balance += amount;
@@ -3725,7 +3749,9 @@ export class ERPStore {
       `balance: ${beforeBal}`,
       `balance: ${tr.balance}`,
     );
-    this.postTreasuryJournal(tx, tr);
+    if (!skipJournal) {
+      this.postTreasuryJournal(tx, tr);
+    }
   }
   postTreasuryJournal(tx, tr) {
     let debitAccount = "101000";
@@ -3783,7 +3809,10 @@ export class ERPStore {
         tx.created_at ? tx.created_at.split("T")[0] : undefined,
       );
       if (entry && entry.reference) {
-        tx.related_entity_id = entry.reference;
+        (tx as any).journal_reference = entry.reference;
+        if (!tx.related_entity_id) {
+          tx.related_entity_id = entry.reference;
+        }
       }
     }
   }
@@ -5259,6 +5288,155 @@ export class ERPStore {
     this.notify();
     return entry;
   }
+  deduplicateSalesTreasuryTransactions(persist = true) {
+    if (!this.state) return false;
+    let changed = false;
+
+    if (Array.isArray(this.state.treasuryTransactions)) {
+      for (const tx of this.state.treasuryTransactions) {
+        if (!tx || typeof tx.note !== "string") continue;
+        const salesMatch = tx.note.match(/إيرادات مبيعات المطعم\s*-\s*طلب رقم #(\S+)/);
+        if (salesMatch && salesMatch[1]) {
+          const expectedRef = `INV-${salesMatch[1]}`;
+          if (tx.related_entity_id !== expectedRef) {
+            if (tx.related_entity_id && !String(tx.related_entity_id).startsWith("INV-")) {
+              (tx as any).journal_reference = tx.related_entity_id;
+            }
+            tx.related_entity_id = expectedRef;
+            changed = true;
+          }
+        }
+        const returnMatch = tx.note.match(/مرتجع مبيعات المطعم\s*-\s*طلب رقم #(\S+)/);
+        if (returnMatch && returnMatch[1]) {
+          const expectedRef = `SRT-${returnMatch[1]}`;
+          if (tx.related_entity_id !== expectedRef) {
+            if (tx.related_entity_id && !String(tx.related_entity_id).startsWith("SRT-")) {
+              (tx as any).journal_reference = tx.related_entity_id;
+            }
+            tx.related_entity_id = expectedRef;
+            changed = true;
+          }
+        }
+      }
+
+      const seenTxKeys = new Set<string>();
+      const deduplicatedReversed: any[] = [];
+      for (let i = this.state.treasuryTransactions.length - 1; i >= 0; i--) {
+        const tx = this.state.treasuryTransactions[i];
+        if (!tx) continue;
+        const relId = String(tx.related_entity_id || "");
+        if (relId.startsWith("INV-") || relId.startsWith("SRT-")) {
+          const key = `${tx.treasury_id || "tr-1"}:${tx.type}:${relId}`;
+          if (seenTxKeys.has(key)) {
+            changed = true;
+            continue;
+          }
+          seenTxKeys.add(key);
+        }
+        deduplicatedReversed.push(tx);
+      }
+      if (changed) {
+        this.state.treasuryTransactions = deduplicatedReversed.reverse();
+      }
+    }
+
+    if (Array.isArray(this.state.journalEntries)) {
+      const seenJeKeys = new Set<string>();
+      const deduplicatedJeReversed: any[] = [];
+      let jeChanged = false;
+      for (let i = this.state.journalEntries.length - 1; i >= 0; i--) {
+        const je = this.state.journalEntries[i];
+        if (!je) continue;
+        const desc = String(je.description || "");
+        const salesJeMatch = desc.match(
+          /(?:فاتورة مبيعات POS|إيرادات مبيعات المطعم)\s*-\s*طلب رقم #(\S+)/,
+        );
+        const returnJeMatch = desc.match(
+          /(?:مرتجع مبيعات POS|مرتجع مبيعات المطعم)\s*-\s*طلب رقم #(\S+)/,
+        );
+        if (salesJeMatch && salesJeMatch[1]) {
+          const key = `INV-${salesJeMatch[1]}`;
+          if (seenJeKeys.has(key)) {
+            jeChanged = true;
+            continue;
+          }
+          seenJeKeys.add(key);
+        } else if (returnJeMatch && returnJeMatch[1]) {
+          const key = `SRT-${returnJeMatch[1]}`;
+          if (seenJeKeys.has(key)) {
+            jeChanged = true;
+            continue;
+          }
+          seenJeKeys.add(key);
+        }
+        deduplicatedJeReversed.push(je);
+      }
+      if (jeChanged) {
+        this.state.journalEntries = deduplicatedJeReversed.reverse();
+        changed = true;
+      }
+    }
+
+    if (Array.isArray(this.state.treasuries)) {
+      const cashierTr = this.state.treasuries.find(
+        (t) => t && (t.id === "tr-1" || t.linked_to_restaurant) && !t.deleted,
+      );
+      if (cashierTr) {
+        const opBal = Number(cashierTr.opening_balance ?? 0);
+        let computedBal = opBal;
+        const containerTotals = new Map<string, number>();
+
+        const trTxs = (this.state.treasuryTransactions || []).filter(
+          (tx) => tx && tx.treasury_id === cashierTr.id,
+        );
+        for (const tx of trTxs) {
+          const isIncoming =
+            tx.type === "deposit" || tx.type === "sales" || tx.type === "transfer_in";
+          const amt = Number(tx.amount || 0);
+          computedBal += isIncoming ? amt : -amt;
+
+          if (Array.isArray(cashierTr.containers)) {
+            const pm = tx.payment_method || "cash";
+            const curr = tx.currency || "EGP";
+            const matchedCnt =
+              cashierTr.containers.find(
+                (c: any) =>
+                  c.currency === curr &&
+                  ((pm === "cash" && c.id.includes("cash")) ||
+                    (pm === "card" && c.id.includes("card")) ||
+                    (pm === "wallet" && c.id.includes("wallet"))),
+              ) || cashierTr.containers.find((c: any) => c.currency === curr);
+            if (matchedCnt) {
+              const prev = containerTotals.get(matchedCnt.id) || 0;
+              containerTotals.set(matchedCnt.id, prev + (isIncoming ? amt : -amt));
+            }
+          }
+        }
+
+        if (Math.abs(Number(cashierTr.balance || 0) - computedBal) > 0.001) {
+          cashierTr.balance = computedBal;
+          cashierTr.available_balance = computedBal;
+          changed = true;
+        }
+        if (Array.isArray(cashierTr.containers)) {
+          for (const cnt of cashierTr.containers) {
+            const expectedCntBal = containerTotals.get(cnt.id) || 0;
+            if (Math.abs(Number(cnt.balance || 0) - expectedCntBal) > 0.001) {
+              cnt.balance = expectedCntBal;
+              changed = true;
+            }
+          }
+        }
+      }
+    }
+
+    if (changed && persist) {
+      this.recalculateAccountBalances();
+      this.saveState();
+    }
+    return changed;
+  }
+
   postSalesInvoiceJournal(
     orderNumber,
     total,
@@ -5270,85 +5448,112 @@ export class ERPStore {
     treasuryId = "tr-1",
     containerId,
   ) {
+    const orderRef = `INV-${orderNumber}`;
+    const alreadyExists = (this.state.treasuryTransactions || []).some(
+      (tx) =>
+        tx.treasury_id === treasuryId &&
+        tx.type === "sales" &&
+        (tx.related_entity_id === orderRef ||
+          (typeof tx.note === "string" && tx.note.includes(`طلب رقم #${orderNumber}`))),
+    );
+    if (alreadyExists) {
+      return;
+    }
+
     let treasuryAccount = "101000";
     if (paymentMethod === "card") treasuryAccount = "102000";
     else if (paymentMethod === "wallet") treasuryAccount = "103000";
     const rate = this.getExchangeRate(currency);
-    const lines = [
-      {
-        account_code: treasuryAccount,
-        debit: total,
-        credit: 0,
-        currency: currency,
-        rate: rate,
-      },
-      {
-        account_code: "401000",
-        debit: 0,
-        credit: subtotal,
-        currency: currency,
-        rate: rate,
-      },
-      {
-        account_code: "202000",
-        debit: 0,
-        credit: tax,
-        currency: currency,
-        rate: rate,
-      },
-    ];
-    this.addJournalEntry(
-      `فاتورة مبيعات POS - طلب رقم #${orderNumber}`,
-      lines,
-      `INV-${orderNumber}`,
-      currency,
-    );
+    const numericTotal = Number(total || 0);
+    const numericTax = Math.max(0, Number(tax || 0));
+    const numericSubtotal =
+      numericTax > 0 ? Math.max(0, numericTotal - numericTax) : numericTotal;
+
+    if (numericTotal > 0) {
+      const lines: any[] = [
+        {
+          account_code: treasuryAccount,
+          debit: numericTotal,
+          credit: 0,
+          currency: currency,
+          rate: rate,
+        },
+        {
+          account_code: "401000",
+          debit: 0,
+          credit: numericSubtotal,
+          currency: currency,
+          rate: rate,
+        },
+      ];
+      if (numericTax > 0) {
+        lines.push({
+          account_code: "202000",
+          debit: 0,
+          credit: numericTax,
+          currency: currency,
+          rate: rate,
+        });
+      }
+      try {
+        this.addJournalEntry(
+          `فاتورة مبيعات POS - طلب رقم #${orderNumber}`,
+          lines,
+          orderRef,
+          currency,
+        );
+      } catch (err) {
+        console.warn("Could not post sales journal entry:", err);
+      }
+    }
 
     // Track in active restaurant shift if one is open
     const activeShift = this.getActiveRestaurantShift();
     if (activeShift) {
       if (!activeShift.generated_journal_refs) activeShift.generated_journal_refs = [];
-      if (!activeShift.generated_journal_refs.includes(`INV-${orderNumber}`)) {
-        activeShift.generated_journal_refs.push(`INV-${orderNumber}`);
+      if (!activeShift.generated_journal_refs.includes(orderRef)) {
+        activeShift.generated_journal_refs.push(orderRef);
+        activeShift.orders_count = (activeShift.orders_count || 0) + 1;
+        activeShift.total_sales = (activeShift.total_sales || 0) + numericTotal;
+        activeShift.total_tax = (activeShift.total_tax || 0) + numericTax;
+        activeShift.net_total = Math.max(
+          0,
+          (activeShift.total_sales || 0) - (activeShift.total_refunds || 0),
+        );
+        if (!activeShift.payment_breakdown) {
+          activeShift.payment_breakdown = { cash: 0, card: 0, wallet: 0 };
+        }
+        if (paymentMethod === "card") {
+          activeShift.payment_breakdown.card =
+            (activeShift.payment_breakdown.card || 0) + numericTotal;
+        } else if (paymentMethod === "wallet") {
+          activeShift.payment_breakdown.wallet =
+            (activeShift.payment_breakdown.wallet || 0) + numericTotal;
+        } else {
+          activeShift.payment_breakdown.cash =
+            (activeShift.payment_breakdown.cash || 0) + numericTotal;
+        }
+        this.saveState();
       }
-      activeShift.orders_count = (activeShift.orders_count || 0) + 1;
-      activeShift.total_sales = (activeShift.total_sales || 0) + Number(total || 0);
-      activeShift.total_tax = (activeShift.total_tax || 0) + Number(tax || 0);
-      activeShift.net_total = Math.max(
-        0,
-        (activeShift.total_sales || 0) - (activeShift.total_refunds || 0),
-      );
-      if (!activeShift.payment_breakdown) {
-        activeShift.payment_breakdown = { cash: 0, card: 0, wallet: 0 };
-      }
-      if (paymentMethod === "card") {
-        activeShift.payment_breakdown.card =
-          (activeShift.payment_breakdown.card || 0) + Number(total || 0);
-      } else if (paymentMethod === "wallet") {
-        activeShift.payment_breakdown.wallet =
-          (activeShift.payment_breakdown.wallet || 0) + Number(total || 0);
-      } else {
-        activeShift.payment_breakdown.cash =
-          (activeShift.payment_breakdown.cash || 0) + Number(total || 0);
-      }
-      this.saveState();
     }
     try {
       this.addTreasuryTransaction(
         treasuryId,
         "sales",
-        total,
+        numericTotal,
         currency,
         `إيرادات مبيعات المطعم - طلب رقم #${orderNumber}`,
-        `INV-${orderNumber}`,
+        orderRef,
         paymentMethod,
         containerId,
+        true,
       );
     } catch (err) {
       console.error("Error adding treasury transaction for order:", err);
     }
   }
   syncOperationalSalesWithTreasury(orders, targetTreasuryId) {
+    this.deduplicateSalesTreasuryTransactions(true);
     let syncedCount = 0;
     let totalAmountSynced = 0;
     let alreadySyncedCount = 0;
@@ -5366,11 +5571,25 @@ export class ERPStore {
       };
     }
     const validOrders = (orders || []).filter(
-      (o) => o && o.order_number && o.status !== "cancelled",
+      (o) =>
+        o &&
+        o.order_number &&
+        o.status !== "cancelled" &&
+        o.status !== "refunded" &&
+        Number(o.total || 0) > 0,
     );
     for (const order of validOrders) {
       const orderRef = `INV-${order.order_number}`;
-      if (this.state.treasuryTransactions.find((tx) => tx.related_entity_id === orderRef)) {
+      const existingTx = this.state.treasuryTransactions.find(
+        (tx) =>
+          tx.related_entity_id === orderRef ||
+          (typeof tx.note === "string" && tx.note.includes(`طلب رقم #${order.order_number}`)),
+      );
+      if (existingTx) {
+        if (existingTx.related_entity_id !== orderRef && existingTx.type === "sales") {
+          (existingTx as any).journal_reference = existingTx.related_entity_id;
+          existingTx.related_entity_id = orderRef;
+        }
         alreadySyncedCount++;
         continue;
       }
@@ -5443,38 +5662,46 @@ export class ERPStore {
     if (paymentMethod === "card") treasuryAccount = "102000";
     else if (paymentMethod === "wallet") treasuryAccount = "103000";
     const rate = this.getExchangeRate(currency);
-    const lines = [
-      {
-        account_code: "401000",
-        debit: total,
-        credit: 0,
-        currency: currency,
-        rate: rate,
-      },
-      {
-        account_code: treasuryAccount,
-        debit: 0,
-        credit: total,
-        currency: currency,
-        rate: rate,
-      },
-    ];
-    this.addJournalEntry(
-      `مرتجع مبيعات POS - طلب رقم #${orderNumber}`,
-      lines,
-      `SRT-${orderNumber}`,
-      currency,
-    );
+    const numericTotal = Number(total || 0);
+    if (numericTotal > 0) {
+      const lines = [
+        {
+          account_code: "401000",
+          debit: numericTotal,
+          credit: 0,
+          currency: currency,
+          rate: rate,
+        },
+        {
+          account_code: treasuryAccount,
+          debit: 0,
+          credit: numericTotal,
+          currency: currency,
+          rate: rate,
+        },
+      ];
+      try {
+        this.addJournalEntry(
+          `مرتجع مبيعات POS - طلب رقم #${orderNumber}`,
+          lines,
+          `SRT-${orderNumber}`,
+          currency,
+        );
+      } catch (err) {
+        console.warn("Could not post sales return journal entry:", err);
+      }
+    }
     try {
       this.addTreasuryTransaction(
         treasuryId,
         "withdrawal",
-        total,
+        numericTotal,
         currency,
         `مرتجع مبيعات المطعم - طلب رقم #${orderNumber}`,
         `SRT-${orderNumber}`,
         paymentMethod,
         containerId,
+        true,
       );
     } catch (err) {
       console.error("Error adding treasury transaction for refund:", err);

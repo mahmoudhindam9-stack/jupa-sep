@@ -1,5 +1,9 @@
 // @ts-nocheck
 import { createFileRoute, useNavigate, useBlocker, useLocation, Link } from "@tanstack/react-router";
+import {
+  extractTabParam,
+  useSyncedSubTab,
+} from "@/components/navigation/navigationRegistry";
 import React, { useState, useEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
 import {
@@ -348,51 +352,51 @@ function LedgerPage() {
   // UI state
   const location = useLocation();
   const [selectedTab, setSelectedTab] = useState(() => {
-    if (typeof window !== "undefined") {
-      const tabParam = new URLSearchParams(window.location.search).get("tab");
-      if (
-        tabParam &&
-        [
-          "hub",
-          "financial_position",
-          "ledger",
-          "journal",
-          "vouchers",
-          "trial",
-          "statements",
-          "accounts",
-          "treasury",
-          "reports",
-        ].includes(tabParam)
-      ) {
-        return tabParam;
-      }
+    const tabParam = extractTabParam(location.search, (location as any).searchStr);
+    if (
+      tabParam &&
+      [
+        "hub",
+        "financial_position",
+        "ledger",
+        "journal",
+        "vouchers",
+        "trial",
+        "statements",
+        "accounts",
+        "treasury",
+        "reports",
+      ].includes(tabParam)
+    ) {
+      return tabParam;
     }
     return "hub";
   });
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const tabParam = new URLSearchParams(location.search).get("tab");
-      if (
-        tabParam &&
-        [
-          "hub",
-          "financial_position",
-          "ledger",
-          "journal",
-          "vouchers",
-          "trial",
-          "statements",
-          "accounts",
-          "treasury",
-          "reports",
-        ].includes(tabParam)
-      ) {
-        setSelectedTab(tabParam);
-      }
+    const tabParam = extractTabParam(location.search, (location as any).searchStr);
+    if (
+      tabParam &&
+      [
+        "hub",
+        "financial_position",
+        "ledger",
+        "journal",
+        "vouchers",
+        "trial",
+        "statements",
+        "accounts",
+        "treasury",
+        "reports",
+      ].includes(tabParam)
+    ) {
+      setSelectedTab(tabParam);
+    } else if (!tabParam) {
+      setSelectedTab("hub");
     }
   }, [location.search]);
+
+  useSyncedSubTab("/admin/ledger", selectedTab, setSelectedTab, "hub");
 
   const [isImportingOracle, setIsImportingOracle] = useState(false);
   const [isSavingToDb, setIsSavingToDb] = useState(false);

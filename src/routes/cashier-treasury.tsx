@@ -8,6 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { erpStore } from "@/shared/services/erpStore";
 import { useSettings } from "@/hooks/use-settings";
 import { Button } from "@/components/ui/button";
+import { AppMainNavbar } from "@/components/navigation/AppMainNavbar";
 import { AppBreadcrumbBar } from "@/components/navigation/AppBreadcrumbBar";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
@@ -64,7 +65,11 @@ function getOrderCurrency(order: any, erpTransactions?: any[]): string {
   if (!order) return "EGP";
   const txs = erpTransactions || erpStore.getState().treasuryTransactions;
   if (order.order_number && Array.isArray(txs)) {
-    const invTx = txs.find((tx) => tx.related_entity_id === `INV-${order.order_number}`);
+    const invTx = txs.find(
+      (tx) =>
+        tx.related_entity_id === `INV-${order.order_number}` ||
+        (typeof tx.note === "string" && tx.note.includes(`طلب رقم #${order.order_number}`)),
+    );
     if (invTx && invTx.currency) return invTx.currency;
   }
   if (order.currency) return order.currency;
@@ -83,7 +88,11 @@ function getOrderOriginalAmount(
   if (!order || order.total === undefined || order.total === null) return 0;
   const txs = erpTransactions || erpStore.getState().treasuryTransactions;
   if (order.order_number && Array.isArray(txs)) {
-    const invTx = txs.find((tx) => tx.related_entity_id === `INV-${order.order_number}`);
+    const invTx = txs.find(
+      (tx) =>
+        tx.related_entity_id === `INV-${order.order_number}` ||
+        (typeof tx.note === "string" && tx.note.includes(`طلب رقم #${order.order_number}`)),
+    );
     if (invTx && Number(invTx.amount) > 0) {
       return Number(invTx.amount);
     }
@@ -265,6 +274,8 @@ function CashierTreasuryPage() {
 
   // Hydration safeguard & real-time store subscription
   useEffect(() => {
+    erpStore.deduplicateSalesTreasuryTransactions(true);
+    setErpState(erpStore.getState());
     setIsMounted(true);
     return erpStore.subscribe(() => {
       setErpState(erpStore.getState());
@@ -333,13 +344,21 @@ function CashierTreasuryPage() {
     };
   })();
 
-  // Keep track of transaction count for live notifications
-  const [prevTxCount, setPrevTxCount] = useState<number | null>(null);
+  // Keep track of transaction count & latest ID for live notifications (excluding initial page-load sync)
+  const [prevTxSnapshot, setPrevTxSnapshot] = useState<{
+    count: number;
+    latestId: string | null;
+  } | null>(null);
 
   useEffect(() => {
     if (isMounted) {
       const currentCount = transactions.length;
-      if (prevTxCount !== null && currentCount > prevTxCount) {
+      const currentLatestId = transactions[0]?.id || null;
+      if (
+        prevTxSnapshot !== null &&
+        currentCount > prevTxSnapshot.count &&
+        currentLatestId !== prevTxSnapshot.latestId
+      ) {
         const latestTx = transactions[0];
         if (latestTx) {
           toast({
@@ -349,9 +368,15 @@ function CashierTreasuryPage() {
           });
         }
       }
-      setPrevTxCount(currentCount);
+      if (
+        prevTxSnapshot === null ||
+        prevTxSnapshot.count !== currentCount ||
+        prevTxSnapshot.latestId !== currentLatestId
+      ) {
+        setPrevTxSnapshot({ count: currentCount, latestId: currentLatestId });
+      }
     }
-  }, [transactions, isMounted, prevTxCount, lang, toast]);
+  }, [transactions, isMounted, prevTxSnapshot, lang, toast]);
 
   // Helper to read locally cached POS orders
   const getLocalOrders = (): Order[] => {
@@ -549,7 +574,14 @@ function CashierTreasuryPage() {
   // Operational Sales Synchronization Stats
   const operationalSalesStats = (() => {
     const orders = ordersQuery.data || [];
-    const validOrders = orders.filter((o) => o && o.order_number && o.status !== "cancelled");
+    const validOrders = orders.filter(
+      (o) =>
+        o &&
+        o.order_number &&
+        o.status !== "cancelled" &&
+        o.status !== "refunded" &&
+        Number(o.total || 0) > 0,
+    );
     const totalOrdersCount = validOrders.length;
     let unsyncedCount = 0;
     let totalSalesAmount = 0;
@@ -557,7 +589,10 @@ function CashierTreasuryPage() {
     validOrders.forEach((o) => {
       const orderRef = `INV-${o.order_number}`;
       const isSynced = erpState.treasuryTransactions.some(
-        (tx) => tx.related_entity_id === orderRef && tx.treasury_id === cashierTreasuryId,
+        (tx) =>
+          tx.treasury_id === cashierTreasuryId &&
+          (tx.related_entity_id === orderRef ||
+            (typeof tx.note === "string" && tx.note.includes(`طلب رقم #${o.order_number}`))),
       );
       if (!isSynced) unsyncedCount++;
       totalSalesAmount += Number(o.total || 0);
@@ -1051,29 +1086,31 @@ function CashierTreasuryPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans">
-      {/* Unified Navigation Breadcrumb Bar */}
+    <div className="min-h-screen bg-slate-50 dark:bg-background text-slate-800 dark:text-foreground flex flex-col font-sans">
+      {/* 1. Permanent Fixed Main Top Bar */}
+      <AppMainNavbar />
+
+      {/* 2. Contextual Breadcrumb Bar */}
       <AppBreadcrumbBar />
 
-      {/* Header - Bright Light Theme Sticky */}
-      <header className="px-6 py-4 bg-white/95 backdrop-blur border-b border-slate-200/80 sticky top-0 z-50 shadow-sm">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {/* Contextual Cashier Treasury Action Bar */}
+      <div className="px-4 sm:px-6 py-3 bg-card/95 backdrop-blur border-b border-border">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-100/80 border border-emerald-300 flex items-center justify-center text-emerald-700 shrink-0 shadow-sm">
-              <Wallet size={22} />
+            <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
+              <Wallet size={18} />
             </div>
             <div>
-              <h1 className="text-xl font-black tracking-tight text-slate-900 flex items-center gap-2 flex-wrap">
-                <span>{lang === "ar" ? "تفاصيل خزينة الكاشير" : "Cashier Treasury Details"}</span>
-                <span className="text-[11px] bg-blue-100 text-blue-800 border border-blue-300 px-2.5 py-0.5 rounded-full font-black">
-                  {lang === "ar" ? "رقم الحساب: 13010130" : "Account No: 13010130"}
+              <div className="flex items-center gap-2 flex-wrap text-xs sm:text-sm">
+                <h1 className="font-black tracking-tight text-foreground">
+                  {lang === "ar" ? "تفاصيل خزينة الكاشير" : "Cashier Treasury Details"}
+                </h1>
+                <span className="text-muted-foreground">·</span>
+                <span className="text-xs font-mono tabular-nums font-bold text-muted-foreground">
+                  {lang === "ar" ? "حساب 13010130" : "Acct 13010130"}
                 </span>
-                <span className="text-[11px] bg-emerald-100/80 text-emerald-800 border border-emerald-300 px-2.5 py-0.5 rounded-full font-black flex items-center gap-1.5 shadow-xs">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  {lang === "ar" ? "حساب نشط ومراقب" : "Active & Monitored"}
-                </span>
-              </h1>
-              <p className="text-xs text-slate-500 mt-0.5 font-medium">
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-0.5 font-medium">
                 {lang === "ar"
                   ? "مراقبة الرصيد الفعلي وحركات المبيعات والتحصيلات والمسحوبات والمرتجع الفوري"
                   : "Monitor actual balance, sales entries, collections, and instant refunds"}
@@ -1087,22 +1124,22 @@ function CashierTreasuryPage() {
                 setTransferAmount(shiftSalesAmount);
                 setTransferDialogOpen(true);
               }}
-              className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs h-9 px-4 rounded-xl flex items-center gap-2 shadow-sm transition active:scale-95"
+              className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs h-8 px-3 rounded-lg flex items-center gap-1.5 shadow-2xs transition active:scale-95"
             >
-              <ArrowLeftRight size={16} />
+              <ArrowLeftRight size={14} />
               <span>{lang === "ar" ? "تحويل نقدية / إنهاء الشيفت" : "Transfer / End Shift"}</span>
             </Button>
 
             <Button
               onClick={() => handleSyncSales(true)}
               disabled={isSyncing}
-              className={`font-black text-xs h-9 px-4 rounded-xl flex items-center gap-2 shadow-sm transition active:scale-95 ${
+              className={`font-black text-xs h-8 px-3 rounded-lg flex items-center gap-1.5 shadow-2xs transition active:scale-95 ${
                 operationalSalesStats.unsyncedCount > 0
-                  ? "bg-amber-600 hover:bg-amber-700 text-white animate-pulse"
+                  ? "bg-amber-600 hover:bg-amber-700 text-white"
                   : "bg-indigo-600 hover:bg-indigo-700 text-white"
               }`}
             >
-              <RefreshCw size={15} className={isSyncing ? "animate-spin" : ""} />
+              <RefreshCw size={14} className={isSyncing ? "animate-spin" : ""} />
               <span>
                 {isSyncing
                   ? lang === "ar"
@@ -1112,7 +1149,7 @@ function CashierTreasuryPage() {
                     ? `مزامنة مبيعات اليوم ${
                         operationalSalesStats.unsyncedCount > 0
                           ? `(${operationalSalesStats.unsyncedCount} معلق)`
-                          : "⚡"
+                          : ""
                       }`
                     : "Sync Today Sales"}
               </span>
@@ -1122,60 +1159,42 @@ function CashierTreasuryPage() {
               type="button"
               onClick={() => printCashierReport("shift")}
               variant="outline"
-              className="border-slate-300 bg-white hover:bg-slate-50 text-slate-800 font-bold text-xs h-9 px-4 rounded-xl flex items-center gap-2 shadow-sm"
+              className="font-bold text-xs h-8 px-3 rounded-lg flex items-center gap-1.5"
               title="طباعة شيفت اليوم"
             >
-              <Printer size={16} />
+              <Printer size={14} />
               <span>طباعة الشيفت</span>
             </Button>
             <Button
               type="button"
               onClick={() => printCashierReport("range")}
               variant="outline"
-              className="border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-800 font-bold text-xs h-9 px-4 rounded-xl flex items-center gap-2 shadow-sm"
+              className="font-bold text-xs h-8 px-3 rounded-lg flex items-center gap-1.5"
               title="طباعة التاريخ المحدد"
             >
-              <Printer size={16} />
+              <Printer size={14} />
               <span>طباعة الفترة</span>
-            </Button>
-            <Button
-              type="button"
-              onClick={() => printCashierReport("range")}
-              variant="outline"
-              className="border-violet-300 bg-violet-50 hover:bg-violet-100 text-violet-800 font-bold text-xs h-9 px-4 rounded-xl flex items-center gap-2 shadow-sm"
-              title="طباعة مستند محاسبي"
-            >
-              <FileText size={16} />
-              <span>مستند محاسبي</span>
             </Button>
             <Button
               type="button"
               onClick={() => exportCashierReportToExcel("range")}
               variant="outline"
-              className="border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs h-9 px-4 rounded-xl flex items-center gap-2 shadow-sm"
+              className="font-bold text-xs h-8 px-3 rounded-lg flex items-center gap-1.5"
               title="تصدير الفترة إلى Excel"
             >
-              <FileSpreadsheet size={16} />
+              <FileSpreadsheet size={14} />
               <span>Excel للفترة</span>
             </Button>
             <Button
               onClick={() => setExportDialogOpen(true)}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-9 px-4 rounded-xl flex items-center gap-2 shadow-sm transition active:scale-95"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-8 px-3 rounded-lg flex items-center gap-1.5 shadow-2xs transition active:scale-95"
             >
-              <FileSpreadsheet size={16} />
-              <span>{lang === "ar" ? "تصفية وتصدير تقرير Excel" : "Export Custom Excel"}</span>
+              <FileSpreadsheet size={14} />
+              <span>{lang === "ar" ? "تصفية وتصدير Excel" : "Export Custom Excel"}</span>
             </Button>
-
-            <Link
-              to="/"
-              className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 text-xs font-bold rounded-xl transition border border-slate-300/80 shadow-xs active:scale-95"
-            >
-              <ArrowLeft size={14} />
-              <span>{lang === "ar" ? "العودة للرئيسية" : "Back to POS"}</span>
-            </Link>
           </div>
         </div>
-      </header>
+      </div>
 
       {/* Main Dashboard Container */}
       <main className="flex-1 p-6 max-w-7xl mx-auto w-full space-y-6">

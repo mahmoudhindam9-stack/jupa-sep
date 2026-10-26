@@ -24,30 +24,36 @@ export function CurrencySwitcher({
 
   if (compact) {
     return (
-      <div data-studio-preserve="currency-switcher" className={`space-y-1.5 ${className}`}>
-        <div className="flex items-center gap-1 bg-muted/60 border border-border p-1 rounded-xl">
+      <div
+        data-studio-preserve="currency-switcher"
+        className={`inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 ${className}`}
+      >
+        <div className="inline-flex items-center gap-0.5 bg-muted/70 border border-border/80 p-0.5 rounded-lg">
           {currencies.map((c) => {
             const isActive = currency === c.code;
             return (
               <button
                 key={c.code}
+                type="button"
                 onClick={() => changeCurrency(c.code)}
                 title={`عرض هذه الصفحة بـ ${c.labelAr}`}
-                className={`px-2 py-1 rounded-lg text-[11px] font-black transition flex items-center gap-1 ${
+                className={`px-2 py-1 rounded-md text-[11px] font-bold transition-colors flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0 ${
                   isActive
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    ? "bg-primary text-primary-foreground shadow-2xs"
+                    : "text-muted-foreground hover:bg-background/70 hover:text-foreground"
                 }`}
               >
-                <span>{c.flag}</span>
                 <span>{c.code}</span>
               </button>
             );
           })}
         </div>
         {currency !== "USD" && (
-          <div className="flex items-center justify-between gap-1.5 bg-muted/40 px-2 py-1 rounded-lg border border-border/60 text-[11px]">
-            <span className="text-muted-foreground font-bold shrink-0">1 $ =</span>
+          <div
+            className="hidden xl:inline-flex items-center gap-1 bg-muted/40 px-2 py-1 rounded-lg border border-border/60 text-[11px] tabular-nums"
+            title="سعر الصرف اليومي للتحويل مقابل الدولار"
+          >
+            <span className="text-muted-foreground font-semibold shrink-0">1$ =</span>
             <input
               type="number"
               step="any"
@@ -58,8 +64,7 @@ export function CurrencySwitcher({
                   updateExchangeRate(currency, val);
                 }
               }}
-              className="w-14 h-5 px-1 text-center font-mono font-bold bg-background border border-border rounded text-[11px] focus:ring-1 focus:ring-primary focus:outline-none"
-              title="سعر الصرف اليومي للتحويل مقابل الدولار"
+              className="w-14 h-5 px-1 text-center font-mono font-bold tabular-nums bg-background border border-border rounded text-[11px] focus:ring-1 focus:ring-primary focus:outline-none"
             />
             <span className="font-bold text-foreground shrink-0">
               {currency === "EGP" ? "ج.م" : "ج.س.ج"}

@@ -1,4 +1,8 @@
-import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, useLocation, Link } from "@tanstack/react-router";
+import {
+  extractTabParam,
+  useSyncedSubTab,
+} from "@/components/navigation/navigationRegistry";
 import { useEffect, useState } from "react";
 import {
   ArrowUpRight,
@@ -97,10 +101,20 @@ function getSyncCounts(): RestaurantCounts {
 
 function RestaurantHubPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const tabParam = extractTabParam(location.search, (location as any).searchStr);
   const [counts, setCounts] = useState<RestaurantCounts>({ menu: 8, inventory: 6, orders: 0 });
   const [isLauncherOpen, setIsLauncherOpen] = useState(false);
   const [closingShift, setClosingShift] = useState<RestaurantShift | null>(null);
-  const [activeTab, setActiveTab] = useState<"grid" | "vouchers">("grid");
+  const [activeTab, setActiveTab] = useState<"grid" | "vouchers">(
+    tabParam === "vouchers" ? "vouchers" : "grid",
+  );
+
+  useEffect(() => {
+    setActiveTab(tabParam === "vouchers" ? "vouchers" : "grid");
+  }, [tabParam]);
+
+  useSyncedSubTab("/admin/restaurant", activeTab, setActiveTab, "grid");
 
   useEffect(() => {
     let active = true;

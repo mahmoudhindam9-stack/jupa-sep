@@ -1,6 +1,10 @@
 // @ts-nocheck
 import React, { useState, useMemo, useEffect, useSyncExternalStore } from "react";
 import { createFileRoute, useLocation, Link, useNavigate } from "@tanstack/react-router";
+import {
+  extractTabParam,
+  useSyncedSubTab,
+} from "@/components/navigation/navigationRegistry";
 import { toast } from "sonner";
 import {
   Trees,
@@ -77,13 +81,14 @@ export function ParkManagementPage() {
 
   const navigate = useNavigate();
   const location = useLocation();
-  const searchParams = new URLSearchParams(location.search);
-  const tabParam = searchParams.get("tab") || "grid";
+  const tabParam = extractTabParam(location.search, (location as any).searchStr) || "grid";
 
   const [activeTab, setActiveTab] = useState(tabParam);
   useEffect(() => {
     setActiveTab(tabParam || "grid");
   }, [tabParam]);
+
+  useSyncedSubTab("/admin/park", activeTab, setActiveTab, "grid");
 
   const handleTabChange = (newTab: string) => {
     setActiveTab(newTab);
