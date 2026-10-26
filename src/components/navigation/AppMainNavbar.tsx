@@ -147,7 +147,7 @@ export function AppMainNavbar({
               <ChevronDown size={13} className="text-muted-foreground shrink-0" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-60 p-1.5 font-cairo" dir="rtl">
+          <DropdownMenuContent align="start" className="w-60 p-1.5 font-cairo text-right">
             <DropdownMenuItem
               onClick={() => {
                 dispatchSubTabCommand("/admin", "");

@@ -196,8 +196,7 @@ export function AppBreadcrumbBar({
                 </DropdownMenuTrigger>
                 <DropdownMenuContent
                   align="start"
-                  className="w-60 p-1.5 font-cairo"
-                  dir="rtl"
+                  className="w-60 p-1.5 font-cairo text-right"
                 >
                   <DropdownMenuLabel className="text-[11px] text-muted-foreground px-2 py-1">
                     الانتقال السريع لقسم رئيسي آخر
@@ -274,8 +273,7 @@ export function AppBreadcrumbBar({
                     </DropdownMenuTrigger>
                     <DropdownMenuContent
                       align="start"
-                      className="w-64 p-1.5 font-cairo"
-                      dir="rtl"
+                      className="w-64 p-1.5 font-cairo text-right"
                     >
                       <DropdownMenuLabel className="text-[11px] text-muted-foreground px-2 py-1">
                         الأقسام الفرعية داخل {department.label}
