@@ -226,4 +226,224 @@ $get_my_profile$;
 REVOKE ALL ON FUNCTION public.get_my_managed_profile() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.get_my_managed_profile() TO authenticated;
 
+-- 4. Idempotent seed/update of the compliant default admin account (admin / Admin@12345)
+DO $seed_compliant_admin$
+DECLARE
+  v_admin_id uuid;
+  v_instance_id uuid;
+  v_full_permissions jsonb;
+BEGIN
+  SELECT jsonb_object_agg(permission_key, true)
+    INTO v_full_permissions
+  FROM unnest(ARRAY[
+    'orders',
+    'orders_view',
+    'orders_create_custom',
+    'orders_cancel_modify',
+    'orders_manage_carts',
+    'orders_generate_qr',
+    'pos',
+    'pos_access',
+    'pos_create_custom_order',
+    'pos_apply_discounts',
+    'pos_void_items',
+    'restaurant_open_shift',
+    'restaurant_returns',
+    'captain',
+    'captain_access',
+    'captain_create_order',
+    'captain_transfer_tables',
+    'captain_modify_items',
+    'kitchen',
+    'kitchen_view',
+    'kitchen_change_status',
+    'kitchen_modify_order',
+    'delivery',
+    'delivery_view',
+    'delivery_update_status',
+    'inventory',
+    'inventory_view',
+    'inventory_adjust_transfer',
+    'inventory_waste_dispose',
+    'purchasing',
+    'purchasing_view',
+    'purchasing_add_invoice',
+    'purchasing_returns',
+    'production',
+    'production_view',
+    'production_execute',
+    'hr',
+    'hr_view_attendance',
+    'hr_manage_payroll_loans',
+    'treasury',
+    'treasury_view',
+    'treasury_open_close',
+    'treasury_transfer_reconcile',
+    'accounting',
+    'accounting_view',
+    'accounting_post_journal',
+    'accounting_lock_period',
+    'journal_approval',
+    'expense_approval',
+    'revenue_approval',
+    'cost_centers',
+    'mall_manage_shops',
+    'mall_garden_finance',
+    'reports',
+    'reports_view_sales',
+    'reports_view_financials',
+    'super_admin_full_access',
+    'users_roles',
+    'system_manage_users',
+    'branch_mgmt',
+    'developer_options',
+    'system_backup_update',
+    'audit_logs',
+    'system_audit_logs',
+    'manage_park_shifts',
+    'delete_park_shifts',
+    'park_reports',
+    'park_open_shift',
+    'park_returns',
+    'approval_journals',
+    'approval_expenses',
+    'approval_revenues'
+  ]::text[]) AS keys(permission_key);
+
+  SELECT COALESCE(
+    (SELECT u.instance_id FROM auth.users u LIMIT 1),
+    '00000000-0000-0000-0000-000000000000'::uuid
+  ) INTO v_instance_id;
+
+  SELECT u.id INTO v_admin_id
+  FROM auth.users u
+  WHERE lower(trim(COALESCE(u.email, ''))) = 'admin@restocash.com'
+  LIMIT 1;
+
+  IF v_admin_id IS NULL THEN
+    SELECT p.id INTO v_admin_id
+    FROM public.profiles p
+    WHERE lower(trim(COALESCE(p.username, ''))) = 'admin'
+    LIMIT 1;
+  END IF;
+
+  IF v_admin_id IS NULL THEN
+    v_admin_id := gen_random_uuid();
+    INSERT INTO auth.users (
+      instance_id,
+      id,
+      aud,
+      role,
+      email,
+      encrypted_password,
+      email_confirmed_at,
+      raw_app_meta_data,
+      raw_user_meta_data,
+      created_at,
+      updated_at,
+      confirmation_token,
+      email_change,
+      email_change_token_new,
+      recovery_token
+    )
+    VALUES (
+      v_instance_id,
+      v_admin_id,
+      'authenticated',
+      'authenticated',
+      'admin@restocash.com',
+      extensions.crypt('Admin@12345', extensions.gen_salt('bf')),
+      now(),
+      '{"provider":"email","providers":["email"]}'::jsonb,
+      jsonb_build_object(
+        'username', 'admin',
+        'full_name', 'مدير النظام العام',
+        'phone', '01000000000',
+        'role', 'super_admin'
+      ),
+      now(),
+      now(),
+      '',
+      '',
+      '',
+      ''
+    );
+  ELSE
+    UPDATE auth.users
+       SET email = 'admin@restocash.com',
+           encrypted_password = extensions.crypt('Admin@12345', extensions.gen_salt('bf')),
+           email_confirmed_at = COALESCE(email_confirmed_at, now()),
+           raw_app_meta_data = '{"provider":"email","providers":["email"]}'::jsonb,
+           raw_user_meta_data = COALESCE(raw_user_meta_data, '{}'::jsonb) || jsonb_build_object(
+             'username', 'admin',
+             'full_name', 'مدير النظام العام',
+             'role', 'super_admin'
+           ),
+           updated_at = now()
+     WHERE id = v_admin_id;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM auth.identities i
+    WHERE i.user_id = v_admin_id AND i.provider = 'email'
+  ) THEN
+    INSERT INTO auth.identities (
+      id,
+      user_id,
+      provider_id,
+      identity_data,
+      provider,
+      last_sign_in_at,
+      created_at,
+      updated_at
+    )
+    VALUES (
+      gen_random_uuid(),
+      v_admin_id,
+      v_admin_id::text,
+      jsonb_build_object(
+        'sub', v_admin_id::text,
+        'email', 'admin@restocash.com',
+        'email_verified', true,
+        'phone_verified', false
+      ),
+      'email',
+      now(),
+      now(),
+      now()
+    );
+  END IF;
+
+  INSERT INTO public.profiles (
+    id,
+    email,
+    username,
+    full_name,
+    phone,
+    role,
+    permissions,
+    created_at,
+    updated_at
+  )
+  VALUES (
+    v_admin_id,
+    'admin@restocash.com',
+    'admin',
+    'مدير النظام العام',
+    '01000000000',
+    'super_admin',
+    v_full_permissions,
+    now(),
+    now()
+  )
+  ON CONFLICT (id) DO UPDATE
+     SET email = 'admin@restocash.com',
+         username = 'admin',
+         full_name = COALESCE(NULLIF(trim(public.profiles.full_name), ''), 'مدير النظام العام'),
+         role = 'super_admin',
+         permissions = v_full_permissions,
+         updated_at = now();
+END;
+$seed_compliant_admin$;
+
 COMMIT;
