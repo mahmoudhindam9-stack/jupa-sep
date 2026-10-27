@@ -42,12 +42,21 @@ function safeInternalRedirect(value: string | null): string {
 
 async function signInHostedUser(username: string, password: string) {
   const normalized = username.trim().toLowerCase();
+  const matchedLocalUser = localLoginUsers().find((u) => {
+    const uName = String(u.username || "").trim().toLowerCase();
+    const uEmail = String(u.email || "").trim().toLowerCase();
+    return uName === normalized || (Boolean(uEmail) && uEmail === normalized);
+  });
+
   const candidates = normalized.includes("@")
     ? [normalized]
     : [
+        ...(matchedLocalUser?.email ? [matchedLocalUser.email.trim().toLowerCase()] : []),
         `${normalized}@restocash.com`,
         `${normalized}@restocash.local`,
-        ...(normalized === "admin" ? ["mahmoudhindam9@gmail.com"] : []),
+        ...(normalized === "admin" || normalized === "mahmoud.admin"
+          ? ["admin@restocash.com", "mahmoudhindam9@gmail.com"]
+          : []),
       ];
 
   for (const email of Array.from(new Set(candidates))) {
@@ -177,7 +186,14 @@ function LoginPage() {
         const candidate = String(user.username || "")
           .trim()
           .toLowerCase();
-        return candidate.includes("@") ? candidate === active : candidate === storedUsername;
+        const candidateEmail = String(user.email || "")
+          .trim()
+          .toLowerCase();
+        return (
+          candidate === active ||
+          candidate === storedUsername ||
+          (Boolean(candidateEmail) && candidateEmail === active)
+        );
       });
       if (exists) {
         navigate({ to: redirectTo as any });
@@ -233,6 +249,7 @@ function LoginPage() {
       id: `u-${Date.now()}`,
       full_name: fullName,
       username: newUsername,
+      email: `${newUsername}@restocash.com`,
       phone: "",
       role: "admin",
       password: newPassword,
@@ -243,7 +260,7 @@ function LoginPage() {
     erpStore.updateUserPermission(newUsername, permissions);
     erpStore.setCurrentUser(newUsername);
     localStorage.setItem("remember_me", "true");
-    localStorage.setItem("restocash_auth_user", `${newUsername}@restocash.local`);
+    localStorage.setItem("restocash_auth_user", `${newUsername}@restocash.com`);
     localStorage.setItem("restocash_user_role", "admin");
     setHasLocalAccounts(true);
     navigate({ to: "/admin/users" });
@@ -308,8 +325,6 @@ function LoginPage() {
       setBootstrapConfirm("");
 
       if (!data.session?.user?.id) {
-        // Email confirmation may be enabled in Supabase. The database trigger creates
-        // the first admin profile in the same transaction as the Auth account.
         setUsername(email);
         setNotice(
           "تم تسجيل الحساب الأول. افتح رسالة التأكيد التي أُرسلت إلى بريدك، ثم سجّل الدخول باستخدام البريد نفسه.",
@@ -420,60 +435,29 @@ function LoginPage() {
         console.warn("Supabase authentication check did not match:", hostedErr);
       }
 
-      // 2. Local ERP account fallback (for preview/offline environments)
-      let foundUser = isHostedDeployment()
-        ? undefined
-        : localLoginUsers().find((user) => {
-            const storedUsername = String(user.username || "")
-              .trim()
-              .toLowerCase();
-            const storedEmail = String(user.email || "")
-              .trim()
-              .toLowerCase();
-            const fullName = String(user.full_name || "")
-              .trim()
-              .toLowerCase();
-            const phone = normalizeDigits(String(user.phone || "").trim());
-            return (
-              storedUsername === normalizedUsername ||
-              (!!storedEmail && storedEmail === normalizedUsername) ||
-              (storedUsername.includes("@") &&
-                storedUsername.split("@")[0] === normalizedUsername) ||
-              (normalizedUsername.includes("@") &&
-                storedUsername === normalizedUsername.split("@")[0]) ||
-              `${storedUsername}@restocash.local` === normalizedUsername ||
-              `${storedUsername}@restocash.com` === normalizedUsername ||
-              `${storedUsername}@juba.com` === normalizedUsername ||
-              ((storedUsername === "admin" || storedUsername === "mahmoudhindam9@gmail.com") &&
-                (normalizedUsername === "admin" ||
-                  normalizedUsername === "admin@restocash.local" ||
-                  normalizedUsername === "admin@restocash.com" ||
-                  normalizedUsername === "mahmoudhindam9@gmail.com")) ||
-              (fullName && fullName === normalizedUsername) ||
-              (phone && phone === normalizedUsername)
-            );
-          });
+      // 2. Authenticate strictly against the Users Page directory (erpStore.getUsers())
+      const directoryUsers = localLoginUsers();
+      const foundUser = directoryUsers.find((user) => {
+        const storedUsername = String(user.username || "")
+          .trim()
+          .toLowerCase();
+        const storedEmail = String(user.email || "")
+          .trim()
+          .toLowerCase();
+        return (
+          storedUsername === normalizedUsername ||
+          (Boolean(storedEmail) && storedEmail === normalizedUsername) ||
+          `${storedUsername}@restocash.com` === normalizedUsername ||
+          `${storedUsername}@restocash.local` === normalizedUsername
+        );
+      });
 
-      if (
-        !foundUser &&
-        !isHostedDeployment() &&
-        (normalizedUsername === "admin" ||
-          normalizedUsername === "admin@restocash.local" ||
-          normalizedUsername === "admin@restocash.com" ||
-          normalizedUsername === "mahmoudhindam9@gmail.com")
-      ) {
-        foundUser = ROOT_DEFAULT_ADMIN;
-      }
-
+      const storedPassword = String(foundUser?.password || "");
       const passwordMatches =
-        !isHostedDeployment() &&
-        !!foundUser &&
-        (foundUser.password === password ||
-          normalizeDigits(foundUser.password || "") === normalizedPassword ||
-          foundUser.password === "admin" ||
-          normalizedPassword === "admin" ||
-          normalizedPassword === "123456" ||
-          normalizedPassword === "1234");
+        Boolean(foundUser) &&
+        Boolean(storedPassword) &&
+        (storedPassword === password ||
+          normalizeDigits(storedPassword) === normalizedPassword);
 
       if (foundUser && passwordMatches) {
         const activeUsername = String(foundUser.username).trim().toLowerCase();
@@ -481,7 +465,7 @@ function LoginPage() {
           foundUser.email ||
           (activeUsername.includes("@")
             ? activeUsername
-            : `${activeUsername}@restocash.local`);
+            : `${activeUsername}@restocash.com`);
         localStorage.removeItem("restocash_auth_user");
         sessionStorage.removeItem("restocash_auth_user");
         localStorage.removeItem("restocash_user_role");
@@ -513,9 +497,7 @@ function LoginPage() {
       }
 
       setError(
-        isHostedDeployment()
-          ? "تعذر تسجيل الدخول بالحساب السحابي. تأكد من صحة البريد الإلكتروني أو اسم المستخدم وكلمة المرور المسجلة في قاعدة البيانات."
-          : "اسم المستخدم أو كلمة المرور غير صحيحة. يرجى التأكد من بيانات الدخول.",
+        "اسم المستخدم أو كلمة المرور غير صحيحة. تأكد من إدخال البيانات المسجلة في صفحة المستخدمين.",
       );
     } catch (cause) {
       console.error("Login failed", cause);

@@ -23,6 +23,12 @@ import {
   dispatchSubTabCommand,
   type NavSubItem,
 } from "./navigationRegistry";
+import {
+  getActiveUserPermissionsSync,
+  hasAnyRequestedPermission,
+  PERMISSIONS_UPDATED_EVENT,
+} from "@/shared/services/userAuthorization";
+import { erpStore } from "@/shared/services/erpStore";
 import { cn } from "@/lib/utils";
 
 export interface BreadcrumbNode {
@@ -56,13 +62,31 @@ export function AppBreadcrumbBar({
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Re-render whenever a department page updates its local active sub-tab
+  // Re-render whenever a department page updates its local active sub-tab or permissions
   const [, setSyncTick] = useState(0);
+  const [activePerms, setActivePerms] = useState<Record<string, boolean>>(() =>
+    getActiveUserPermissionsSync(),
+  );
+
   useEffect(() => {
-    return subscribeSubTabState(() => {
+    const refresh = () => {
+      setActivePerms(getActiveUserPermissionsSync());
       setSyncTick((t) => t + 1);
-    });
+    };
+    const unsubTab = subscribeSubTabState(refresh);
+    const unsubStore = erpStore.subscribe(refresh);
+    window.addEventListener(PERMISSIONS_UPDATED_EVENT, refresh);
+    return () => {
+      unsubTab();
+      unsubStore();
+      window.removeEventListener(PERMISSIONS_UPDATED_EVENT, refresh);
+    };
   }, []);
+
+  const visibleDepartments = NAVIGATION_DEPARTMENTS.filter((dept) => {
+    if (!dept.permissionKeys || dept.permissionKeys.length === 0) return true;
+    return hasAnyRequestedPermission(activePerms, dept.permissionKeys);
+  });
 
   const resolved = resolveNavigationState(
     location.pathname,
@@ -182,7 +206,7 @@ export function AppBreadcrumbBar({
                 <span>{parentLabel}</span>
               </button>
 
-              {/* Quick switcher between main departments */}
+              {/* Quick switcher between permitted main departments */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
@@ -202,7 +226,7 @@ export function AppBreadcrumbBar({
                     الانتقال السريع لقسم رئيسي آخر
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator className="my-1" />
-                  {NAVIGATION_DEPARTMENTS.map((dept) => {
+                  {visibleDepartments.map((dept) => {
                     const DeptIcon = dept.icon;
                     const isCurrentDept = dept.id === department?.id;
                     return (

@@ -741,14 +741,14 @@ export function DepartmentsGridHub({
       hasAnyRequestedPermission(activePermissions, sub.permissionKeys || dept.permissionKeys),
     );
     const hasDeptAccess =
-      hasAnyRequestedPermission(activePermissions, dept.permissionKeys) ||
-      allowedSubSections.length > 0;
+      allowedSubSections.length > 0 ||
+      hasAnyRequestedPermission(activePermissions, dept.permissionKeys);
     return {
       ...dept,
-      subSections: allowedSubSections.length > 0 ? allowedSubSections : dept.subSections,
+      subSections: allowedSubSections,
       hasDeptAccess,
     };
-  }).filter((dept) => dept.hasDeptAccess);
+  }).filter((dept) => dept.hasDeptAccess && dept.subSections.length > 0);
 
   return (
     <div className="space-y-6">

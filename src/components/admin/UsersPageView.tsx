@@ -24,10 +24,19 @@ import {
 import { erpStore, UserPermission, SystemUser } from "@/shared/services/erpStore";
 import { authService } from "@/features/auth/services/authService";
 import {
+  inspectManagedUserConditions,
   normalizeManagedUsername,
   userValidationErrorMessage,
   validateManagedUserForm,
 } from "@/features/auth/services/managedUserValidation";
+import {
+  getPendingUserError,
+   getPendingUserSyncCount,
+  hasPendingUserChange,
+  queueUserChange,
+  startUserSync,
+  syncPendingUserChanges,
+} from "@/features/auth/services/userDirectorySync";
 import { supabase } from "@/integrations/supabase/client";
 import { isHostedDeployment } from "@/shared/services/previewAccess";
 import { notifyPermissionsUpdated } from "@/shared/services/userAuthorization";
@@ -833,15 +842,85 @@ export function UsersPage() {
     }, 500);
   };
 
+  const [pendingSyncCount, setPendingSyncCount] = useState<number>(0);
+  const [isSyncingDirectory, setIsSyncingDirectory] = useState<boolean>(false);
+
+  const hasPasswordInputInForm = Boolean(form.password.trim() || form.confirmPassword.trim());
+  const effectiveFormEmail =
+    form.email.trim() ||
+    (editing?.email
+      ? editing.email
+      : form.username.trim()
+        ? `${normalizeManagedUsername(form.username)}@restocash.com`
+        : "");
+
+  const formInspection = inspectManagedUserConditions({
+    fullName: form.full_name,
+    username: form.username,
+    email: effectiveFormEmail,
+    phone: form.phone,
+    password: form.password,
+    passwordConfirmation: form.confirmPassword,
+    role: form.role,
+    hosted: true,
+    requireEmail: true,
+    requirePassword: !editing || hasPasswordInputInForm,
+    requirePasswordConfirmation: !editing || hasPasswordInputInForm,
+    existingUsers: localUsers,
+    editingUserId: editing?.id || null,
+  });
+
+  const handleManualCloudSync = async () => {
+    setIsSyncingDirectory(true);
+    try {
+      const summary = await syncPendingUserChanges();
+      const authUser = await authService.getCurrentUser();
+      if (authUser?.id) {
+        const profiles = (await authService.getUsers()) as any[];
+        const cloudUsers = (profiles || [])
+          .filter((profile) => Boolean(profile?.id && profile?.username))
+          .map(profileToSystemUser)
+          .sort((a, b) => a.username.localeCompare(b.username));
+        erpStore.replaceManagedUsers(cloudUsers);
+      }
+      setLocalUsers(localLoginUsers());
+      setPendingSyncCount(getPendingUserSyncCount());
+      notifyPermissionsUpdated();
+      toast({
+        title: "تمت مزامنة المستخدمين مع قاعدة البيانات",
+        description:
+          summary.syncedCount > 0
+            ? `تمت مزامنة ${summary.syncedCount} حساب/تعديل مع قاعدة البيانات بنجاح.`
+            : "جميع المستخدمين والصلاحيات متطابقون مع سجل النظام.",
+      });
+    } catch (err: any) {
+      toast({
+        title: "تنبيه المزامنة",
+        description: userValidationErrorMessage(err),
+        variant: "destructive",
+      });
+    } finally {
+      setIsSyncingDirectory(false);
+    }
+  };
+
   useEffect(() => {
     let mounted = true;
     let hasLoadedDirectory = false;
 
-    const unsubscribe = erpStore.subscribe(() => {
+    const stopSyncWorker = startUserSync();
+
+    const syncLocalState = () => {
       if (!mounted) return;
       setErpState(erpStore.getState());
       setLocalUsers(localLoginUsers());
-    });
+      setPendingSyncCount(getPendingUserSyncCount());
+    };
+
+    const unsubscribe = erpStore.subscribe(syncLocalState);
+    if (typeof window !== "undefined") {
+      window.addEventListener("restocash-user-sync-updated", syncLocalState);
+    }
 
     const loadUsersDirectory = async () => {
       if (!hasLoadedDirectory) setUserDirectoryStatus("loading");
@@ -850,6 +929,7 @@ export function UsersPage() {
         // Always check if there is an active Supabase Auth session on ANY host
         const authUser = await authService.getCurrentUser();
         if (authUser?.id) {
+          await syncPendingUserChanges();
           const actor = await authService.getProfile(authUser.id);
           if (actor?.id) {
             const profiles = (await authService.getUsers()) as any[];
@@ -863,7 +943,8 @@ export function UsersPage() {
               .sort((a, b) => a.username.localeCompare(b.username));
 
             erpStore.replaceManagedUsers(cloudUsers);
-            setLocalUsers(cloudUsers);
+            setLocalUsers(localLoginUsers());
+            setPendingSyncCount(getPendingUserSyncCount());
             setUserDirectoryStatus("ready");
             hasLoadedDirectory = true;
             notifyPermissionsUpdated();
@@ -876,6 +957,7 @@ export function UsersPage() {
         if (mounted) {
           setIsCloudSyncActive(false);
           setLocalUsers(fallbackUsers);
+          setPendingSyncCount(getPendingUserSyncCount());
           setUserDirectoryStatus("ready");
           setUserDirectoryError("");
           hasLoadedDirectory = true;
@@ -886,6 +968,7 @@ export function UsersPage() {
         if (fallbackUsers.length > 0) {
           setIsCloudSyncActive(false);
           setLocalUsers(fallbackUsers);
+          setPendingSyncCount(getPendingUserSyncCount());
           setUserDirectoryStatus("ready");
           setUserDirectoryError("");
           hasLoadedDirectory = true;
@@ -918,14 +1001,15 @@ export function UsersPage() {
     return () => {
       mounted = false;
       unsubscribe();
+      stopSyncWorker();
+      if (typeof window !== "undefined") {
+        window.removeEventListener("restocash-user-sync-updated", syncLocalState);
+      }
       if (channel) void supabase.removeChannel(channel);
     };
   }, []);
 
   const upsert = async () => {
-    const username = form.username.trim();
-    const normalizedUsername = normalizeManagedUsername(username);
-    const cloudMode = isCloudSyncActive;
     const actorPermissions = currentActorPermissions(erpState, actorProfile);
 
     if (userDirectoryStatus !== "ready") {
@@ -950,22 +1034,21 @@ export function UsersPage() {
     }
 
     try {
-      const hasPasswordInput = Boolean(form.password.trim());
+      const hasPasswordInput = Boolean(form.password.trim() || form.confirmPassword.trim());
       const validatedForm = validateManagedUserForm({
         fullName: form.full_name,
         username: form.username,
-        email:
-          form.email.trim() ||
-          (editing?.email
-            ? editing.email
-            : `${normalizeManagedUsername(form.username)}@restocash.com`),
+        email: effectiveFormEmail,
         phone: form.phone,
         password: form.password,
         passwordConfirmation: form.confirmPassword,
         role: form.role,
-        hosted: cloudMode,
+        hosted: true,
+        requireEmail: true,
         requirePassword: !editing || hasPasswordInput,
         requirePasswordConfirmation: !editing || hasPasswordInput,
+        existingUsers: localUsers,
+        editingUserId: editing?.id || null,
       });
 
       if (editing) {
@@ -977,49 +1060,46 @@ export function UsersPage() {
               defaultPermissionsForRole(form.role);
         assertNoPrivilegeEscalation(permissions as any, validatedForm.role, actorPermissions);
 
-        const isUuidAccount = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-          String(editing.id || ""),
-        );
+        // 1. Save locally first (Local-First)
+        const updatedLocalUser: SystemUser = {
+          ...editing,
+          full_name: validatedForm.fullName,
+          username: validatedForm.username,
+          email: validatedForm.email || editing.email || `${validatedForm.username}@restocash.com`,
+          phone: validatedForm.phone,
+          role: validatedForm.role as any,
+          permissions,
+          ...(hasPasswordInput ? { password: validatedForm.password } : {}),
+        };
 
-        let updated: SystemUser;
-        if (cloudMode && isUuidAccount) {
-          if (hasPasswordInput) {
-            await authService.updateManagedUserPassword(editing.id, validatedForm.password);
-          }
-          const savedProfile = await authService.saveManagedProfile({
-            id: editing.id,
-            username: validatedForm.username,
-            full_name: validatedForm.fullName,
-            phone: validatedForm.phone,
-            role: validatedForm.role as any,
-            permissions,
-          });
-          updated = profileToSystemUser(savedProfile);
-        } else {
-          updated = {
-            ...editing,
-            full_name: validatedForm.fullName,
-            username: validatedForm.username,
-            email: validatedForm.email || editing.email || "",
-            phone: validatedForm.phone,
-            role: validatedForm.role,
-            permissions,
-            ...(hasPasswordInput ? { password: validatedForm.password } : {}),
-          };
-        }
-
-        const nextUsers = [...localUsers.filter((user) => user.id !== updated.id), updated].sort(
-          (a, b) => a.username.localeCompare(b.username),
-        );
-        if (cloudMode && isUuidAccount) {
-          erpStore.replaceManagedUsers(nextUsers);
-        } else {
-          erpStore.upsertUser(updated);
-        }
-        erpStore.updateUserPermission(updated.username, updated.permissions || {});
-        setLocalUsers(nextUsers);
+        erpStore.upsertUser(updatedLocalUser);
+        erpStore.updateUserPermission(updatedLocalUser.username, permissions);
+        setLocalUsers(localLoginUsers());
         setErpState(erpStore.getState());
         notifyPermissionsUpdated();
+
+        // 2. Synchronize with Supabase Database
+        const syncResult = await queueUserChange({
+          kind: "upsert",
+          userId: updatedLocalUser.id,
+          username: updatedLocalUser.username,
+          password: hasPasswordInput ? validatedForm.password : undefined,
+          profile: {
+            id: updatedLocalUser.id,
+            username: updatedLocalUser.username,
+            email: updatedLocalUser.email,
+            full_name: updatedLocalUser.full_name,
+            phone: updatedLocalUser.phone,
+            role: updatedLocalUser.role,
+            permissions,
+          },
+        });
+
+        setLocalUsers(localLoginUsers());
+        setErpState(erpStore.getState());
+        setPendingSyncCount(getPendingUserSyncCount());
+        notifyPermissionsUpdated();
+
         setEditing(null);
         setForm({
           full_name: "",
@@ -1032,84 +1112,66 @@ export function UsersPage() {
         });
         setIsConfirmUpsertOpen(false);
         toast({
-          title:
-            cloudMode && isUuidAccount
-              ? "تم تحديث المستخدم في قاعدة البيانات (Supabase)"
-              : "تم تحديث المستخدم بنجاح",
-          description: "تم تأكيد حفظ بيانات المستخدم ودوره وصلاحياته وتطبيقها فورًا.",
+          title: syncResult.synced
+            ? "تم حفظ التعديلات محلياً ومزامنتها مع قاعدة البيانات ✓"
+            : "تم حفظ التعديلات محلياً وجارٍ المزامنة مع قاعدة البيانات",
+          description: syncResult.synced
+            ? `تم تحديث حساب (${updatedLocalUser.username}) وصلاحياته في التطبيق وقاعدة البيانات بنجاح.`
+            : `تم حفظ حساب (${updatedLocalUser.username}) وصلاحياته محلياً وسيتم إكمال المزامنة السحابية تلقائياً.`,
         });
         return;
       }
-
-      const duplicate = localUsers.some(
-        (user) => String(user.username).trim().toLowerCase() === normalizedUsername,
-      );
-      if (duplicate) throw new Error("اسم المستخدم موجود بالفعل. اختر اسم دخول مختلفًا.");
 
       const permissions = limitPermissionsToActor(
         defaultPermissionsForRole(validatedForm.role),
         actorPermissions,
       );
+      assertNoPrivilegeEscalation(permissions as any, validatedForm.role, actorPermissions);
 
-      if (cloudMode) {
-        const emailToUse =
-          validatedForm.email || `${validatedForm.username}@restocash.com`;
-        const { profile: savedProfile, sessionConfirmed } =
-          await authService.createManagedUserAccount({
-            email: emailToUse,
-            password: validatedForm.password,
-            username: validatedForm.username,
-            full_name: validatedForm.fullName,
-            phone: validatedForm.phone,
-            role: validatedForm.role,
-            permissions,
-          });
-        const savedUser = profileToSystemUser(savedProfile);
+      const emailToUse =
+        validatedForm.email || `${validatedForm.username}@restocash.com`;
 
-        const nextUsers = [
-          ...localUsers.filter((user) => user.id !== savedUser.id),
-          savedUser,
-        ].sort((a, b) => a.username.localeCompare(b.username));
-        erpStore.replaceManagedUsers(nextUsers);
-        erpStore.updateUserPermission(savedUser.username, savedUser.permissions || {});
-        setLocalUsers(nextUsers);
-        setErpState(erpStore.getState());
-        notifyPermissionsUpdated();
-        setForm({
-          full_name: "",
-          username: "",
-          email: "",
-          phone: "",
-          password: "",
-          confirmPassword: "",
-          role: "cashier",
-        });
-        setIsConfirmUpsertOpen(false);
-        toast({
-          title: "تم إنشاء المستخدم وتأكيد حفظه في Supabase",
-          description: sessionConfirmed
-            ? `تم إنشاء الحساب (${savedUser.username}) بصلاحياته المحددة في قاعدة البيانات بنجاح.`
-            : `تم إنشاء الحساب (${savedUser.username}) وربطه بالبريد ${savedUser.email}.`,
-        });
-        return;
-      }
-
+      // 1. Save new user locally first (Local-First)
       const localUser: SystemUser = {
         id: `u-${Date.now()}`,
-        full_name: form.full_name.trim(),
+        full_name: validatedForm.fullName,
         username: validatedForm.username,
-        email: validatedForm.email || `${validatedForm.username}@restocash.com`,
+        email: emailToUse,
         phone: validatedForm.phone,
-        role: validatedForm.role,
+        role: validatedForm.role as any,
         password: validatedForm.password,
         permissions,
         created_at: new Date().toISOString(),
       };
+
       erpStore.upsertUser(localUser);
-      erpStore.updateUserPermission(validatedForm.username, permissions);
+      erpStore.updateUserPermission(localUser.username, permissions);
       setLocalUsers(localLoginUsers());
       setErpState(erpStore.getState());
       notifyPermissionsUpdated();
+
+      // 2. Synchronize with Supabase Database
+      const syncResult = await queueUserChange({
+        kind: "create",
+        localUserId: localUser.id,
+        username: localUser.username,
+        email: emailToUse,
+        password: validatedForm.password,
+        profile: {
+          username: localUser.username,
+          email: emailToUse,
+          full_name: localUser.full_name,
+          phone: localUser.phone,
+          role: localUser.role,
+          permissions,
+        },
+      });
+
+      setLocalUsers(localLoginUsers());
+      setErpState(erpStore.getState());
+      setPendingSyncCount(getPendingUserSyncCount());
+      notifyPermissionsUpdated();
+
       setForm({
         full_name: "",
         username: "",
@@ -1121,8 +1183,12 @@ export function UsersPage() {
       });
       setIsConfirmUpsertOpen(false);
       toast({
-        title: "تم إنشاء المستخدم وتفعيل صلاحياته بنجاح",
-        description: `تم حفظ الحساب (${validatedForm.username}) وتفعيل جدول صلاحياته فورًا.`,
+        title: syncResult.synced
+          ? "تم حفظ المستخدم محلياً ومزامنته مع قاعدة البيانات ✓"
+          : "تم حفظ المستخدم محلياً وتفعيل صلاحياته بنجاح ✓",
+        description: syncResult.synced
+          ? `تم إنشاء الحساب (${validatedForm.username}) محلياً ومزامنته مع قاعدة البيانات (Supabase) بصلاحياته المحددة.`
+          : `تم حفظ الحساب (${validatedForm.username}) محلياً وتفعيل جدول صلاحياته فوراً، وجدولة مزامنته مع قاعدة البيانات.`,
       });
     } catch (error: any) {
       toast({
@@ -1136,9 +1202,6 @@ export function UsersPage() {
   const deleteUser = async () => {
     if (!userToDelete) return;
     const target = localUsers.find((user) => user.id === userToDelete);
-    const isUuidAccount = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-      String(userToDelete || ""),
-    );
 
     if (isActiveUserRecord(target, activeAuthUser)) {
       toast({
@@ -1152,28 +1215,26 @@ export function UsersPage() {
     }
 
     try {
-      if (isCloudSyncActive && isUuidAccount) {
-        if (userDirectoryStatus !== "ready") {
-          throw new Error(userDirectoryError || "دليل المستخدمين غير جاهز من Supabase.");
-        }
-        await authService.deleteUser(userToDelete);
-      }
-
-      const nextUsers = localUsers.filter((user) => user.id !== userToDelete);
-      if (isCloudSyncActive && isUuidAccount) {
-        erpStore.replaceManagedUsers(nextUsers);
-      } else {
-        erpStore.deleteUser(userToDelete);
-      }
-      setLocalUsers(nextUsers);
+      // 1. Delete locally first
+      erpStore.deleteUser(userToDelete);
+      setLocalUsers(localLoginUsers());
       setErpState(erpStore.getState());
       notifyPermissionsUpdated();
+
+      // 2. Sync deletion with database
+      if (target) {
+        await queueUserChange({
+          kind: "delete",
+          userId: target.id,
+          username: target.username,
+        });
+      }
+      setLocalUsers(localLoginUsers());
+      setPendingSyncCount(getPendingUserSyncCount());
+
       toast({
-        title:
-          isCloudSyncActive && isUuidAccount
-            ? "تم حذف المستخدم من Supabase"
-            : "تم حذف المستخدم بنجاح",
-        description: "تم تأكيد حذف الحساب والصلاحيات.",
+        title: "تم حذف المستخدم ومزامنة الحذف",
+        description: "تم حذف الحساب والصلاحيات من النظام ومزامنة التغيير مع قاعدة البيانات.",
       });
     } catch (error: any) {
       toast({
@@ -1192,7 +1253,7 @@ export function UsersPage() {
     setForm({
       full_name: p.full_name ?? "",
       username: p.username ?? "",
-      email: p.email ?? "",
+      email: p.email || (p.username ? `${p.username}@restocash.com` : ""),
       phone: p.phone ?? "",
       password: "",
       confirmPassword: "",
@@ -1215,9 +1276,6 @@ export function UsersPage() {
 
   const handleSavePermissions = async () => {
     if (!permissionsUser || !editedPermissions) return;
-    const isUuidAccount = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-      String(permissionsUser.id || ""),
-    );
     try {
       if (userDirectoryStatus !== "ready") {
         throw new Error(userDirectoryError || "دليل المستخدمين غير جاهز.");
@@ -1229,42 +1287,46 @@ export function UsersPage() {
         currentActorPermissions(erpStore.getState(), actorProfile),
       );
 
-      let updatedUser: SystemUser;
-      if (isCloudSyncActive && isUuidAccount) {
-        const savedProfile = await authService.saveManagedProfile({
-          id: permissionsUser.id,
-          username: permissionsUser.username,
-          full_name: permissionsUser.full_name,
-          phone: permissionsUser.phone,
-          role: permissionsUser.role as any,
-          permissions: editedPermissions,
-        });
-        updatedUser = profileToSystemUser(savedProfile);
-      } else {
-        updatedUser = { ...permissionsUser, permissions: editedPermissions };
-      }
-
-      const nextUsers = localUsers.map((user) =>
-        user.id === updatedUser.id ? updatedUser : user,
-      );
-      if (isCloudSyncActive && isUuidAccount) {
-        erpStore.replaceManagedUsers(nextUsers);
-      } else {
-        erpStore.upsertUser(updatedUser);
-      }
-      erpStore.updateUserPermission(updatedUser.username, updatedUser.permissions || {});
-      setLocalUsers(nextUsers);
+      // 1. Save permissions locally first
+      const updatedUser: SystemUser = {
+        ...permissionsUser,
+        permissions: { ...editedPermissions },
+      };
+      erpStore.upsertUser(updatedUser);
+      erpStore.updateUserPermission(updatedUser.username, editedPermissions);
+      setLocalUsers(localLoginUsers());
       setErpState(erpStore.getState());
+      notifyPermissionsUpdated();
+
+      // 2. Synchronize permissions with Supabase database
+      const syncResult = await queueUserChange({
+        kind: "upsert",
+        userId: updatedUser.id,
+        username: updatedUser.username,
+        profile: {
+          id: updatedUser.id,
+          username: updatedUser.username,
+          email: updatedUser.email || `${updatedUser.username}@restocash.com`,
+          full_name: updatedUser.full_name,
+          phone: updatedUser.phone,
+          role: updatedUser.role,
+          permissions: editedPermissions,
+        },
+      });
+
+      setLocalUsers(localLoginUsers());
+      setErpState(erpStore.getState());
+      setPendingSyncCount(getPendingUserSyncCount());
       notifyPermissionsUpdated();
       setIsConfirmSavePermsOpen(false);
       setPermissionsUser(null);
       setEditedPermissions(null);
       toast({
-        title:
-          isCloudSyncActive && isUuidAccount
-            ? "تم حفظ الصلاحيات في قاعدة البيانات (Supabase)"
-            : "تم حفظ الصلاحيات وتفعيلها بنجاح",
-        description: "تم تطبيق جدول الصلاحيات الجديد فورًا على أقسام وشاشات النظام.",
+        title: syncResult.synced
+          ? "تم حفظ الصلاحيات محلياً ومزامنتها مع قاعدة البيانات ✓"
+          : "تم حفظ الصلاحيات محلياً وتفعيلها بنجاح ✓",
+        description:
+          "تم تطبيق جدول الصلاحيات الجديد فوراً وإخفاء كافة الأقسام غير المسموحة لهذا المستخدم.",
       });
     } catch (error: any) {
       toast({
@@ -1323,7 +1385,6 @@ export function UsersPage() {
         });
       });
     } else if (preset === "manager") {
-      // Accounting, reports, approvals, inventory, purchasing, orders, hr
       const allowedCategories = [
         "orders_sales",
         "inventory_section",
@@ -1387,7 +1448,7 @@ export function UsersPage() {
       <div className="bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 rounded-xl p-3 flex items-center justify-between gap-3 text-xs">
         <div className="flex items-center gap-2 text-indigo-900 dark:text-indigo-200 font-bold">
           <UsersIcon size={16} />
-          <span>هذا القسم متاح ومدمج أيضاً ضمن قسم إدارة الموارد البشرية.</span>
+          <span>هذه الصفحة هي المرجع الوحيد والموحد لجميع مستخدمي النظام وصلاحياتهم.</span>
         </div>
         <Link
           to="/admin/hr"
@@ -1400,18 +1461,29 @@ export function UsersPage() {
 
       {/* Page Header */}
       <div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
           <span className="bg-primary/10 text-primary text-xs px-3 py-1 rounded-full font-black flex items-center gap-1.5">
             <UsersIcon size={14} />
-            إدارة الكوادر البشرية والرقابة
+            المرجع الموحد للمستخدمين والصلاحيات
           </span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs font-bold gap-1.5 rounded-xl"
+            onClick={handleManualCloudSync}
+            disabled={isSyncingDirectory}
+          >
+            <RefreshCw size={14} className={isSyncingDirectory ? "animate-spin" : ""} />
+            {isSyncingDirectory
+              ? "جارٍ المزامنة مع قاعدة البيانات..."
+              : `مزامنة مع قاعدة البيانات${pendingSyncCount > 0 ? ` (${pendingSyncCount} بالانتظار)` : ""}`}
+          </Button>
         </div>
         <h1 className="text-3xl font-black tracking-tight text-foreground mt-2">
           إدارة المستخدمين وصلاحيات الوصول والرقابة
         </h1>
         <p className="text-xs text-muted-foreground mt-1">
-          إضافة وتعديل حسابات المستخدمين والأنظمة، تخصيص جدول الصلاحيات (ACL)، وقفل الفترات والدفاتر
-          المالية
+          يتم حفظ المستخدمين الجدد محلياً أولاً ثم مزامنتهم تلقائياً مع قاعدة البيانات (Supabase) بنفس الشروط والقيود، مع إخفاء أي قسم غير مصرح به لكل مستخدم
         </p>
         <div
           className={`mt-3 rounded-xl border px-3 py-2 text-xs font-semibold ${
@@ -1428,8 +1500,8 @@ export function UsersPage() {
             : userDirectoryStatus === "error"
               ? `تعذر تحميل دليل المستخدمين: ${userDirectoryError}`
               : isCloudSyncActive
-                ? `نظام الصلاحيات نشط ومتصل بقاعدة البيانات السحابية (Supabase public.profiles). عدد الحسابات: ${localUsers.length}.`
-                : `نظام الصلاحيات نشط ومتزامن مع قاعدة بيانات النظام. عدد الحسابات المسجلة: ${localUsers.length}.`}
+                ? `المرجع الموحد نشط ومتصل بقاعدة البيانات (Supabase public.profiles & auth.users). إجمالي المستخدمين: ${localUsers.length}.`
+                : `المرجع الموحد نشط (حفظ محلي فوري + مزامنة تلقائية مع قاعدة البيانات). إجمالي المستخدمين المسجلين: ${localUsers.length}.`}
         </div>
       </div>
 
@@ -1437,11 +1509,11 @@ export function UsersPage() {
       <div className="space-y-4">
         <h2 className="text-lg font-black text-foreground flex items-center gap-2">
           <ShieldCheck size={18} className="text-primary" />
-          <span>حسابات كادر العمل والمنظومة</span>
+          <span>{editing ? `تعديل بيانات المستخدم (${editing.username})` : "إضافة مستخدم جديد (موحد مع شروط قاعدة البيانات)"}</span>
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-6 gap-4 bg-card border border-border p-5 rounded-2xl shadow-sm">
           <div className="md:col-span-2 lg:col-span-1">
-            <Label className="text-xs font-bold">الاسم الكامل</Label>
+            <Label className="text-xs font-bold">الاسم الكامل *</Label>
             <Input
               className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1"
               placeholder="مثال: أحمد محمد"
@@ -1451,25 +1523,42 @@ export function UsersPage() {
             />
           </div>
           <div className="md:col-span-2 lg:col-span-1">
-            <Label className="text-xs font-bold">اسم المستخدم</Label>
+            <Label className="text-xs font-bold">اسم المستخدم (Username) *</Label>
             <Input
-              className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1"
-              placeholder="مثال: mahmoud.admin"
+              className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1 font-mono"
+              placeholder="مثال: ahmed.cashier"
               minLength={3}
               maxLength={32}
               autoComplete="username"
               value={form.username}
-              onChange={(e) => setForm((s) => ({ ...s, username: e.target.value }))}
+              onChange={(e) => {
+                const nextUsername = e.target.value;
+                setForm((s) => {
+                  const prevAutoEmail = s.username
+                    ? `${normalizeManagedUsername(s.username)}@restocash.com`
+                    : "";
+                  const shouldAutoFillEmail =
+                    !editing && (!s.email || s.email === prevAutoEmail);
+                  return {
+                    ...s,
+                    username: nextUsername,
+                    email: shouldAutoFillEmail && nextUsername.trim()
+                      ? `${normalizeManagedUsername(nextUsername)}@restocash.com`
+                      : s.email,
+                  };
+                });
+              }}
+              dir="ltr"
             />
           </div>
           <div className="md:col-span-2 lg:col-span-1">
-            <Label className="text-xs font-bold">البريد الإلكتروني لحساب الدخول</Label>
+            <Label className="text-xs font-bold">البريد الإلكتروني لقاعدة البيانات *</Label>
             <Input
               type="email"
-              className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1"
-              placeholder="name@example.com"
+              className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1 font-mono"
+              placeholder="user@restocash.com"
               autoComplete="email"
-              required={isCloudSyncActive && !editing}
+              required
               disabled={!!editing && isCloudSyncActive}
               value={form.email}
               onChange={(e) => setForm((s) => ({ ...s, email: e.target.value }))}
@@ -1487,11 +1576,13 @@ export function UsersPage() {
             />
           </div>
           <div className="md:col-span-2 lg:col-span-1">
-            <Label className="text-xs font-bold">الرقم السري</Label>
+            <Label className="text-xs font-bold">
+              {editing ? "الرقم السري الجديد (اختياري)" : "الرقم السري الجديد *"}
+            </Label>
             <Input
               type="password"
               className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1"
-              placeholder={editing ? "اتركه فارغاً لعدم التغيير" : "الرقم السري"}
+              placeholder={editing ? "اتركه فارغاً لعدم التغيير" : "8 خانات (حروف + أرقام)"}
               value={form.password}
               minLength={8}
               maxLength={128}
@@ -1500,11 +1591,11 @@ export function UsersPage() {
             />
           </div>
           <div className="md:col-span-2 lg:col-span-1">
-            <Label className="text-xs font-bold">تأكيد كلمة المرور</Label>
+            <Label className="text-xs font-bold">تأكيد الرقم السري *</Label>
             <Input
               type="password"
               className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1"
-              placeholder={editing ? "اتركه فارغًا دون تغيير" : "أعد كتابة كلمة المرور"}
+              placeholder={editing ? "اتركه فارغًا دون تغيير" : "أعد كتابة الرقم السري"}
               required={!editing || Boolean(form.password)}
               minLength={8}
               maxLength={128}
@@ -1514,7 +1605,7 @@ export function UsersPage() {
             />
           </div>
           <div className="md:col-span-2 lg:col-span-2">
-            <Label className="text-xs font-bold">الدور الوظيفي الأساسي</Label>
+            <Label className="text-xs font-bold">الدور الوظيفي الأساسي *</Label>
             <select
               className="w-full h-9 rounded-md border border-input bg-background px-3 text-xs font-bold mt-1"
               value={form.role}
@@ -1527,40 +1618,150 @@ export function UsersPage() {
               ))}
             </select>
           </div>
-          <div className="md:col-span-6 flex justify-end items-end gap-2 mt-2">
-            {editing && (
+
+          {/* Live Database Requirements & Unmet Conditions Indicator */}
+          <div className="md:col-span-6 grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-border/60">
+            <div className="rounded-xl border border-border bg-muted/20 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-foreground">
+                  شروط الاسم واسم المستخدم والبريد في قاعدة البيانات:
+                </span>
+                <Badge
+                  variant="outline"
+                  className={`text-[10px] font-bold ${
+                    formInspection.isFullNameValid &&
+                    formInspection.isUsernameValid &&
+                    formInspection.isEmailValid
+                      ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
+                      : "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30"
+                  }`}
+                >
+                  {formInspection.isFullNameValid &&
+                  formInspection.isUsernameValid &&
+                  formInspection.isEmailValid
+                    ? "جميع شروط الاسم مستوفاة ✓"
+                    : "يوجد شرط غير مستوفى"}
+                </Badge>
+              </div>
+              <ul className="space-y-1 text-[11px]">
+                {[
+                  ...formInspection.fullNameChecks,
+                  ...formInspection.usernameChecks,
+                  ...formInspection.emailChecks,
+                ].map((rule) => (
+                  <li
+                    key={rule.id}
+                    className={`flex items-center gap-1.5 font-semibold ${
+                      rule.met
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : "text-destructive"
+                    }`}
+                  >
+                    {rule.met ? (
+                      <CheckCircle2 size={13} className="shrink-0" />
+                    ) : (
+                      <AlertCircle size={13} className="shrink-0" />
+                    )}
+                    <span>{rule.label}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="rounded-xl border border-border bg-muted/20 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-foreground">
+                  شروط الرقم السري الجديد في قاعدة البيانات:
+                </span>
+                <Badge
+                  variant="outline"
+                  className={`text-[10px] font-bold ${
+                    formInspection.passwordChecks.length === 0
+                      ? "bg-muted text-muted-foreground"
+                      : formInspection.isPasswordValid
+                        ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
+                        : "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30"
+                  }`}
+                >
+                  {formInspection.passwordChecks.length === 0
+                    ? "بدون تغيير للرقم السري"
+                    : formInspection.isPasswordValid
+                      ? "جميع شروط الرقم السري مستوفاة ✓"
+                      : "يوجد شرط غير مستوفى"}
+                </Badge>
+              </div>
+              {formInspection.passwordChecks.length === 0 ? (
+                <p className="text-[11px] text-muted-foreground font-semibold">
+                  أثناء التعديل، اترك خانة الرقم السري فارغة للاحتفاظ بالرقم السري الحالي، أو أدخل رقماً سرياً جديداً لمطابقة الشروط.
+                </p>
+              ) : (
+                <ul className="space-y-1 text-[11px]">
+                  {formInspection.passwordChecks.map((rule) => (
+                    <li
+                      key={rule.id}
+                      className={`flex items-center gap-1.5 font-semibold ${
+                        rule.met
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-destructive"
+                      }`}
+                    >
+                      {rule.met ? (
+                        <CheckCircle2 size={13} className="shrink-0" />
+                      ) : (
+                        <AlertCircle size={13} className="shrink-0" />
+                      )}
+                      <span>{rule.label}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+
+          <div className="md:col-span-6 flex justify-between items-center flex-wrap gap-2 mt-1">
+            <div className="text-[11px] font-bold">
+              {!formInspection.isValid ? (
+                <span className="text-destructive flex items-center gap-1.5">
+                  <AlertTriangle size={14} />
+                  يرجى استيفاء الشروط الموضحة باللون الأحمر أعلاه لتفعيل الحفظ والمزامنة مع قاعدة البيانات.
+                </span>
+              ) : (
+                <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                  <CheckCircle2 size={14} />
+                  جميع البيانات والشروط مطابقة لمتطلبات قاعدة البيانات وجاهزة للحفظ.
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {editing && (
+                <Button
+                  variant="outline"
+                  className="h-9 px-6 rounded-xl font-bold"
+                  onClick={() => {
+                    setEditing(null);
+                    setForm({
+                      full_name: "",
+                      username: "",
+                      email: "",
+                      phone: "",
+                      password: "",
+                      confirmPassword: "",
+                      role: "cashier",
+                    });
+                  }}
+                >
+                  إلغاء التعديل
+                </Button>
+              )}
               <Button
-                variant="outline"
-                className="h-9 px-6 rounded-xl font-bold"
-                onClick={() => {
-                  setEditing(null);
-                  setForm({
-                    full_name: "",
-                    username: "",
-                    email: "",
-                    phone: "",
-                    password: "",
-                    confirmPassword: "",
-                    role: "cashier",
-                  });
-                }}
+                className="h-9 px-6 rounded-xl font-bold gap-2"
+                onClick={() => setIsConfirmUpsertOpen(true)}
+                disabled={!formInspection.isValid || userDirectoryStatus !== "ready"}
               >
-                إلغاء التعديل
+                <Save size={16} />
+                {editing ? "حفظ التعديلات ومزامنتها" : "حفظ محلياً ومزامنة المستخدم الجديد"}
               </Button>
-            )}
-            <Button
-              className="h-9 px-6 rounded-xl font-bold gap-2"
-              onClick={() => setIsConfirmUpsertOpen(true)}
-              disabled={
-                !form.full_name ||
-                !form.username ||
-                (!editing && (!form.password || !form.confirmPassword)) ||
-                userDirectoryStatus !== "ready"
-              }
-            >
-              <Save size={16} />
-              {editing ? "حفظ التعديلات" : "إضافة مستخدم جديد"}
-            </Button>
+            </div>
           </div>
         </div>
 
@@ -1572,64 +1773,95 @@ export function UsersPage() {
                 <th className="text-right p-3 font-bold">اسم المستخدم / البريد الإلكتروني</th>
                 <th className="text-right p-3 font-bold">رقم الهاتف</th>
                 <th className="text-right p-3 font-bold">الدور الوظيفي</th>
+                <th className="text-right p-3 font-bold">حالة المزامنة</th>
                 <th className="text-center p-3 font-bold w-40">الإجراءات</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border font-semibold">
-              {localUsers.map((u) => (
-                <tr key={u.id} className="hover:bg-muted/30 transition-colors">
-                  <td className="p-3 font-bold text-foreground">{u.full_name || "-"}</td>
-                  <td className="p-3">
-                    <div className="font-mono font-bold">{u.username || "-"}</div>
-                    {u.email && (
-                      <div className="font-mono text-[10px] text-muted-foreground mt-1" dir="ltr">
-                        {u.email}
-                      </div>
-                    )}
-                  </td>
-                  <td className="p-3 font-mono">{u.phone || "-"}</td>
-                  <td className="p-3">
-                    <span className="bg-primary/10 text-primary border border-primary/20 px-2.5 py-0.5 rounded-full font-black text-[10px]">
-                      {roleLabels[u.role] ?? u.role}
-                    </span>
-                  </td>
-                  <td className="p-3 flex items-center justify-center gap-1.5 flex-wrap">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-8 px-2.5 rounded-lg gap-1.5 text-primary border-primary/30 hover:bg-primary/10 font-bold"
-                      onClick={() => openPermissionsForUser(u)}
-                      disabled={userDirectoryStatus !== "ready"}
-                    >
-                      <ShieldCheck size={14} />
-                      الصلاحيات
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="outline"
-                      className="h-8 w-8 rounded-lg"
-                      onClick={() => startEdit(u)}
-                      disabled={userDirectoryStatus !== "ready"}
-                    >
-                      <Pencil size={14} />
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="destructive"
-                      className="h-8 w-8 rounded-lg"
-                      onClick={() => {
-                        setUserToDelete(u.id);
-                        setIsConfirmDeleteOpen(true);
-                      }}
-                      disabled={
-                        isActiveUserRecord(u, activeAuthUser) || userDirectoryStatus !== "ready"
-                      }
-                    >
-                      <Trash2 size={14} />
-                    </Button>
-                  </td>
-                </tr>
-              ))}
+              {localUsers.map((u) => {
+                const isCloudUuid =
+                  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+                    String(u.id || ""),
+                  );
+                const isPending = hasPendingUserChange(u.id, u.username);
+                const syncError = getPendingUserError(u.id, u.username);
+                return (
+                  <tr key={u.id} className="hover:bg-muted/30 transition-colors">
+                    <td className="p-3 font-bold text-foreground">{u.full_name || "-"}</td>
+                    <td className="p-3">
+                      <div className="font-mono font-bold">{u.username || "-"}</div>
+                      {u.email && (
+                        <div className="font-mono text-[10px] text-muted-foreground mt-1" dir="ltr">
+                          {u.email}
+                        </div>
+                      )}
+                    </td>
+                    <td className="p-3 font-mono">{u.phone || "-"}</td>
+                    <td className="p-3">
+                      <span className="bg-primary/10 text-primary border border-primary/20 px-2.5 py-0.5 rounded-full font-black text-[10px]">
+                        {roleLabels[u.role] ?? u.role}
+                      </span>
+                    </td>
+                    <td className="p-3">
+                      {isPending ? (
+                        <div className="space-y-0.5">
+                          <span className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                            محفوظ محلياً • قيد المزامنة
+                          </span>
+                          {syncError && (
+                            <div className="text-[10px] text-destructive max-w-[200px] truncate" title={syncError}>
+                              {syncError}
+                            </div>
+                          )}
+                        </div>
+                      ) : isCloudUuid ? (
+                        <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                          متزامن مع قاعدة البيانات ✓
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/30 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                          محفوظ محلياً وجاهز للمزامنة ✓
+                        </span>
+                      )}
+                    </td>
+                    <td className="p-3 flex items-center justify-center gap-1.5 flex-wrap">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 px-2.5 rounded-lg gap-1.5 text-primary border-primary/30 hover:bg-primary/10 font-bold"
+                        onClick={() => openPermissionsForUser(u)}
+                        disabled={userDirectoryStatus !== "ready"}
+                      >
+                        <ShieldCheck size={14} />
+                        الصلاحيات
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        className="h-8 w-8 rounded-lg"
+                        onClick={() => startEdit(u)}
+                        disabled={userDirectoryStatus !== "ready"}
+                      >
+                        <Pencil size={14} />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="destructive"
+                        className="h-8 w-8 rounded-lg"
+                        onClick={() => {
+                          setUserToDelete(u.id);
+                          setIsConfirmDeleteOpen(true);
+                        }}
+                        disabled={
+                          isActiveUserRecord(u, activeAuthUser) || userDirectoryStatus !== "ready"
+                        }
+                      >
+                        <Trash2 size={14} />
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

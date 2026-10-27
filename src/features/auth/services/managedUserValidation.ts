@@ -115,9 +115,164 @@ export interface ManagedUserFormInput {
   password?: string;
   passwordConfirmation?: string;
   role: string;
-  hosted: boolean;
+  hosted?: boolean;
+  requireEmail?: boolean;
   requirePassword?: boolean;
   requirePasswordConfirmation?: boolean;
+  existingUsers?: Array<{ id?: string; username?: string; email?: string }>;
+  editingUserId?: string | null;
+}
+
+export interface ValidationRuleCheck {
+  id: string;
+  label: string;
+  met: boolean;
+}
+
+export interface ManagedUserInspectionResult {
+  fullNameChecks: ValidationRuleCheck[];
+  usernameChecks: ValidationRuleCheck[];
+  emailChecks: ValidationRuleCheck[];
+  passwordChecks: ValidationRuleCheck[];
+  isFullNameValid: boolean;
+  isUsernameValid: boolean;
+  isEmailValid: boolean;
+  isPasswordValid: boolean;
+  isValid: boolean;
+  unmetSummary: string[];
+}
+
+export function inspectManagedUserConditions(
+  input: ManagedUserFormInput,
+): ManagedUserInspectionResult {
+  const fullName = String(input.fullName ?? "").trim();
+  const rawUsername = normalizeManagedDigits(String(input.username ?? "")).trim();
+  const username = rawUsername.toLowerCase();
+  const email = normalizeManagedEmail(input.email ?? "");
+  const password = normalizeManagedDigits(String(input.password ?? ""));
+  const passwordConfirmation = normalizeManagedDigits(String(input.passwordConfirmation ?? ""));
+  const requirePassword = Boolean(input.requirePassword || password.length > 0);
+  const requireConfirmation = Boolean(
+    input.requirePasswordConfirmation ?? requirePassword,
+  );
+
+  const otherUsers = (input.existingUsers || []).filter(
+    (u) => !input.editingUserId || String(u.id) !== String(input.editingUserId),
+  );
+
+  const isUsernameDuplicate =
+    username.length > 0 &&
+    otherUsers.some(
+      (u) => normalizeManagedUsername(u.username || "") === username,
+    );
+
+  const isEmailDuplicate =
+    email.length > 0 &&
+    otherUsers.some(
+      (u) => normalizeManagedEmail(u.email || "") === email,
+    );
+
+  const fullNameChecks: ValidationRuleCheck[] = [
+    {
+      id: "fullname_required",
+      label: "إدخال الاسم الكامل للمستخدم (بين 1 و120 حرفاً)",
+      met: fullName.length >= 1 && fullName.length <= 120,
+    },
+  ];
+
+  const usernameChecks: ValidationRuleCheck[] = [
+    {
+      id: "username_length",
+      label: "طول اسم المستخدم بين 3 و32 حرفاً",
+      met: username.length >= 3 && username.length <= 32,
+    },
+    {
+      id: "username_chars",
+      label: "أحرف إنجليزية صغيرة أو أرقام فقط (يُسمح بـ . _ - وبدون مسافات أو رمز @)",
+      met:
+        rawUsername.length > 0 &&
+        /^[a-z0-9._-]+$/.test(username) &&
+        rawUsername === username,
+    },
+    {
+      id: "username_unique",
+      label: "اسم المستخدم فريد وغير مكرر في قاعدة البيانات",
+      met: username.length >= 3 && !isUsernameDuplicate,
+    },
+  ];
+
+  const emailChecks: ValidationRuleCheck[] = [
+    {
+      id: "email_format",
+      label: "صيغة بريد إلكتروني صحيحة (مثل user@restocash.com) بحد أقصى 254 حرفاً",
+      met: EMAIL_PATTERN.test(email) && email.length <= 254,
+    },
+    {
+      id: "email_unique",
+      label: "البريد الإلكتروني فريد وغير مرتبط بمستخدم آخر",
+      met: EMAIL_PATTERN.test(email) && !isEmailDuplicate,
+    },
+  ];
+
+  const passwordChecks: ValidationRuleCheck[] = requirePassword
+    ? [
+        {
+          id: "password_length",
+          label: "طول الرقم السري لا يقل عن 8 خانات",
+          met: password.length >= 8,
+        },
+        {
+          id: "password_letters_numbers",
+          label: "يحتوي على حروف إنجليزية وأرقام معاً لتوافق حماية قاعدة البيانات",
+          met: /[A-Za-z]/.test(password) && /[0-9]/.test(password),
+        },
+        {
+          id: "password_no_spaces",
+          label: "خالٍ من المسافات الفارغة",
+          met: password.length > 0 && !/\s/.test(password),
+        },
+        ...(requireConfirmation
+          ? [
+              {
+                id: "password_match",
+                label: "تطابق الرقم السري مع خانة تأكيد الرقم السري",
+                met: password.length >= 8 && password === passwordConfirmation,
+              },
+            ]
+          : []),
+      ]
+    : [];
+
+  const isFullNameValid = fullNameChecks.every((c) => c.met);
+  const isUsernameValid = usernameChecks.every((c) => c.met);
+  const isEmailValid =
+    input.requireEmail === false && !email
+      ? true
+      : emailChecks.every((c) => c.met);
+  const isPasswordValid = passwordChecks.every((c) => c.met);
+
+  const unmetSummary = [
+    ...fullNameChecks.filter((c) => !c.met).map((c) => c.label),
+    ...usernameChecks.filter((c) => !c.met).map((c) => c.label),
+    ...(input.requireEmail === false && !email
+      ? []
+      : emailChecks.filter((c) => !c.met).map((c) => c.label)),
+    ...passwordChecks.filter((c) => !c.met).map((c) => c.label),
+  ];
+
+  return {
+    fullNameChecks,
+    usernameChecks,
+    emailChecks,
+    passwordChecks,
+    isFullNameValid,
+    isUsernameValid,
+    isEmailValid,
+    isPasswordValid,
+    isValid:
+      isFullNameValid && isUsernameValid && isEmailValid && isPasswordValid,
+    unmetSummary,
+  };
 }
 
 export function validateManagedUserForm(input: ManagedUserFormInput): {
@@ -129,13 +284,22 @@ export function validateManagedUserForm(input: ManagedUserFormInput): {
   role: string;
 } {
   const fullName = String(input.fullName ?? "").trim();
+  const rawUsername = normalizeManagedDigits(String(input.username ?? "")).trim();
   const username = normalizeManagedUsername(input.username);
   const email = normalizeManagedEmail(input.email ?? "");
   const phone = String(input.phone ?? "").trim();
   const password = normalizeManagedDigits(String(input.password ?? ""));
+  const requireEmail = input.requireEmail !== false;
+  const requirePassword = Boolean(input.requirePassword || password.length > 0);
 
   if (!fullName) throw new Error("الاسم الكامل مطلوب.");
   if (fullName.length > 120) throw new Error("الاسم الكامل لا يمكن أن يتجاوز 120 حرفًا.");
+
+  if (rawUsername !== username) {
+    throw new Error(
+      "اسم المستخدم يجب أن يُكتب بأحرف إنجليزية صغيرة فقط (بدون أحرف كبيرة).",
+    );
+  }
 
   if (!USERNAME_PATTERN.test(username)) {
     throw new Error(
@@ -149,24 +313,52 @@ export function validateManagedUserForm(input: ManagedUserFormInput): {
 
   if (phone.length > 40) throw new Error("رقم الهاتف لا يمكن أن يتجاوز 40 حرفًا.");
 
-  if (input.hosted && !EMAIL_PATTERN.test(email)) {
-    throw new Error("أدخل بريدًا إلكترونيًا حقيقيًا وصالحًا لحساب Supabase.");
-  }
-  if (input.hosted && email.length > 254) {
-    throw new Error("البريد الإلكتروني لا يمكن أن يتجاوز 254 حرفًا.");
+  if (requireEmail || email.length > 0) {
+    if (!EMAIL_PATTERN.test(email)) {
+      throw new Error("أدخل بريدًا إلكترونيًا صحيحًا وصالحًا متوافقًا مع قاعدة البيانات (مثل name@restocash.com).");
+    }
+    if (email.length > 254) {
+      throw new Error("البريد الإلكتروني لا يمكن أن يتجاوز 254 حرفًا.");
+    }
   }
 
-  if (input.requirePassword && password.length < 8) {
-    throw new Error(
-      "كلمة المرور يجب ألا تقل عن 8 أحرف؛ وقد يرفضها Supabase إذا خالفت سياسة قوة كلمة المرور.",
+  if (input.existingUsers && input.existingUsers.length > 0) {
+    const otherUsers = input.existingUsers.filter(
+      (u) => !input.editingUserId || String(u.id) !== String(input.editingUserId),
     );
+    if (otherUsers.some((u) => normalizeManagedUsername(u.username || "") === username)) {
+      throw new Error("اسم المستخدم مستخدم بالفعل لمستخدم آخر. اختر اسم مستخدم فريدًا.");
+    }
+    if (
+      email &&
+      otherUsers.some((u) => normalizeManagedEmail(u.email || "") === email)
+    ) {
+      throw new Error("البريد الإلكتروني مرتبط بمستخدم آخر بالفعل. استخدم بريدًا مختلفًا.");
+    }
+  }
+
+  if (requirePassword) {
+    if (password.length < 8) {
+      throw new Error(
+        "الرقم السري يجب ألا يقل عن 8 خانات ليتوافق مع شروط قاعدة البيانات.",
+      );
+    }
+    if (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
+      throw new Error(
+        "الرقم السري يجب أن يحتوي على حروف إنجليزية وأرقام معاً (مثل Admin@12345).",
+      );
+    }
+    if (/\s/.test(password)) {
+      throw new Error("الرقم السري لا يجب أن يحتوي على مسافات فارغة.");
+    }
   }
 
   if (
     input.requirePasswordConfirmation &&
+    requirePassword &&
     password !== normalizeManagedDigits(String(input.passwordConfirmation ?? ""))
   ) {
-    throw new Error("تأكيد كلمة المرور غير مطابق.");
+    throw new Error("تأكيد الرقم السري غير مطابق للرقم السري الجديد.");
   }
 
   return {
@@ -183,6 +375,7 @@ export function validateManagedProfilePayload(profile: {
   id?: string;
   username?: string | null;
   full_name?: string | null;
+  email?: string | null;
   phone?: string | null;
   role?: string | null;
   permissions?: unknown;
@@ -196,9 +389,11 @@ export function validateManagedProfilePayload(profile: {
   validateManagedUserForm({
     fullName: String(profile.full_name ?? ""),
     username: String(profile.username ?? ""),
+    email: profile.email ? String(profile.email) : undefined,
     phone: String(profile.phone ?? ""),
     role: String(profile.role ?? ""),
     hosted: false,
+    requireEmail: Boolean(profile.email),
   });
 
   const permissions = profile.permissions ?? {};

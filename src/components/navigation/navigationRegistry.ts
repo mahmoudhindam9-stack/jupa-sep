@@ -569,6 +569,8 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
       "hr",
       "hr_view_attendance",
       "hr_manage_payroll_loans",
+      "users_roles",
+      "system_manage_users",
       "super_admin_full_access",
     ],
     children: [

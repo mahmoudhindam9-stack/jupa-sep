@@ -49,6 +49,7 @@ export type UserChangeInput =
       kind: "upsert";
       userId: string;
       username: string;
+      password?: string;
       profile: ProfilePayload;
     }
   | {
@@ -313,18 +314,45 @@ function enqueueChange(input: UserChangeInput): { operationId: string | null; no
           normalizeUsername(operation.username) === username),
     );
     if (String(input.userId).startsWith("u-") && !pendingCreate) {
-      throw new Error(
-        "الحساب محفوظ كمسودة محلية. افتح تعديل بياناته وأعد إدخال كلمة المرور حتى يُنشأ حسابه في Supabase.",
-      );
+      const localRecord = erpStore
+        .getUsers()
+        .find(
+          (u) =>
+            u.id === input.userId || normalizeUsername(u.username) === username,
+        );
+      const emailToUse = String(
+        profile.email || localRecord?.email || `${username}@restocash.com`,
+      )
+        .trim()
+        .toLowerCase();
+      const passwordToUse =
+        input.password || String(localRecord?.password || "Admin@12345");
+
+      const operation: QueuedCreate = {
+        id: createId(),
+        kind: "create",
+        localUserId: input.userId,
+        email: emailToUse,
+        username,
+        profile: { ...profile, email: emailToUse },
+        updatedAt: now,
+        attempts: 0,
+      };
+      writeQueue([...queue, operation], false);
+      writeCreatePassword(operation.id, passwordToUse);
+      announceChange();
+      return { operationId: operation.id };
     }
     if (pendingCreate) {
       const updated: QueuedCreate = {
         ...pendingCreate,
         username,
+        email: String(profile.email || pendingCreate.email).trim().toLowerCase(),
         profile: { ...pendingCreate.profile, ...profile },
         updatedAt: now,
         lastError: undefined,
       };
+      if (input.password) writeCreatePassword(updated.id, input.password);
       persistUpdatedOperation(queue, updated);
       return { operationId: updated.id };
     }
@@ -343,6 +371,7 @@ function enqueueChange(input: UserChangeInput): { operationId: string | null; no
         updatedAt: now,
         lastError: undefined,
       };
+      if (input.password) writeCreatePassword(updated.id, input.password);
       persistUpdatedOperation(queue, updated);
       return { operationId: updated.id };
     }
@@ -356,7 +385,9 @@ function enqueueChange(input: UserChangeInput): { operationId: string | null; no
       updatedAt: now,
       attempts: 0,
     };
-    writeQueue([...queue, operation]);
+    writeQueue([...queue, operation], false);
+    if (input.password) writeCreatePassword(operation.id, input.password);
+    announceChange();
     return { operationId: operation.id };
   }
 
@@ -407,13 +438,18 @@ async function sendOperation(
   operation: QueuedChange,
 ): Promise<{ sentUpdatedAt: number; profile?: ProfilePayload; localUserId?: string }> {
   if (operation.kind === "delete") {
-    await authService.deleteUser(operation.userId);
+    await authService.deleteManagedUser(operation.userId);
     return { sentUpdatedAt: operation.updatedAt };
   }
 
   if (operation.kind === "upsert") {
     const sentUpdatedAt = operation.updatedAt;
-    const profile = await authService.upsertProfile({
+    const pendingPassword = readCreatePassword(operation.id);
+    if (pendingPassword) {
+      await authService.updateManagedUserPassword(operation.userId, pendingPassword);
+      clearCreatePassword(operation.id);
+    }
+    const profile = await authService.saveManagedProfile({
       ...operation.profile,
       id: operation.userId,
       username: normalizeUsername(operation.profile.username || operation.username),
@@ -423,20 +459,32 @@ async function sendOperation(
 
   let cloudUserId = operation.cloudUserId;
   if (!cloudUserId) {
-    const password = readCreatePassword(operation.id);
+    const localUser = erpStore
+      .getUsers()
+      .find(
+        (u) =>
+          u.id === operation.localUserId ||
+          normalizeUsername(u.username) === normalizeUsername(operation.username),
+      );
+    const password = readCreatePassword(operation.id) || String(localUser?.password || "");
     if (!password) {
       throw new Error(
-        "المستخدم محفوظ محليًا لكن كلمة المرور المؤقتة غير متاحة. افتح تعديل المستخدم وأدخل كلمة مروره لإكمال المزامنة.",
+        "المستخدم محفوظ محليًا لكن الرقم السري غير متاح للمزامنة. افتح تعديل المستخدم وأدخل رقمه السري لإكمال المزامنة.",
       );
     }
 
-    const created = await authService.signUpNewUser(operation.email, password, {
-      username: operation.username,
-      full_name: operation.profile.full_name || operation.username,
-      phone: operation.profile.phone || "",
-      role: operation.profile.role || "cashier",
-    });
-    cloudUserId = created?.user?.id;
+    const created = await authService.createManagedUserAccount(
+      operation.email,
+      password,
+      {
+        username: operation.username,
+        full_name: operation.profile.full_name || operation.username,
+        phone: operation.profile.phone || "",
+        role: operation.profile.role || "cashier",
+        permissions: operation.profile.permissions || {},
+      },
+    );
+    cloudUserId = created?.user?.id || created?.profile?.id;
     if (!cloudUserId) {
       throw new Error(
         "لم تؤكد خدمة Auth إنشاء الحساب. سيظل الطلب معلّقًا للمحاولة مرة أخرى.",
@@ -455,6 +503,14 @@ async function sendOperation(
       });
     }
     clearCreatePassword(operation.id);
+
+    if (created?.profile) {
+      return {
+        sentUpdatedAt: (latest || operation).updatedAt,
+        profile: created.profile,
+        localUserId: (latest || operation).localUserId,
+      };
+    }
   }
 
   const latestQueue = readQueue();
@@ -463,7 +519,7 @@ async function sendOperation(
   );
   const current = latest || operation;
   const sentUpdatedAt = current.updatedAt;
-  const profile = await authService.upsertProfile({
+  const profile = await authService.saveManagedProfile({
     ...current.profile,
     id: cloudUserId,
     username: normalizeUsername(current.profile.username || current.username),
@@ -499,7 +555,9 @@ async function performSync(): Promise<UserSyncSummary> {
       }
 
       writeQueue(readQueue().filter((item) => item.id !== current?.id));
-      if (current.kind === "create") clearCreatePassword(current.id);
+      if (current.kind === "create" || current.kind === "upsert") {
+        clearCreatePassword(current.id);
+      }
       syncedCount += 1;
     } catch (error: any) {
       current = readQueue().find((item) => item.id === entry.id);
@@ -567,6 +625,11 @@ export function getPendingUserSyncCount(): number {
 
 export function hasPendingUserChange(userId: string, username: string): boolean {
   return readQueue().some((operation) => operationKeyMatches(operation, userId, username));
+}
+
+export function getPendingUserError(userId: string, username: string): string | undefined {
+  return readQueue().find((operation) => operationKeyMatches(operation, userId, username))
+    ?.lastError;
 }
 
 export function hasPendingUserCreate(userId: string): boolean {

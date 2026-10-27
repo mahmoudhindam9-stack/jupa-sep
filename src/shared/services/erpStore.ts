@@ -996,25 +996,62 @@ export class ERPStore {
     this.saveState();
   }
   getUsers() {
-    return this.state.users || [];
+    return ensureCurrentManagedUsers(this.state.users || []);
   }
   replaceManagedUsers(users: SystemUser[]) {
-    // Used only after Supabase confirms the authoritative hosted directory.
-    // Replace stale local identities and ACL cache without generating fake audit
-    // entries for every profile merely because a page was opened or refreshed.
-    const cleanUsers = (Array.isArray(users) ? users : [])
+    // Reconcile authoritative Supabase directory with local-first users that may still be pending cloud sync.
+    const existingLocalUsers = ensureCurrentManagedUsers(this.state.users || []);
+    const cloudUsers = (Array.isArray(users) ? users : [])
       .filter((user) => Boolean(user?.id && user?.username))
-      .map((user) => ({
-        ...user,
-        username: String(user.username).trim().toLowerCase(),
-        email: String(user.email || "").trim().toLowerCase(),
-        permissions: { ...(user.permissions || {}) },
-        password: undefined,
-      }));
-    this.state.users = cleanUsers;
-    const permissionsByIdentity: Record<string, UserPermission> = {};
-    for (const user of cleanUsers) {
-      const permissions = { ...(user.permissions || {}) };
+      .map((user) => {
+        const normalizedUsername = String(user.username).trim().toLowerCase();
+        const normalizedEmail = String(user.email || `${normalizedUsername}@restocash.com`)
+          .trim()
+          .toLowerCase();
+        const matchedLocal = existingLocalUsers.find(
+          (local) =>
+            local.id === user.id ||
+            String(local.username || "").trim().toLowerCase() === normalizedUsername ||
+            (normalizedEmail &&
+              String(local.email || "").trim().toLowerCase() === normalizedEmail),
+        );
+        const mergedPermissions = {
+          ...(matchedLocal?.permissions || {}),
+          ...(this.state.userPermissions?.[normalizedUsername] || {}),
+          ...(user.permissions || {}),
+        };
+        return {
+          ...matchedLocal,
+          ...user,
+          username: normalizedUsername,
+          email: normalizedEmail,
+          permissions: mergedPermissions,
+          password: user.password || matchedLocal?.password,
+        };
+      });
+
+    const cloudUsernames = new Set(cloudUsers.map((u) => u.username));
+    const cloudEmails = new Set(cloudUsers.map((u) => String(u.email || "").toLowerCase()));
+
+    // Keep any local-only users that have not yet been synced to Supabase
+    const unsyncedLocalUsers = existingLocalUsers.filter((local) => {
+      const uname = String(local.username || "").trim().toLowerCase();
+      const uemail = String(local.email || "").trim().toLowerCase();
+      return !cloudUsernames.has(uname) && (!uemail || !cloudEmails.has(uemail));
+    });
+
+    const combinedUsers = ensureCurrentManagedUsers([...cloudUsers, ...unsyncedLocalUsers]);
+    this.state.users = combinedUsers;
+
+    const permissionsByIdentity: Record<string, UserPermission> = {
+      ...(this.state.userPermissions || {}),
+    };
+    for (const user of combinedUsers) {
+      const permissions = {
+        ...(permissionsByIdentity[user.username] || {}),
+        ...(user.permissions || {}),
+      };
+      user.permissions = permissions;
       permissionsByIdentity[user.username] = permissions;
       if (user.email) {
         permissionsByIdentity[String(user.email).trim().toLowerCase()] = { ...permissions };
@@ -1023,18 +1060,63 @@ export class ERPStore {
     this.state.userPermissions = permissionsByIdentity;
     this.saveState();
   }
-  upsertUser(user) {
+  upsertUser(user: SystemUser) {
     if (!this.state.users) this.state.users = [];
-    const idx = this.state.users.findIndex((u) => u.id === user.id);
-    if (idx >= 0) this.state.users[idx] = user;
-    else this.state.users.push(user);
+    const normalizedUsername = String(user.username || "").trim().toLowerCase();
+    const normalizedEmail = String(
+      user.email || `${normalizedUsername || "user"}@restocash.com`,
+    )
+      .trim()
+      .toLowerCase();
+
+    const idx = this.state.users.findIndex(
+      (u) =>
+        u.id === user.id ||
+        String(u.username || "").trim().toLowerCase() === normalizedUsername ||
+        (normalizedEmail &&
+          String(u.email || "").trim().toLowerCase() === normalizedEmail),
+    );
+
+    const existingUser = idx >= 0 ? this.state.users[idx] : undefined;
+    const mergedPermissions = {
+      ...(existingUser?.permissions || {}),
+      ...(this.state.userPermissions?.[normalizedUsername] || {}),
+      ...(user.permissions || {}),
+    };
+
+    const nextUser: SystemUser = {
+      ...existingUser,
+      ...user,
+      username: normalizedUsername,
+      email: normalizedEmail,
+      password:
+        user.password !== undefined && String(user.password).length > 0
+          ? user.password
+          : existingUser?.password,
+      permissions: mergedPermissions,
+    };
+
+    if (idx >= 0) {
+      this.state.users[idx] = nextUser;
+    } else {
+      this.state.users.push(nextUser);
+    }
+
+    if (!this.state.userPermissions) this.state.userPermissions = {};
+    this.state.userPermissions[normalizedUsername] = { ...mergedPermissions };
+    if (normalizedEmail) {
+      this.state.userPermissions[normalizedEmail] = { ...mergedPermissions };
+    }
     this.saveState();
   }
-  deleteUser(id) {
+  deleteUser(id: string) {
     if (!this.state.users) return;
     const target = this.state.users.find((user) => user.id === id);
     this.state.users = this.state.users.filter((user) => user.id !== id);
     const username = String(target?.username || "")
+      .trim()
+      .toLowerCase();
+    const email = String(target?.email || "")
       .trim()
       .toLowerCase();
     const reservedRoleNames = new Set([
@@ -1046,31 +1128,58 @@ export class ERPStore {
       "kitchen",
     ]);
     if (username && !reservedRoleNames.has(username)) delete this.state.userPermissions?.[username];
+    if (email && !reservedRoleNames.has(email)) delete this.state.userPermissions?.[email];
     this.saveState();
   }
-  setCurrentUser(email) {
+  setCurrentUser(email: string) {
     this.state.currentUser = email;
     this.saveState();
     this.logAction("SYSTEM", "تغيير المستخدم النشط", `تم تسجيل دخول المستخدم: ${email}`, "SYSTEM");
   }
-  updateUserPermission(email, permissions) {
-    const existing = this.state.userPermissions[email] || {
-      treasury: false,
-      accounting: false,
-      journal_approval: false,
-      expense_approval: false,
-      revenue_approval: false,
-      reports: false,
-      cost_centers: false,
-      branch_mgmt: false,
-      audit_logs: false,
-    };
-    this.state.userPermissions[email] = {
+  updateUserPermission(identity: string, permissions: Partial<UserPermission>) {
+    const normalizedIdentity = String(identity || "").trim().toLowerCase();
+    if (!this.state.userPermissions) this.state.userPermissions = {};
+    const existing = this.state.userPermissions[normalizedIdentity] ||
+      this.state.userPermissions[identity] || {
+        treasury: false,
+        accounting: false,
+        journal_approval: false,
+        expense_approval: false,
+        revenue_approval: false,
+        reports: false,
+        cost_centers: false,
+        branch_mgmt: false,
+        audit_logs: false,
+      };
+    const nextPermissions = {
       ...existing,
       ...permissions,
     };
+    this.state.userPermissions[normalizedIdentity] = nextPermissions;
+    this.state.userPermissions[identity] = nextPermissions;
+
+    // Also update the matching user inside this.state.users so the Users directory stays the single source of truth
+    if (Array.isArray(this.state.users)) {
+      const targetUser = this.state.users.find(
+        (u) =>
+          String(u.username || "").trim().toLowerCase() === normalizedIdentity ||
+          String(u.email || "").trim().toLowerCase() === normalizedIdentity ||
+          String(u.id || "") === identity,
+      );
+      if (targetUser) {
+        targetUser.permissions = {
+          ...(targetUser.permissions || {}),
+          ...nextPermissions,
+        };
+        const uname = String(targetUser.username || "").trim().toLowerCase();
+        const uemail = String(targetUser.email || "").trim().toLowerCase();
+        if (uname) this.state.userPermissions[uname] = { ...targetUser.permissions };
+        if (uemail) this.state.userPermissions[uemail] = { ...targetUser.permissions };
+      }
+    }
+
     this.saveState();
-    this.logAction("ADMIN", "تحديث صلاحيات مستخدم", `تم تحديث صلاحيات ${email}`, "UPDATE");
+    this.logAction("ADMIN", "تحديث صلاحيات مستخدم", `تم تحديث صلاحيات ${identity}`, "UPDATE");
   }
   addBranch(name, name_ar, code) {
     const branch = {

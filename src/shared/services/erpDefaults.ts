@@ -1081,13 +1081,16 @@ export const DEFAULT_SUPPLIERS: Supplier[] = ORACLE_MIGRATION_ACCOUNTS.filter(
 
 export const LEGACY_DEFAULT_USER_IDS = new Set(["u-manager", "u-cashier"]);
 
+export const DEFAULT_COMPLIANT_ADMIN_PASSWORD = "Admin@12345";
+
 export const ROOT_DEFAULT_ADMIN: SystemUser = {
   id: "u-admin",
   full_name: "المدير العام (System Admin)",
   username: "admin",
+  email: "admin@restocash.com",
   phone: "01000000000",
-  role: "admin",
-  password: "admin",
+  role: "super_admin",
+  password: DEFAULT_COMPLIANT_ADMIN_PASSWORD,
   permissions: {
     super_admin_full_access: true,
     orders: true,
@@ -1106,11 +1109,21 @@ export const ROOT_DEFAULT_ADMIN: SystemUser = {
     revenue_approval: true,
     reports: true,
     cost_centers: true,
+    mall_manage_shops: true,
+    mall_garden_finance: true,
+    manage_park_shifts: true,
+    delete_park_shifts: true,
+    park_reports: true,
+    park_open_shift: true,
+    park_returns: true,
+    restaurant_open_shift: true,
+    restaurant_returns: true,
     branch_mgmt: true,
     audit_logs: true,
     users_roles: true,
     system_manage_users: true,
     system_backup_update: true,
+    developer_options: true,
   },
   created_at: "2026-01-01T00:00:00.000Z",
 };
@@ -1118,39 +1131,40 @@ export const ROOT_DEFAULT_ADMIN: SystemUser = {
 export const OWNER_DEFAULT_ADMIN: SystemUser = {
   id: "u-owner-mahmoud",
   full_name: "المدير العام (mahmoudhindam9)",
-  username: "mahmoudhindam9@gmail.com",
+  username: "mahmoud.admin",
+  email: "mahmoudhindam9@gmail.com",
   phone: "01000000000",
-  role: "admin",
-  password: "admin",
+  role: "super_admin",
+  password: DEFAULT_COMPLIANT_ADMIN_PASSWORD,
   permissions: {
-    super_admin_full_access: true,
-    orders: true,
-    pos: true,
-    captain: true,
-    kitchen: true,
-    delivery: true,
-    inventory: true,
-    hr: true,
-    purchasing: true,
-    production: true,
-    treasury: true,
-    accounting: true,
-    journal_approval: true,
-    expense_approval: true,
-    revenue_approval: true,
-    reports: true,
-    cost_centers: true,
-    branch_mgmt: true,
-    audit_logs: true,
-    users_roles: true,
-    system_manage_users: true,
-    system_backup_update: true,
+    ...ROOT_DEFAULT_ADMIN.permissions,
   },
   created_at: "2026-01-01T00:00:00.000Z",
 };
 
+function sanitizeCompliantUsername(rawUsername: string, fallbackIndex = 1): string {
+  const lower = String(rawUsername || "")
+    .trim()
+    .toLowerCase();
+  const basePart = lower.includes("@") ? lower.split("@")[0] : lower;
+  let cleaned = basePart
+    .replace(/[^a-z0-9._-]/g, ".")
+    .replace(/\.{2,}/g, ".")
+    .replace(/^[._-]+|[._-]+$/g, "");
+  if (cleaned.length < 3) {
+    cleaned = `user.${cleaned || fallbackIndex}`;
+  }
+  return cleaned.slice(0, 32);
+}
+
+function isCompliantPasswordValue(pw: unknown): boolean {
+  if (typeof pw !== "string" || pw.length < 8) return false;
+  if (/\s/.test(pw)) return false;
+  return /[A-Za-z]/.test(pw) && /[0-9]/.test(pw);
+}
+
 export function ensureCurrentManagedUsers(users: unknown): SystemUser[] {
-  const list = Array.isArray(users)
+  const rawList = Array.isArray(users)
     ? (users.filter(
         (user: any) =>
           user &&
@@ -1159,16 +1173,98 @@ export function ensureCurrentManagedUsers(users: unknown): SystemUser[] {
           user.username.trim().length > 0,
       ) as SystemUser[])
     : [];
-  const hasAdmin = list.some(
-    (u) =>
-      u.username === "admin" ||
-      u.username === "admin@restocash.local" ||
-      u.username === "admin@restocash.com",
-  );
+
+  const usedUsernames = new Set<string>();
+  const usedEmails = new Set<string>();
+
+  const normalizedList: SystemUser[] = rawList.map((user, idx) => {
+    const rawUserStr = String(user.username || "").trim().toLowerCase();
+    const rawEmailStr = String(user.email || "").trim().toLowerCase();
+
+    const candidateEmail =
+      /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(rawEmailStr)
+        ? rawEmailStr
+        : /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(rawUserStr)
+          ? rawUserStr
+          : "";
+
+    let compliantUsername =
+      rawUserStr === "mahmoudhindam9@gmail.com"
+        ? "mahmoud.admin"
+        : rawUserStr === "admin@restocash.local" || rawUserStr === "admin@restocash.com"
+          ? "admin"
+          : sanitizeCompliantUsername(rawUserStr, idx + 1);
+
+    if (usedUsernames.has(compliantUsername)) {
+      compliantUsername = `${compliantUsername.slice(0, 28)}.${idx + 1}`;
+    }
+    usedUsernames.add(compliantUsername);
+
+    let compliantEmail =
+      candidateEmail ||
+      (compliantUsername === "admin"
+        ? "admin@restocash.com"
+        : `${compliantUsername}@restocash.com`);
+
+    if (usedEmails.has(compliantEmail)) {
+      compliantEmail = `${compliantUsername}.${idx + 1}@restocash.com`;
+    }
+    usedEmails.add(compliantEmail);
+
+    const isCloudUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      String(user.id || ""),
+    );
+
+    const resolvedPassword =
+      user.password === undefined && isCloudUuid
+        ? undefined
+        : isCompliantPasswordValue(user.password)
+          ? String(user.password)
+          : DEFAULT_COMPLIANT_ADMIN_PASSWORD;
+
+    const validRoles = new Set([
+      "super_admin",
+      "admin",
+      "manager",
+      "cashier",
+      "captain",
+      "kitchen",
+    ]);
+    const rawRole = String(user.role || "cashier").trim().toLowerCase();
+    const resolvedRole = (
+      compliantUsername === "admin" && (rawRole === "admin" || rawRole === "super_admin")
+        ? "super_admin"
+        : validRoles.has(rawRole)
+          ? rawRole
+          : "cashier"
+    ) as SystemUser["role"];
+
+    const resolvedPermissions =
+      compliantUsername === "admin"
+        ? { ...ROOT_DEFAULT_ADMIN.permissions, ...(user.permissions || {}) }
+        : { ...(user.permissions || {}) };
+
+    return {
+      ...user,
+      full_name: String(user.full_name || compliantUsername).trim().slice(0, 120),
+      username: compliantUsername,
+      email: compliantEmail,
+      phone: String(user.phone || "").trim().slice(0, 40),
+      role: resolvedRole,
+      password: resolvedPassword,
+      permissions: resolvedPermissions,
+    };
+  });
+
+  const hasAdmin = normalizedList.some((u) => u.username === "admin");
   if (!hasAdmin) {
-    list.unshift(ROOT_DEFAULT_ADMIN);
+    normalizedList.unshift({
+      ...ROOT_DEFAULT_ADMIN,
+      permissions: { ...ROOT_DEFAULT_ADMIN.permissions },
+    });
   }
-  return list;
+
+  return normalizedList;
 }
 
 export const DEFAULT_PERMISSIONS: Record<string, UserPermission> = {
