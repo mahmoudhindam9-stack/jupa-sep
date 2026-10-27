@@ -289,17 +289,14 @@ export function validateManagedUserForm(input: ManagedUserFormInput): {
   const email = normalizeManagedEmail(input.email ?? "");
   const phone = String(input.phone ?? "").trim();
   const password = normalizeManagedDigits(String(input.password ?? ""));
-  const requireEmail = input.requireEmail !== false;
+  const requireEmail =
+    input.requireEmail !== undefined
+      ? input.requireEmail !== false
+      : input.hosted !== false;
   const requirePassword = Boolean(input.requirePassword || password.length > 0);
 
   if (!fullName) throw new Error("الاسم الكامل مطلوب.");
   if (fullName.length > 120) throw new Error("الاسم الكامل لا يمكن أن يتجاوز 120 حرفًا.");
-
-  if (rawUsername !== username) {
-    throw new Error(
-      "اسم المستخدم يجب أن يُكتب بأحرف إنجليزية صغيرة فقط (بدون أحرف كبيرة).",
-    );
-  }
 
   if (!USERNAME_PATTERN.test(username)) {
     throw new Error(
@@ -340,7 +337,7 @@ export function validateManagedUserForm(input: ManagedUserFormInput): {
   if (requirePassword) {
     if (password.length < 8) {
       throw new Error(
-        "الرقم السري يجب ألا يقل عن 8 خانات ليتوافق مع شروط قاعدة البيانات.",
+        "كلمة المرور (الرقم السري) يجب ألا تقل عن 8 أحرف لتتوافق مع شروط قاعدة البيانات.",
       );
     }
     if (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
@@ -358,7 +355,7 @@ export function validateManagedUserForm(input: ManagedUserFormInput): {
     requirePassword &&
     password !== normalizeManagedDigits(String(input.passwordConfirmation ?? ""))
   ) {
-    throw new Error("تأكيد الرقم السري غير مطابق للرقم السري الجديد.");
+    throw new Error("تأكيد كلمة المرور (الرقم السري) غير مطابق للرقم السري الجديد.");
   }
 
   return {
