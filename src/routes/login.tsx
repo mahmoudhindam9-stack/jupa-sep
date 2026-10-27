@@ -16,7 +16,8 @@ import {
 } from "@/features/auth/services/managedUserValidation";
 import { resetLocalManagedUserDirectoryForBootstrap } from "@/features/auth/services/userDirectorySync";
 import { useSettings } from "@/hooks/use-settings";
-import { isAiStudioPreview } from "@/shared/services/previewAccess";
+import { isAiStudioPreview, isHostedDeployment } from "@/shared/services/previewAccess";
+import { notifyPermissionsUpdated } from "@/shared/services/userAuthorization";
 
 export const Route = createFileRoute("/login")({
   head: () => ({ meta: [{ title: "تسجيل الدخول" }] }),
@@ -28,11 +29,6 @@ function normalizeDigits(str: string): string {
   return normalizeManagedDigits(str);
 }
 
-function isHostedDeployment(mounted = true): boolean {
-  if (typeof window === "undefined" || !mounted) return false;
-  const host = window.location.hostname.toLowerCase();
-  return !["localhost", "127.0.0.1", "::1", "[::1]"].includes(host) && !host.endsWith(".localhost");
-}
 
 function localLoginUsers(): SystemUser[] {
   return erpStore
@@ -46,12 +42,13 @@ function safeInternalRedirect(value: string | null): string {
 
 async function signInHostedUser(username: string, password: string) {
   const normalized = username.trim().toLowerCase();
-  // Auth always uses the real email stored in Supabase Auth. Users created by the
-  // Users page from a username alone use the established @restocash.com login alias.
-  // Legacy users can still enter their actual email shown in the Users directory.
   const candidates = normalized.includes("@")
     ? [normalized]
-    : [`${normalized}@restocash.com`, `${normalized}@restocash.local`];
+    : [
+        `${normalized}@restocash.com`,
+        `${normalized}@restocash.local`,
+        ...(normalized === "admin" ? ["mahmoudhindam9@gmail.com"] : []),
+      ];
 
   for (const email of Array.from(new Set(candidates))) {
     try {
@@ -64,7 +61,6 @@ async function signInHostedUser(username: string, password: string) {
         console.warn("Could not load hosted user profile.", err);
       }
       if (!profile?.id || !profile?.username) {
-        // An Auth identity without a managed profile is not an ERP account.
         await supabase.auth.signOut().catch(() => undefined);
         return null;
       }
@@ -377,11 +373,61 @@ function LoginPage() {
     localStorage.setItem("remember_me", rememberMe ? "true" : "false");
 
     try {
-      // Hosted deployments must authenticate against Supabase; browser-local users are not valid credentials.
+      // 1. Always attempt Supabase Auth + public.profiles login first on ANY host
+      try {
+        const authenticated = await signInHostedUser(normalizedUsername, normalizedPassword);
+        if (authenticated && "session" in authenticated && authenticated.session?.user?.id) {
+          const { session, profile, email } = authenticated;
+          const activeUsername = String(
+            profile.username || normalizedUsername.split("@")[0] || "admin",
+          )
+            .trim()
+            .toLowerCase();
+          const activeEmail = session.user.email || email;
+          localStorage.removeItem("restocash_auth_user");
+          sessionStorage.removeItem("restocash_auth_user");
+          localStorage.removeItem("restocash_user_role");
+          sessionStorage.removeItem("restocash_user_role");
+          const storage = rememberMe ? localStorage : sessionStorage;
+          storage.setItem("restocash_auth_user", activeEmail);
+          storage.setItem("restocash_user_role", String(profile.role || "cashier"));
+          const permissions = profile.permissions || {};
+          erpStore.updateUserPermission(activeUsername, permissions);
+          erpStore.upsertUser({
+            id: profile.id,
+            full_name: profile.full_name || activeUsername,
+            username: activeUsername,
+            email: profile.email || session.user.email || "",
+            phone: profile.phone || "",
+            role: profile.role || "cashier",
+            permissions,
+            created_at: profile.created_at || new Date().toISOString(),
+          } as SystemUser);
+          erpStore.setCurrentUser(activeUsername);
+          notifyPermissionsUpdated();
+          const role = String(profile.role || "cashier");
+          const finalDestination = new URLSearchParams(window.location.search).has("redirect")
+            ? destination
+            : role === "captain"
+              ? "/captain"
+              : role === "kitchen"
+                ? "/oven"
+                : "/admin";
+          navigate({ to: finalDestination as any });
+          return;
+        }
+      } catch (hostedErr) {
+        console.warn("Supabase authentication check did not match:", hostedErr);
+      }
+
+      // 2. Local ERP account fallback (for preview/offline environments)
       let foundUser = isHostedDeployment()
         ? undefined
         : localLoginUsers().find((user) => {
             const storedUsername = String(user.username || "")
+              .trim()
+              .toLowerCase();
+            const storedEmail = String(user.email || "")
               .trim()
               .toLowerCase();
             const fullName = String(user.full_name || "")
@@ -390,6 +436,7 @@ function LoginPage() {
             const phone = normalizeDigits(String(user.phone || "").trim());
             return (
               storedUsername === normalizedUsername ||
+              (!!storedEmail && storedEmail === normalizedUsername) ||
               (storedUsername.includes("@") &&
                 storedUsername.split("@")[0] === normalizedUsername) ||
               (normalizedUsername.includes("@") &&
@@ -430,9 +477,11 @@ function LoginPage() {
 
       if (foundUser && passwordMatches) {
         const activeUsername = String(foundUser.username).trim().toLowerCase();
-        const activeEmail = activeUsername.includes("@")
-          ? activeUsername
-          : `${activeUsername}@restocash.local`;
+        const activeEmail =
+          foundUser.email ||
+          (activeUsername.includes("@")
+            ? activeUsername
+            : `${activeUsername}@restocash.local`);
         localStorage.removeItem("restocash_auth_user");
         sessionStorage.removeItem("restocash_auth_user");
         localStorage.removeItem("restocash_user_role");
@@ -442,12 +491,15 @@ function LoginPage() {
         storage.setItem("restocash_user_role", foundUser.role || "cashier");
         const statePermissions = erpStore.getState().userPermissions;
         const permissions =
-          foundUser.permissions ||
+          (foundUser.permissions && Object.keys(foundUser.permissions).length > 0
+            ? foundUser.permissions
+            : null) ||
           statePermissions[activeUsername] ||
           statePermissions[foundUser.role] ||
           {};
         erpStore.updateUserPermission(activeUsername, permissions);
         erpStore.setCurrentUser(activeUsername);
+        notifyPermissionsUpdated();
         const role = String(foundUser.role || "cashier");
         const finalDestination = new URLSearchParams(window.location.search).has("redirect")
           ? destination
@@ -460,56 +512,9 @@ function LoginPage() {
         return;
       }
 
-      if (isHostedDeployment()) {
-        try {
-          const authenticated = await signInHostedUser(normalizedUsername, normalizedPassword);
-          if (authenticated && "session" in authenticated && authenticated.session?.user?.id) {
-            const { session, profile, email } = authenticated;
-            const activeUsername = String(
-              profile.username || normalizedUsername.split("@")[0] || "admin",
-            )
-              .trim()
-              .toLowerCase();
-            const activeEmail = session.user.email || email;
-            localStorage.removeItem("restocash_auth_user");
-            sessionStorage.removeItem("restocash_auth_user");
-            localStorage.removeItem("restocash_user_role");
-            sessionStorage.removeItem("restocash_user_role");
-            const storage = rememberMe ? localStorage : sessionStorage;
-            storage.setItem("restocash_auth_user", activeEmail);
-            storage.setItem("restocash_user_role", String(profile.role || "cashier"));
-            const permissions = profile.permissions || {};
-            erpStore.updateUserPermission(activeUsername, permissions);
-            erpStore.upsertUser({
-              id: profile.id,
-              full_name: profile.full_name || activeUsername,
-              username: activeUsername,
-              email: profile.email || session.user.email || "",
-              phone: profile.phone || "",
-              role: profile.role || "cashier",
-              permissions,
-              created_at: profile.created_at || new Date().toISOString(),
-            } as SystemUser);
-            erpStore.setCurrentUser(activeUsername);
-            const role = String(profile.role || "cashier");
-            const finalDestination = new URLSearchParams(window.location.search).has("redirect")
-              ? destination
-              : role === "captain"
-                ? "/captain"
-                : role === "kitchen"
-                  ? "/oven"
-                  : "/admin";
-            navigate({ to: finalDestination as any });
-            return;
-          }
-        } catch (hostedErr) {
-          console.warn("Hosted authentication failed:", hostedErr);
-        }
-      }
-
       setError(
         isHostedDeployment()
-          ? "تعذر تسجيل الدخول بالحساب السحابي. تأكد من إنشاء حساب admin في Supabase وأن كلمة المرور مضبوطة في إعدادات المشروع، ثم حاول مرة أخرى."
+          ? "تعذر تسجيل الدخول بالحساب السحابي. تأكد من صحة البريد الإلكتروني أو اسم المستخدم وكلمة المرور المسجلة في قاعدة البيانات."
           : "اسم المستخدم أو كلمة المرور غير صحيحة. يرجى التأكد من بيانات الدخول.",
       );
     } catch (cause) {

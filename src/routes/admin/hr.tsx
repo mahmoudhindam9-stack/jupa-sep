@@ -15,7 +15,7 @@ import {
   type PayrollRecord,
 } from "@/shared/services/erpStore";
 import { printRawHtml } from "@/shared/utils/printAccountingDocument";
-import { UsersPage } from "./users";
+import { UsersPage } from "@/components/admin/UsersPageView";
 import {
   Users,
   UserPlus,
@@ -66,7 +66,14 @@ export const Route = createFileRoute("/admin/hr")({
 
 function HRPage() {
   const { toast } = useToast();
-  const { formatPrice, formatTreasuryCurrency } = useSettings();
+  const {
+    currency,
+    exchangeRates,
+    formatPrice,
+    convertPrice,
+    formatConvertedPrice,
+    formatTreasuryCurrency,
+  } = useSettings();
 
   // ERP Store subscription
   const [erpState, setErpState] = useState(erpStore.getState());
@@ -424,18 +431,24 @@ function HRPage() {
     setIsAddLoanOpen(true);
   };
 
-  // HR Executive Stats
+  // HR Executive Stats (Valued in active page currency & exchange rate)
   const activeEmployeesCount = employees.filter((e) => e.status === "active").length;
   const totalPayrollCost = useMemo(() => {
     return employees
       .filter((e) => e.status === "active")
-      .reduce((sum, emp) => sum + (Number(emp.salary) || 0), 0);
-  }, [employees]);
+      .reduce((sum, emp) => sum + convertPrice(Number(emp.salary) || 0, emp.currency || "EGP"), 0);
+  }, [employees, convertPrice]);
 
   const activeLoansCount = loans.filter((l) => l.status === "active").length;
-  const activeLoansAmount = loans
-    .filter((l) => l.status === "active")
-    .reduce((sum, l) => sum + (l.amount - l.paid_amount), 0);
+  const activeLoansAmount = useMemo(() => {
+    return loans
+      .filter((l) => l.status === "active")
+      .reduce(
+        (sum, l) =>
+          sum + convertPrice(Math.max(0, Number(l.amount || 0) - Number(l.paid_amount || 0)), l.currency || "EGP"),
+        0,
+      );
+  }, [loans, convertPrice]);
 
   // Filter Employees
   const filteredEmployees = useMemo(() => {
@@ -448,6 +461,13 @@ function HRPage() {
       return matchSearch && matchDept;
     });
   }, [employees, empSearch, empDeptFilter]);
+
+  const filteredValuedSalariesTotal = useMemo(() => {
+    return filteredEmployees.reduce(
+      (sum, emp) => sum + convertPrice(Number(emp.salary) || 0, emp.currency || "EGP"),
+      0,
+    );
+  }, [filteredEmployees, convertPrice]);
 
   // Handle Employee Actions
   const handleAddEmployeeSubmit = (e: React.FormEvent) => {
@@ -877,17 +897,24 @@ function HRPage() {
 
             <Card className="border border-border shadow-sm rounded-2xl bg-card">
               <CardHeader className="pb-2">
-                <CardTitle className="text-xs font-bold text-muted-foreground flex items-center gap-1.5">
-                  <Building2 size={14} />
-                  الأجور الشهرية الأساسية
+                <CardTitle className="text-xs font-bold text-muted-foreground flex items-center justify-between gap-1.5">
+                  <span className="flex items-center gap-1.5">
+                    <Building2 size={14} />
+                    إجمالي الراتب المقوم الشهري
+                  </span>
+                  <Badge variant="outline" className="text-[10px] font-mono px-1.5 py-0">
+                    {currency === "USD"
+                      ? `1$ = ${exchangeRates.EGP} ج.م`
+                      : `1$ = ${exchangeRates[currency]} ${currency === "EGP" ? "ج.م" : "ج.س.ج"}`}
+                  </Badge>
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-black text-slate-800 dark:text-slate-100">
-                  {formatPrice(totalPayrollCost)}
+                <div className="text-3xl font-black text-slate-800 dark:text-slate-100 tabular-nums">
+                  {formatConvertedPrice(totalPayrollCost)}
                 </div>
                 <p className="text-[10px] text-muted-foreground mt-1">
-                  مجموع الرواتب بعد التحويل لعملة العرض الحالية
+                  مجموع الراتب المقوم للموظفين النشطين بعملة الصفحة ({currency}) والمعامل الحالي
                 </p>
               </CardContent>
             </Card>
@@ -896,15 +923,15 @@ function HRPage() {
               <CardHeader className="pb-2">
                 <CardTitle className="text-xs font-bold text-muted-foreground flex items-center gap-1.5">
                   <Coins size={14} />
-                  القروض والسلف الجارية
+                  القروض والسلف الجارية (المقومة)
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-black text-amber-600 dark:text-amber-400">
-                  {formatPrice(activeLoansAmount)}
+                <div className="text-3xl font-black text-amber-600 dark:text-amber-400 tabular-nums">
+                  {formatConvertedPrice(activeLoansAmount)}
                 </div>
                 <p className="text-[10px] text-muted-foreground mt-1">
-                  موزعة على {activeLoansCount} سلف جاري سدادها
+                  موزعة على {activeLoansCount} سلف جاري سدادها بعملة الصفحة ({currency})
                 </p>
               </CardContent>
             </Card>
@@ -972,7 +999,9 @@ function HRPage() {
                     بيانات الموظفين، المسميات الوظيفية، الرواتب الأساسية وتواريخ التعيين
                   </p>
                   <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
-                    <span className="text-primary">{employees.length} موظف مسجل</span>
+                    <span className="text-primary">
+                      {employees.length} موظف • {formatConvertedPrice(totalPayrollCost)}
+                    </span>
                     <span className="text-muted-foreground group-hover:text-primary text-xs transition-transform group-hover:translate-x-[-2px]">
                       فتح الدليل ←
                     </span>
@@ -1111,7 +1140,7 @@ function HRPage() {
               </Card>
 
               <Card
-                onClick={() => setIsAddModalOpen(true)}
+                onClick={() => setIsAddEmpOpen(true)}
                 className="group cursor-pointer rounded-2xl border border-primary/30 bg-primary/5 hover:border-primary hover:bg-primary/10 transition-all duration-200 hover:shadow-lg"
               >
                 <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
@@ -1183,7 +1212,13 @@ function HRPage() {
                   className="pr-10 bg-card rounded-xl text-xs"
                 />
               </div>
-              <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+              <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end">
+                <div className="flex items-center gap-1.5 bg-primary/10 text-primary border border-primary/20 px-3 py-1.5 rounded-xl text-xs font-black">
+                  <span>مجموع الراتب المقوم ({filteredEmployees.length}):</span>
+                  <span className="font-mono tabular-nums">
+                    {formatConvertedPrice(filteredValuedSalariesTotal)}
+                  </span>
+                </div>
                 <Badge variant="outline" className="text-[10px] py-1 px-3">
                   تصفية القسم:
                 </Badge>
@@ -1270,10 +1305,10 @@ function HRPage() {
                         </div>
                         <div className="text-left space-y-0.5">
                           <span className="text-muted-foreground block font-bold text-[10px]">
-                            الراتب المقوم
+                            الراتب المقوم ({currency})
                           </span>
-                          <span className="font-bold text-xs text-slate-500">
-                            {formatPrice(emp.salary, emp.currency as any)}
+                          <span className="font-black text-xs text-primary tabular-nums">
+                            {formatPrice(Number(emp.salary) || 0, (emp.currency || "EGP") as any)}
                           </span>
                         </div>
                       </div>
@@ -1497,6 +1532,7 @@ function HRPage() {
                       <th className="p-3.5 text-rose-600">خصومات الحضور والغياب</th>
                       <th className="p-3.5 text-amber-600">خصم قسط السلفة</th>
                       <th className="p-3.5 text-emerald-600">صافي المستحق للقبض</th>
+                      <th className="p-3.5 text-primary">الصافي المقوم ({currency})</th>
                       <th className="p-3.5">العملة الأساسية</th>
                       <th className="p-3.5">الحالة</th>
                       <th className="p-3.5 text-center pl-6">صرف النقدية والإجراءات</th>
@@ -1505,77 +1541,98 @@ function HRPage() {
                   <tbody className="divide-y divide-border/60">
                     {payrolls.filter((p) => p.month === payrollMonth).length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="p-8 text-center text-muted-foreground">
+                        <td colSpan={9} className="p-8 text-center text-muted-foreground">
                           لم يتم توليد مسير رواتب لهذا الشهر بعد. يرجى الضغط على زر توليد مسير
                           الرواتب أعلاه.
                         </td>
                       </tr>
                     ) : (
-                      payrolls
-                        .filter((p) => p.month === payrollMonth)
-                        .map((p) => {
-                          const emp = employees.find((e) => e.id === p.employee_id);
-                          return (
-                            <tr key={p.id} className="hover:bg-muted/30 transition">
-                              <td className="p-3.5 pr-6 font-bold text-slate-800">
-                                {emp ? emp.name : "موظف محذوف"}
-                              </td>
-                              <td className="p-3.5 font-mono font-bold">
-                                {formatTreasuryCurrency(p.basic_salary, p.currency)}
-                              </td>
-                              <td className="p-3.5 font-mono font-bold text-rose-600">
-                                -{formatTreasuryCurrency(p.deductions, p.currency)}
-                              </td>
-                              <td className="p-3.5 font-mono font-bold text-amber-600">
-                                -{formatTreasuryCurrency(p.loan_deduction, p.currency)}
-                              </td>
-                              <td className="p-3.5 font-mono font-black text-emerald-600">
-                                {formatTreasuryCurrency(p.net_salary, p.currency)}
-                              </td>
-                              <td className="p-3.5 text-xs text-muted-foreground font-black">
-                                {p.currency}
-                              </td>
-                              <td className="p-3.5">
-                                {p.status === "paid" ? (
-                                  <Badge className="bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
-                                    تم الصرف
-                                  </Badge>
-                                ) : (
-                                  <Badge variant="outline" className="text-slate-400 border-dashed">
-                                    بانتظار الصرف
-                                  </Badge>
-                                )}
-                              </td>
-                              <td className="p-3.5 text-center pl-6">
-                                <div className="flex items-center justify-center gap-2">
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => viewPayrollVoucher(p)}
-                                    className="h-7 text-xs rounded-lg font-bold px-3 gap-1"
-                                  >
-                                    <Printer size={12} />
-                                    عرض السند
-                                  </Button>
+                      <>
+                        {payrolls
+                          .filter((p) => p.month === payrollMonth)
+                          .map((p) => {
+                            const emp = employees.find((e) => e.id === p.employee_id);
+                            return (
+                              <tr key={p.id} className="hover:bg-muted/30 transition">
+                                <td className="p-3.5 pr-6 font-bold text-slate-800 dark:text-slate-100">
+                                  {emp ? emp.name : "موظف محذوف"}
+                                </td>
+                                <td className="p-3.5 font-mono font-bold">
+                                  {formatTreasuryCurrency(p.basic_salary, p.currency)}
+                                </td>
+                                <td className="p-3.5 font-mono font-bold text-rose-600">
+                                  -{formatTreasuryCurrency(p.deductions, p.currency)}
+                                </td>
+                                <td className="p-3.5 font-mono font-bold text-amber-600">
+                                  -{formatTreasuryCurrency(p.loan_deduction, p.currency)}
+                                </td>
+                                <td className="p-3.5 font-mono font-black text-emerald-600">
+                                  {formatTreasuryCurrency(p.net_salary, p.currency)}
+                                </td>
+                                <td className="p-3.5 font-mono font-black text-primary tabular-nums">
+                                  {formatPrice(Number(p.net_salary) || 0, (p.currency || "EGP") as any)}
+                                </td>
+                                <td className="p-3.5 text-xs text-muted-foreground font-black">
+                                  {p.currency}
+                                </td>
+                                <td className="p-3.5">
                                   {p.status === "paid" ? (
-                                    <div className="text-xs text-slate-400 font-bold font-mono">
-                                      تاريخ الدفع: {p.payment_date}
-                                    </div>
+                                    <Badge className="bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                                      تم الصرف
+                                    </Badge>
                                   ) : (
+                                    <Badge variant="outline" className="text-slate-400 border-dashed">
+                                      بانتظار الصرف
+                                    </Badge>
+                                  )}
+                                </td>
+                                <td className="p-3.5 text-center pl-6">
+                                  <div className="flex items-center justify-center gap-2">
                                     <Button
                                       size="sm"
-                                      onClick={() => openPaySalaryDialog(p)}
-                                      className="h-7 text-xs rounded-lg font-bold px-4 bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 gap-1"
+                                      variant="outline"
+                                      onClick={() => viewPayrollVoucher(p)}
+                                      className="h-7 text-xs rounded-lg font-bold px-3 gap-1"
                                     >
-                                      <CreditCard size={12} />
-                                      صرف الراتب نقداً
+                                      <Printer size={12} />
+                                      عرض السند
                                     </Button>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })
+                                    {p.status === "paid" ? (
+                                      <div className="text-xs text-slate-400 font-bold font-mono">
+                                        تاريخ الدفع: {p.payment_date}
+                                      </div>
+                                    ) : (
+                                      <Button
+                                        size="sm"
+                                        onClick={() => openPaySalaryDialog(p)}
+                                        className="h-7 text-xs rounded-lg font-bold px-4 bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 gap-1"
+                                      >
+                                        <CreditCard size={12} />
+                                        صرف الراتب نقداً
+                                      </Button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        <tr className="bg-primary/5 font-black border-t-2 border-primary/20">
+                          <td className="p-3.5 pr-6 text-primary" colSpan={5}>
+                            إجمالي صافي مسير الرواتب المقوم حسب عملة الصفحة ({currency}) والمعامل الحالي
+                          </td>
+                          <td className="p-3.5 font-mono text-primary text-base tabular-nums" colSpan={4}>
+                            {formatConvertedPrice(
+                              payrolls
+                                .filter((p) => p.month === payrollMonth)
+                                .reduce(
+                                  (sum, p) =>
+                                    sum + convertPrice(Number(p.net_salary) || 0, p.currency || "EGP"),
+                                  0,
+                                ),
+                            )}
+                          </td>
+                        </tr>
+                      </>
                     )}
                   </tbody>
                 </table>

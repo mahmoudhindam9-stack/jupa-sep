@@ -44,6 +44,8 @@ export default defineConfig({
       "react",
       "react-dom",
       "react-dom/client",
+      "react/jsx-runtime",
+      "react/jsx-dev-runtime",
       "@tanstack/react-query",
       "@supabase/supabase-js",
       "lucide-react",
@@ -51,20 +53,23 @@ export default defineConfig({
       "clsx",
       "tailwind-merge",
     ],
-    esbuildOptions: {
-      plugins: [
-        {
-          name: "async-hooks-polyfill",
-          setup(build) {
-            build.onResolve({ filter: /^(node:)?async_hooks$/ }, () => ({
-              path: path.resolve(__dirname, "./src/shared/services/asyncHooksPolyfill.ts"),
-            }));
-          },
-        },
-      ],
-    },
+    exclude: [
+      "@tanstack/react-start",
+      "@tanstack/react-start/client",
+      "@tanstack/react-start-client",
+      "@tanstack/start-client-core",
+      "@tanstack/react-router",
+      "@tanstack/router-core",
+    ],
   },
   resolve: {
+    dedupe: [
+      "react",
+      "react-dom",
+      "react-dom/client",
+      "react/jsx-runtime",
+      "react/jsx-dev-runtime",
+    ],
     tsconfigPaths: true,
     alias: {
       "@": path.resolve(__dirname, "./src"),
@@ -72,9 +77,13 @@ export default defineConfig({
       async_hooks: path.resolve(__dirname, "./src/shared/services/asyncHooksPolyfill.ts"),
     },
   },
+  build: {
+    chunkSizeWarningLimit: 2500,
+  },
   server: {
     host: "0.0.0.0",
     port: 3000,
     allowedHosts: true,
+    hmr: false,
   },
 });

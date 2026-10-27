@@ -72,7 +72,7 @@ export const Route = createFileRoute("/admin/park")({
   component: ParkManagementPage,
 });
 
-export function ParkManagementPage() {
+function ParkManagementPage() {
   const state = useSyncExternalStore(
     (cb) => erpStore.subscribe(cb),
     () => erpStore.getState(),
@@ -1253,4 +1253,4 @@ export function ParkManagementPage() {
     </div>
   );
 }
-export default ParkManagementPage;
+

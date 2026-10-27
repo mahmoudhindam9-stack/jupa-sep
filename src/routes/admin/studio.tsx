@@ -57,7 +57,7 @@ export const Route = createFileRoute("/admin/studio")({
 
 type SaveStatus = "saved" | "saving" | "unsaved" | "error";
 
-export function DeveloperStudioProPage() {
+function DeveloperStudioProPage() {
   const { toast } = useToast();
 
   // Core Draft State

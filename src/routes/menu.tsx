@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { UtensilsCrossed, ShoppingCart, Plus, Minus, Trash2, Clock } from "lucide-react";
@@ -136,6 +136,8 @@ function MenuPage() {
     const orderPayload = {
       id: "ord_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
       table_id: resolvedTableId,
+      table_number: finalTableNum,
+      table_name: `طاولة ${finalTableNum}`,
       items: cart,
       order_type: "dine_in",
       notes: "تم الطلب عبر نظام الطلب الذاتي (العميل)",

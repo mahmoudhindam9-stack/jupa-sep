@@ -83,17 +83,14 @@ export function useSettings(overridePageKey?: string) {
     setMounted(true);
     loadSettings();
 
-    const handleCustomEvent = (e: any) => {
-      const targetKey = e?.detail?.pageKey;
-      const thisKey = computePageKey(overridePageKey);
-      if (!targetKey || targetKey === thisKey) {
-        loadSettings();
-      }
+    const handleCustomEvent = () => {
+      loadSettings();
     };
 
     const handleStorageChange = (e: StorageEvent) => {
       if (
-        e.key?.startsWith("app_currency") ||
+        !e.key ||
+        e.key.startsWith("app_currency") ||
         e.key === "app_exchange_rates" ||
         e.key === "app_lang"
       ) {
@@ -110,14 +107,22 @@ export function useSettings(overridePageKey?: string) {
       }
     };
 
+    const handleRouteOrFocus = () => {
+      loadSettings();
+    };
+
     window.addEventListener("app_currency_changed" as any, handleCustomEvent);
     window.addEventListener("app_lang_changed" as any, handleLangChange);
     window.addEventListener("storage", handleStorageChange);
+    window.addEventListener("popstate", handleRouteOrFocus);
+    window.addEventListener("focus", handleRouteOrFocus);
 
     return () => {
       window.removeEventListener("app_currency_changed" as any, handleCustomEvent);
       window.removeEventListener("app_lang_changed" as any, handleLangChange);
       window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener("popstate", handleRouteOrFocus);
+      window.removeEventListener("focus", handleRouteOrFocus);
     };
   }, [loadSettings, overridePageKey]);
 
@@ -135,11 +140,13 @@ export function useSettings(overridePageKey?: string) {
   const changeCurrency = (newCurrency: Currency) => {
     setCurrency(newCurrency);
     if (typeof localStorage !== "undefined") {
-      const key = `app_currency_${computePageKey(overridePageKey)}`;
+      const pageKey = computePageKey(overridePageKey);
+      const key = `app_currency_${pageKey}`;
       localStorage.setItem(key, newCurrency);
+      localStorage.setItem("app_currency", newCurrency);
       window.dispatchEvent(
         new CustomEvent("app_currency_changed", {
-          detail: { pageKey: computePageKey(overridePageKey), newCurrency },
+          detail: { pageKey, newCurrency },
         }),
       );
     }
@@ -152,48 +159,65 @@ export function useSettings(overridePageKey?: string) {
       localStorage.setItem("app_exchange_rates", JSON.stringify(newRates));
       window.dispatchEvent(
         new CustomEvent("app_currency_changed", {
-          detail: { pageKey: "rates_updated" },
+          detail: { pageKey: computePageKey(overridePageKey), ratesUpdated: true, currency: curr, rate },
         }),
       );
     }
   };
 
-  const formatPrice = (amount: number, baseCurrency: Currency = "USD") => {
-    const targetRate = exchangeRates[currency] || 1;
-    const baseRate = exchangeRates[baseCurrency] || 1;
+  const convertPrice = useCallback(
+    (amount: number, baseCurrency: Currency | string = "USD"): number => {
+      const num = Number(amount || 0);
+      const cleanBase = ((baseCurrency || "USD").toUpperCase().trim() as Currency);
+      const targetRate = Number(exchangeRates[currency]) || 1;
+      const baseRate = Number(exchangeRates[cleanBase]) || 1;
 
-    // Convert base price (USD) to target currency using exchange rate (معامل التحويل)
-    // If base is USD and target is EGP, amount * exchangeRates['EGP']
-    let convertedAmount = amount;
-    if (baseCurrency === "USD") {
-      if (currency === "USD") convertedAmount = amount;
-      else convertedAmount = amount * (exchangeRates[currency] || 1);
-    } else {
-      // if base is another currency
-      const inUSD = amount / baseRate;
-      convertedAmount = currency === "USD" ? inUSD : inUSD * (exchangeRates[currency] || 1);
-    }
+      if (cleanBase === currency) {
+        return num;
+      }
 
-    const value = Number(convertedAmount || 0).toLocaleString("en-US", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
+      if (cleanBase === "USD") {
+        return currency === "USD" ? num : num * targetRate;
+      } else {
+        const inUSD = num / baseRate;
+        return currency === "USD" ? inUSD : inUSD * targetRate;
+      }
+    },
+    [currency, exchangeRates],
+  );
 
-    if (!mounted) {
-      return `${value} $`;
-    }
+  const formatConvertedPrice = useCallback(
+    (convertedAmount: number): string => {
+      const value = Number(convertedAmount || 0).toLocaleString("en-US", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
 
-    if (lang === "ar") {
-      if (currency === "EGP") return `${value} ج.م`;
-      if (currency === "USD") return `${value} $`;
-      if (currency === "SSP") return `${value} ج.ج.س`;
-    } else {
-      if (currency === "EGP") return `${value} EGP`;
-      if (currency === "USD") return `$${value}`;
-      if (currency === "SSP") return `${value} SSP`;
-    }
-    return `${value} ${currency}`;
-  };
+      if (!mounted) {
+        return `${value} $`;
+      }
+
+      if (lang === "ar") {
+        if (currency === "EGP") return `${value} ج.م`;
+        if (currency === "USD") return `${value} $`;
+        if (currency === "SSP") return `${value} ج.ج.س`;
+      } else {
+        if (currency === "EGP") return `${value} EGP`;
+        if (currency === "USD") return `$${value}`;
+        if (currency === "SSP") return `${value} SSP`;
+      }
+      return `${value} ${currency}`;
+    },
+    [currency, lang, mounted],
+  );
+
+  const formatPrice = useCallback(
+    (amount: number, baseCurrency: Currency = "USD") => {
+      const convertedAmount = convertPrice(amount, baseCurrency);
+      return formatConvertedPrice(convertedAmount);
+    },
+    [convertPrice, formatConvertedPrice],
+  );
 
   return {
     lang,
@@ -202,6 +226,8 @@ export function useSettings(overridePageKey?: string) {
     changeLang,
     changeCurrency,
     updateExchangeRate,
+    convertPrice,
+    formatConvertedPrice,
     formatPrice,
     formatTreasuryCurrency,
   };

@@ -256,9 +256,9 @@ function CashierTreasuryPage() {
     name_ar: "خزينة الكاشير",
     type: "cash" as const,
     currency: "EGP",
-    balance: 15000,
+    balance: 0,
     is_open: true,
-    opening_balance: 15000,
+    opening_balance: 0,
     responsible_employee: "غير محدد",
     status: "active" as const,
   };
@@ -269,7 +269,7 @@ function CashierTreasuryPage() {
 
   // Calculate Cashier Treasury Breakdown for currencies
   const cashierBreakdown = (() => {
-    const opBal = cashierTreasury.opening_balance ?? 15000;
+    const opBal = cashierTreasury.opening_balance ?? 0;
 
     let cashEGP = opBal;
     let cashUSD = 0;
@@ -545,8 +545,10 @@ function CashierTreasuryPage() {
       (o) =>
         o &&
         o.order_number &&
+        (o.status === "completed" || o.payment_status === "paid") &&
         o.status !== "cancelled" &&
         o.status !== "refunded" &&
+        o.status !== "pending" &&
         Number(o.total || 0) > 0,
     );
     const totalOrdersCount = validOrders.length;

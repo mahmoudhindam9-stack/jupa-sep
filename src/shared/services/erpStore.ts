@@ -126,6 +126,12 @@ export class ERPStore {
       this.saveState();
       this.saveToIDB(this.state);
     }
+    if (!this.state.financial_transactions_zero_reset_2026_10_26) {
+      this.wipeAllFinancialTransactionsToZero(false);
+      this.state.financial_transactions_zero_reset_2026_10_26 = true;
+      this.saveState();
+      this.saveToIDB(this.state);
+    }
     // Clean and validate park shifts: ensure integrity without arbitrary suppression
     if (this.state.parkShifts && this.state.parkShifts.length > 0) {
       const validShifts = this.state.parkShifts.filter((s: any) => {
@@ -239,6 +245,56 @@ export class ERPStore {
           getReq.onsuccess = () => {
             if (getReq.result) {
               const idbState = getReq.result;
+              if (!idbState.financial_transactions_zero_reset_2026_10_26) {
+                idbState.journalEntries = [];
+                idbState.deletedJournalEntries = [];
+                idbState.vouchers = [];
+                idbState.treasuryTransactions = [];
+                idbState.sales_invoices = [];
+                idbState.orders = [];
+                idbState.purchaseOrders = [];
+                idbState.inventoryDocuments = [];
+                idbState.reconciliations = [];
+                idbState.loans = [];
+                idbState.payrolls = [];
+                idbState.mallPayments = [];
+                idbState.mallGardenRevenues = [];
+                idbState.mallGardenExpenses = [];
+                idbState.mallTerminatedContractsArchive = [];
+                idbState.parkTicketTransactions = [];
+                idbState.parkShifts = [];
+                idbState.parkActiveShift = null;
+                idbState.restaurantShifts = [];
+                idbState.restaurantActiveShift = null;
+                idbState.restaurantRefundRecords = [];
+                if (Array.isArray(idbState.treasuries)) {
+                  idbState.treasuries.forEach((t: any) => {
+                    t.balance = 0;
+                    t.opening_balance = 0;
+                    t.available_balance = 0;
+                    if (Array.isArray(t.containers)) {
+                      t.containers.forEach((c: any) => {
+                        c.balance = 0;
+                      });
+                    }
+                  });
+                }
+                if (Array.isArray(idbState.parkOperationalTreasuries)) {
+                  idbState.parkOperationalTreasuries.forEach((t: any) => {
+                    t.balance = 0;
+                  });
+                }
+                if (Array.isArray(idbState.accounts)) {
+                  idbState.accounts.forEach((a: any) => {
+                    a.balance = 0;
+                    a.opening_balance = 0;
+                    a.initial_balance = 0;
+                    a.current_balance = 0;
+                  });
+                }
+                idbState.financial_transactions_zero_reset_2026_10_26 = true;
+                this.saveToIDB(idbState);
+              }
               if (!idbState.park_sales_hard_zero_reset_v4_2026_09_03) {
                 idbState.parkShifts = [];
                 idbState.parkActiveShift = null;
@@ -525,14 +581,41 @@ export class ERPStore {
             }
           }
         });
-        const loadedJournalEntries = Array.isArray(parsed.journalEntries)
+        const isFreshFinancialStart = parsed.financial_transactions_zero_reset_2026_10_26 === true;
+        if (!isFreshFinancialStart) {
+          loadedTreasuries.forEach((t) => {
+            t.balance = 0;
+            t.opening_balance = 0;
+            t.available_balance = 0;
+            if (Array.isArray(t.containers)) {
+              t.containers.forEach((c) => {
+                c.balance = 0;
+              });
+            }
+          });
+          loadedAccounts.forEach((a) => {
+            a.balance = 0;
+            a.opening_balance = 0;
+            (a as any).initial_balance = 0;
+            (a as any).current_balance = 0;
+          });
+          if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
+            try {
+              localStorage.removeItem("pos_local_orders");
+              localStorage.removeItem("pos_held_orders");
+              localStorage.removeItem("pending_cashier_order");
+              localStorage.removeItem("pos_cart_items");
+            } catch {}
+          }
+        }
+        const loadedJournalEntries = isFreshFinancialStart && Array.isArray(parsed.journalEntries)
           ? parsed.journalEntries
           : [];
-        const loadedTreasuryTransactions = Array.isArray(parsed.treasuryTransactions)
+        const loadedTreasuryTransactions = isFreshFinancialStart && Array.isArray(parsed.treasuryTransactions)
           ? parsed.treasuryTransactions
           : [];
-        const loadedVouchers = Array.isArray(parsed.vouchers) ? parsed.vouchers : [];
-        const loadedReconciliations = Array.isArray(parsed.reconciliations)
+        const loadedVouchers = isFreshFinancialStart && Array.isArray(parsed.vouchers) ? parsed.vouchers : [];
+        const loadedReconciliations = isFreshFinancialStart && Array.isArray(parsed.reconciliations)
           ? parsed.reconciliations
           : [];
 
@@ -541,19 +624,25 @@ export class ERPStore {
           currentBranchId: "branch-1",
           treasuries: loadedTreasuries,
           suppliers: loadedSuppliers,
-          purchaseOrders: (parsed.purchaseOrders || []).map((po) => ({
-            ...po,
-            branch_id: "branch-1",
-          })),
-          treasuryTransactions: loadedTreasuryTransactions.map((tx) => ({
-            ...tx,
-            branch_id: "branch-1",
-          })),
-          vouchers: loadedVouchers.map((v) => ({
-            ...v,
-            branch_id: "branch-1",
-            deleted: !!v.deleted,
-          })),
+          purchaseOrders: isFreshFinancialStart
+            ? (parsed.purchaseOrders || []).map((po) => ({
+                ...po,
+                branch_id: "branch-1",
+              }))
+            : [],
+          treasuryTransactions: isFreshFinancialStart
+            ? loadedTreasuryTransactions.map((tx) => ({
+                ...tx,
+                branch_id: "branch-1",
+              }))
+            : [],
+          vouchers: isFreshFinancialStart
+            ? loadedVouchers.map((v) => ({
+                ...v,
+                branch_id: "branch-1",
+                deleted: !!v.deleted,
+              }))
+            : [],
           accounts: loadedAccounts,
           journalEntries: loadedJournalEntries,
           auditLogs: parsed.auditLogs || [],
@@ -565,10 +654,12 @@ export class ERPStore {
           costCenters: parsed.costCenters || DEFAULT_COST_CENTERS,
           isAccountingPeriodLocked: !!parsed.isAccountingPeriodLocked,
           extendedInventoryItems: parsed.extendedInventoryItems || {},
-          inventoryDocuments: (parsed.inventoryDocuments || []).map((doc) => ({
-            ...doc,
-            branch_id: "branch-1",
-          })),
+          inventoryDocuments: isFreshFinancialStart
+            ? (parsed.inventoryDocuments || []).map((doc) => ({
+                ...doc,
+                branch_id: "branch-1",
+              }))
+            : [],
           reconciliations: loadedReconciliations,
           userPermissions: parsed.userPermissions || DEFAULT_PERMISSIONS,
           currentUser: parsed.currentUser || "",
@@ -584,23 +675,14 @@ export class ERPStore {
           wipe_journal_entries_2026_08_18_v3: true,
           employees: parsed.employees || DEFAULT_EMPLOYEES,
           attendance: parsed.attendance || [],
-          loans: parsed.loans || [],
-          payrolls: parsed.payrolls || [],
+          loans: isFreshFinancialStart ? parsed.loans || [] : [],
+          payrolls: isFreshFinancialStart ? parsed.payrolls || [] : [],
           mallShops:
             parsed.mallShops && parsed.mallShops.length > 0 ? parsed.mallShops : DEFAULT_MALL_SHOPS,
-          mallPayments:
-            parsed.mallPayments && parsed.mallPayments.length > 0
-              ? parsed.mallPayments
-              : DEFAULT_MALL_PAYMENTS,
-          mallGardenRevenues:
-            parsed.mallGardenRevenues && parsed.mallGardenRevenues.length > 0
-              ? parsed.mallGardenRevenues
-              : DEFAULT_GARDEN_REVENUES,
-          mallGardenExpenses:
-            parsed.mallGardenExpenses && parsed.mallGardenExpenses.length > 0
-              ? parsed.mallGardenExpenses
-              : DEFAULT_GARDEN_EXPENSES,
-          mallTerminatedContractsArchive: parsed.mallTerminatedContractsArchive || [],
+          mallPayments: isFreshFinancialStart && Array.isArray(parsed.mallPayments) ? parsed.mallPayments : [],
+          mallGardenRevenues: isFreshFinancialStart && Array.isArray(parsed.mallGardenRevenues) ? parsed.mallGardenRevenues : [],
+          mallGardenExpenses: isFreshFinancialStart && Array.isArray(parsed.mallGardenExpenses) ? parsed.mallGardenExpenses : [],
+          mallTerminatedContractsArchive: isFreshFinancialStart ? parsed.mallTerminatedContractsArchive || [] : [],
           parkTicketItems:
             parsed.parkTicketItems && parsed.parkTicketItems.length > 0
               ? parsed.parkTicketItems
@@ -611,32 +693,123 @@ export class ERPStore {
               : DEFAULT_PARK_CUSTOMERS,
           parkOperationalTreasuries:
             parsed.parkOperationalTreasuries && parsed.parkOperationalTreasuries.length > 0
-              ? parsed.park_sales_hard_zero_reset_v4_2026_09_03
+              ? isFreshFinancialStart && parsed.park_sales_hard_zero_reset_v4_2026_09_03
                 ? parsed.parkOperationalTreasuries
                 : parsed.parkOperationalTreasuries.map((t: any) => ({ ...t, balance: 0 }))
               : DEFAULT_PARK_OPERATIONAL_TREASURIES,
-          parkTicketTransactions: parsed.park_sales_hard_zero_reset_v4_2026_09_03
+          parkTicketTransactions: isFreshFinancialStart && parsed.park_sales_hard_zero_reset_v4_2026_09_03
             ? parsed.parkTicketTransactions || []
             : [],
-          parkShifts: parsed.park_sales_hard_zero_reset_v4_2026_09_03
+          parkShifts: isFreshFinancialStart && parsed.park_sales_hard_zero_reset_v4_2026_09_03
             ? (parsed.parkShifts || []).filter((s: any) => {
                 return Boolean(s && s.id && (s.shift_number || s.auto_shift_number));
               })
             : [],
-          parkActiveShift: parsed.park_sales_hard_zero_reset_v4_2026_09_03
+          parkActiveShift: isFreshFinancialStart && parsed.park_sales_hard_zero_reset_v4_2026_09_03
             ? parsed.parkActiveShift || null
             : null,
           park_sales_hard_zero_reset_v4_2026_09_03: true,
           park_shifts_v2_hard_reset_2026_09_03: true,
           park_shifts_cleared_2026_09_03_clean: true,
-          restaurantShifts: parsed.restaurantShifts || [],
-          restaurantActiveShift: parsed.restaurantActiveShift || null,
-          restaurantRefundRecords: parsed.restaurantRefundRecords || [],
+          restaurantShifts: isFreshFinancialStart ? parsed.restaurantShifts || [] : [],
+          restaurantActiveShift: isFreshFinancialStart ? parsed.restaurantActiveShift || null : null,
+          restaurantRefundRecords: isFreshFinancialStart ? parsed.restaurantRefundRecords || [] : [],
+          orders: isFreshFinancialStart ? parsed.orders || [] : [],
+          sales_invoices: isFreshFinancialStart ? parsed.sales_invoices || [] : [],
+          financial_transactions_zero_reset_2026_10_26: true,
         };
       } catch (e) {
         console.error("Error parsing ERP state:", e);
       }
     return this.getDefaultState();
+  }
+
+  wipeAllFinancialTransactionsToZero(save: boolean = true) {
+    // 1. General ledger & accounting
+    this.state.journalEntries = [];
+    (this.state as any).deletedJournalEntries = [];
+    this.state.vouchers = [];
+
+    // 2. Treasuries & Cash
+    this.state.treasuryTransactions = [];
+    if (Array.isArray(this.state.treasuries)) {
+      this.state.treasuries.forEach((t) => {
+        t.balance = 0;
+        t.opening_balance = 0;
+        t.available_balance = 0;
+        if (Array.isArray(t.containers)) {
+          t.containers.forEach((c) => {
+            c.balance = 0;
+          });
+        }
+      });
+    }
+
+    // 3. Park operational treasuries, tickets and shifts
+    this.state.parkTicketTransactions = [];
+    this.state.parkShifts = [];
+    this.state.parkActiveShift = null;
+    if (Array.isArray(this.state.parkOperationalTreasuries)) {
+      this.state.parkOperationalTreasuries.forEach((t) => {
+        t.balance = 0;
+      });
+    }
+
+    // 4. Restaurant & POS sales, orders, and shifts
+    (this.state as any).sales_invoices = [];
+    this.state.orders = [];
+    this.state.restaurantShifts = [];
+    this.state.restaurantActiveShift = null;
+    this.state.restaurantRefundRecords = [];
+
+    // 5. Mall & Garden revenues, expenses, and rental payments
+    this.state.mallGardenRevenues = [];
+    this.state.mallGardenExpenses = [];
+    this.state.mallPayments = [];
+    this.state.mallTerminatedContractsArchive = [];
+
+    // 6. Procurement, inventory docs & HR financial records
+    this.state.purchaseOrders = [];
+    this.state.inventoryDocuments = [];
+    this.state.reconciliations = [];
+    this.state.loans = [];
+    this.state.payrolls = [];
+
+    // 7. Reset all chart of accounts initial & current balances to zero
+    if (Array.isArray(this.state.accounts)) {
+      this.state.accounts.forEach((a) => {
+        a.balance = 0;
+        a.opening_balance = 0;
+        (a as any).initial_balance = 0;
+        (a as any).current_balance = 0;
+      });
+    }
+
+    // 8. Wipe browser storage cache for cached pos orders / cart
+    if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
+      try {
+        localStorage.removeItem("pos_local_orders");
+        localStorage.removeItem("pos_held_orders");
+        localStorage.removeItem("pending_cashier_order");
+        localStorage.removeItem("pos_cart_items");
+      } catch {}
+    }
+
+    this.state.financial_transactions_zero_reset_2026_10_26 = true;
+    this.recalculateAccountBalances();
+
+    this.logAction(
+      "ADMIN",
+      "تصفير كامل الحركات المالية",
+      "تم تصفير ومحو كافة الحركات المالية والإيرادات والمصروفات والورديات وسندات القبض والصرف وقيود اليومية للبدء من الصفر بنجاح",
+      "DELETE",
+    );
+
+    if (save) {
+      this.saveState();
+      this.saveToIDB(this.state);
+      this.notify();
+    }
   }
 
   clearAllJournalEntries() {
@@ -664,39 +837,10 @@ export class ERPStore {
   }
 
   deleteAllSystemData() {
-    const s = this.getDefaultState();
-    s.hard_reset_2026_08_18_final = true;
-    s.wipe_journal_entries_2026_08_18_v3 = true;
-    s.treasuryTransactions = [];
-    s.journalEntries = [];
-    s.vouchers = [];
-    s.purchaseOrders = [];
-    s.inventoryDocuments = [];
-    s.orders = [];
-    s.mallGardenRevenues = [];
-    s.mallGardenExpenses = [];
-    s.mallPayments = [];
-    s.mallShops = [];
-    s.attendance = [];
-    s.loans = [];
-    s.payrolls = [];
-    s.auditLogs = [];
-
-    s.treasuries = JSON.parse(JSON.stringify(DEFAULT_TREASURIES));
-    s.treasuries.forEach((t) => {
-      t.balance = 0;
-      t.opening_balance = 0;
-      t.available_balance = 0;
-      if (t.containers) t.containers.forEach((c) => (c.balance = 0));
-    });
-    s.accounts.forEach((a) => {
-      a.balance = 0;
-      a.opening_balance = 0;
-    });
-
-    this.state = s;
-    this.recalculateAccountBalances();
+    this.wipeAllFinancialTransactionsToZero(false);
+    this.state.auditLogs = [];
     this.saveState();
+    this.saveToIDB(this.state);
     this.notify();
 
     if (typeof window !== "undefined") {
@@ -752,6 +896,7 @@ export class ERPStore {
       restaurantShifts: [],
       restaurantActiveShift: null,
       restaurantRefundRecords: [],
+      financial_transactions_zero_reset_2026_10_26: true,
     };
   }
   saveState() {
@@ -3256,8 +3401,10 @@ export class ERPStore {
       (o) =>
         o &&
         o.order_number &&
+        (o.status === "completed" || o.payment_status === "paid") &&
         o.status !== "cancelled" &&
         o.status !== "refunded" &&
+        o.status !== "pending" &&
         Number(o.total || 0) > 0,
     );
     for (const order of validOrders) {

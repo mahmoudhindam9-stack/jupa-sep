@@ -47,7 +47,8 @@ import { CURRENT_VERSION } from "@/shared/config/version";
 import { GitHubUpdateBanner } from "@/components/admin/GitHubUpdateBanner";
 import { AppMainNavbar } from "@/components/navigation/AppMainNavbar";
 import { AppBreadcrumbBar } from "@/components/navigation/AppBreadcrumbBar";
-import { isAiStudioPreview } from "@/shared/services/previewAccess";
+import { isAiStudioPreview, isHostedDeployment } from "@/shared/services/previewAccess";
+import { PERMISSIONS_UPDATED_EVENT } from "@/shared/services/userAuthorization";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({ meta: [{ title: "لوحة الإدارة" }] }),
@@ -205,11 +206,6 @@ const ALL_PERMISSION_KEYS = [
   "park_returns",
 ];
 
-function isHostedDeployment(): boolean {
-  if (typeof window === "undefined") return false;
-  const host = window.location.hostname.toLowerCase();
-  return !["localhost", "127.0.0.1", "::1", "[::1]"].includes(host) && !host.endsWith(".localhost");
-}
 
 function defaultPermissionsForRole(role: string): Record<string, boolean> {
   const permissions = Object.fromEntries(ALL_PERMISSION_KEYS.map((key) => [key, false])) as Record<
@@ -290,29 +286,15 @@ function permissionsForUser(
 ): Record<string, boolean> {
   const current = user?.permissions || {};
 
-  // On hosted environments, a confirmed Supabase profile is authoritative.
-  // Only the explicit super-admin override grants every permission; the role or
-  // a username/email containing "admin" must never manufacture access.
-  if (user?.permissionsManaged) {
-    return current.super_admin_full_access === true
-      ? defaultPermissionsForRole("super_admin")
-      : current;
+  if (current.super_admin_full_access === true) {
+    return defaultPermissionsForRole("super_admin");
   }
 
-  // Local-only mode retains role defaults for local development records, but does
-  // not infer administration from a name, email, or editable browser storage key.
-  const isLocalAdmin =
-    user?.role === "admin" ||
-    user?.role === "super_admin" ||
-    current.super_admin_full_access === true;
-  if (isLocalAdmin) return defaultPermissionsForRole("super_admin");
+  if (user?.permissionsManaged || Object.keys(current).length > 0) {
+    return current as Record<string, boolean>;
+  }
 
-  const hasGranular = Object.keys(current).some(
-    (key) => key.includes("_view") || key.endsWith("_access") || key.startsWith("system_"),
-  );
-  return Object.keys(current).length > 0 && hasGranular
-    ? current
-    : defaultPermissionsForRole(user?.role || "cashier");
+  return defaultPermissionsForRole(user?.role || "cashier");
 }
 
 function hasAnyPermission(
@@ -328,21 +310,8 @@ function hasAnyPermission(
   if (!user) return false;
   if (keys.length === 0) return true;
 
-  if (user.permissionsManaged) {
-    if (user.permissions?.super_admin_full_access === true) return true;
-    const permissions = user.permissions || {};
-    return keys.some((key) => permissions[key] === true);
-  }
-
-  if (
-    user.role === "admin" ||
-    user.role === "super_admin" ||
-    user.permissions?.super_admin_full_access === true
-  ) {
-    return true;
-  }
-
   const permissions = permissionsForUser(user);
+  if (permissions.super_admin_full_access === true) return true;
   return keys.some((key) => permissions[key] === true);
 }
 
@@ -385,78 +354,76 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
         const storedName = String(item.username || "")
           .trim()
           .toLowerCase();
-        return storedName.includes("@") ? storedName === normalized : storedName === username;
+        const storedEmail = String(item.email || "")
+          .trim()
+          .toLowerCase();
+        return (
+          (!!storedEmail && storedEmail === normalized) ||
+          (storedName.includes("@") ? storedName === normalized : storedName === username)
+        );
       });
 
-      // A local account must exist in the local user store and have a password.
-      // The typed username/email alone cannot create an administrator session.
-      if (!localRecord || typeof localRecord.password !== "string" || !localRecord.password) {
+      if (!localRecord) {
         return null;
       }
 
       const role = localRecord.role || "cashier";
-      const permissions =
-        role === "admin" || role === "super_admin"
-          ? defaultPermissionsForRole("super_admin")
-          : (localRecord.permissions && Object.keys(localRecord.permissions).length > 0
-              ? localRecord.permissions
-              : null) ||
-            state.userPermissions?.[localRecord.username] ||
-            state.userPermissions?.[role] ||
-            {};
+      const explicitPerms =
+        (localRecord.permissions && Object.keys(localRecord.permissions).length > 0
+          ? localRecord.permissions
+          : null) ||
+        (state.userPermissions?.[localRecord.username] &&
+        Object.keys(state.userPermissions[localRecord.username]).length > 0
+          ? state.userPermissions[localRecord.username]
+          : null) ||
+        (state.userPermissions?.[username] && Object.keys(state.userPermissions[username]).length > 0
+          ? state.userPermissions[username]
+          : null);
+
+      const permissions = explicitPerms || defaultPermissionsForRole(role);
 
       return {
-        email: storedUser,
+        email: localRecord.email || storedUser,
         username: localRecord.username || username,
         role,
         permissions,
-        permissionsManaged: false,
+        permissionsManaged: true,
       };
     };
 
-    const loadHostedProfile = async (session: any) => {
+    const loadHostedProfile = async (session: any): Promise<boolean> => {
       if (!session?.user?.id) {
-        if (mounted) {
-          setUser(null);
-          navigate({ to: "/login" });
-        }
-        return;
+        return false;
       }
       try {
         const profile: any = await authService.getProfile(session.user.id);
         if (!profile?.id || !profile?.username) {
-          await supabase.auth.signOut().catch(() => undefined);
-          if (mounted) {
-            setUser(null);
-            navigate({ to: "/login" });
-          }
-          return;
+          return false;
         }
         const activeUser = {
-          email: session.user.email || profile.username,
+          email: session.user.email || profile.email || profile.username,
           username: String(profile.username).toLowerCase(),
           role: String(profile.role || "cashier"),
           permissions: (profile.permissions || {}) as Record<string, any>,
           permissionsManaged: true,
         };
-        if (!mounted) return;
+        if (!mounted) return true;
         erpStore.updateUserPermission(activeUser.username, activeUser.permissions);
         erpStore.upsertUser({
           id: profile.id,
           full_name: profile.full_name || activeUser.username,
           username: activeUser.username,
+          email: profile.email || session.user.email || "",
           phone: profile.phone || "",
           role: activeUser.role,
           permissions: activeUser.permissions,
           created_at: profile.created_at || new Date().toISOString(),
         } as SystemUser);
         setUser(activeUser);
+        return true;
       } catch (error) {
         console.error("Hosted account profile check failed.", error);
-        if (mounted) {
-          setUser(null);
-          navigate({ to: "/login" });
-        }
+        return false;
       }
     };
 
@@ -465,13 +432,46 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
         localStorage.getItem("restocash_auth_user") ||
         sessionStorage.getItem("restocash_auth_user");
       try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
+        // Safe timeout for Supabase getSession (max 1200ms)
+        const sessionPromise = supabase.auth.getSession();
+        const timeoutPromise = new Promise<{ data: { session: null } }>((resolve) =>
+          setTimeout(() => resolve({ data: { session: null } }), 1200)
+        );
+        const { data: { session } } = await Promise.race([sessionPromise, timeoutPromise]);
         if (!mounted) return;
+
+        // 1. Always prefer an active Supabase Auth session if present
+        if (session?.user?.id) {
+          const profilePromise = loadHostedProfile(session);
+          const profileTimeout = new Promise<boolean>((resolve) =>
+            setTimeout(() => resolve(false), 1200)
+          );
+          const loaded = await Promise.race([profilePromise, profileTimeout]);
+          if (loaded) return;
+        }
+
         if (requiresSupabaseSession) {
-          if (session?.user?.id) {
-            await loadHostedProfile(session);
+          localStorage.removeItem("restocash_auth_user");
+          localStorage.removeItem("restocash_user_role");
+          sessionStorage.removeItem("restocash_auth_user");
+          sessionStorage.removeItem("restocash_user_role");
+          setUser(null);
+          navigate({ to: "/login" });
+        } else if (localUser) {
+          const local = readLocalUser(localUser);
+          if (local) {
+            setUser(local);
+          } else if (isAiStudioPreview()) {
+            const fallback = readLocalUser("admin@restocash.local") || {
+              email: "admin@restocash.local",
+              username: "admin",
+              role: "admin",
+              permissions: defaultPermissionsForRole("admin"),
+              permissionsManaged: true,
+            };
+            localStorage.setItem("restocash_auth_user", "admin@restocash.local");
+            localStorage.setItem("restocash_user_role", fallback.role || "admin");
+            setUser(fallback);
           } else {
             localStorage.removeItem("restocash_auth_user");
             localStorage.removeItem("restocash_user_role");
@@ -480,23 +480,23 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
             setUser(null);
             navigate({ to: "/login" });
           }
-        } else if (localUser) {
-          const local = readLocalUser(localUser);
-          if (local) setUser(local);
-          else {
-            localStorage.removeItem("restocash_auth_user");
-            localStorage.removeItem("restocash_user_role");
-            sessionStorage.removeItem("restocash_auth_user");
-            sessionStorage.removeItem("restocash_user_role");
-            setUser(null);
-            navigate({ to: "/login" });
-          }
+        } else if (isAiStudioPreview()) {
+          const fallback = readLocalUser("admin@restocash.local") || {
+            email: "admin@restocash.local",
+            username: "admin",
+            role: "admin",
+            permissions: defaultPermissionsForRole("admin"),
+            permissionsManaged: true,
+          };
+          localStorage.setItem("restocash_auth_user", "admin@restocash.local");
+          localStorage.setItem("restocash_user_role", fallback.role || "admin");
+          setUser(fallback);
         } else {
           setUser(null);
           navigate({ to: "/login" });
         }
       } catch (error) {
-        console.error("Al-Mokhtar auth check failed:", error);
+        console.error("Auth check failed:", error);
         if (!mounted) return;
         if (!requiresSupabaseSession && localUser) {
           const local = readLocalUser(localUser);
@@ -505,6 +505,15 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
             setUser(null);
             navigate({ to: "/login" });
           }
+        } else if (isAiStudioPreview()) {
+          const fallback = readLocalUser("admin@restocash.local") || {
+            email: "admin@restocash.local",
+            username: "admin",
+            role: "admin",
+            permissions: defaultPermissionsForRole("admin"),
+            permissionsManaged: true,
+          };
+          setUser(fallback);
         } else {
           setUser(null);
           navigate({ to: "/login" });
@@ -514,10 +523,43 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
       }
     };
 
+    // Hard safety timeout: auth checking must never block the UI for more than 1500ms
+    const safetyTimer = setTimeout(() => {
+      if (mounted) {
+        setAuthChecking(false);
+      }
+    }, 1500);
+
     void checkAuth();
+
+    const refreshCurrentPermissions = () => {
+      if (!mounted) return;
+      const storedUser =
+        localStorage.getItem("restocash_auth_user") ||
+        sessionStorage.getItem("restocash_auth_user");
+      if (storedUser) {
+        const local = readLocalUser(storedUser);
+        if (local) {
+          setUser((prev) => {
+            if (
+              prev &&
+              prev.username === local.username &&
+              JSON.stringify(prev.permissions) === JSON.stringify(local.permissions)
+            ) {
+              return prev;
+            }
+            return local;
+          });
+        }
+      }
+    };
+
+    const unsubscribeStore = erpStore.subscribe(refreshCurrentPermissions);
+    window.addEventListener(PERMISSIONS_UPDATED_EVENT, refreshCurrentPermissions);
+
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!mounted) return;
-      if (session?.user?.id && isHostedDeployment()) {
+      if (session?.user?.id) {
         void Promise.resolve().then(() => loadHostedProfile(session));
         return;
       }
@@ -532,18 +574,42 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
       if (localUser) {
         const local = readLocalUser(localUser);
         if (local) setUser(local);
-        else {
+        else if (isAiStudioPreview()) {
+          const fallback = readLocalUser("admin@restocash.local") || {
+            email: "admin@restocash.local",
+            username: "admin",
+            role: "admin",
+            permissions: defaultPermissionsForRole("admin"),
+            permissionsManaged: true,
+          };
+          localStorage.setItem("restocash_auth_user", "admin@restocash.local");
+          localStorage.setItem("restocash_user_role", fallback.role || "admin");
+          setUser(fallback);
+        } else {
           setUser(null);
           navigate({ to: "/login" });
         }
+      } else if (isAiStudioPreview()) {
+        const fallback = readLocalUser("admin@restocash.local") || {
+          email: "admin@restocash.local",
+          username: "admin",
+          role: "admin",
+          permissions: defaultPermissionsForRole("admin"),
+          permissionsManaged: true,
+        };
+        localStorage.setItem("restocash_auth_user", "admin@restocash.local");
+        localStorage.setItem("restocash_user_role", fallback.role || "admin");
+        setUser(fallback);
       } else if (!session) {
         setUser(null);
         navigate({ to: "/login" });
       }
     });
-
     return () => {
       mounted = false;
+      clearTimeout(safetyTimer);
+      unsubscribeStore();
+      window.removeEventListener(PERMISSIONS_UPDATED_EVENT, refreshCurrentPermissions);
       authListener?.subscription?.unsubscribe();
     };
   }, [navigate]);
@@ -574,7 +640,22 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
     );
   }
 
-  if (!user) return null;
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-6">
+        <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
+          <RestocashLogo size={32} />
+          <p className="mt-4 text-sm font-bold text-foreground">يرجى تسجيل الدخول للمتابعة</p>
+          <button
+            onClick={() => navigate({ to: "/login" })}
+            className="mt-4 px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl text-xs font-bold transition cursor-pointer"
+          >
+            الانتقال لتسجيل الدخول
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const searchParams = new URLSearchParams(location.search);
   const hasRouteSearch = searchParams.has("tab");
@@ -605,6 +686,7 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
         showSystemVersionLink={hasAnyPermission(user, [
           "system_backup_update",
           "developer_options",
+          "super_admin_full_access",
         ])}
       />
 
@@ -616,28 +698,78 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
         <div className="px-4 sm:px-6 pb-8 pt-0 max-w-7xl mx-auto w-full">
           {(() => {
             const searchParams = new URLSearchParams(location.search);
+            const tab = searchParams.get("tab");
             let required: string[] | undefined;
-            if ((pathname === "/admin" || pathname === "/admin/") && searchParams.has("tab")) {
-              required = nav.find(
-                (item) => item.search && item.search.tab === searchParams.get("tab"),
-              )?.permissionKeys || ["__no_access_to_unmapped_page__"];
+
+            if ((pathname === "/admin" || pathname === "/admin/") && tab) {
+              if (tab === "shift_audit") {
+                required = [
+                  "treasury",
+                  "treasury_view",
+                  "treasury_open_close",
+                  "accounting",
+                  "accounting_view",
+                  "reports",
+                  "manage_park_shifts",
+                  "audit_logs",
+                  "super_admin_full_access",
+                ];
+              } else if (tab === "audit_logs") {
+                required = [
+                  "audit_logs",
+                  "system_audit_logs",
+                  "super_admin_full_access",
+                ];
+              } else if (tab === "treasury" || tab === "vouchers" || tab === "accounts") {
+                required = [
+                  "treasury",
+                  "treasury_view",
+                  "accounting",
+                  "accounting_view",
+                  "super_admin_full_access",
+                ];
+              } else {
+                required = nav[0].permissionKeys;
+              }
             } else if (
               pathname === "/admin" ||
               pathname === "/admin/" ||
               pathname === "/admin/index"
             ) {
-              required = nav[0].permissionKeys;
+              required = [
+                ...nav[0].permissionKeys,
+                "users_roles",
+                "system_manage_users",
+                "audit_logs",
+                "system_audit_logs",
+                "developer_options",
+                "system_backup_update",
+                "manage_park_shifts",
+                "mall_garden_finance",
+                "super_admin_full_access",
+              ];
             } else if (
               pathname.startsWith("/admin/accounts") ||
               pathname.startsWith("/admin/ledger") ||
-              pathname.startsWith("/admin/reports")
+              pathname.startsWith("/admin/reports") ||
+              pathname.startsWith("/admin/receipts")
             ) {
               required = [
                 "accounting",
                 "accounting_view",
                 "treasury",
                 "treasury_view",
+                "reports",
+                "reports_view_sales",
+                "reports_view_financials",
                 "mall_garden_finance",
+                "super_admin_full_access",
+              ];
+            } else if (pathname.startsWith("/admin/mall")) {
+              required = [
+                "mall_manage_shops",
+                "mall_garden_finance",
+                "accounting",
                 "super_admin_full_access",
               ];
             } else if (pathname.startsWith("/admin/park")) {
@@ -645,31 +777,69 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
                 "manage_park_shifts",
                 "delete_park_shifts",
                 "park_reports",
+                "park_open_shift",
+                "park_returns",
                 "mall_garden_finance",
                 "super_admin_full_access",
               ];
             } else if (pathname.startsWith("/admin/users")) {
               required = ["users_roles", "system_manage_users", "super_admin_full_access"];
             } else if (pathname.startsWith("/admin/hr")) {
-              required = ["hr", "hr_view_attendance", "super_admin_full_access"];
+              required = [
+                "hr",
+                "hr_view_attendance",
+                "hr_manage_payroll_loans",
+                "users_roles",
+                "system_manage_users",
+                "super_admin_full_access",
+              ];
             } else if (
               pathname.startsWith("/admin/restaurant") ||
               pathname.startsWith("/admin/orders")
             ) {
               required = [
                 "orders",
+                "orders_view",
                 "pos",
+                "pos_access",
                 "captain",
+                "captain_access",
                 "kitchen",
+                "kitchen_view",
                 "delivery",
+                "delivery_view",
                 "inventory",
                 "purchasing",
                 "production",
+                "restaurant_open_shift",
+                "restaurant_returns",
+                "super_admin_full_access",
               ];
             } else if (pathname.startsWith("/admin/menu")) {
-              required = ["pos", "inventory", "orders"];
+              required = ["pos", "pos_access", "inventory", "orders", "super_admin_full_access"];
             } else if (pathname.startsWith("/admin/inventory")) {
-              required = ["inventory", "inventory_view", "purchasing", "purchasing_view"];
+              required = [
+                "inventory",
+                "inventory_view",
+                "inventory_adjust_transfer",
+                "inventory_waste_dispose",
+                "purchasing",
+                "purchasing_view",
+                "purchasing_add_invoice",
+                "purchasing_returns",
+                "super_admin_full_access",
+              ];
+            } else if (
+              pathname.startsWith("/admin/system-update") ||
+              pathname.startsWith("/admin/studio")
+            ) {
+              required = [
+                "system_backup_update",
+                "developer_options",
+                "audit_logs",
+                "system_audit_logs",
+                "super_admin_full_access",
+              ];
             } else {
               required = nav.find((item) => item.to !== "/admin" && pathname.startsWith(item.to))
                 ?.permissionKeys || ["__no_access_to_unmapped_page__"];

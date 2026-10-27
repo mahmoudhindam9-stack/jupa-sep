@@ -1,5 +1,5 @@
 // @ts-nocheck
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   UtensilsCrossed,
@@ -54,6 +54,12 @@ import {
 import { cn } from "@/lib/utils";
 import { useStudioPublishedPage } from "@/features/developer-studio/hooks/useStudio";
 import { StudioElementRenderer } from "@/features/developer-studio/components/StudioElementRenderer";
+import { erpStore } from "@/shared/services/erpStore";
+import {
+  getActiveUserPermissionsSync,
+  hasAnyRequestedPermission,
+  PERMISSIONS_UPDATED_EVENT,
+} from "@/shared/services/userAuthorization";
 
 interface DepartmentCardItem {
   id: string;
@@ -63,6 +69,7 @@ interface DepartmentCardItem {
   to: string;
   search?: Record<string, string>;
   icon: any;
+  permissionKeys: string[];
   colorScheme: {
     bgLight: string;
     border: string;
@@ -80,6 +87,7 @@ interface DepartmentCardItem {
     search?: Record<string, string>;
     icon: any;
     desc?: string;
+    permissionKeys?: string[];
   }[];
 }
 
@@ -92,6 +100,23 @@ const DEPARTMENTS: DepartmentCardItem[] = [
       "نقطة البيع السريعة POS، الكابتن أوردر للطاولات، شاشة المطبخ والفرن، وتتبع الطلبات وإغلاق وردية الكاشير.",
     to: "/admin/restaurant",
     icon: UtensilsCrossed,
+    permissionKeys: [
+      "orders",
+      "orders_view",
+      "pos",
+      "pos_access",
+      "captain",
+      "captain_access",
+      "kitchen",
+      "kitchen_view",
+      "delivery",
+      "delivery_view",
+      "inventory",
+      "purchasing",
+      "production",
+      "restaurant_open_shift",
+      "restaurant_returns",
+    ],
     colorScheme: {
       bgLight: "bg-amber-500/5",
       border: "border-amber-500/20",
@@ -109,18 +134,21 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         to: "/pos",
         icon: Store,
         desc: "تسجيل المبيعات والفواتير السريعة",
+        permissionKeys: ["pos", "pos_access", "orders", "orders_create_custom"],
       },
       {
         title: "شاشة الكابتن أوردر للطاولات",
         to: "/captain",
         icon: Users,
         desc: "أوردرات الصالة وخدمة الطاولات",
+        permissionKeys: ["captain", "captain_access", "captain_create_order"],
       },
       {
         title: "شاشة المطبخ والفرن الذكية",
         to: "/oven",
         icon: Flame,
         desc: "متابعة تجهيز الأطباق والطلبات",
+        permissionKeys: ["kitchen", "kitchen_view", "kitchen_change_status"],
       },
       {
         title: "متابعة الطلبات والديليفري",
@@ -128,6 +156,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "orders" },
         icon: ClipboardList,
         desc: "الطلبات الجارية والتوصيل",
+        permissionKeys: ["orders", "orders_view", "delivery", "delivery_view"],
       },
       {
         title: "إدارة الطاولات والباركود QR",
@@ -135,12 +164,14 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "tables" },
         icon: Grid3X3,
         desc: "تخطيط الصالة والباركود الذكي",
+        permissionKeys: ["orders", "orders_generate_qr", "captain", "captain_transfer_tables"],
       },
       {
         title: "قائمة الطعام والوجبات (المنيو)",
         to: "/admin/menu",
         icon: Coffee,
         desc: "تعديل الأصناف والأسعار",
+        permissionKeys: ["pos", "inventory", "orders"],
       },
       {
         title: "مستودع وخامات المطعم",
@@ -148,6 +179,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "inventory" },
         icon: Package,
         desc: "المخزون الداخلي السريع",
+        permissionKeys: ["inventory", "inventory_view", "production", "production_view"],
       },
       {
         title: "إغلاق وردية كاشير المطعم",
@@ -155,6 +187,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "shifts" },
         icon: History,
         desc: "تقارير وتصفية وردية الكاشير",
+        permissionKeys: ["pos", "pos_access", "restaurant_open_shift", "treasury_open_close"],
       },
     ],
   },
@@ -166,6 +199,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
       "دليل المحلات والمستأجرين، عقود الإيجار السنوية والشهرية، متابعة التحصيل والدفعات، ومصروفات وتشغيل المول.",
     to: "/admin/mall",
     icon: Building2,
+    permissionKeys: ["mall_manage_shops", "mall_garden_finance", "accounting"],
     colorScheme: {
       bgLight: "bg-blue-500/5",
       border: "border-blue-500/20",
@@ -184,6 +218,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "shops" },
         icon: Store,
         desc: "قائمة الوحدات والمستأجرين والعقود",
+        permissionKeys: ["mall_manage_shops"],
       },
       {
         title: "متابعة الإيجارات والدفعات الشهرية",
@@ -191,6 +226,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "payments" },
         icon: Calendar,
         desc: "سجل التحصيل الشهري والمستحقات",
+        permissionKeys: ["mall_manage_shops", "accounting"],
       },
       {
         title: "مصروفات وتشغيل وصيانة المول",
@@ -198,6 +234,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "expenses" },
         icon: CreditCard,
         desc: "تكاليف التشغيل والصيانة والأمن",
+        permissionKeys: ["mall_manage_shops", "mall_garden_finance", "accounting"],
       },
       {
         title: "التقارير المالية ونسب الإشغال",
@@ -205,6 +242,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "reports" },
         icon: TrendingUp,
         desc: "الملخص الإحصائي والمالي للمول",
+        permissionKeys: ["mall_manage_shops", "reports", "accounting"],
       },
     ],
   },
@@ -216,6 +254,14 @@ const DEPARTMENTS: DepartmentCardItem[] = [
       "نقطة بيع تذاكر الدخول والألعاب (POS)، فتح وإغلاق ورديات الكاشير، الخزائن التشغيلية الثمانية، وتقارير الإيرادات.",
     to: "/admin/park",
     icon: Trees,
+    permissionKeys: [
+      "manage_park_shifts",
+      "delete_park_shifts",
+      "park_reports",
+      "park_open_shift",
+      "park_returns",
+      "mall_garden_finance",
+    ],
     colorScheme: {
       bgLight: "bg-teal-500/5",
       border: "border-teal-500/20",
@@ -234,6 +280,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "tickets" },
         icon: Ticket,
         desc: "إصدار تذاكر الدخول والباركود",
+        permissionKeys: ["manage_park_shifts", "park_open_shift", "mall_garden_finance"],
       },
       {
         title: "فتح وردية كاشير جديدة",
@@ -241,6 +288,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "shifts" },
         icon: Plus,
         desc: "إطلاق وردية كاشير مع العهدة النقدية",
+        permissionKeys: ["manage_park_shifts", "park_open_shift"],
       },
       {
         title: "إغلاق وتسوية وردية الكاشير",
@@ -248,6 +296,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "closing" },
         icon: History,
         desc: "تقارير الوردية والتسوية المالية",
+        permissionKeys: ["manage_park_shifts", "delete_park_shifts", "park_open_shift"],
       },
       {
         title: "الخزائن التشغيلية الثمانية (8)",
@@ -255,6 +304,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "treasury" },
         icon: Landmark,
         desc: "متابعة أرصدة صناديق الحديقة",
+        permissionKeys: ["manage_park_shifts", "mall_garden_finance", "treasury"],
       },
       {
         title: "إدارة العملاء واشتراكات الزوار",
@@ -262,6 +312,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "customers" },
         icon: Users,
         desc: "سجل الزوار والعملاء الدائمين",
+        permissionKeys: ["manage_park_shifts", "park_open_shift", "mall_garden_finance"],
       },
       {
         title: "أسعار التذاكر وفئات الألعاب",
@@ -269,6 +320,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "prices" },
         icon: Settings,
         desc: "تحديد تعرفة الدخول والألعاب",
+        permissionKeys: ["manage_park_shifts", "mall_garden_finance"],
       },
       {
         title: "تقارير إيرادات الحديقة والورديات",
@@ -276,6 +328,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "reports" },
         icon: FileBarChart,
         desc: "إحصائيات المبيعات والتحصيل",
+        permissionKeys: ["park_reports", "manage_park_shifts", "mall_garden_finance"],
       },
     ],
   },
@@ -287,6 +340,15 @@ const DEPARTMENTS: DepartmentCardItem[] = [
       "كشف حساب الأستاذ العام، دفتر اليومية العامة، دليل وشجرة الحسابات، إدارة الخزائن، والتقارير المالية والميزانية.",
     to: "/admin/ledger",
     icon: Landmark,
+    permissionKeys: [
+      "accounting",
+      "accounting_view",
+      "accounting_post_journal",
+      "treasury",
+      "treasury_view",
+      "reports",
+      "reports_view_financials",
+    ],
     colorScheme: {
       bgLight: "bg-indigo-500/5",
       border: "border-indigo-500/20",
@@ -305,6 +367,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "financial_position" },
         icon: TrendingUp,
         desc: "عرض الأصول والخصوم وقائمة الدخل الموحدة",
+        permissionKeys: ["accounting", "accounting_view", "reports_view_financials"],
       },
       {
         title: "كشف حساب الأستاذ العام",
@@ -312,6 +375,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "ledger" },
         icon: BookOpen,
         desc: "كشف حساب مفصل وأرصدة الحسابات",
+        permissionKeys: ["accounting", "accounting_view"],
       },
       {
         title: "دفتر اليومية العامة والقيود المزدوجة",
@@ -319,6 +383,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "journal" },
         icon: FileText,
         desc: "تسجيل وترحيل قيود اليومية",
+        permissionKeys: ["accounting", "accounting_view", "accounting_post_journal"],
       },
       {
         title: "إدارة الخزائن والحسابات البنكية",
@@ -326,6 +391,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "treasury" },
         icon: Wallet,
         desc: "الصناديق النقدية وحركات الخزينة",
+        permissionKeys: ["treasury", "treasury_view", "accounting"],
       },
       {
         title: "دليل وشجرة الحسابات (Oracle)",
@@ -333,6 +399,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "accounts" },
         icon: FileBarChart,
         desc: "شجرة الحسابات بالأصول والخصوم",
+        permissionKeys: ["accounting", "accounting_view"],
       },
       {
         title: "سندات الصرف والقبض المرحّلة",
@@ -340,6 +407,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "vouchers" },
         icon: Receipt,
         desc: "سندات الإيرادات والمصروفات",
+        permissionKeys: ["accounting", "treasury", "expense_approval", "revenue_approval"],
       },
       {
         title: "ميزان المراجعة المحاسبي",
@@ -347,6 +415,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "trial" },
         icon: Scale,
         desc: "توازن الأرصدة والمجاميع",
+        permissionKeys: ["accounting", "accounting_view", "reports_view_financials"],
       },
       {
         title: "التقارير والميزانية العمومية",
@@ -354,12 +423,14 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "reports" },
         icon: TrendingUp,
         desc: "قائمة الدخل والمركز المالي",
+        permissionKeys: ["reports", "reports_view_financials", "accounting"],
       },
       {
         title: "تصميم وإدارة الإيصالات والسندات",
         to: "/admin/receipts",
         icon: Receipt,
         desc: "نماذج الطباعة الرسمية",
+        permissionKeys: ["accounting", "treasury", "orders", "pos"],
       },
     ],
   },
@@ -371,6 +442,13 @@ const DEPARTMENTS: DepartmentCardItem[] = [
       "دليل الموظفين، الحضور والانصراف، مسيرات الرواتب والسلف، وإدارة حسابات المستخدمين وتحديد أدوار الصلاحيات.",
     to: "/admin/hr",
     icon: UserCheck,
+    permissionKeys: [
+      "hr",
+      "hr_view_attendance",
+      "hr_manage_payroll_loans",
+      "users_roles",
+      "system_manage_users",
+    ],
     colorScheme: {
       bgLight: "bg-rose-500/5",
       border: "border-rose-500/20",
@@ -389,6 +467,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "employees" },
         icon: Users,
         desc: "الملفات الشخصية والوظائف",
+        permissionKeys: ["hr", "hr_view_attendance"],
       },
       {
         title: "تسجيل الحضور والانصراف",
@@ -396,6 +475,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "attendance" },
         icon: CalendarDays,
         desc: "متابعة أوقات العمل والورديات",
+        permissionKeys: ["hr", "hr_view_attendance"],
       },
       {
         title: "مسيرات الرواتب الشهرية والبدلات",
@@ -403,6 +483,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "payroll" },
         icon: DollarSign,
         desc: "احتساب المستحقات الشهرية",
+        permissionKeys: ["hr", "hr_manage_payroll_loans"],
       },
       {
         title: "السلف والخصومات والمكافآت",
@@ -410,6 +491,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "loans" },
         icon: Coins,
         desc: "حركات السلف والاستقطاعات",
+        permissionKeys: ["hr", "hr_manage_payroll_loans"],
       },
       {
         title: "إدارة مستخدمي النظام والصلاحيات",
@@ -417,6 +499,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "users" },
         icon: ShieldCheck,
         desc: "تحديد أدوار الوصول وحسابات الدخول",
+        permissionKeys: ["users_roles", "system_manage_users", "super_admin_full_access"],
       },
     ],
   },
@@ -428,6 +511,16 @@ const DEPARTMENTS: DepartmentCardItem[] = [
       "إدارة المستودعات، أصناف المخزون، التحويلات الداخلية، فواتير المشتريات والموردين، وتسويات الهالك والتوالف.",
     to: "/admin/inventory",
     icon: Package,
+    permissionKeys: [
+      "inventory",
+      "inventory_view",
+      "inventory_adjust_transfer",
+      "inventory_waste_dispose",
+      "purchasing",
+      "purchasing_view",
+      "purchasing_add_invoice",
+      "purchasing_returns",
+    ],
     colorScheme: {
       bgLight: "bg-sky-500/5",
       border: "border-sky-500/20",
@@ -446,6 +539,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "items" },
         icon: Package,
         desc: "متابعة أرصدة المواد وتنبيهات النواقص",
+        permissionKeys: ["inventory", "inventory_view"],
       },
       {
         title: "التحويلات الداخلية بين المستودعات",
@@ -453,6 +547,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "transfers" },
         icon: ArrowLeftRight,
         desc: "نقل الخامات بين الفروع والمخازن",
+        permissionKeys: ["inventory", "inventory_adjust_transfer"],
       },
       {
         title: "فواتير المشتريات وسندات الاستلام",
@@ -460,6 +555,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "purchases" },
         icon: FileSpreadsheet,
         desc: "تسجيل فواتير الشراء الواردة",
+        permissionKeys: ["purchasing", "purchasing_view", "purchasing_add_invoice"],
       },
       {
         title: "إدارة الموردين والشركات",
@@ -467,6 +563,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "suppliers" },
         icon: Users,
         desc: "بيانات وحسابات الموردين",
+        permissionKeys: ["purchasing", "purchasing_view", "purchasing_returns"],
       },
       {
         title: "تسويات الهالك والتوالف",
@@ -474,6 +571,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "waste" },
         icon: Trash2,
         desc: "إثبات الفاقد وتكلفة الهدر",
+        permissionKeys: ["inventory", "inventory_waste_dispose"],
       },
     ],
   },
@@ -486,6 +584,16 @@ const DEPARTMENTS: DepartmentCardItem[] = [
     to: "/admin",
     search: { tab: "shift_audit" },
     icon: Database,
+    permissionKeys: [
+      "treasury",
+      "treasury_view",
+      "treasury_open_close",
+      "accounting",
+      "accounting_view",
+      "reports",
+      "manage_park_shifts",
+      "audit_logs",
+    ],
     colorScheme: {
       bgLight: "bg-teal-500/5",
       border: "border-teal-500/20",
@@ -523,6 +631,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
     to: "/admin",
     search: { tab: "audit_logs" },
     icon: History,
+    permissionKeys: ["audit_logs", "system_audit_logs", "super_admin_full_access"],
     colorScheme: {
       bgLight: "bg-indigo-500/5",
       border: "border-indigo-500/20",
@@ -559,6 +668,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
       "فحص المزامنة مع GitHub، سجل التحديثات التلقائية للنظام، والتحكم في إعدادات التطوير والنسخ الاحتياطي.",
     to: "/admin/system-update",
     icon: Settings,
+    permissionKeys: ["system_backup_update", "developer_options", "super_admin_full_access"],
     colorScheme: {
       bgLight: "bg-slate-500/5",
       border: "border-slate-500/20",
@@ -576,26 +686,69 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         to: "/admin/studio",
         icon: Sparkles,
         desc: "تصميم الواجهات والمسودات والنشر الآمن",
+        permissionKeys: ["developer_options", "super_admin_full_access"],
       },
       {
         title: "تحديثات النظام ومزامنة GitHub",
         to: "/admin/system-update",
         icon: RefreshCw,
         desc: "الإصدار والتحديثات التلقائية",
+        permissionKeys: ["system_backup_update", "developer_options", "super_admin_full_access"],
       },
       {
         title: "فحص الاتصال والنسخ الاحتياطي",
         to: "/admin/system-update",
         icon: Database,
         desc: "فحص حالة قاعدة البيانات والتخزين",
+        permissionKeys: ["system_backup_update", "developer_options", "super_admin_full_access"],
       },
     ],
   },
 ];
 
-export function DepartmentsGridHub() {
+export function DepartmentsGridHub({
+  userPermissions: propPermissions,
+}: {
+  userPermissions?: Record<string, boolean>;
+} = {}) {
   const navigate = useNavigate();
   const { elements, allElements } = useStudioPublishedPage("/admin");
+  const [activePermissions, setActivePermissions] = useState<Record<string, boolean>>(() =>
+    propPermissions && Object.keys(propPermissions).length > 0
+      ? propPermissions
+      : getActiveUserPermissionsSync(),
+  );
+
+  useEffect(() => {
+    if (propPermissions && Object.keys(propPermissions).length > 0) {
+      setActivePermissions(propPermissions);
+      return;
+    }
+    const refresh = () => {
+      setActivePermissions(getActiveUserPermissionsSync());
+    };
+    refresh();
+    const unsub = erpStore.subscribe(refresh);
+    window.addEventListener(PERMISSIONS_UPDATED_EVENT, refresh);
+    return () => {
+      unsub();
+      window.removeEventListener(PERMISSIONS_UPDATED_EVENT, refresh);
+    };
+  }, [propPermissions]);
+
+  const visibleDepartments = DEPARTMENTS.map((dept) => {
+    const allowedSubSections = dept.subSections.filter((sub) =>
+      hasAnyRequestedPermission(activePermissions, sub.permissionKeys || dept.permissionKeys),
+    );
+    const hasDeptAccess =
+      hasAnyRequestedPermission(activePermissions, dept.permissionKeys) ||
+      allowedSubSections.length > 0;
+    return {
+      ...dept,
+      subSections: allowedSubSections.length > 0 ? allowedSubSections : dept.subSections,
+      hasDeptAccess,
+    };
+  }).filter((dept) => dept.hasDeptAccess);
 
   return (
     <div className="space-y-6">
@@ -615,7 +768,7 @@ export function DepartmentsGridHub() {
 
       {/* Grid of Department Squares */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-5 sm:gap-6">
-        {DEPARTMENTS.map((dept) => {
+        {visibleDepartments.map((dept) => {
           const Icon = dept.icon;
           return (
             <Card

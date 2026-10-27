@@ -15,7 +15,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { CURRENT_VERSION } from "@/shared/config/version";
 import { supabase } from "@/integrations/supabase/client";
-import { signOutCurrentUser } from "@/shared/services/userAuthorization";
+import {
+  getActiveUserPermissionsSync,
+  hasAnyRequestedPermission,
+  PERMISSIONS_UPDATED_EVENT,
+  signOutCurrentUser,
+} from "@/shared/services/userAuthorization";
+import { erpStore } from "@/shared/services/erpStore";
 import {
   NAVIGATION_DEPARTMENTS,
   resolveNavigationState,
@@ -49,6 +55,22 @@ export function AppMainNavbar({
   const location = useLocation();
   const navigate = useNavigate();
   const [fallbackUser, setFallbackUser] = useState<AppMainNavbarUser | null>(null);
+  const [activePerms, setActivePerms] = useState<Record<string, boolean>>(() =>
+    getActiveUserPermissionsSync(),
+  );
+
+  useEffect(() => {
+    const refresh = () => {
+      setActivePerms(getActiveUserPermissionsSync());
+    };
+    refresh();
+    const unsub = erpStore.subscribe(refresh);
+    window.addEventListener(PERMISSIONS_UPDATED_EVENT, refresh);
+    return () => {
+      unsub();
+      window.removeEventListener(PERMISSIONS_UPDATED_EVENT, refresh);
+    };
+  }, []);
 
   useEffect(() => {
     if (propUser) return;
@@ -57,9 +79,22 @@ export function AppMainNavbar({
         localStorage.getItem("restocash_auth_user") ||
         sessionStorage.getItem("restocash_auth_user");
       if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed === "object") {
-          setFallbackUser(parsed);
+        if (raw.startsWith("{")) {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === "object") {
+            setFallbackUser(parsed);
+            return;
+          }
+        } else {
+          const role =
+            localStorage.getItem("restocash_user_role") ||
+            sessionStorage.getItem("restocash_user_role") ||
+            "مشرف";
+          setFallbackUser({
+            email: raw,
+            name: raw.split("@")[0],
+            role,
+          });
           return;
         }
       }
@@ -88,9 +123,11 @@ export function AppMainNavbar({
     (location as { searchStr?: string }).searchStr,
   );
 
-  const visibleDepartments = hasDepartmentPermission
-    ? NAVIGATION_DEPARTMENTS.filter(hasDepartmentPermission)
-    : NAVIGATION_DEPARTMENTS;
+  const visibleDepartments = NAVIGATION_DEPARTMENTS.filter((dept) => {
+    if (hasDepartmentPermission) return hasDepartmentPermission(dept);
+    if (!dept.permissionKeys || dept.permissionKeys.length === 0) return true;
+    return hasAnyRequestedPermission(activePerms, dept.permissionKeys);
+  });
 
   const handleLogout = async () => {
     if (onSignOut) {

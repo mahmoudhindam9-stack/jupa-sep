@@ -31,8 +31,8 @@ const getLineBaseValue = (
 import { AccountSearchSelect } from "@/components/AccountSearchSelect";
 import { VouchersLedgerSection } from "@/components/admin/VouchersLedgerSection";
 import { ComprehensiveFinancialPositionCard } from "@/components/admin/ComprehensiveFinancialPositionCard";
-import { AccountsPage } from "./accounts";
-import { ReportsPage } from "./reports";
+import { AccountsPage } from "@/components/admin/AccountsPageView";
+import { ReportsPage } from "@/components/admin/ReportsPageView";
 import { TreasuryManagementView } from "@/components/admin/TreasuryManagementView";
 import {
   printAccountingDocument,

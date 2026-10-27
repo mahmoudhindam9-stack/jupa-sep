@@ -12,6 +12,7 @@ import { Chatbot } from "@/components/Chatbot";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { translator } from "../shared/services/translationService";
 import { createAppSync } from "../shared/services/appSync";
+import { studioService } from "@/features/developer-studio/services/studioService";
 import appCss from "../styles.css?url";
 
 function NotFoundComponent() {
@@ -42,11 +43,9 @@ function NotFoundComponent() {
 }
 
 function ErrorComponent({ error, reset }: { error: any; reset: () => void }) {
-  useEffect(() => {
-    // Keep the original route failure visible; error boundaries must not require
-    // router context, because router initialization itself can be the failing step.
+  if (typeof console !== "undefined" && console.error) {
     console.error("Restocash route error:", error);
-  }, [error]);
+  }
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <main className="w-full max-w-lg text-center" aria-labelledby="error-title">
@@ -113,7 +112,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     scripts: [
       {
         // This runs before the client entry is imported, so it can recover if client.tsx itself fails to load.
-        children: String.raw`try{const k="restocash:chunk-recovery-attempted";const diagnose=(m)=>{const match=m.match(/https?:\/\/[^\s"'<>]+\/src\/client\.tsx(?:\?[^\s"'<>]*)?/);if(!match){console.error("Client entry load failed; no module URL found.",m);return;}const entry=match[0];const seen=new Set();const visited=[];const failures=[];const scan=async(url,depth)=>{if(seen.has(url)||seen.size>=32||depth>3)return;seen.add(url);try{const response=await fetch(url,{cache:"no-store"});const body=await response.text();const info={url,status:response.status,ok:response.ok,contentType:response.headers.get("content-type")};visited.push(info);if(!response.ok){failures.push({...info,body:body.slice(0,1200)});return;}if(depth>=3||!/(javascript|ecmascript)/i.test(info.contentType||""))return;const re=/\b(?:import|export)\s+(?:[^'";]*?\s+from\s+)?['"]([^'"]+)['"]/g;const deps=[];let hit;while((hit=re.exec(body))!==null){try{const dep=new URL(hit[1],url);if(dep.origin===location.origin&&(dep.pathname.startsWith("/src/")||dep.pathname.includes("/node_modules/")||dep.pathname.startsWith("/@id/")||dep.pathname.startsWith("/@fs/")))deps.push(dep.href);}catch(e){}}await Promise.all(deps.map(dep=>scan(dep,depth+1)));}catch(error){failures.push({url,error:String(error)});}};void scan(entry,0).then(()=>console.error("Client entry import graph diagnostics",{entry,visitedModules:visited.length,failedModules:failures,modules:visited})).catch(error=>console.error("Import graph diagnostics crashed",error));};const recover=(r)=>{const m=String(r||"").toLowerCase();if(!m.includes("failed to fetch dynamically imported module")&&!m.includes("error loading dynamically imported module")&&!m.includes("importing a module script failed")&&!m.includes("loading chunk")&&!m.includes("dynamically imported module"))return;try{if(sessionStorage.getItem(k)==="1"){console.error("Client entry still failed after one recovery reload; collecting the underlying Vite response.",m);diagnose(r);return;}sessionStorage.setItem(k,"1");}catch(e){console.error("Client entry failed; session storage is unavailable.",m);diagnose(r);return;}window.location.reload();};window.addEventListener("error",e=>recover(e.message||""));window.addEventListener("unhandledrejection",e=>recover(e.reason?.message||String(e.reason||"")));}catch(e){console.error("Could not install client entry recovery handler.",e);}`,
+        children: String.raw`try{const k="restocash:chunk-recovery-attempted";const recover=(r,ev)=>{const m=String(r||"").toLowerCase();if(!m.includes("failed to fetch dynamically imported module")&&!m.includes("error loading dynamically imported module")&&!m.includes("importing a module script failed")&&!m.includes("loading chunk")&&!m.includes("dynamically imported module"))return;if(ev&&typeof ev.preventDefault==="function"){ev.preventDefault();}try{const now=Date.now();const raw=sessionStorage.getItem(k);let data={count:0,time:0};if(raw){try{data=JSON.parse(raw);}catch(e){}}if(!data.time||(now-data.time>8000)){data={count:0,time:now};}if(data.count<4){data.count++;data.time=now;sessionStorage.setItem(k,JSON.stringify(data));setTimeout(()=>{window.location.reload();},1000);}else{sessionStorage.removeItem(k);}}catch(e){setTimeout(()=>{window.location.reload();},1000);}};window.addEventListener("error",e=>recover(e.message||"",e));window.addEventListener("unhandledrejection",e=>recover(e.reason?.message||String(e.reason||""),e));}catch(e){}`,
       },
       {
         children: `try{const s=localStorage.getItem("restocash-theme");if(s==="dark"||(!s&&window.matchMedia("(prefers-color-scheme: dark)").matches)){document.documentElement.classList.add("dark");}}catch(e){}`,
@@ -321,8 +320,8 @@ function RootComponent() {
     window.addEventListener("studio_published_updated", publishedHandler);
     window.addEventListener("studio_legacy_edits_updated", legacyEditsUpdatedHandler);
     window.addEventListener("storage", storageHandler);
-    void import("@/features/developer-studio/services/studioService")
-      .then(({ studioService }) => studioService.getPublishedConfig())
+    void studioService
+      .getPublishedConfig()
       .then(applyPublishedStudioEdits)
       .catch((error) => console.warn("Published Studio config could not be loaded:", error));
 
