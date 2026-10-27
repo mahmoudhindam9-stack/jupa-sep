@@ -271,6 +271,10 @@ export const authService = {
     if (data !== true) throw new Error("لم يؤكد Supabase حذف الحساب؛ لم يتم اعتماد العملية.");
   },
 
+  async deleteManagedUser(id: string): Promise<void> {
+    return this.deleteUser(id);
+  },
+
   async signUpNewUser(email: string, password: string, profileData: any) {
     const normalizedEmail = normalizeEmail(email);
     const validated = validateManagedUserForm({

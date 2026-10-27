@@ -159,8 +159,8 @@ function clearCreatePassword(operationId: string): void {
 }
 
 function safeProfile(profile: ProfilePayload): ProfilePayload {
-  const { id: _ignoredId, password: _ignoredPassword, ...safe } = profile || {};
-  return safe;
+  const { id: _ignoredId, password: _ignoredPassword, ...safe } = (profile || {}) as ProfilePayload;
+  return safe as ProfilePayload;
 }
 
 function profileToUser(profile: ProfilePayload): SystemUser {
@@ -305,7 +305,7 @@ function enqueueChange(input: UserChangeInput): { operationId: string | null; no
 
   if (input.kind === "upsert") {
     const username = normalizeUsername(input.username);
-    const profile = { ...safeProfile(input.profile), username };
+    const profile: ProfilePayload = { ...safeProfile(input.profile), username };
 
     const pendingCreate = queue.find(
       (operation): operation is QueuedCreate =>
@@ -438,7 +438,7 @@ async function sendOperation(
   operation: QueuedChange,
 ): Promise<{ sentUpdatedAt: number; profile?: ProfilePayload; localUserId?: string }> {
   if (operation.kind === "delete") {
-    await authService.deleteManagedUser(operation.userId);
+    await authService.deleteUser(operation.userId);
     return { sentUpdatedAt: operation.updatedAt };
   }
 
@@ -473,18 +473,16 @@ async function sendOperation(
       );
     }
 
-    const created = await authService.createManagedUserAccount(
-      operation.email,
+    const created = await authService.createManagedUserAccount({
+      email: operation.email,
       password,
-      {
-        username: operation.username,
-        full_name: operation.profile.full_name || operation.username,
-        phone: operation.profile.phone || "",
-        role: operation.profile.role || "cashier",
-        permissions: operation.profile.permissions || {},
-      },
-    );
-    cloudUserId = created?.user?.id || created?.profile?.id;
+      username: operation.username,
+      full_name: operation.profile.full_name || operation.username,
+      phone: operation.profile.phone || "",
+      role: operation.profile.role || "cashier",
+      permissions: operation.profile.permissions || {},
+    });
+    cloudUserId = created?.profile?.id;
     if (!cloudUserId) {
       throw new Error(
         "لم تؤكد خدمة Auth إنشاء الحساب. سيظل الطلب معلّقًا للمحاولة مرة أخرى.",

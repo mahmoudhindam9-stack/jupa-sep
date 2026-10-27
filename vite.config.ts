@@ -27,9 +27,6 @@ if (
 export default defineConfig({
   plugins: [
     tanstackStart({
-      router: {
-        autoCodeSplitting: false,
-      },
       prerender: {
         enabled: true,
         autoStaticPathsDiscovery: false,
