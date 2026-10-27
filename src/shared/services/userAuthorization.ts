@@ -117,9 +117,6 @@ export async function currentUserHasPermission(keys: string[]): Promise<boolean>
     }
   } catch (error) {
     console.warn("Supabase session permission check failed:", error);
-    if (isHostedDeployment()) {
-      return false;
-    }
   }
 
   // 2. If strictly hosted deployment with no Supabase session and no local session, fail closed

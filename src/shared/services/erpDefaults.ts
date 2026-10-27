@@ -1211,16 +1211,9 @@ export function ensureCurrentManagedUsers(users: unknown): SystemUser[] {
     }
     usedEmails.add(compliantEmail);
 
-    const isCloudUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-      String(user.id || ""),
-    );
-
-    const resolvedPassword =
-      user.password === undefined && isCloudUuid
-        ? undefined
-        : isCompliantPasswordValue(user.password)
-          ? String(user.password)
-          : DEFAULT_COMPLIANT_ADMIN_PASSWORD;
+    const resolvedPassword = isCompliantPasswordValue(user.password)
+      ? String(user.password)
+      : DEFAULT_COMPLIANT_ADMIN_PASSWORD;
 
     const validRoles = new Set([
       "super_admin",

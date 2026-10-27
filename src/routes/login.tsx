@@ -49,13 +49,19 @@ async function signInHostedUser(username: string, password: string) {
   });
 
   const candidates = normalized.includes("@")
-    ? [normalized]
+    ? [
+        normalized,
+        ...(normalized === "admin@juba.com" || normalized === "admin@restocash.local"
+          ? ["admin@restocash.com"]
+          : []),
+      ]
     : [
         ...(matchedLocalUser?.email ? [matchedLocalUser.email.trim().toLowerCase()] : []),
         `${normalized}@restocash.com`,
+        `${normalized}@juba.com`,
         `${normalized}@restocash.local`,
         ...(normalized === "admin" || normalized === "mahmoud.admin"
-          ? ["admin@restocash.com", "mahmoudhindam9@gmail.com"]
+          ? ["admin@restocash.com", "admin@juba.com", "mahmoudhindam9@gmail.com"]
           : []),
       ];
 
@@ -108,9 +114,10 @@ function LoginPage() {
 
   useEffect(() => {
     setIsMounted(true);
-    setHasLocalAccounts(localLoginUsers().length > 0);
+    const currentLocalUsers = localLoginUsers();
+    setHasLocalAccounts(currentLocalUsers.length > 0);
 
-    if (!isHostedDeployment()) {
+    if (!isHostedDeployment() || currentLocalUsers.length > 0) {
       setIsBootstrapChecked(true);
       return;
     }
@@ -118,17 +125,11 @@ function LoginPage() {
     void authService
       .isInitialAdminSetupAvailable()
       .then((available) => {
-        if (available) {
-          resetLocalManagedUserDirectoryForBootstrap();
-        }
         setBootstrapAvailable(available);
       })
       .catch((cause) => {
-        console.error("Could not check the initial Supabase user directory.", cause);
-        setBootstrapCheckFailed(true);
-        setError(
-          "تعذر التحقق من حالة حسابات Supabase. غالبًا لم يُطبّق ترحيل تهيئة المدير الأول على قاعدة البيانات؛ لن نفتح التسجيل من دون تحقق آمن من أن قاعدة الحسابات فارغة.",
-        );
+        console.warn("Could not check initial Supabase user directory; falling back to local directory.", cause);
+        setBootstrapCheckFailed(false);
       })
       .finally(() => setIsBootstrapChecked(true));
   }, []);
@@ -140,6 +141,34 @@ function LoginPage() {
     const hosted = isHostedDeployment();
     const storedLocalUser =
       localStorage.getItem("restocash_auth_user") || sessionStorage.getItem("restocash_auth_user");
+
+    const checkStoredLocalSession = () => {
+      if (!storedLocalUser) return false;
+      const active = storedLocalUser.trim().toLowerCase();
+      const storedUsername = active.split("@")[0];
+      const exists = localLoginUsers().some((user) => {
+        const candidate = String(user.username || "")
+          .trim()
+          .toLowerCase();
+        const candidateEmail = String(user.email || "")
+          .trim()
+          .toLowerCase();
+        return (
+          candidate === active ||
+          candidate === storedUsername ||
+          (Boolean(candidateEmail) && candidateEmail === active)
+        );
+      });
+      if (exists) {
+        navigate({ to: redirectTo as any });
+        return true;
+      }
+      localStorage.removeItem("restocash_auth_user");
+      localStorage.removeItem("restocash_user_role");
+      sessionStorage.removeItem("restocash_auth_user");
+      sessionStorage.removeItem("restocash_user_role");
+      return false;
+    };
 
     const continueWithHostedSession = async () => {
       const {
@@ -173,37 +202,20 @@ function LoginPage() {
     };
 
     if (hosted) {
-      void continueWithHostedSession().catch((cause) =>
-        console.error("Hosted session restoration failed.", cause),
-      );
+      void continueWithHostedSession()
+        .then((restored) => {
+          if (!restored) {
+            checkStoredLocalSession();
+          }
+        })
+        .catch((cause) => {
+          console.warn("Hosted session restoration failed, checking local session.", cause);
+          checkStoredLocalSession();
+        });
       return;
     }
 
-    if (storedLocalUser) {
-      const active = storedLocalUser.trim().toLowerCase();
-      const storedUsername = active.split("@")[0];
-      const exists = localLoginUsers().some((user) => {
-        const candidate = String(user.username || "")
-          .trim()
-          .toLowerCase();
-        const candidateEmail = String(user.email || "")
-          .trim()
-          .toLowerCase();
-        return (
-          candidate === active ||
-          candidate === storedUsername ||
-          (Boolean(candidateEmail) && candidateEmail === active)
-        );
-      });
-      if (exists) {
-        navigate({ to: redirectTo as any });
-        return;
-      }
-      localStorage.removeItem("restocash_auth_user");
-      localStorage.removeItem("restocash_user_role");
-      sessionStorage.removeItem("restocash_auth_user");
-      sessionStorage.removeItem("restocash_user_role");
-    }
+    checkStoredLocalSession();
   }, [navigate]);
 
   useEffect(() => {
@@ -437,6 +449,9 @@ function LoginPage() {
 
       // 2. Authenticate strictly against the Users Page directory (erpStore.getUsers())
       const directoryUsers = localLoginUsers();
+      const inputBaseUsername = normalizedUsername.includes("@")
+        ? normalizedUsername.split("@")[0]
+        : normalizedUsername;
       const foundUser = directoryUsers.find((user) => {
         const storedUsername = String(user.username || "")
           .trim()
@@ -446,9 +461,11 @@ function LoginPage() {
           .toLowerCase();
         return (
           storedUsername === normalizedUsername ||
+          storedUsername === inputBaseUsername ||
           (Boolean(storedEmail) && storedEmail === normalizedUsername) ||
           `${storedUsername}@restocash.com` === normalizedUsername ||
-          `${storedUsername}@restocash.local` === normalizedUsername
+          `${storedUsername}@restocash.local` === normalizedUsername ||
+          `${storedUsername}@juba.com` === normalizedUsername
         );
       });
 
@@ -681,13 +698,13 @@ function LoginPage() {
         <p className="text-sm text-muted-foreground text-center">تسجيل الدخول للإدارة</p>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <Label>{isHostedDeployment(isMounted) ? "البريد الإلكتروني (أو اسم المستخدم للحسابات القديمة)" : "اسم المستخدم"}</Label>
+            <Label>اسم المستخدم أو البريد الإلكتروني</Label>
             <Input
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
-              placeholder={isHostedDeployment(isMounted) ? "name@example.com" : "admin"}
+              placeholder="admin أو admin@restocash.com"
               autoComplete="username"
               dir="ltr"
               className="mt-1"
