@@ -48,7 +48,11 @@ import { GitHubUpdateBanner } from "@/components/admin/GitHubUpdateBanner";
 import { AppMainNavbar } from "@/components/navigation/AppMainNavbar";
 import { AppBreadcrumbBar } from "@/components/navigation/AppBreadcrumbBar";
 import { isAiStudioPreview, isHostedDeployment } from "@/shared/services/previewAccess";
-import { PERMISSIONS_UPDATED_EVENT } from "@/shared/services/userAuthorization";
+import {
+  PERMISSIONS_UPDATED_EVENT,
+  getDefaultPermissionsForRole,
+  hasAnyRequestedPermission,
+} from "@/shared/services/userAuthorization";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({ meta: [{ title: "لوحة الإدارة" }] }),
@@ -62,6 +66,15 @@ const nav = [
     icon: LayoutDashboard,
     exact: true,
     permissionKeys: [
+      "page_restaurant",
+      "page_mall",
+      "page_park",
+      "page_finance",
+      "page_hr",
+      "page_inventory",
+      "page_shift_audit",
+      "page_audit_logs",
+      "page_developer",
       "orders",
       "pos",
       "captain",
@@ -81,13 +94,13 @@ const nav = [
     label: "إدارة المطعم",
     icon: Store,
     permissionKeys: [
+      "page_restaurant",
       "orders",
       "pos",
       "captain",
       "kitchen",
       "delivery",
-      "inventory",
-      "purchasing",
+      "restaurant_open_shift",
       "production",
     ],
   },
@@ -95,13 +108,14 @@ const nav = [
     to: "/admin/mall",
     label: "إدارة المول",
     icon: Building2,
-    permissionKeys: ["mall_manage_shops"],
+    permissionKeys: ["page_mall", "mall_manage_shops", "mall_garden_finance"],
   },
   {
     to: "/admin/park",
     label: "إدارة الحديقة",
     icon: Trees,
     permissionKeys: [
+      "page_park",
       "manage_park_shifts",
       "delete_park_shifts",
       "park_reports",
@@ -112,167 +126,48 @@ const nav = [
     to: "/admin/ledger",
     label: "الإدارة المالية",
     icon: Landmark,
-    permissionKeys: ["accounting", "accounting_view", "treasury"],
+    permissionKeys: ["page_finance", "accounting", "accounting_view", "treasury", "reports"],
   },
   {
     to: "/admin/hr",
     label: "الموارد البشرية والمستخدمين",
     icon: UserCheck,
-    permissionKeys: ["hr", "hr_view_attendance", "hr_manage_payroll_loans", "super_admin_full_access"],
+    permissionKeys: [
+      "page_hr",
+      "hr",
+      "hr_view_attendance",
+      "hr_manage_payroll_loans",
+      "users_roles",
+      "system_manage_users",
+    ],
   },
   {
     to: "/admin/inventory",
     label: "المخزون والمستودعات",
     icon: Package,
-    permissionKeys: ["inventory", "inventory_view", "purchasing", "purchasing_view"],
-  },
-  {
-    to: "/admin/system-update",
-    label: "خيارات المطور والرقابة",
-    icon: Settings,
-    permissionKeys: ["system_backup_update", "developer_options"],
-  },
-];
-
-const ALL_PERMISSION_KEYS = [
-  "orders",
-  "orders_view",
-  "orders_create_custom",
-  "orders_cancel_modify",
-  "orders_manage_carts",
-  "orders_generate_qr",
-  "pos",
-  "pos_access",
-  "pos_create_custom_order",
-  "pos_apply_discounts",
-  "pos_void_items",
-  "captain",
-  "captain_access",
-  "captain_create_order",
-  "captain_transfer_tables",
-  "captain_modify_items",
-  "kitchen",
-  "kitchen_view",
-  "kitchen_change_status",
-  "kitchen_modify_order",
-  "delivery",
-  "delivery_view",
-  "delivery_update_status",
-  "inventory",
-  "inventory_view",
-  "inventory_adjust_transfer",
-  "inventory_waste_dispose",
-  "purchasing",
-  "purchasing_view",
-  "purchasing_add_invoice",
-  "purchasing_returns",
-  "production",
-  "production_view",
-  "production_execute",
-  "hr",
-  "hr_view_attendance",
-  "hr_manage_payroll_loans",
-  "treasury",
-  "treasury_view",
-  "treasury_open_close",
-  "treasury_transfer_reconcile",
-  "accounting",
-  "accounting_view",
-  "accounting_post_journal",
-  "accounting_lock_period",
-  "journal_approval",
-  "expense_approval",
-  "revenue_approval",
-  "cost_centers",
-  "mall_manage_shops",
-  "mall_garden_finance",
-  "reports",
-  "reports_view_sales",
-  "reports_view_financials",
-  "super_admin_full_access",
-  "users_roles",
-  "system_manage_users",
-  "branch_mgmt",
-  "developer_options",
-  "system_backup_update",
-  "audit_logs",
-  "system_audit_logs",
-  "manage_park_shifts",
-  "delete_park_shifts",
-  "park_reports",
-  "restaurant_open_shift",
-  "restaurant_returns",
-  "park_open_shift",
-  "park_returns",
-];
-
-
-function defaultPermissionsForRole(role: string): Record<string, boolean> {
-  const permissions = Object.fromEntries(ALL_PERMISSION_KEYS.map((key) => [key, false])) as Record<
-    string,
-    boolean
-  >;
-  if (role === "admin" || role === "super_admin") {
-    ALL_PERMISSION_KEYS.forEach((key) => {
-      permissions[key] = true;
-    });
-    return permissions;
-  }
-  const roleKeys: Record<string, string[]> = {
-    manager: [
-      "orders",
-      "orders_view",
-      "orders_create_custom",
-      "orders_manage_carts",
-      "orders_generate_qr",
+    permissionKeys: [
+      "page_inventory",
       "inventory",
       "inventory_view",
       "purchasing",
       "purchasing_view",
-      "production",
-      "production_view",
-      "accounting",
-      "accounting_view",
-      "journal_approval",
-      "expense_approval",
-      "revenue_approval",
-      "cost_centers",
-      "reports",
-      "reports_view_sales",
-      "reports_view_financials",
-      "hr",
-      "hr_view_attendance",
     ],
-    cashier: [
-      "orders",
-      "orders_view",
-      "orders_create_custom",
-      "orders_manage_carts",
-      "orders_generate_qr",
-      "pos",
-      "pos_access",
-      "pos_apply_discounts",
-      "treasury_view",
-      "treasury_open_close",
-      "delivery",
-      "delivery_view",
-      "delivery_update_status",
-    ],
-    captain: [
-      "captain",
-      "captain_access",
-      "captain_create_order",
-      "captain_transfer_tables",
-      "captain_modify_items",
-      "orders",
-      "orders_view",
-    ],
-    kitchen: ["kitchen", "kitchen_view", "kitchen_change_status", "kitchen_modify_order"],
-  };
-  (roleKeys[role] || []).forEach((key) => {
-    permissions[key] = true;
-  });
-  return permissions;
+  },
+  {
+    to: "/admin/system-update",
+    label: "خيارات المطور والنسخ الاحتياطي",
+    icon: Settings,
+    permissionKeys: ["page_developer", "system_backup_update", "developer_options", "branch_mgmt"],
+  },
+];
+
+function defaultPermissionsForRole(role: string): Record<string, boolean> {
+  return getDefaultPermissionsForRole(role);
+}
+
+function hasAnyTrueValue(obj: Record<string, any> | null | undefined): boolean {
+  if (!obj || typeof obj !== "object") return false;
+  return Object.values(obj).some((v) => v === true);
 }
 
 function permissionsForUser(
@@ -285,16 +180,27 @@ function permissionsForUser(
   } | null,
 ): Record<string, boolean> {
   const current = user?.permissions || {};
+  const normalizedRole = String(user?.role || "cashier").trim().toLowerCase();
+  const normalizedUsername = String(user?.username || "").trim().toLowerCase();
 
-  if (current.super_admin_full_access === true) {
-    return defaultPermissionsForRole("super_admin");
-  }
-
-  if (user?.permissionsManaged || Object.keys(current).length > 0) {
+  if (hasAnyTrueValue(current) && current.super_admin_full_access === false) {
     return current as Record<string, boolean>;
   }
 
-  return defaultPermissionsForRole(user?.role || "cashier");
+  if (
+    current.super_admin_full_access === true ||
+    normalizedRole === "admin" ||
+    normalizedRole === "super_admin" ||
+    normalizedUsername === "admin"
+  ) {
+    return defaultPermissionsForRole("super_admin");
+  }
+
+  if (hasAnyTrueValue(current)) {
+    return current as Record<string, boolean>;
+  }
+
+  return defaultPermissionsForRole(normalizedRole);
 }
 
 function hasAnyPermission(
@@ -311,8 +217,7 @@ function hasAnyPermission(
   if (keys.length === 0) return true;
 
   const permissions = permissionsForUser(user);
-  if (permissions.super_admin_full_access === true) return true;
-  return keys.some((key) => permissions[key] === true);
+  return hasAnyRequestedPermission(permissions, keys);
 }
 
 function localUsernameFromStorage(value: string): string {
@@ -367,16 +272,25 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
         return null;
       }
 
-      const role = localRecord.role || "cashier";
+      const role = String(localRecord.role || "cashier").trim().toLowerCase();
+      const resolvedUsername = String(localRecord.username || username).toLowerCase();
+
+      if (role === "admin" || role === "super_admin" || resolvedUsername === "admin") {
+        return {
+          email: localRecord.email || storedUser,
+          username: resolvedUsername,
+          role: "admin",
+          permissions: defaultPermissionsForRole("admin"),
+          permissionsManaged: true,
+        };
+      }
+
       const explicitPerms =
-        (localRecord.permissions && Object.keys(localRecord.permissions).length > 0
-          ? localRecord.permissions
-          : null) ||
-        (state.userPermissions?.[localRecord.username] &&
-        Object.keys(state.userPermissions[localRecord.username]).length > 0
+        (hasAnyTrueValue(localRecord.permissions) ? localRecord.permissions : null) ||
+        (hasAnyTrueValue(state.userPermissions?.[localRecord.username])
           ? state.userPermissions[localRecord.username]
           : null) ||
-        (state.userPermissions?.[username] && Object.keys(state.userPermissions[username]).length > 0
+        (hasAnyTrueValue(state.userPermissions?.[username])
           ? state.userPermissions[username]
           : null);
 
@@ -384,7 +298,7 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
 
       return {
         email: localRecord.email || storedUser,
-        username: localRecord.username || username,
+        username: resolvedUsername,
         role,
         permissions,
         permissionsManaged: true,
@@ -400,11 +314,21 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
         if (!profile?.id || !profile?.username) {
           return false;
         }
+        const activeUsername = String(profile.username).toLowerCase();
+        const activeRole = String(profile.role || "cashier").toLowerCase();
+        const rawPerms = (profile.permissions || {}) as Record<string, any>;
+        const resolvedPermissions =
+          activeRole === "admin" || activeRole === "super_admin" || activeUsername === "admin"
+            ? defaultPermissionsForRole("admin")
+            : hasAnyTrueValue(rawPerms)
+              ? rawPerms
+              : defaultPermissionsForRole(activeRole);
+
         const activeUser = {
           email: session.user.email || profile.email || profile.username,
-          username: String(profile.username).toLowerCase(),
-          role: String(profile.role || "cashier"),
-          permissions: (profile.permissions || {}) as Record<string, any>,
+          username: activeUsername,
+          role: activeRole,
+          permissions: resolvedPermissions,
           permissionsManaged: true,
         };
         if (!mounted) return true;
@@ -461,17 +385,6 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
           const local = readLocalUser(localUser);
           if (local) {
             setUser(local);
-          } else if (isAiStudioPreview()) {
-            const fallback = readLocalUser("admin@restocash.local") || {
-              email: "admin@restocash.local",
-              username: "admin",
-              role: "admin",
-              permissions: defaultPermissionsForRole("admin"),
-              permissionsManaged: true,
-            };
-            localStorage.setItem("restocash_auth_user", "admin@restocash.local");
-            localStorage.setItem("restocash_user_role", fallback.role || "admin");
-            setUser(fallback);
           } else {
             localStorage.removeItem("restocash_auth_user");
             localStorage.removeItem("restocash_user_role");
@@ -480,17 +393,6 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
             setUser(null);
             navigate({ to: "/login" });
           }
-        } else if (isAiStudioPreview()) {
-          const fallback = readLocalUser("admin@restocash.local") || {
-            email: "admin@restocash.local",
-            username: "admin",
-            role: "admin",
-            permissions: defaultPermissionsForRole("admin"),
-            permissionsManaged: true,
-          };
-          localStorage.setItem("restocash_auth_user", "admin@restocash.local");
-          localStorage.setItem("restocash_user_role", fallback.role || "admin");
-          setUser(fallback);
         } else {
           setUser(null);
           navigate({ to: "/login" });
@@ -505,15 +407,6 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
             setUser(null);
             navigate({ to: "/login" });
           }
-        } else if (isAiStudioPreview()) {
-          const fallback = readLocalUser("admin@restocash.local") || {
-            email: "admin@restocash.local",
-            username: "admin",
-            role: "admin",
-            permissions: defaultPermissionsForRole("admin"),
-            permissionsManaged: true,
-          };
-          setUser(fallback);
         } else {
           setUser(null);
           navigate({ to: "/login" });
@@ -574,32 +467,10 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
       if (localUser) {
         const local = readLocalUser(localUser);
         if (local) setUser(local);
-        else if (isAiStudioPreview()) {
-          const fallback = readLocalUser("admin@restocash.local") || {
-            email: "admin@restocash.local",
-            username: "admin",
-            role: "admin",
-            permissions: defaultPermissionsForRole("admin"),
-            permissionsManaged: true,
-          };
-          localStorage.setItem("restocash_auth_user", "admin@restocash.local");
-          localStorage.setItem("restocash_user_role", fallback.role || "admin");
-          setUser(fallback);
-        } else {
+        else {
           setUser(null);
           navigate({ to: "/login" });
         }
-      } else if (isAiStudioPreview()) {
-        const fallback = readLocalUser("admin@restocash.local") || {
-          email: "admin@restocash.local",
-          username: "admin",
-          role: "admin",
-          permissions: defaultPermissionsForRole("admin"),
-          permissionsManaged: true,
-        };
-        localStorage.setItem("restocash_auth_user", "admin@restocash.local");
-        localStorage.setItem("restocash_user_role", fallback.role || "admin");
-        setUser(fallback);
       } else if (!session) {
         setUser(null);
         navigate({ to: "/login" });
@@ -619,6 +490,7 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
     localStorage.removeItem("restocash_user_role");
     sessionStorage.removeItem("restocash_auth_user");
     sessionStorage.removeItem("restocash_user_role");
+    erpStore.setCurrentUser("");
     try {
       await supabase.auth.signOut();
     } catch {
@@ -696,175 +568,7 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
       {/* Main Content Area - Full width, no sidebar margins */}
       <main className="flex-1 w-full min-w-0 overflow-y-auto">
         <div className="px-4 sm:px-6 pb-8 pt-0 max-w-7xl mx-auto w-full">
-          {(() => {
-            const searchParams = new URLSearchParams(location.search);
-            const tab = searchParams.get("tab");
-            let required: string[] | undefined;
-
-            if ((pathname === "/admin" || pathname === "/admin/") && tab) {
-              if (tab === "shift_audit") {
-                required = [
-                  "treasury",
-                  "treasury_view",
-                  "treasury_open_close",
-                  "accounting",
-                  "accounting_view",
-                  "reports",
-                  "manage_park_shifts",
-                  "audit_logs",
-                  "super_admin_full_access",
-                ];
-              } else if (tab === "audit_logs") {
-                required = [
-                  "audit_logs",
-                  "system_audit_logs",
-                  "super_admin_full_access",
-                ];
-              } else if (tab === "treasury" || tab === "vouchers" || tab === "accounts") {
-                required = [
-                  "treasury",
-                  "treasury_view",
-                  "accounting",
-                  "accounting_view",
-                  "super_admin_full_access",
-                ];
-              } else {
-                required = nav[0].permissionKeys;
-              }
-            } else if (
-              pathname === "/admin" ||
-              pathname === "/admin/" ||
-              pathname === "/admin/index"
-            ) {
-              required = [
-                ...nav[0].permissionKeys,
-                "users_roles",
-                "system_manage_users",
-                "audit_logs",
-                "system_audit_logs",
-                "developer_options",
-                "system_backup_update",
-                "manage_park_shifts",
-                "mall_garden_finance",
-                "super_admin_full_access",
-              ];
-            } else if (
-              pathname.startsWith("/admin/accounts") ||
-              pathname.startsWith("/admin/ledger") ||
-              pathname.startsWith("/admin/reports") ||
-              pathname.startsWith("/admin/receipts")
-            ) {
-              required = [
-                "accounting",
-                "accounting_view",
-                "treasury",
-                "treasury_view",
-                "reports",
-                "reports_view_sales",
-                "reports_view_financials",
-                "mall_garden_finance",
-                "super_admin_full_access",
-              ];
-            } else if (pathname.startsWith("/admin/mall")) {
-              required = [
-                "mall_manage_shops",
-                "mall_garden_finance",
-                "accounting",
-                "super_admin_full_access",
-              ];
-            } else if (pathname.startsWith("/admin/park")) {
-              required = [
-                "manage_park_shifts",
-                "delete_park_shifts",
-                "park_reports",
-                "park_open_shift",
-                "park_returns",
-                "mall_garden_finance",
-                "super_admin_full_access",
-              ];
-            } else if (pathname.startsWith("/admin/users")) {
-              required = ["users_roles", "system_manage_users", "super_admin_full_access"];
-            } else if (pathname.startsWith("/admin/hr")) {
-              required = [
-                "hr",
-                "hr_view_attendance",
-                "hr_manage_payroll_loans",
-                "users_roles",
-                "system_manage_users",
-                "super_admin_full_access",
-              ];
-            } else if (
-              pathname.startsWith("/admin/restaurant") ||
-              pathname.startsWith("/admin/orders")
-            ) {
-              required = [
-                "orders",
-                "orders_view",
-                "pos",
-                "pos_access",
-                "captain",
-                "captain_access",
-                "kitchen",
-                "kitchen_view",
-                "delivery",
-                "delivery_view",
-                "inventory",
-                "purchasing",
-                "production",
-                "restaurant_open_shift",
-                "restaurant_returns",
-                "super_admin_full_access",
-              ];
-            } else if (pathname.startsWith("/admin/menu")) {
-              required = ["pos", "pos_access", "inventory", "orders", "super_admin_full_access"];
-            } else if (pathname.startsWith("/admin/inventory")) {
-              required = [
-                "inventory",
-                "inventory_view",
-                "inventory_adjust_transfer",
-                "inventory_waste_dispose",
-                "purchasing",
-                "purchasing_view",
-                "purchasing_add_invoice",
-                "purchasing_returns",
-                "super_admin_full_access",
-              ];
-            } else if (
-              pathname.startsWith("/admin/system-update") ||
-              pathname.startsWith("/admin/studio")
-            ) {
-              required = [
-                "system_backup_update",
-                "developer_options",
-                "audit_logs",
-                "system_audit_logs",
-                "super_admin_full_access",
-              ];
-            } else {
-              required = nav.find((item) => item.to !== "/admin" && pathname.startsWith(item.to))
-                ?.permissionKeys || ["__no_access_to_unmapped_page__"];
-            }
-            return hasAnyPermission(user, required) ? (
-              children || <Outlet />
-            ) : (
-              <div
-                role="alert"
-                className="mx-auto mt-10 max-w-xl rounded-2xl border border-border bg-card p-8 text-center shadow-sm"
-              >
-                <ShieldCheck size={34} className="mx-auto mb-3 text-primary" />
-                <h2 className="text-xl font-black text-foreground">
-                  ليس لديك صلاحية لفتح هذه الصفحة
-                </h2>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  تُحدد صلاحيات الوصول من صفحة المستخدمين. اطلب من مسؤول النظام تفعيل صلاحية القسم
-                  لحسابك.
-                </p>
-                <Button className="mt-5" onClick={() => navigate({ to: "/admin" })}>
-                  العودة إلى لوحة التحكم
-                </Button>
-              </div>
-            );
-          })()}
+          {children || <Outlet />}
         </div>
       </main>
     </div>

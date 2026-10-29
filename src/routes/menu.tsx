@@ -21,6 +21,7 @@ import { menuService } from "@/features/menu/services/menuService";
 import { tableOrdersStore } from "@/shared/services/tableOrdersStore";
 import { MenuItem } from "@/shared/types";
 import { useToast } from "@/hooks/use-toast";
+import { useSettings } from "@/hooks/use-settings";
 import { supabase } from "@/integrations/supabase/client";
 import { CustomerOrderTracker } from "@/components/CustomerOrderTracker";
 
@@ -105,6 +106,7 @@ export const Route = createFileRoute("/menu")({
       tableName: search.tableName ? String(search.tableName) : undefined,
       zone: search.zone ? String(search.zone) : undefined,
       currency: search.currency ? String(search.currency) : undefined,
+      rate: search.rate !== undefined ? String(search.rate) : undefined,
       lang: search.lang ? String(search.lang) : undefined,
       allowLangSwitch:
         search.allowLangSwitch !== undefined ? String(search.allowLangSwitch) : undefined,
@@ -121,11 +123,13 @@ function MenuPage() {
     tableName,
     zone,
     currency,
+    rate: qrRate,
     lang: qrLang,
     allowLangSwitch,
     welcome,
   } = Route.useSearch();
   const { toast } = useToast();
+  const { currency: systemCurrency, exchangeRates } = useSettings();
 
   const [activeLang, setActiveLang] = useState<"ar" | "en">(() =>
     qrLang === "en" ? "en" : "ar",
@@ -140,13 +144,40 @@ function MenuPage() {
   const isAr = activeLang !== "en";
   const canSwitchLang = allowLangSwitch !== "0";
 
-  const selectedCurrency = currency || "EGP";
+  const selectedCurrency = currency || systemCurrency || "USD";
+  const activeRate = useMemo(() => {
+    if (selectedCurrency === "USD" || selectedCurrency === "$") return 1;
+    const parsedQrRate = Number(qrRate);
+    if (!Number.isNaN(parsedQrRate) && parsedQrRate > 0) {
+      return parsedQrRate;
+    }
+    const sysRate = Number(exchangeRates?.[selectedCurrency]);
+    if (!Number.isNaN(sysRate) && sysRate > 0) {
+      return sysRate;
+    }
+    return 1;
+  }, [selectedCurrency, qrRate, exchangeRates]);
+
   const currencySymbol =
     selectedCurrency === "EGP" || selectedCurrency === "ج.م"
       ? isAr
         ? "ج.م"
         : "EGP"
-      : selectedCurrency;
+      : selectedCurrency === "USD"
+        ? "$"
+        : selectedCurrency;
+
+  const convertUsdPrice = (usdPrice: number | undefined | null): number => {
+    return Number(usdPrice || 0) * activeRate;
+  };
+
+  const formatMenuPrice = (usdPrice: number | undefined | null): string => {
+    const val = convertUsdPrice(usdPrice);
+    return val.toLocaleString("en-US", {
+      minimumFractionDigits: Number.isInteger(val) ? 0 : 2,
+      maximumFractionDigits: 2,
+    });
+  };
 
   // Resolve table number & location accurately (default to Table #1 if none passed in URL)
   const rawTableId = tableId || table_id || "";
@@ -319,6 +350,7 @@ function MenuPage() {
       description: isAr
         ? `تم إضافة ${customizingItem.name_ar} إلى طلبك`
         : `${translateMenuText(customizingItem.name_ar, "en")} added to your order`,
+      duration: 1200,
     });
     setCustomizingItem(null);
   };
@@ -341,12 +373,14 @@ function MenuPage() {
     setCart((prev) => prev.filter((_, i) => i !== cartIndex));
   };
 
-  const totalAmount = cart.reduce((sum, c) => {
+  const baseTotalUsd = cart.reduce((sum, c) => {
     const itemTotal =
       Number(c.item.price || 0) +
       (c.selectedAdditions?.reduce((s: number, a: any) => s + Number(a.price || 0), 0) || 0);
     return sum + itemTotal * c.quantity;
   }, 0);
+
+  const totalAmount = convertUsdPrice(baseTotalUsd);
 
   const sendTableAssistanceRequest = async (requestType: "call_captain" | "request_bill") => {
     if (isCallingCaptain) return;
@@ -449,6 +483,7 @@ function MenuPage() {
       description: isAr
         ? `تم إبلاغ الكابتن بمكانك (${fullLocationLabel}) وسيحضر إليك حالاً.`
         : `The captain has been notified of your location (${fullLocationLabel}).`,
+      duration: 1500,
     });
   };
 
@@ -504,14 +539,14 @@ function MenuPage() {
       items: enrichedItems,
       order_type: diningType,
       notes: combinedNotes,
-      subtotal: totalAmount,
+      subtotal: baseTotalUsd,
       tax: 0,
-      total: totalAmount,
+      total: baseTotalUsd,
       status: "pending",
       created_at: new Date().toISOString(),
-      pricing_currency: selectedCurrency,
+      pricing_currency: "USD",
       payment_currency: selectedCurrency,
-      payment_exchange_rate: 1,
+      payment_exchange_rate: activeRate,
       payment_amount: totalAmount,
       customer_tracking_token: trackingTokenForOrder,
     };
@@ -638,6 +673,7 @@ function MenuPage() {
       description: isAr
         ? `وصل طلبك (${fullLocationLabel}) إلى شاشة الكابتن وجاري اعتماده.`
         : `Your order (${fullLocationLabel}) was received by the captain.`,
+      duration: 1500,
     });
   };
 
@@ -876,8 +912,7 @@ function MenuPage() {
                               isAr ? "left-3" : "right-3"
                             } bg-slate-950/85 backdrop-blur-md text-white px-3 py-1 rounded-xl text-xs font-black shadow-sm tabular-nums`}
                           >
-                            {Number(item.price || 0).toLocaleString("en-US")}{" "}
-                            {currencySymbol}
+                            {formatMenuPrice(item.price)} {currencySymbol}
                           </div>
 
                           {item.badge && (
@@ -979,7 +1014,7 @@ function MenuPage() {
                   {translateMenuText(customizingItem.name_ar, activeLang)}
                 </h2>
                 <span className="text-xs font-black text-emerald-600 tabular-nums">
-                  {Number(customizingItem.price || 0).toLocaleString("en-US")} {currencySymbol}
+                  {formatMenuPrice(customizingItem.price)} {currencySymbol}
                 </span>
               </div>
               <button
@@ -1024,7 +1059,7 @@ function MenuPage() {
                         </div>
                         {add.price ? (
                           <span className="text-xs font-black text-emerald-600 tabular-nums">
-                            +{add.price}
+                            +{formatMenuPrice(add.price)} {currencySymbol}
                           </span>
                         ) : null}
                       </button>
@@ -1079,7 +1114,7 @@ function MenuPage() {
             </div>
             <div className="flex items-center gap-2">
               <span className="font-black text-emerald-400 tabular-nums text-sm sm:text-base">
-                {totalAmount.toLocaleString("en-US", { minimumFractionDigits: 2 })} {currencySymbol}
+                {formatMenuPrice(baseTotalUsd)} {currencySymbol}
               </span>
               <ShoppingCart size={20} />
             </div>
@@ -1172,10 +1207,7 @@ function MenuPage() {
                         <div className="text-[11px] text-amber-700 font-medium">{c.notes}</div>
                       )}
                       <span className="text-xs text-emerald-600 font-black tabular-nums">
-                        {(unitPrice * c.quantity).toLocaleString("en-US", {
-                          minimumFractionDigits: 2,
-                        })}{" "}
-                        {currencySymbol}
+                        {formatMenuPrice(unitPrice * c.quantity)} {currencySymbol}
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
@@ -1233,8 +1265,7 @@ function MenuPage() {
               <div className="flex justify-between items-center text-base font-black">
                 <span>{isAr ? "الإجمالي الكلي:" : "Total Amount:"}</span>
                 <span className="text-emerald-600 tabular-nums">
-                  {totalAmount.toLocaleString("en-US", { minimumFractionDigits: 2 })}{" "}
-                  {currencySymbol}
+                  {formatMenuPrice(baseTotalUsd)} {currencySymbol}
                 </span>
               </div>
               <button

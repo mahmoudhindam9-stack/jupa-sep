@@ -1,15 +1,22 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-export function OrderTimer({ createdAt }: { createdAt: string }) {
+export function OrderTimer({ createdAt }: { createdAt?: string | null }) {
   const [elapsed, setElapsed] = useState<string>("00:00");
+  const startMsRef = useRef<number>(Date.now());
+  const lastPropRef = useRef<string | null | undefined>(undefined);
 
   useEffect(() => {
-    if (!createdAt) return;
-    const start = new Date(createdAt).getTime();
+    const now = Date.now();
+    if (createdAt !== lastPropRef.current) {
+      lastPropRef.current = createdAt;
+      const parsed = createdAt ? new Date(createdAt).getTime() : now;
+      // Guard against NaN or server clock being ahead of client clock
+      startMsRef.current = !isNaN(parsed) && parsed > 0 ? Math.min(parsed, now) : now;
+    }
 
     const updateTimer = () => {
-      const now = new Date().getTime();
-      const diff = Math.max(0, now - start);
+      const currentNow = Date.now();
+      const diff = Math.max(0, currentNow - startMsRef.current);
 
       const hours = Math.floor(diff / (1000 * 60 * 60));
       const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
@@ -31,16 +38,16 @@ export function OrderTimer({ createdAt }: { createdAt: string }) {
 
   return (
     <div
-      className="flex items-center gap-1.5 bg-slate-900/10 px-2 py-0.5 rounded text-sm font-bold font-mono text-slate-700"
+      className="inline-flex items-center gap-1.5 bg-slate-900/10 px-2 py-0.5 rounded text-xs sm:text-sm font-black font-mono tabular-nums text-slate-800 shrink-0"
       role="timer"
       aria-label={`وقت الطلب المنقضي: ${elapsed}`}
       aria-live="off"
     >
-      <span className="relative flex h-2.5 w-2.5" aria-hidden="true">
-        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+      <span className="relative flex h-2 w-2 shrink-0" aria-hidden="true">
+        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
+        <span className="relative inline-flex rounded-full h-2 w-2 bg-red-600"></span>
       </span>
-      {elapsed}
+      <span>{elapsed}</span>
     </div>
   );
 }

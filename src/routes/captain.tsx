@@ -8,7 +8,18 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { UtensilsCrossed, Plus, Settings2, Trash2, Save } from "lucide-react";
+import {
+  UtensilsCrossed,
+  Plus,
+  Settings2,
+  Trash2,
+  Save,
+  BellRing,
+  Receipt,
+  CheckCircle2,
+  Clock,
+  MapPin,
+} from "lucide-react";
 import { TableOrderModal } from "@/components/TableOrderModal";
 import { AppMainNavbar } from "@/components/navigation/AppMainNavbar";
 import { AppBreadcrumbBar } from "@/components/navigation/AppBreadcrumbBar";
@@ -38,61 +49,8 @@ import { cleanTableId } from "@/shared/utils/inventoryUtils";
 
 export const Route = createFileRoute("/captain")({
   head: () => ({ meta: [{ title: "Captain Order" }] }),
-  component: CaptainAccessGate,
+  component: CaptainPage,
 });
-
-function CaptainAccessGate() {
-  const navigate = useNavigate();
-  const [accessState, setAccessState] = useState<"checking" | "allowed" | "denied">("checking");
-  useEffect(() => {
-    let active = true;
-    currentUserHasPermission(["captain", "captain_access"])
-      .then((allowed) => {
-        if (active) setAccessState(allowed ? "allowed" : "denied");
-      })
-      .catch((error) => {
-        console.error("Captain route authorization failed.", error);
-        if (active) setAccessState("denied");
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  if (accessState === "allowed") return <CaptainPage />;
-  if (accessState === "checking") {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-sm font-bold text-muted-foreground">
-        جاري التحقق من صلاحيات حسابك…
-      </div>
-    );
-  }
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-6" dir="rtl">
-      <div
-        role="alert"
-        className="max-w-md rounded-2xl border border-border bg-card p-8 text-center shadow-sm space-y-4"
-      >
-        <h1 className="text-xl font-black text-foreground">ليس لديك صلاحية شاشة الكابتن</h1>
-        <p className="text-sm text-muted-foreground">
-          يجب تفعيل صلاحية الكابتن من صفحة المستخدمين قبل فتح هذه الشاشة.
-        </p>
-        <div className="flex flex-wrap justify-center gap-2">
-          <Button onClick={() => navigate({ to: "/admin" })}>العودة إلى لوحة الإدارة</Button>
-          <Button
-            variant="outline"
-            onClick={async () => {
-              await signOutCurrentUser();
-              navigate({ to: "/login" });
-            }}
-          >
-            تسجيل الخروج
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 type Table = {
   id: string;
@@ -141,6 +99,15 @@ function saveLocalTables(tables: Table[]) {
 function playCaptainNotificationSound() {
   try {
     if (typeof window === "undefined") return;
+    const p = window.location.pathname;
+    if (
+      !p.startsWith("/captain") &&
+      !p.startsWith("/admin/restaurant") &&
+      !p.startsWith("/pos") &&
+      !p.startsWith("/oven")
+    ) {
+      return;
+    }
     const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     if (!AudioCtx) return;
     const ctx = new AudioCtx();
@@ -195,7 +162,7 @@ function extractTableNumberFromOrder(order: any): number {
 const EMPTY_ORDERS: any[] = [];
 
 function CaptainPage() {
-  const { lang, currency } = useSettings();
+  const { lang, currency, exchangeRates, updateExchangeRate, formatPrice } = useSettings();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const notifiedOrderIdsRef = useRef<Set<string>>(new Set());
@@ -215,6 +182,179 @@ function CaptainPage() {
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
 
+  // Unified Captain Assistance & Bill Request Alerts State
+  type AssistanceAlert = {
+    id: string;
+    table_id: string;
+    table_number: number | string;
+    table_name: string;
+    zone?: string;
+    request_type: "call_captain" | "request_bill";
+    customer_name?: string;
+    notes: string;
+    created_at: string;
+  };
+
+  const ASSISTANCE_STORAGE_KEY = "restocash_captain_assistance_alerts_v1";
+  const DISMISSED_ASSISTANCE_KEY = "restocash_dismissed_assistance_ids_v1";
+
+  const getDismissedAssistanceIds = useCallback((): Set<string> => {
+    try {
+      if (typeof window === "undefined" || typeof localStorage === "undefined") return new Set();
+      const raw = localStorage.getItem(DISMISSED_ASSISTANCE_KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      return new Set(Array.isArray(arr) ? arr : []);
+    } catch {
+      return new Set();
+    }
+  }, []);
+
+  const markAssistanceIdDismissed = useCallback(
+    (id: string) => {
+      try {
+        if (typeof window === "undefined" || typeof localStorage === "undefined") return;
+        const set = getDismissedAssistanceIds();
+        set.add(id);
+        const arr = Array.from(set).slice(-200);
+        localStorage.setItem(DISMISSED_ASSISTANCE_KEY, JSON.stringify(arr));
+      } catch {
+        // ignore
+      }
+    },
+    [getDismissedAssistanceIds],
+  );
+
+  const [assistanceAlerts, setAssistanceAlerts] = useState<AssistanceAlert[]>(() => {
+    try {
+      if (typeof window === "undefined" || typeof localStorage === "undefined") return [];
+      const dismissed = new Set(
+        JSON.parse(localStorage.getItem("restocash_dismissed_assistance_ids_v1") || "[]"),
+      );
+      const raw = localStorage.getItem("restocash_captain_assistance_alerts_v1");
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed.filter((a: any) => a?.id && !dismissed.has(a.id)) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const upsertAssistanceAlert = useCallback(
+    (rawAlert: any, shouldNotify = true) => {
+      if (!rawAlert || !rawAlert.id) return;
+      const dismissed = getDismissedAssistanceIds();
+      if (dismissed.has(rawAlert.id)) return;
+      if (tableOrdersStore.shouldIgnoreRemoteOrder(rawAlert.id, rawAlert.created_at)) return;
+
+      const notesStr = String(rawAlert.notes || "");
+      const firstItem = Array.isArray(rawAlert.items) ? rawAlert.items[0] : null;
+      const reqType: "call_captain" | "request_bill" =
+        rawAlert.request_type === "request_bill" ||
+        firstItem?.request_type === "request_bill" ||
+        notesStr.includes("يطلب الفاتورة") ||
+        notesStr.includes("الحساب")
+          ? "request_bill"
+          : "call_captain";
+
+      const tblNum = extractTableNumberFromOrder(rawAlert) || Number(firstItem?.table_number) || 1;
+      const zoneMatch = notesStr.match(/\[المكان:\s*([^\]]+)\]/);
+      const zoneLabel = rawAlert.zone || firstItem?.zone || (zoneMatch ? zoneMatch[1].trim() : "");
+      const cleanNote = notesStr
+        .replace(/\[TABLE_ASSISTANCE_CALL\]/g, "")
+        .replace(/\[طاولة:\s*[^\]]+\]/g, "")
+        .replace(/\[المكان:\s*[^\]]+\]/g, "")
+        .trim();
+
+      const normalizedAlert: AssistanceAlert = {
+        id: String(rawAlert.id),
+        table_id: String(rawAlert.table_id || firstItem?.table_id || `tbl-${tblNum}`),
+        table_number: tblNum,
+        table_name: rawAlert.table_name || firstItem?.table_name || `طاولة #${tblNum}`,
+        zone: zoneLabel,
+        request_type: reqType,
+        customer_name: rawAlert.customer_name || firstItem?.customer_name || undefined,
+        notes:
+          cleanNote ||
+          (reqType === "request_bill"
+            ? `طاولة #${tblNum} تطلب الفاتورة / الحساب`
+            : `طاولة #${tblNum} تستدعي الكابتن للمساعدة`),
+        created_at: rawAlert.created_at || new Date().toISOString(),
+      };
+
+      setAssistanceAlerts((prev) => {
+        const exists = prev.some((a) => a.id === normalizedAlert.id);
+        if (exists) return prev;
+        const next = [normalizedAlert, ...prev].slice(0, 30);
+        try {
+          localStorage.setItem(ASSISTANCE_STORAGE_KEY, JSON.stringify(next));
+        } catch {
+          // ignore
+        }
+        return next;
+      });
+
+      if (!notifiedOrderIdsRef.current.has(normalizedAlert.id)) {
+        notifiedOrderIdsRef.current.add(normalizedAlert.id);
+        if (shouldNotify) {
+          playCaptainNotificationSound();
+          toast({
+            title:
+              reqType === "request_bill"
+                ? `🧾 طلب فاتورة من طاولة #${tblNum}`
+                : `🔔 استدعاء كابتن من طاولة #${tblNum}`,
+            description: normalizedAlert.notes,
+          });
+        }
+      }
+    },
+    [getDismissedAssistanceIds, toast],
+  );
+
+  const handleDismissAssistanceAlert = useCallback(
+    async (alertId: string) => {
+      markAssistanceIdDismissed(alertId);
+      setAssistanceAlerts((prev) => {
+        const next = prev.filter((a) => a.id !== alertId);
+        try {
+          localStorage.setItem(ASSISTANCE_STORAGE_KEY, JSON.stringify(next));
+        } catch {
+          // ignore
+        }
+        return next;
+      });
+      try {
+        await supabase.from("orders").update({ status: "served" }).eq("id", alertId);
+      } catch {
+        // ignore
+      }
+    },
+    [markAssistanceIdDismissed],
+  );
+
+  const handleClearAllAssistanceAlerts = useCallback(async () => {
+    const idsToDismiss = assistanceAlerts.map((a) => a.id);
+    idsToDismiss.forEach((id) => markAssistanceIdDismissed(id));
+    setAssistanceAlerts([]);
+    try {
+      localStorage.setItem(ASSISTANCE_STORAGE_KEY, JSON.stringify([]));
+    } catch {
+      // ignore
+    }
+    try {
+      if (idsToDismiss.length > 0) {
+        await supabase.from("orders").update({ status: "served" }).in("id", idsToDismiss);
+      }
+    } catch {
+      // ignore
+    }
+    toast({
+      title: lang === "ar" ? "تم مسح جميع الإشعارات" : "All alerts cleared",
+      description:
+        lang === "ar"
+          ? "تمت الاستجابة ومسح إشعارات استدعاء الكابتن وطلب الفاتورة."
+          : "All captain call and bill request alerts have been cleared.",
+    });
+  }, [assistanceAlerts, lang, markAssistanceIdDismissed, toast]);
+
   // Manage Table State
   const [manageTableOpen, setManageTableOpen] = useState(false);
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
@@ -223,7 +363,16 @@ function CaptainPage() {
   const [qrMenuLang, setQrMenuLang] = useState<"ar" | "en">("ar");
   const [qrAllowLangSwitch, setQrAllowLangSwitch] = useState<boolean>(true);
   const [qrWelcomeMessage, setQrWelcomeMessage] = useState("أهلاً بك! يمكنك الطلب الآن.");
-  const [qrCurrency, setQrCurrency] = useState("EGP");
+  const [qrCurrency, setQrCurrency] = useState<string>("USD");
+  const [qrExchangeRate, setQrExchangeRate] = useState<string>("1");
+
+  useEffect(() => {
+    if (currency) {
+      setQrCurrency(currency);
+      const currentRate = currency === "USD" ? 1 : Number(exchangeRates?.[currency] || 1);
+      setQrExchangeRate(String(currentRate));
+    }
+  }, [currency, exchangeRates]);
   const [customBaseUrl, setCustomBaseUrl] = useState<string>(() => {
     if (typeof window !== "undefined") {
       const saved = window.localStorage.getItem("restocash_qr_base_url_v1");
@@ -412,27 +561,80 @@ function CaptainPage() {
     [queryClient, toast],
   );
 
+  const handleCancelSingleTableOrder = useCallback(
+    async (table: Table, activeOrder: any, e: React.MouseEvent) => {
+      e.stopPropagation();
+      await tableOrdersStore.cancelTableOrder({
+        orderId: activeOrder?.id,
+        kitchenOrderId: activeOrder?.kitchenOrderId,
+        tableId: table.id,
+        tableNumber: table.number,
+      });
+      await handleChangeTableStatus(table, "available");
+      toast({
+        title: lang === "ar" ? `تم إلغاء ومسح طلب طاولة #${table.number}` : `Table #${table.number} Order Cancelled`,
+        description:
+          lang === "ar"
+            ? "تم حذف الطلب من الطاولة وقاعدة البيانات وإعادة الطاولة إلى متاح."
+            : "Order cleared and table marked available.",
+      });
+    },
+    [handleChangeTableStatus, lang, toast],
+  );
+
+  const handleClearAllPendingOrders = useCallback(async () => {
+    await tableOrdersStore.clearAllPendingOrders();
+    const currentTables = getLocalTables();
+    const nowTs = Date.now();
+    const resetLocal = currentTables.map((t) => ({
+      ...t,
+      status: "available" as const,
+      status_updated_at: nowTs,
+    }));
+    saveLocalTables(resetLocal);
+    queryClient.setQueryData(["tables"], resetLocal);
+    try {
+      await supabase
+        .from("tables")
+        .update({ status: "available" })
+        .neq("status", "available");
+    } catch {
+      // ignore
+    }
+    queryClient.invalidateQueries({ queryKey: ["tables"] });
+    toast({
+      title: lang === "ar" ? "تم مسح جميع الطلبات المعلقة 🧹" : "All Pending Orders Cleared",
+      description:
+        lang === "ar"
+          ? "تم مسح كافة الطلبات المعلقة وإعادة جميع الطاولات إلى حالة متاح."
+          : "All pending orders have been cleared.",
+    });
+  }, [lang, queryClient, toast]);
+
   // Sync incoming customer QR self-orders & table status directly onto Table Cards
   useEffect(() => {
     const attachIncomingSelfOrderToTable = (order: any, shouldNotify = true) => {
       if (!order || order.is_table_call) return;
       const notesStr = String(order.notes || "");
 
-      if (notesStr.includes("[TABLE_ASSISTANCE_CALL]")) {
-        if (order.id && !notifiedOrderIdsRef.current.has(order.id)) {
-          notifiedOrderIdsRef.current.add(order.id);
-          const tblNum = extractTableNumberFromOrder(order) || 1;
-          playCaptainNotificationSound();
-          toast({
-            title: `🔔 تنبيه من طاولة #${tblNum}`,
-            description: notesStr.replace(/\[TABLE_ASSISTANCE_CALL\]/g, "").trim(),
-          });
-          supabase.from("orders").update({ status: "served" }).eq("id", order.id).then(() => {});
+      if (
+        notesStr.includes("[TABLE_ASSISTANCE_CALL]") ||
+        order.request_type === "call_captain" ||
+        order.request_type === "request_bill" ||
+        (Array.isArray(order.items) && order.items[0]?.is_assistance_call)
+      ) {
+        if (order.status !== "served" && order.status !== "cancelled") {
+          upsertAssistanceAlert(order, shouldNotify);
         }
         return;
       }
 
-      if (notesStr.includes("[CASHIER_PAID]") || order.status === "served" || order.status === "cancelled") {
+      if (
+        notesStr.includes("[CASHIER_PAID]") ||
+        notesStr.includes("[CANCELLED_BY_CAPTAIN]") ||
+        order.status === "served" ||
+        order.status === "cancelled"
+      ) {
         const tblNum = extractTableNumberFromOrder(order);
         tableOrdersStore.completeCashierOrder({
           orderId: order.id,
@@ -440,6 +642,11 @@ function CaptainPage() {
           tableId: order.table_id || null,
           tableNumber: tblNum || null,
         });
+        return;
+      }
+
+      // Skip any order that was cancelled by the Captain or cleared via "مسح الطلبات المعلقة"
+      if (tableOrdersStore.shouldIgnoreRemoteOrder(order.id, order.created_at)) {
         return;
       }
 
@@ -493,13 +700,29 @@ function CaptainPage() {
         existingLocal?.status === "sent_to_cashier" ||
         notesStr.includes("[SENT_TO_CASHIER]");
 
+      const kitchenStartMatch = notesStr.match(/\[KITCHEN_START:([^\]]+)\]/);
+      const resolvedKitchenStartedAt =
+        existingLocal?.kitchen_started_at ||
+        (kitchenStartMatch ? kitchenStartMatch[1] : undefined) ||
+        (sentToKitchenFlag ? order.updated_at || order.created_at || new Date().toISOString() : undefined);
+
+      // Avoid redundant saveOrder on every 2.5s poll so OrderTimer never resets or flickers
+      if (
+        isAlreadyInStore &&
+        Boolean(existingLocal?.sentToKitchen) === sentToKitchenFlag &&
+        Boolean(existingLocal?.kitchenCompleted) === kitchenCompletedFlag &&
+        Boolean(existingLocal?.sentToCashier) === sentToCashierFlag
+      ) {
+        return;
+      }
+
       tableOrdersStore.saveOrder({
         id: order.id,
         kitchenOrderId: order.id,
         table_id: finalTblId,
         table_number: finalTblNum,
         table_name: finalTblName,
-        items: existingLocal?.items?.length ? existingLocal.items : normalizedItems,
+        items: existingLocal ? existingLocal.items : normalizedItems,
         order_type: order.order_type || "dine_in",
         notes: order.notes || `طاولة #${finalTblNum}`,
         selectedAdditions: existingLocal?.selectedAdditions || [],
@@ -510,6 +733,7 @@ function CaptainPage() {
         sentToKitchen: sentToKitchenFlag,
         kitchenCompleted: kitchenCompletedFlag,
         sentToCashier: sentToCashierFlag,
+        kitchen_started_at: resolvedKitchenStartedAt,
         is_self_order:
           notesStr.includes("[SELF_ORDER") || Boolean(order.is_self_order || existingLocal?.is_self_order),
         created_at: order.created_at || existingLocal?.created_at || new Date().toISOString(),
@@ -533,7 +757,7 @@ function CaptainPage() {
         const { data, error } = await supabase
           .from("orders")
           .select("*")
-          .in("status", ["pending", "preparing", "in_kitchen", "ready", "served"])
+          .in("status", ["pending", "preparing", "in_kitchen", "ready", "served", "cancelled"])
           .order("created_at", { ascending: false })
           .limit(25);
 
@@ -559,12 +783,12 @@ function CaptainPage() {
     const pollTimer = setInterval(() => syncRecentSelfOrdersFromDb(false), 2500);
 
     const channel = supabase
-      .channel("orders_channel_captain_cards")
+      .channel("orders_channel")
       .on("broadcast", { event: "NEW_ORDER" }, (payload) => {
         attachIncomingSelfOrderToTable(payload.payload, true);
       })
       .on("broadcast", { event: "TABLE_ASSISTANCE_REQUEST" }, (payload) => {
-        attachIncomingSelfOrderToTable(payload.payload, true);
+        upsertAssistanceAlert(payload.payload, true);
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, (payload) => {
         if (payload.new) {
@@ -572,6 +796,19 @@ function CaptainPage() {
         }
       })
       .subscribe();
+
+    const handleLocalStorageAssistanceUpdate = () => {
+      try {
+        const raw = localStorage.getItem(ASSISTANCE_STORAGE_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        if (Array.isArray(parsed)) {
+          parsed.forEach((item) => upsertAssistanceAlert(item, true));
+        }
+      } catch {
+        // ignore
+      }
+    };
+    window.addEventListener("captain-assistance-updated", handleLocalStorageAssistanceUpdate);
 
     let bc: BroadcastChannel | null = null;
     if (typeof window !== "undefined" && "BroadcastChannel" in window) {
@@ -581,7 +818,7 @@ function CaptainPage() {
           if ((ev.data?.type === "NEW_SELF_ORDER" || ev.data?.type === "NEW_ORDER") && (ev.data?.order || ev.data?.payload)) {
             attachIncomingSelfOrderToTable(ev.data.order || ev.data.payload, true);
           } else if (ev.data?.type === "TABLE_ASSISTANCE_REQUEST" && ev.data?.payload) {
-            attachIncomingSelfOrderToTable(ev.data.payload, true);
+            upsertAssistanceAlert(ev.data.payload, true);
           } else if (
             ev.data?.type === "TABLE_STATUS_CHANGED" ||
             ev.data?.type === "TABLE_PAID_AND_CLEANING" ||
@@ -598,6 +835,7 @@ function CaptainPage() {
     return () => {
       clearInterval(pollTimer);
       supabase.removeChannel(channel);
+      window.removeEventListener("captain-assistance-updated", handleLocalStorageAssistanceUpdate);
       if (bc) {
         try {
           bc.close();
@@ -606,7 +844,7 @@ function CaptainPage() {
         }
       }
     };
-  }, [tablesList, queryClient, toast, handleChangeTableStatus]);
+  }, [tablesList, queryClient, toast, handleChangeTableStatus, upsertAssistanceAlert]);
 
   useEffect(() => {
     const channel = supabase
@@ -765,6 +1003,17 @@ function CaptainPage() {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            {tableOrders.length > 0 && (
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={handleClearAllPendingOrders}
+                className="font-bold gap-1.5 h-8 text-xs shadow-2xs"
+              >
+                <Trash2 size={14} />
+                {lang === "ar" ? "مسح الطلبات المعلقة" : "Clear Pending Orders"}
+              </Button>
+            )}
             <Button
               size="sm"
               onClick={() => {
@@ -805,8 +1054,197 @@ function CaptainPage() {
         </div>
       </div>
 
-      <main className="flex-1 max-w-7xl mx-auto w-full p-4 overflow-auto">
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 mt-4">
+      <main className="flex-1 max-w-7xl mx-auto w-full p-4 overflow-auto space-y-4">
+        {/* Unified Box for Call Captain & Bill Request Notifications */}
+        <section
+          aria-label="إشعارات استدعاء الكابتن وطلب الفاتورة"
+          className={`rounded-2xl border-2 p-3.5 sm:p-4 transition-all shadow-xs ${
+            assistanceAlerts.length > 0
+              ? "bg-amber-50/90 border-amber-400 ring-2 ring-amber-400/20"
+              : "bg-card border-border"
+          }`}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <div
+                className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                  assistanceAlerts.length > 0
+                    ? "bg-amber-500 text-white animate-pulse shadow-xs"
+                    : "bg-slate-100 text-slate-600"
+                }`}
+              >
+                <BellRing size={18} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="font-black text-sm sm:text-base text-slate-900">
+                    {lang === "ar"
+                      ? "إشعارات استدعاء الكابتن وطلب الفاتورة"
+                      : "Captain Call & Bill Request Alerts"}
+                  </h2>
+                  {assistanceAlerts.length > 0 && (
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-black bg-rose-600 text-white">
+                      {assistanceAlerts.length} {lang === "ar" ? "تنبيه نشط" : "Active"}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] font-semibold text-slate-500">
+                  {lang === "ar"
+                    ? "تظهر هنا فوراً طلبات استدعاء الكابتن وطلبات الفاتورة المرسلة من باركود الطاولات"
+                    : "Live table assistance calls and bill requests from customer QR menus"}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-black bg-amber-100 text-amber-900 border border-amber-300">
+                <BellRing size={13} className="text-amber-700" />
+                <span>
+                  {lang === "ar" ? "استدعاء الكابتن:" : "Captain Calls:"}{" "}
+                  {assistanceAlerts.filter((a) => a.request_type === "call_captain").length}
+                </span>
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-black bg-indigo-100 text-indigo-900 border border-indigo-300">
+                <Receipt size={13} className="text-indigo-700" />
+                <span>
+                  {lang === "ar" ? "طلب الفاتورة:" : "Bill Requests:"}{" "}
+                  {assistanceAlerts.filter((a) => a.request_type === "request_bill").length}
+                </span>
+              </span>
+
+              {assistanceAlerts.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleClearAllAssistanceAlerts}
+                  className="h-8 text-xs font-black bg-white hover:bg-emerald-50 text-emerald-700 border-emerald-300 gap-1"
+                >
+                  <CheckCircle2 size={14} />
+                  {lang === "ar" ? "تمت الاستجابة للكل" : "Dismiss All"}
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {assistanceAlerts.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 mt-3 pt-3 border-t border-amber-200/80">
+              {assistanceAlerts.map((alert) => {
+                const isBill = alert.request_type === "request_bill";
+                const matchedTable =
+                  tablesList.find(
+                    (t) =>
+                      t.id === alert.table_id ||
+                      Number(t.number) === Number(alert.table_number),
+                  ) || null;
+                const timeStr = (() => {
+                  try {
+                    return new Date(alert.created_at).toLocaleTimeString("ar-EG", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    });
+                  } catch {
+                    return "";
+                  }
+                })();
+
+                return (
+                  <div
+                    key={alert.id}
+                    className={`rounded-xl p-3 border-2 bg-white shadow-2xs flex flex-col justify-between gap-2.5 ${
+                      isBill ? "border-indigo-300" : "border-amber-300"
+                    }`}
+                  >
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span
+                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-black ${
+                            isBill
+                              ? "bg-indigo-100 text-indigo-900 border border-indigo-200"
+                              : "bg-amber-100 text-amber-900 border border-amber-200"
+                          }`}
+                        >
+                          {isBill ? <Receipt size={13} /> : <BellRing size={13} />}
+                          <span>
+                            {isBill
+                              ? lang === "ar"
+                                ? "طلب الفاتورة / الحساب 🧾"
+                                : "Requesting Bill 🧾"
+                              : lang === "ar"
+                                ? "استدعاء الكابتن 🔔"
+                                : "Calling Captain 🔔"}
+                          </span>
+                        </span>
+
+                        {timeStr && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500">
+                            <Clock size={11} />
+                            <span>{timeStr}</span>
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1.5 flex-wrap text-xs font-black text-slate-900">
+                        <span className="bg-slate-900 text-white px-2 py-0.5 rounded-md">
+                          طاولة #{alert.table_number}
+                        </span>
+                        {alert.zone && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                            <MapPin size={11} />
+                            <span>{alert.zone}</span>
+                          </span>
+                        )}
+                        {alert.customer_name && (
+                          <span className="text-[11px] font-bold text-slate-600">
+                            ({alert.customer_name})
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="text-xs font-bold text-slate-700 leading-snug">
+                        {alert.notes}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+                      {matchedTable && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedTable(matchedTable)}
+                          className="flex-1 h-8 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-black transition cursor-pointer"
+                        >
+                          {lang === "ar"
+                            ? `فتح طاولة #${matchedTable.number}`
+                            : `Open Table #${matchedTable.number}`}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleDismissAssistanceAlert(alert.id)}
+                        className="flex-1 h-8 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black flex items-center justify-center gap-1 transition cursor-pointer"
+                      >
+                        <CheckCircle2 size={13} />
+                        <span>{lang === "ar" ? "تمت الاستجابة" : "Handled"}</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="mt-2.5 pt-2.5 border-t border-border/60 flex items-center justify-between text-xs font-bold text-slate-500">
+              <span>
+                {lang === "ar"
+                  ? "لا توجد طلبات استدعاء كابتن أو طلب فاتورة معلقة حالياً."
+                  : "No pending captain calls or bill requests right now."}
+              </span>
+              <span className="text-[11px] text-emerald-700 font-extrabold">
+                {lang === "ar" ? "متصل ومباشر ●" : "Live Sync ●"}
+              </span>
+            </div>
+          )}
+        </section>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {(tablesQuery.data ?? []).map((t) => {
             const activeOrder = tableOrders.find(
               (o) =>
@@ -815,22 +1253,42 @@ function CaptainPage() {
                   o.status === "sent_to_cashier" ||
                   o.status === "in_checkout"),
             );
+            const tableAlerts = assistanceAlerts.filter(
+              (a) => a.table_id === t.id || Number(a.table_number) === Number(t.number),
+            );
+            const hasBillAlert = tableAlerts.some((a) => a.request_type === "request_bill");
+            const hasCallAlert = tableAlerts.some((a) => a.request_type === "call_captain");
             const totalItemsCount = Array.isArray(activeOrder?.items)
               ? activeOrder.items.reduce(
                   (sum: number, line: any) => sum + Number(line?.quantity || 1),
                   0,
                 )
               : 0;
+            const itemsSummaryText =
+              Array.isArray(activeOrder?.items) && activeOrder.items.length > 0
+                ? activeOrder.items
+                    .map(
+                      (line: any) =>
+                        `${line?.item?.name_ar || line?.name_ar || "صنف"} ×${line?.quantity || 1}`,
+                    )
+                    .join("، ")
+                : activeOrder?.notes
+                  ? String(activeOrder.notes)
+                      .replace(/\[[^\]]+\]/g, "")
+                      .trim() || "مسودة محفوظة بدون أصناف"
+                  : "مسودة محفوظة بدون أصناف";
 
             return (
               <div
                 key={t.id}
-                className={`bg-white border-2 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all flex flex-col h-full cursor-pointer relative overflow-hidden group ${
+                className={`h-[255px] bg-white border-2 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all flex flex-col justify-between cursor-pointer relative overflow-hidden group ${
                   isEditMode
                     ? "border-amber-400 ring-2 ring-amber-400/20"
-                    : activeOrder
-                      ? "border-rose-400 ring-2 ring-rose-400/20 bg-rose-50/40"
-                      : statusColors[t.status]
+                    : tableAlerts.length > 0
+                      ? "border-amber-500 ring-2 ring-amber-500/30 bg-amber-50/40"
+                      : activeOrder
+                        ? "border-rose-400 ring-2 ring-rose-400/20 bg-rose-50/40"
+                        : statusColors[t.status]
                 }`}
                 onClick={() => {
                   if (isEditMode) {
@@ -844,118 +1302,141 @@ function CaptainPage() {
                   <UtensilsCrossed size={80} />
                 </div>
 
-                <div className="flex items-center justify-between mb-1.5 relative z-10">
-                  <div className="flex items-center gap-2">
-                    <span className="font-black text-2xl text-slate-900">#{t.number}</span>
-                    <span className="text-xs font-extrabold px-2 py-0.5 rounded-full bg-white/80 border border-current">
+                {/* Top Header Row — Fixed Height (h-9) */}
+                <div className="h-9 shrink-0 flex items-center justify-between gap-2 relative z-10">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="font-black text-2xl text-slate-900 shrink-0">#{t.number}</span>
+                    <span className="font-bold text-sm text-slate-800 truncate">
+                      {t.name || (lang === "ar" ? `طاولة ${t.number}` : `Table ${t.number}`)}
+                    </span>
+                    <span className="text-[11px] font-extrabold px-2 py-0.5 rounded-full bg-white/85 border border-current shrink-0">
                       {lang === "ar" ? statusLabels[t.status] : t.status}
                     </span>
+                    {hasBillAlert && (
+                      <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-indigo-600 text-white animate-pulse shrink-0">
+                        🧾 فاتورة
+                      </span>
+                    )}
+                    {hasCallAlert && !hasBillAlert && (
+                      <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-amber-500 text-white animate-pulse shrink-0">
+                        🔔 استدعاء
+                      </span>
+                    )}
                   </div>
-                  {isEditMode ? (
-                    <div className="bg-amber-100 text-amber-700 p-1.5 rounded-lg">
-                      <Settings2 size={16} />
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      title={lang === "ar" ? "باركود هذه الطاولة" : "QR for this table"}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setQrTableId(t.id);
-                        setIsQrModalOpen(true);
-                      }}
-                      className="p-1.5 rounded-lg bg-white/90 hover:bg-indigo-50 text-indigo-600 border border-indigo-200 transition-colors"
-                    >
-                      <QrCode size={15} />
-                    </button>
-                  )}
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-[11px] font-bold text-slate-700 bg-white/70 px-2 py-0.5 rounded-lg border border-black/10">
+                      {t.capacity} {lang === "ar" ? "أفراد" : "pax"}
+                    </span>
+                    {isEditMode ? (
+                      <div className="bg-amber-100 text-amber-700 p-1.5 rounded-lg">
+                        <Settings2 size={15} />
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        title={lang === "ar" ? "باركود هذه الطاولة" : "QR for this table"}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setQrTableId(t.id);
+                          setIsQrModalOpen(true);
+                        }}
+                        className="p-1.5 rounded-lg bg-white/90 hover:bg-indigo-50 text-indigo-600 border border-indigo-200 transition-colors cursor-pointer"
+                      >
+                        <QrCode size={15} />
+                      </button>
+                    )}
+                  </div>
                 </div>
 
-                <div className="mb-2 relative z-10 flex items-center justify-between">
-                  <div className="font-bold text-sm text-slate-800">
-                    {t.name || (lang === "ar" ? `طاولة ${t.number}` : `Table ${t.number}`)}
-                  </div>
-                  <div className="text-[11px] font-bold text-slate-600">
-                    {lang === "ar" ? "السعة:" : "Cap:"} {t.capacity} {lang === "ar" ? "أفراد" : "pax"}
-                  </div>
-                </div>
-
-                {/* Active Order Summary & Live Oven Timer directly on Table Card */}
+                {/* Middle Content Box — Strictly Fixed Height (h-[120px]) so all Table Cards have identical height */}
                 {activeOrder ? (
-                  <div className="relative z-10 my-1.5 p-2.5 rounded-xl bg-white/95 border border-slate-200 shadow-2xs space-y-1.5">
-                    <div className="flex items-center justify-between gap-1">
+                  <div className="h-[120px] shrink-0 relative z-10 p-2.5 rounded-xl bg-white/95 border border-slate-200 shadow-2xs flex flex-col justify-between overflow-hidden">
+                    <div className="flex items-center justify-between gap-1.5">
                       <span
-                        className={`text-[11px] font-black px-2 py-0.5 rounded-md ${
+                        className={`text-[11px] font-black px-2 py-0.5 rounded-md truncate ${
                           activeOrder.is_self_order
                             ? "bg-indigo-100 text-indigo-900"
                             : "bg-amber-100 text-amber-900"
                         }`}
                       >
-                        {activeOrder.is_self_order ? "طلب عميل QR 🔔" : "طلب بالطاولة 🛒"}
+                        {activeOrder.is_self_order
+                          ? "طلب عميل QR 🔔"
+                          : totalItemsCount > 0
+                            ? `طلب بالطاولة (${totalItemsCount})`
+                            : "مسودة 📝"}
                       </span>
-                      <span className="font-black text-xs text-slate-900">
-                        {Number(activeOrder.total ?? 0).toFixed(2)} {currency}
-                      </span>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="font-black text-xs text-slate-900 tabular-nums">
+                          {formatPrice(Number(activeOrder.total ?? 0))}
+                        </span>
+                        <button
+                          type="button"
+                          title={lang === "ar" ? "إلغاء ومسح الطلب" : "Cancel Order"}
+                          onClick={(e) => handleCancelSingleTableOrder(t, activeOrder, e)}
+                          className="p-1 rounded-md bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white border border-rose-200 transition-colors cursor-pointer"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
                     </div>
 
-                    {Array.isArray(activeOrder.items) && activeOrder.items.length > 0 && (
-                      <div className="text-[11px] font-bold text-slate-700 line-clamp-2 leading-snug">
-                        {activeOrder.items
-                          .map(
-                            (line: any) =>
-                              `${line?.item?.name_ar || line?.name_ar || "صنف"} ×${line?.quantity || 1}`,
-                          )
-                          .join("، ")}
-                      </div>
-                    )}
+                    <div className="text-[11px] font-bold text-slate-700 truncate">
+                      {itemsSummaryText}
+                    </div>
 
-                    {/* Live Oven / Kitchen Timer on Table Card */}
-                    {activeOrder.sentToKitchen && !activeOrder.kitchenCompleted && (
-                      <div className="flex justify-between items-center bg-orange-100 border border-orange-300 px-2 py-1 rounded-lg">
-                        <span className="text-[11px] font-black text-orange-900">
+                    {/* Status / Live Oven Timer Strip */}
+                    {activeOrder.sentToKitchen && !activeOrder.kitchenCompleted ? (
+                      <div className="h-7 flex justify-between items-center bg-orange-100 border border-orange-300 px-2 rounded-lg">
+                        <span className="text-[11px] font-black text-orange-900 truncate">
                           في الفرن/المطبخ 👨‍🍳
                         </span>
                         <OrderTimer
-                          createdAt={activeOrder.updated_at || activeOrder.created_at}
+                          createdAt={activeOrder.kitchen_started_at || activeOrder.created_at}
                         />
                       </div>
-                    )}
-
-                    {activeOrder.kitchenCompleted && (
-                      <div className="flex justify-between items-center bg-emerald-100 border border-emerald-300 px-2 py-1 rounded-lg">
+                    ) : activeOrder.kitchenCompleted ? (
+                      <div className="h-7 flex justify-between items-center bg-emerald-100 border border-emerald-300 px-2 rounded-lg">
                         <span className="text-[11px] font-black text-emerald-900">
                           جاهز من الفرن ✅
                         </span>
                         <span className="text-[10px] font-bold text-emerald-800">
-                          {totalItemsCount} أصناف
+                          {activeOrder.status === "sent_to_cashier" || activeOrder.sentToCashier
+                            ? "مرسل للكاشير 💰"
+                            : "اضغط للإرسال للكاشير"}
                         </span>
                       </div>
-                    )}
-
-                    {(activeOrder.status === "sent_to_cashier" ||
+                    ) : activeOrder.status === "sent_to_cashier" ||
                       activeOrder.status === "in_checkout" ||
-                      activeOrder.sentToCashier) && (
-                      <div className="flex justify-between items-center bg-emerald-50 border border-emerald-300 px-2 py-1 rounded-lg">
-                        <span className="text-[11px] font-black text-emerald-800">
+                      activeOrder.sentToCashier ? (
+                      <div className="h-7 flex justify-between items-center bg-emerald-50 border border-emerald-300 px-2 rounded-lg">
+                        <span className="text-[11px] font-black text-emerald-800 truncate">
                           مرسل للكاشير (بانتظار الدفع) 💰
                         </span>
                       </div>
+                    ) : (
+                      <div className="h-7 flex items-center justify-center bg-indigo-50 border border-indigo-200 px-2 rounded-lg text-[11px] font-extrabold text-indigo-800">
+                        اضغط لفتح الطلب (للمطبخ / للكاشير)
+                      </div>
                     )}
-
-                    <div className="text-[10px] font-extrabold text-indigo-700 text-center pt-0.5">
-                      اضغط لفتح الطلب (للمطبخ / للكاشير)
-                    </div>
                   </div>
                 ) : (
-                  <div className="relative z-10 my-2 py-3 text-center rounded-xl border border-dashed border-current/25 bg-white/40 text-[11px] font-bold text-slate-600">
-                    لا يوجد طلب حالي — اضغط لإضافة طلب
+                  <div className="h-[120px] shrink-0 relative z-10 px-3 rounded-xl border border-dashed border-current/25 bg-white/45 flex flex-col items-center justify-center text-center gap-1">
+                    <UtensilsCrossed size={18} className=" opacity-50" />
+                    <span className="text-xs font-bold text-slate-700">
+                      لا يوجد طلب حالي على الطاولة
+                    </span>
+                    <span className="text-[10px] font-semibold text-slate-600">
+                      اضغط على الطاولة لإضافة طلب جديد
+                    </span>
                   </div>
                 )}
 
-                {/* Manual Table Status Control (متاح / مشغول / تنظيف) */}
-                {!isEditMode && (
+                {/* Bottom Manual Table Status Control (متاح / مشغول / تنظيف) — Fixed Height (h-9) */}
+                {!isEditMode ? (
                   <div
-                    className="mt-auto pt-2 border-t border-black/10 relative z-10 flex items-center gap-1"
+                    className="h-9 shrink-0 pt-1.5 border-t border-black/10 relative z-10 flex items-center gap-1.5"
                     onClick={(e) => e.stopPropagation()}
                   >
                     {(
@@ -971,7 +1452,7 @@ function CaptainPage() {
                           key={st.key}
                           type="button"
                           onClick={(e) => handleChangeTableStatus(t, st.key, e)}
-                          className={`flex-1 py-1 px-1.5 rounded-lg text-[11px] font-black border transition-all cursor-pointer ${
+                          className={`flex-1 h-7 rounded-lg text-[11px] font-black border transition-all cursor-pointer ${
                             isActive
                               ? `${st.activeCls} shadow-2xs`
                               : "bg-white/85 hover:bg-white text-slate-700 border-slate-300"
@@ -982,6 +1463,10 @@ function CaptainPage() {
                       );
                     })}
                   </div>
+                ) : (
+                  <div className="h-9 shrink-0 pt-1.5 border-t border-amber-300/60 relative z-10 flex items-center justify-center text-xs font-black text-amber-800">
+                    اضغط لتعديل بيانات أو حذف الطاولة
+                  </div>
                 )}
               </div>
             );
@@ -989,7 +1474,7 @@ function CaptainPage() {
 
           {isEditMode && (
             <div
-              className="bg-slate-100 border-2 border-dashed border-slate-300 rounded-2xl p-4 shadow-sm hover:shadow-md hover:bg-slate-200 hover:border-slate-400 transition-all flex flex-col items-center justify-center h-full cursor-pointer min-h-[140px]"
+              className="h-[255px] bg-slate-100 border-2 border-dashed border-slate-300 rounded-2xl p-4 shadow-sm hover:shadow-md hover:bg-slate-200 hover:border-slate-400 transition-all flex flex-col items-center justify-center cursor-pointer"
               onClick={() => handleOpenManage()}
             >
               <div className="bg-white p-3 rounded-full shadow-sm mb-2 text-slate-600">
@@ -1160,6 +1645,13 @@ function CaptainPage() {
               .replace(/\/+$/, "")
               .replace(/\/menu$/i, "");
 
+            const effectiveQrRate =
+              qrCurrency === "USD"
+                ? 1
+                : Number(qrExchangeRate) > 0
+                  ? Number(qrExchangeRate)
+                  : Number(exchangeRates?.[qrCurrency as keyof typeof exchangeRates] || 1);
+
             const params = new URLSearchParams();
             params.set("page", "menu");
             if (qrTableId) params.set("tableId", qrTableId);
@@ -1167,6 +1659,7 @@ function CaptainPage() {
             if (displayedTableName) params.set("tableName", displayedTableName);
             if (qrZone.trim()) params.set("zone", qrZone.trim());
             if (qrCurrency) params.set("currency", qrCurrency);
+            params.set("rate", String(effectiveQrRate));
             params.set("lang", qrMenuLang);
             params.set("allowLangSwitch", qrAllowLangSwitch ? "1" : "0");
             if (qrWelcomeMessage.trim()) params.set("welcome", qrWelcomeMessage.trim());
@@ -1226,7 +1719,7 @@ function CaptainPage() {
                       placeholder="https://your-project.vercel.app"
                       className={`h-10 text-xs font-mono ${lang === "ar" ? "text-right" : "text-left"}`}
                     />
-                    <p className="text-[11px] text-slate-500 font-medium">
+                    <p className="text-[11px] text-slate-500 font-medium break-all">
                       {lang === "ar"
                         ? `الرابط النهائي للباركود على Vercel: ${qrUrl}`
                         : `Final QR URL on Vercel: ${qrUrl}`}
@@ -1291,7 +1784,7 @@ function CaptainPage() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="space-y-1.5">
                       <Label
                         className={
@@ -1301,7 +1794,7 @@ function CaptainPage() {
                         }
                       >
                         {lang === "ar"
-                          ? "لغة صفحة طلب العملاء عند المسح"
+                          ? "لغة صفحة طلب العملاء"
                           : "Customer Menu Language"}
                       </Label>
                       <select
@@ -1321,7 +1814,7 @@ function CaptainPage() {
                             setQrWelcomeMessage("أهلاً بك! يمكنك الطلب الآن.");
                           }
                         }}
-                        className={`w-full h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 ${lang === "ar" ? "text-right" : "text-left"}`}
+                        className={`w-full h-10 rounded-lg border border-slate-300 bg-white px-3 text-xs sm:text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 ${lang === "ar" ? "text-right" : "text-left"}`}
                       >
                         <option value="ar">العربية (Arabic - RTL)</option>
                         <option value="en">الإنجليزية (English - LTR)</option>
@@ -1336,21 +1829,70 @@ function CaptainPage() {
                             : "text-left block text-xs font-bold text-slate-700"
                         }
                       >
-                        {lang === "ar" ? "العملة المفضلة في المنيو" : "Preferred Currency in Menu"}
+                        {lang === "ar" ? "عملة العرض للعميل" : "Customer Display Currency"}
                       </Label>
                       <select
                         value={qrCurrency}
-                        onChange={(e) => setQrCurrency(e.target.value)}
-                        className={`w-full h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 ${lang === "ar" ? "text-right" : "text-left"}`}
+                        onChange={(e) => {
+                          const nextCurr = e.target.value;
+                          setQrCurrency(nextCurr);
+                          if (nextCurr === "USD") {
+                            setQrExchangeRate("1");
+                          } else if (nextCurr === "EGP") {
+                            setQrExchangeRate(String(exchangeRates?.EGP || 50));
+                          } else if (nextCurr === "SSP") {
+                            setQrExchangeRate(String(exchangeRates?.SSP || 100));
+                          }
+                        }}
+                        className={`w-full h-10 rounded-lg border border-slate-300 bg-white px-3 text-xs sm:text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 ${lang === "ar" ? "text-right" : "text-left"}`}
                       >
+                        <option value="USD">دولار أمريكي (USD $ — السعر الرئيسي)</option>
                         <option value="EGP">جنيه مصري (EGP)</option>
-                        <option value="USD">دولار أمريكي (USD)</option>
-                        <option value="EUR">يورو (EUR)</option>
+                        <option value="SSP">جنيه جنوب السودان (SSP)</option>
                         <option value="SAR">ريال سعودي (SAR)</option>
                         <option value="AED">درهم إماراتي (AED)</option>
-                        <option value="SSP">جنيه جنوب السودان (SSP)</option>
+                        <option value="EUR">يورو (EUR)</option>
                       </select>
                     </div>
+
+                    <div className="space-y-1.5">
+                      <Label
+                        className={
+                          lang === "ar"
+                            ? "text-right block text-xs font-bold text-indigo-800"
+                            : "text-left block text-xs font-bold text-indigo-800"
+                        }
+                      >
+                        {lang === "ar"
+                          ? "المعامل الحالي (مقابل 1 دولار $)"
+                          : "Multiplier / Rate (per 1 USD $)"}
+                      </Label>
+                      <Input
+                        type="number"
+                        step="any"
+                        min="0.0001"
+                        disabled={qrCurrency === "USD"}
+                        value={qrCurrency === "USD" ? "1" : qrExchangeRate}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setQrExchangeRate(val);
+                          const num = parseFloat(val);
+                          if (!isNaN(num) && num > 0 && (qrCurrency === "EGP" || qrCurrency === "SSP")) {
+                            updateExchangeRate(qrCurrency, num);
+                          }
+                        }}
+                        placeholder="1"
+                        className="h-10 text-sm font-black font-mono text-center border-indigo-300 bg-indigo-50/40 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl bg-indigo-50/70 border border-indigo-200 px-3 py-2 text-[11px] font-bold text-indigo-950 flex items-center justify-between gap-2">
+                    <span>
+                      {lang === "ar"
+                        ? `قاعدة التسعير: السعر الرئيسي للمنيو بالدولار (USD) × المعامل (${effectiveQrRate}) = السعر في صفحة العميل (${qrCurrency})`
+                        : `Base Menu Price (USD) × Multiplier (${effectiveQrRate}) = Customer Price (${qrCurrency})`}
+                    </span>
                   </div>
 
                   <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">

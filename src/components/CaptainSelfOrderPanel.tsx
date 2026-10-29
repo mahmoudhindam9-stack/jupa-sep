@@ -59,6 +59,15 @@ function saveAssistanceAlerts(alerts: TableAssistanceAlert[]) {
 export function playCaptainNotificationSound(isUrgent = false) {
   try {
     if (typeof window === "undefined") return;
+    const p = window.location.pathname;
+    if (
+      !p.startsWith("/captain") &&
+      !p.startsWith("/admin/restaurant") &&
+      !p.startsWith("/pos") &&
+      !p.startsWith("/oven")
+    ) {
+      return;
+    }
     const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
     if (!AudioCtx) return;
     const ctx = new AudioCtx();

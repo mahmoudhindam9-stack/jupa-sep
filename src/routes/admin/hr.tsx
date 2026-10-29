@@ -14,8 +14,14 @@ import {
   type EmployeeLoan,
   type PayrollRecord,
 } from "@/shared/services/erpStore";
+import {
+  getActiveUserPermissionsSync,
+  hasAnyRequestedPermission,
+  PERMISSIONS_UPDATED_EVENT,
+} from "@/shared/services/userAuthorization";
 import { printRawHtml } from "@/shared/utils/printAccountingDocument";
 import { UsersPage } from "@/components/admin/UsersPageView";
+import { sendPrivateSalarySlipMessages } from "@/components/Chatbot";
 import {
   Users,
   UserPlus,
@@ -43,6 +49,11 @@ import {
   CheckSquare,
   Printer,
   ArrowRight,
+  Scissors,
+  Send,
+  Lock,
+  Eye,
+  ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -88,6 +99,26 @@ function HRPage() {
   const loans = useMemo(() => erpState.loans || [], [erpState.loans]);
   const payrolls = useMemo(() => erpState.payrolls || [], [erpState.payrolls]);
 
+  const [activePerms, setActivePerms] = useState<Record<string, boolean>>(() =>
+    getActiveUserPermissionsSync(),
+  );
+
+  useEffect(() => {
+    const refresh = () => setActivePerms(getActiveUserPermissionsSync());
+    window.addEventListener(PERMISSIONS_UPDATED_EVENT, refresh);
+    const unsub = erpStore.subscribe(refresh);
+    return () => {
+      window.removeEventListener(PERMISSIONS_UPDATED_EVENT, refresh);
+      unsub();
+    };
+  }, []);
+
+  const canViewEmployees = hasAnyRequestedPermission(activePerms, ["page_hr_employees", "hr"]);
+  const canViewAttendance = hasAnyRequestedPermission(activePerms, ["page_hr_attendance", "hr_view_attendance"]);
+  const canViewPayroll = hasAnyRequestedPermission(activePerms, ["page_hr_payroll", "hr_manage_payroll_loans"]);
+  const canViewLoans = hasAnyRequestedPermission(activePerms, ["page_hr_loans", "hr_manage_payroll_loans"]);
+  const canViewUsers = hasAnyRequestedPermission(activePerms, ["page_hr_users", "users_roles", "system_manage_users"]);
+
   // Active Tab state
   const location = useLocation();
   const tabParam = extractTabParam(location.search, (location as any).searchStr);
@@ -95,11 +126,16 @@ function HRPage() {
 
   useEffect(() => {
     if (tabParam) {
-      setActiveTab(tabParam);
+      if (tabParam === "employees" && !canViewEmployees) setActiveTab("grid");
+      else if (tabParam === "attendance" && !canViewAttendance) setActiveTab("grid");
+      else if (tabParam === "payroll" && !canViewPayroll) setActiveTab("grid");
+      else if (tabParam === "loans" && !canViewLoans) setActiveTab("grid");
+      else if (tabParam === "users" && !canViewUsers) setActiveTab("grid");
+      else setActiveTab(tabParam);
     } else {
       setActiveTab("grid");
     }
-  }, [tabParam]);
+  }, [tabParam, canViewEmployees, canViewAttendance, canViewPayroll, canViewLoans, canViewUsers]);
 
   useSyncedSubTab("/admin/hr", activeTab, setActiveTab, "grid");
 
@@ -114,6 +150,14 @@ function HRPage() {
 
   // Payroll Month
   const [payrollMonth, setPayrollMonth] = useState<string>("2026-07");
+
+  // Automatic Payroll Disbursement Preview & GM Approval States
+  const [isDisbursementPreviewOpen, setIsDisbursementPreviewOpen] = useState(false);
+  const [disbursementTreasuryId, setDisbursementTreasuryId] = useState<string>("");
+  const [disbursementViewMode, setDisbursementViewMode] = useState<"journal" | "sheet">("journal");
+
+  // Cuttable Rectangular Salary Receipts Modal State
+  const [isCuttableSlipsOpen, setIsCuttableSlipsOpen] = useState(false);
 
   // Dialog States
   const [isAddEmpOpen, setIsAddEmpOpen] = useState(false);
@@ -300,7 +344,7 @@ function HRPage() {
       documentNo: ref,
       date: l.date,
       employeeName: emp?.name,
-      employeeCode: emp?.id,
+      employeeCode: emp?.employee_code ? `#${emp.employee_code}` : emp?.id,
       amount: l.amount,
       currency: l.currency,
       treasuryName: tr?.name_ar || "الخزينة الرئيسية",
@@ -324,7 +368,7 @@ function HRPage() {
       documentNo: ref,
       date: p.payment_date || new Date().toISOString().split("T")[0],
       employeeName: emp?.name,
-      employeeCode: emp?.id,
+      employeeCode: emp?.employee_code ? `#${emp.employee_code}` : emp?.id,
       month: p.month,
       amount: p.net_salary,
       currency: p.currency,
@@ -377,6 +421,7 @@ function HRPage() {
 
   // Employee Form State
   const [empForm, setEmpForm] = useState({
+    employee_code: erpStore.getNextEmployeeCode(),
     name: "",
     job_title: "",
     department: "المطبخ",
@@ -401,6 +446,7 @@ function HRPage() {
   // Reset forms helper
   const resetEmpForm = () => {
     setEmpForm({
+      employee_code: erpStore.getNextEmployeeCode(),
       name: "",
       job_title: "",
       department: "المطبخ",
@@ -411,6 +457,11 @@ function HRPage() {
       currency: "EGP",
       status: "active",
     });
+  };
+
+  const openAddEmployeeDialog = () => {
+    resetEmpForm();
+    setIsAddEmpOpen(true);
   };
 
   const resetLoanForm = () => {
@@ -452,11 +503,14 @@ function HRPage() {
 
   // Filter Employees
   const filteredEmployees = useMemo(() => {
+    const q = empSearch.trim().toLowerCase();
     return employees.filter((emp) => {
       const matchSearch =
-        (emp.name || "").toLowerCase().includes(empSearch.toLowerCase()) ||
-        (emp.job_title || "").toLowerCase().includes(empSearch.toLowerCase()) ||
-        (emp.phone || "").includes(empSearch);
+        !q ||
+        (emp.name || "").toLowerCase().includes(q) ||
+        (emp.job_title || "").toLowerCase().includes(q) ||
+        (emp.phone || "").includes(q) ||
+        String(emp.employee_code || "").toLowerCase().includes(q);
       const matchDept = empDeptFilter === "all" || emp.department === empDeptFilter;
       return matchSearch && matchDept;
     });
@@ -559,6 +613,7 @@ function HRPage() {
   const openEditDialog = (emp: Employee) => {
     setSelectedEmp(emp);
     setEmpForm({
+      employee_code: emp.employee_code || erpStore.getNextEmployeeCode(),
       name: emp.name || "",
       job_title: emp.job_title || "",
       department: emp.department || "المطبخ",
@@ -773,6 +828,543 @@ function HRPage() {
     setIsVoucherOpen(true);
   };
 
+  // ============================================================================
+  // 1. AUTOMATIC PAYROLL DISBURSEMENT PREVIEW, APPROVAL & GM PRINTOUT
+  // ============================================================================
+  const openDisbursementPreviewModal = () => {
+    const monthRecords = (erpStore.getState().payrolls || []).filter(
+      (p) => p.month === payrollMonth,
+    );
+    if (monthRecords.length === 0) {
+      erpStore.generatePayroll(payrollMonth);
+    }
+    const activeTreasuries = (erpStore.getState().treasuries || []).filter((t) => !t.deleted);
+    if (!disbursementTreasuryId && activeTreasuries.length > 0) {
+      setDisbursementTreasuryId(activeTreasuries[0].id);
+    }
+    setIsDisbursementPreviewOpen(true);
+  };
+
+  const disbursementPreviewData = useMemo(() => {
+    if (!isDisbursementPreviewOpen) return null;
+    try {
+      return erpStore.buildPayrollDisbursementPreview(payrollMonth, disbursementTreasuryId);
+    } catch {
+      return null;
+    }
+  }, [isDisbursementPreviewOpen, payrollMonth, disbursementTreasuryId, erpState]);
+
+  const handleApproveAndPostDisbursement = () => {
+    if (!disbursementTreasuryId) {
+      toast({
+        title: "اختر خزينة الصرف",
+        description: "يرجى تحديد الخزينة أو البنك المراد صرف المرتبات منه أولاً.",
+        variant: "destructive",
+      });
+      return;
+    }
+    try {
+      const result = erpStore.approvePayrollDisbursementJournal(
+        payrollMonth,
+        disbursementTreasuryId,
+      );
+      toast({
+        title: "تم اعتماد وترحيل قيود صرف المرتبات بنجاح ✅",
+        description: `تم توليد واعتماد قيود الصرف لشهر ${payrollMonth} (${result.totalEmployees} موظف) من ${result.treasuryName}.`,
+      });
+      setErpState(erpStore.getState());
+    } catch (err: any) {
+      toast({
+        title: "خطأ في الاعتماد",
+        description: err?.message || "تعذر اعتماد قيود صرف المرتبات.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handlePrintGeneralManagerApproval = (formatMode: "sheet" | "journal") => {
+    const preview = erpStore.buildPayrollDisbursementPreview(
+      payrollMonth,
+      disbursementTreasuryId,
+    );
+    const todayStr = new Date().toISOString().split("T")[0];
+    const groups = Object.values(preview.groupsByCurrency || {});
+
+    const sheetSectionsHtml = groups
+      .map((group) => {
+        const rowsHtml = group.records
+          .map(
+            ({ payroll, employee }, idx) => `
+          <tr>
+            <td style="text-align:center;">${idx + 1}</td>
+            <td style="font-family:monospace;font-weight:900;text-align:center;color:#0284c7;">#${employee?.employee_code || "-"}</td>
+            <td style="font-weight:bold;">${employee?.name || "موظف"}</td>
+            <td>${employee?.job_title || "-"}</td>
+            <td>${employee?.department || "-"}</td>
+            <td style="font-family:monospace;font-weight:bold;">${Number(payroll.basic_salary || 0).toLocaleString()} ${group.currency}</td>
+            <td style="font-family:monospace;color:#059669;">+${Number(payroll.bonuses || 0).toLocaleString()} ${group.currency}</td>
+            <td style="font-family:monospace;color:#e11d48;">-${Number(payroll.deductions || 0).toLocaleString()} ${group.currency}</td>
+            <td style="font-family:monospace;color:#d97706;">-${Number(payroll.loan_deduction || 0).toLocaleString()} ${group.currency}</td>
+            <td style="font-family:monospace;font-weight:900;color:#0f172a;background:#f0fdf4;">${Number(payroll.net_salary || 0).toLocaleString()} ${group.currency}</td>
+            <td style="text-align:center;">${payroll.status === "paid" ? "تم الصرف" : "بانتظار الاعتماد"}</td>
+          </tr>`,
+          )
+          .join("");
+
+        return `
+        <div style="margin-bottom:24px;">
+          <div style="font-weight:900;font-size:14px;margin-bottom:8px;color:#0f172a;background:#f1f5f9;padding:8px 12px;border-right:4px solid #0284c7;border-radius:6px;">
+            كشف مرتبات الموظفين بعملة (${group.currency}) — خزينة الصرف: ${preview.treasuryAccName}
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th style="width:36px;text-align:center;">م</th>
+                <th style="width:85px;text-align:center;">الرقم الوظيفي</th>
+                <th>اسم الموظف</th>
+                <th>المسمى الوظيفي</th>
+                <th>القسم</th>
+                <th>الراتب الأساسي</th>
+                <th>المكافآت</th>
+                <th>خصم الغياب</th>
+                <th>قسط السلفة</th>
+                <th>صافي المستحق للصرف</th>
+                <th>الحالة</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+              <tr style="background:#e0f2fe;font-weight:900;">
+                <td colspan="5">الإجمالي الكلي (${group.records.length} موظف)</td>
+                <td style="font-family:monospace;">${group.totalBasic.toLocaleString()} ${group.currency}</td>
+                <td style="font-family:monospace;">+${group.totalBonuses.toLocaleString()} ${group.currency}</td>
+                <td style="font-family:monospace;">-${group.totalDeductions.toLocaleString()} ${group.currency}</td>
+                <td style="font-family:monospace;">-${group.totalLoans.toLocaleString()} ${group.currency}</td>
+                <td style="font-family:monospace;font-size:14px;color:#047857;">${group.totalNet.toLocaleString()} ${group.currency}</td>
+                <td></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>`;
+      })
+      .join("");
+
+    const journalSectionsHtml = groups
+      .map((group) => {
+        const totalDebit = group.journalLines.reduce((s, l) => s + Number(l.debit || 0), 0);
+        const totalCredit = group.journalLines.reduce((s, l) => s + Number(l.credit || 0), 0);
+
+        const linesHtml = group.journalLines
+          .map(
+            (line, idx) => `
+          <tr>
+            <td style="text-align:center;">${idx + 1}</td>
+            <td style="font-family:monospace;font-weight:bold;">${line.account_code}</td>
+            <td style="font-weight:bold;">${line.account_name}</td>
+            <td>${line.description}</td>
+            <td style="font-family:monospace;font-weight:bold;color:#059669;text-align:left;">
+              ${line.debit > 0 ? `${line.debit.toLocaleString()} ${line.currency}` : "-"}
+            </td>
+            <td style="font-family:monospace;font-weight:bold;color:#e11d48;text-align:left;">
+              ${line.credit > 0 ? `${line.credit.toLocaleString()} ${line.currency}` : "-"}
+            </td>
+          </tr>`,
+          )
+          .join("");
+
+        return `
+        <div style="margin-bottom:24px;">
+          <div style="font-weight:900;font-size:14px;margin-bottom:8px;color:#0f172a;background:#f1f5f9;padding:8px 12px;border-right:4px solid #7c3aed;border-radius:6px;">
+            قيد صرف المرتبات والأجور التلقائي (${group.currency}) — حساب الخزينة/البنك: [${preview.treasuryAccCode}] ${preview.treasuryAccName}
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th style="width:36px;text-align:center;">م</th>
+                <th style="width:110px;">كود الحساب</th>
+                <th>اسم الحساب المحاسبي</th>
+                <th>البيان والتفاصيل</th>
+                <th style="width:130px;text-align:left;">مدين (Debit)</th>
+                <th style="width:130px;text-align:left;">دائن (Credit)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${linesHtml}
+              <tr style="background:#f3e8ff;font-weight:900;">
+                <td colspan="4">إجمالي القيد المحاسبي المزدوج (${group.currency}) — القيد متزن</td>
+                <td style="font-family:monospace;text-align:left;color:#047857;">${totalDebit.toLocaleString()} ${group.currency}</td>
+                <td style="font-family:monospace;text-align:left;color:#be123c;">${totalCredit.toLocaleString()} ${group.currency}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>`;
+      })
+      .join("");
+
+    const docTitle =
+      formatMode === "sheet"
+        ? `كشف مسير رواتب ومستحقات الموظفين لشهر (${payrollMonth}) - للاعتماد من المدير العام`
+        : `مذكرة قيود صرف المرتبات والأجور لشهر (${payrollMonth}) - للاعتماد من المدير العام`;
+
+    const html = `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <title>${docTitle}</title>
+  <style>
+    @page { size: A4 landscape; margin: 10mm; }
+    body { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; direction: rtl; color: #0f172a; background: #fff; margin: 0; padding: 12px; }
+    .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px double #0f172a; padding-bottom: 12px; margin-bottom: 16px; }
+    .header-title h1 { margin: 0; font-size: 20px; font-weight: 900; color: #0f172a; }
+    .header-title p { margin: 4px 0 0; font-size: 13px; color: #475569; font-weight: bold; }
+    .gm-box { background: #fffbeb; border: 1.5px solid #f59e0b; border-radius: 8px; padding: 10px 16px; margin-bottom: 16px; font-size: 13px; font-weight: bold; color: #92400e; display: flex; justify-content: space-between; align-items: center; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th, td { border: 1px solid #cbd5e1; padding: 7px 9px; text-align: right; }
+    th { background: #1e293b; color: #fff; font-weight: bold; }
+    .signatures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 32px; page-break-inside: avoid; }
+    .sig-card { border: 1px dashed #64748b; border-radius: 8px; padding: 14px; text-align: center; background: #f8fafc; }
+    .sig-card h4 { margin: 0 0 36px; font-size: 13px; color: #0f172a; }
+    .sig-card p { margin: 0; font-size: 11px; color: #64748b; border-top: 1px solid #cbd5e1; padding-top: 6px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-title">
+      <h1>${docTitle}</h1>
+      <p>إدارة الموارد البشرية والشؤون المالية — شهر المسير: ${payrollMonth}</p>
+    </div>
+    <div style="text-align:left;font-size:12px;font-weight:bold;">
+      <div>تاريخ الإصدار: ${todayStr}</div>
+      <div>عدد الموظفين: ${preview.totalEmployees} موظف</div>
+      <div>خزينة الصرف: ${preview.treasuryAccName}</div>
+    </div>
+  </div>
+
+  <div class="gm-box">
+    <span>السيد / المدير العام المحترم ،، يرجى التكرم بالاطلاع واعتماد ${
+      formatMode === "sheet" ? "كشف صرف المرتبات التفصيلي" : "قيود صرف المرتبات المحاسبية"
+    } لشهر (${payrollMonth}).</span>
+    <span>حالة المراجعة: جاهز للاعتماد النهائي</span>
+  </div>
+
+  ${formatMode === "sheet" ? sheetSectionsHtml : journalSectionsHtml}
+
+  <div class="signatures">
+    <div class="sig-card">
+      <h4>إعداد / مسؤول الموارد البشرية</h4>
+      <p>الاسم والتوقيع والتاريخ</p>
+    </div>
+    <div class="sig-card">
+      <h4>مراجعة / المدير المالي والحسابات</h4>
+      <p>الاسم والتوقيع والمطابقة المالية</p>
+    </div>
+    <div class="sig-card" style="border: 2px solid #0f172a; background: #f0fdf4;">
+      <h4>اعتماد السيد / المدير العام (General Manager)</h4>
+      <p>التوقيع والختم الرسمي بالاعتماد والصرف</p>
+    </div>
+  </div>
+</body>
+</html>`;
+
+    printRawHtml(html, docTitle);
+  };
+
+  // ============================================================================
+  // 2. CUTTABLE RECTANGULAR SALARY RECEIPTS FOR ALL EMPLOYEES (إيصالات مستطيلة للتقطيع)
+  // ============================================================================
+  const cuttableSalarySlipsList = useMemo(() => {
+    const monthPayrolls = payrolls.filter((p) => p.month === payrollMonth);
+    const activeEmployees = employees.filter((e) => e.status === "active");
+
+    return activeEmployees.map((emp, index) => {
+      const p = monthPayrolls.find((rec) => rec.employee_id === emp.id);
+      const basic = p ? Number(p.basic_salary || 0) : Number(emp.salary || 0);
+      const bonuses = p ? Number(p.bonuses || 0) : 0;
+      const deductions = p ? Number(p.deductions || 0) : 0;
+      const loanDed = p ? Number(p.loan_deduction || 0) : 0;
+      const net = p ? Number(p.net_salary || 0) : Math.max(0, basic + bonuses - deductions - loanDed);
+      const curr = p?.currency || emp.currency || "EGP";
+
+      return {
+        seq: index + 1,
+        empId: emp.id,
+        employeeCode: emp.employee_code || String(1001 + index),
+        name: emp.name,
+        jobTitle: emp.job_title,
+        department: emp.department,
+        month: payrollMonth,
+        basic,
+        bonuses,
+        deductions,
+        loanDed,
+        net,
+        currency: curr,
+      };
+    });
+  }, [employees, payrolls, payrollMonth]);
+
+  const handlePrintCuttableSalaryReceipts = () => {
+    if (cuttableSalarySlipsList.length === 0) {
+      toast({
+        title: "لا يوجد موظفون نشطون",
+        description: "يرجى التأكد من وجود موظفين نشطين لطباعة إيصالات تسليم الرواتب.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const todayStr = new Date().toISOString().split("T")[0];
+    // Chunk into pages of 10 slips per A4 page (2 columns x 5 rows = 10 uniform rectangles per page)
+    const slipsPerPage = 10;
+    const pages: Array<typeof cuttableSalarySlipsList> = [];
+    for (let i = 0; i < cuttableSalarySlipsList.length; i += slipsPerPage) {
+      pages.push(cuttableSalarySlipsList.slice(i, i + slipsPerPage));
+    }
+
+    const pagesHtml = pages
+      .map((pageSlips, pageIndex) => {
+        const cardsHtml = pageSlips
+          .map(
+            (slip) => `
+          <div class="slip-card">
+            <div class="cut-badge">✂ إيصال استلام راتب #${slip.seq} • الرقم الوظيفي: #${slip.employeeCode}</div>
+            <div class="slip-header">
+              <span class="slip-month">مسير شهر: ${slip.month}</span>
+              <span class="slip-date">${todayStr}</span>
+            </div>
+
+            <div class="slip-row name-row">
+              <span class="lbl">العامل (#${slip.employeeCode}):</span>
+              <span class="val-name">${slip.name} <small>(${slip.jobTitle})</small></span>
+            </div>
+
+            <div class="slip-row amount-row">
+              <div>
+                <span class="lbl">صافي المبلغ المستلم:</span>
+                <div class="sub-breakdown">
+                  أساسي: ${slip.basic.toLocaleString()} | خصم: ${slip.deductions.toLocaleString()} | سلفة: ${slip.loanDed.toLocaleString()}
+                </div>
+              </div>
+              <span class="val-amount">${slip.net.toLocaleString()} ${slip.currency}</span>
+            </div>
+
+            <div class="slip-footer">
+              <div class="ack-text">أقر أنا الموقع أدناه باستلام راتبي الصافي كاملاً نقداً:</div>
+              <div class="sig-box">
+                <span>توقيع المستلم: ........................................</span>
+              </div>
+            </div>
+          </div>`,
+          )
+          .join("");
+
+        return `
+        <div class="a4-page ${pageIndex < pages.length - 1 ? "page-break" : ""}">
+          <div class="page-top-note">
+            <span>كشف إيصالات تسليم المرتبات القابلة للتقطيع — شهر (${payrollMonth})</span>
+            <span>صفحة ${pageIndex + 1} من ${pages.length} (إجمالي ${cuttableSalarySlipsList.length} إيصال موحد المقاس)</span>
+          </div>
+          <div class="slips-grid">
+            ${cardsHtml}
+          </div>
+        </div>`;
+      })
+      .join("");
+
+    const html = `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <title>إيصالات تسليم المرتبات المستطيلة للتقطيع - ${payrollMonth}</title>
+  <style>
+    @page { size: A4 portrait; margin: 8mm; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+      direction: rtl;
+      margin: 0;
+      padding: 0;
+      color: #0f172a;
+      background: #fff;
+    }
+    .a4-page {
+      width: 100%;
+      padding: 2mm;
+    }
+    .page-break {
+      page-break-after: always;
+    }
+    .page-top-note {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      font-weight: bold;
+      color: #475569;
+      margin-bottom: 3mm;
+      padding-bottom: 1.5mm;
+      border-bottom: 1px solid #cbd5e1;
+    }
+    .slips-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 4mm;
+    }
+    .slip-card {
+      position: relative;
+      height: 50mm;
+      border: 1.8px dashed #334155;
+      border-radius: 6px;
+      padding: 3.5mm 4mm;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      background: #ffffff;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+    .cut-badge {
+      position: absolute;
+      top: -8px;
+      right: 10px;
+      background: #fff;
+      padding: 0 6px;
+      font-size: 9px;
+      font-weight: 900;
+      color: #475569;
+    }
+    .slip-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 10px;
+      font-weight: bold;
+      color: #475569;
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 1.5mm;
+    }
+    .slip-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .name-row {
+      padding: 1.5mm 0;
+    }
+    .lbl {
+      font-size: 11px;
+      font-weight: bold;
+      color: #334155;
+    }
+    .val-name {
+      font-size: 13px;
+      font-weight: 900;
+      color: #0f172a;
+    }
+    .val-name small {
+      font-size: 10px;
+      font-weight: bold;
+      color: #0284c7;
+    }
+    .amount-row {
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+      border-radius: 5px;
+      padding: 2mm 3mm;
+    }
+    .sub-breakdown {
+      font-size: 9px;
+      color: #64748b;
+      font-family: monospace;
+      margin-top: 1px;
+    }
+    .val-amount {
+      font-size: 15px;
+      font-weight: 900;
+      font-family: monospace;
+      color: #047857;
+    }
+    .slip-footer {
+      padding-top: 1mm;
+    }
+    .ack-text {
+      font-size: 9px;
+      color: #475569;
+      margin-bottom: 1.5mm;
+    }
+    .sig-box {
+      font-size: 11px;
+      font-weight: 900;
+      color: #0f172a;
+    }
+  </style>
+</head>
+<body>
+  ${pagesHtml}
+</body>
+</html>`;
+
+    printRawHtml(html, `إيصالات تسليم الرواتب - ${payrollMonth}`);
+  };
+
+  // ============================================================================
+  // 3. SEND CONFIDENTIAL SALARY DETAILS TO EACH EMPLOYEE PRIVATELY VIA MESSENGER
+  // ============================================================================
+  const handleSendSingleEmployeeSalarySlip = async (payrollRec: PayrollRecord) => {
+    const emp = employees.find((e) => e.id === payrollRec.employee_id);
+    if (!emp) {
+      toast({
+        title: "الموظف غير موجود",
+        description: "تعذر العثور على بيانات الموظف لإرسال رسالة الراتب.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const sentCount = await sendPrivateSalarySlipMessages([
+      { employee: emp, payroll: payrollRec },
+    ]);
+
+    if (sentCount > 0) {
+      toast({
+        title: `تم إرسال تفاصيل الراتب بسرية إلى ${emp.name} 🔒`,
+        description: `وصلت تفاصيل راتب شهر ${payrollRec.month} في المحادثة الخاصة للموظف (${emp.name}) فقط ولا يمكن لأي موظف آخر الاطلاع عليها.`,
+      });
+    }
+  };
+
+  const handleSendAllEmployeesSalarySlipsPrivately = async () => {
+    let monthRecords = payrolls.filter((p) => p.month === payrollMonth);
+    if (monthRecords.length === 0) {
+      erpStore.generatePayroll(payrollMonth);
+      monthRecords = (erpStore.getState().payrolls || []).filter(
+        (p) => p.month === payrollMonth,
+      );
+    }
+
+    const pairs = monthRecords
+      .map((p) => {
+        const emp = employees.find((e) => e.id === p.employee_id);
+        return emp ? { employee: emp, payroll: p } : null;
+      })
+      .filter(Boolean) as Array<{ employee: Employee; payroll: PayrollRecord }>;
+
+    if (pairs.length === 0) {
+      toast({
+        title: "لا توجد مسيرات رواتب",
+        description: "يرجى احتساب مسير الرواتب أولاً.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const sentCount = await sendPrivateSalarySlipMessages(pairs);
+    toast({
+      title: `تم إرسال بيانات الرواتب السرية لـ (${sentCount}) موظف بنجاح 🔒`,
+      description:
+        "تم إرسال تفاصيل الراتب لكل موظف على حدة في محادثته الخاصة فقط، مع منع اطلاع أي موظف على راتب زميله.",
+    });
+  };
+
   // Statistics for Attendance Tab
   const attendanceStatsForDate = useMemo(() => {
     const records = attendance.filter((r) => r.date === attendanceDate);
@@ -801,7 +1393,7 @@ function HRPage() {
           </div>
           <div className="flex items-center gap-2">
             <Button
-              onClick={() => setIsAddEmpOpen(true)}
+              onClick={openAddEmployeeDialog}
               className="gap-1.5 rounded-xl font-bold text-xs h-9 px-4"
             >
               <UserPlus size={16} />
@@ -829,46 +1421,56 @@ function HRPage() {
           </Button>
 
           <div className="flex items-center gap-1.5 overflow-x-auto">
-            <Button
-              size="sm"
-              variant={activeTab === "employees" ? "default" : "outline"}
-              onClick={() => setActiveTab("employees")}
-              className="rounded-xl font-bold text-xs h-8"
-            >
-              الكادر ({employees.length})
-            </Button>
-            <Button
-              size="sm"
-              variant={activeTab === "attendance" ? "default" : "outline"}
-              onClick={() => setActiveTab("attendance")}
-              className="rounded-xl font-bold text-xs h-8"
-            >
-              الحضور والدوام
-            </Button>
-            <Button
-              size="sm"
-              variant={activeTab === "payroll" ? "default" : "outline"}
-              onClick={() => setActiveTab("payroll")}
-              className="rounded-xl font-bold text-xs h-8"
-            >
-              الرواتب
-            </Button>
-            <Button
-              size="sm"
-              variant={activeTab === "loans" ? "default" : "outline"}
-              onClick={() => setActiveTab("loans")}
-              className="rounded-xl font-bold text-xs h-8"
-            >
-              السلف والقروض
-            </Button>
-            <Button
-              size="sm"
-              variant={activeTab === "users" ? "default" : "outline"}
-              onClick={() => setActiveTab("users")}
-              className="rounded-xl font-bold text-xs h-8"
-            >
-              المستخدمين
-            </Button>
+            {canViewEmployees && (
+              <Button
+                size="sm"
+                variant={activeTab === "employees" ? "default" : "outline"}
+                onClick={() => setActiveTab("employees")}
+                className="rounded-xl font-bold text-xs h-8"
+              >
+                الكادر ({employees.length})
+              </Button>
+            )}
+            {canViewAttendance && (
+              <Button
+                size="sm"
+                variant={activeTab === "attendance" ? "default" : "outline"}
+                onClick={() => setActiveTab("attendance")}
+                className="rounded-xl font-bold text-xs h-8"
+              >
+                الحضور والدوام
+              </Button>
+            )}
+            {canViewPayroll && (
+              <Button
+                size="sm"
+                variant={activeTab === "payroll" ? "default" : "outline"}
+                onClick={() => setActiveTab("payroll")}
+                className="rounded-xl font-bold text-xs h-8"
+              >
+                الرواتب
+              </Button>
+            )}
+            {canViewLoans && (
+              <Button
+                size="sm"
+                variant={activeTab === "loans" ? "default" : "outline"}
+                onClick={() => setActiveTab("loans")}
+                className="rounded-xl font-bold text-xs h-8"
+              >
+                السلف والقروض
+              </Button>
+            )}
+            {canViewUsers && (
+              <Button
+                size="sm"
+                variant={activeTab === "users" ? "default" : "outline"}
+                onClick={() => setActiveTab("users")}
+                className="rounded-xl font-bold text-xs h-8"
+              >
+                المستخدمين
+              </Button>
+            )}
           </div>
         </div>
       )}
@@ -975,197 +1577,209 @@ function HRPage() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <Card
-                onClick={() => setActiveTab("employees")}
-                className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
-                  activeTab === "employees"
-                    ? "border-primary bg-primary/5 shadow-sm ring-2 ring-primary/30"
-                    : "border-border/80 bg-card hover:border-primary/40 hover:bg-accent/30"
-                }`}
-              >
-                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
-                  <div className="rounded-xl bg-gradient-to-br from-blue-500/20 to-indigo-500/20 text-blue-600 dark:text-blue-400 p-2.5 shadow-xs">
-                    <Users size={22} />
-                  </div>
-                  <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
-                    الكادر
-                  </span>
-                </CardHeader>
-                <CardContent className="space-y-1.5 p-4 pt-0">
-                  <h3 className="font-black text-sm text-foreground group-hover:text-primary transition-colors">
-                    دليل الكادر الوظيفي
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
-                    بيانات الموظفين، المسميات الوظيفية، الرواتب الأساسية وتواريخ التعيين
-                  </p>
-                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
-                    <span className="text-primary">
-                      {employees.length} موظف • {formatConvertedPrice(totalPayrollCost)}
+              {canViewEmployees && (
+                <Card
+                  onClick={() => setActiveTab("employees")}
+                  className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
+                    activeTab === "employees"
+                      ? "border-primary bg-primary/5 shadow-sm ring-2 ring-primary/30"
+                      : "border-border/80 bg-card hover:border-primary/40 hover:bg-accent/30"
+                  }`}
+                >
+                  <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
+                    <div className="rounded-xl bg-gradient-to-br from-blue-500/20 to-indigo-500/20 text-blue-600 dark:text-blue-400 p-2.5 shadow-xs">
+                      <Users size={22} />
+                    </div>
+                    <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                      الكادر
                     </span>
-                    <span className="text-muted-foreground group-hover:text-primary text-xs transition-transform group-hover:translate-x-[-2px]">
-                      فتح الدليل ←
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardHeader>
+                  <CardContent className="space-y-1.5 p-4 pt-0">
+                    <h3 className="font-black text-sm text-foreground group-hover:text-primary transition-colors">
+                      دليل الكادر الوظيفي
+                    </h3>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                      بيانات الموظفين، المسميات الوظيفية، الرواتب الأساسية وتواريخ التعيين
+                    </p>
+                    <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
+                      <span className="text-primary">
+                        {employees.length} موظف • {formatConvertedPrice(totalPayrollCost)}
+                      </span>
+                      <span className="text-muted-foreground group-hover:text-primary text-xs transition-transform group-hover:translate-x-[-2px]">
+                        فتح الدليل ←
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
-              <Card
-                onClick={() => setActiveTab("attendance")}
-                className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
-                  activeTab === "attendance"
-                    ? "border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/20 shadow-sm ring-2 ring-emerald-400/30"
-                    : "border-border/80 bg-card hover:border-emerald-500/40 hover:bg-accent/30"
-                }`}
-              >
-                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
-                  <div className="rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 text-emerald-600 dark:text-emerald-400 p-2.5 shadow-xs">
-                    <CalendarDays size={22} />
-                  </div>
-                  <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
-                    الحضور
-                  </span>
-                </CardHeader>
-                <CardContent className="space-y-1.5 p-4 pt-0">
-                  <h3 className="font-black text-sm text-foreground group-hover:text-emerald-600 transition-colors">
-                    حضور وانصراف الدوام
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
-                    تسجيل حضور اليوم، التأخيرات، الإجازات وحساب ساعات العمل الإضافية
-                  </p>
-                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
-                    <span className="text-emerald-600 dark:text-emerald-400">
-                      {attendanceStatsForDate.present} حاضر اليوم
+              {canViewAttendance && (
+                <Card
+                  onClick={() => setActiveTab("attendance")}
+                  className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
+                    activeTab === "attendance"
+                      ? "border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/20 shadow-sm ring-2 ring-emerald-400/30"
+                      : "border-border/80 bg-card hover:border-emerald-500/40 hover:bg-accent/30"
+                  }`}
+                >
+                  <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
+                    <div className="rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 text-emerald-600 dark:text-emerald-400 p-2.5 shadow-xs">
+                      <CalendarDays size={22} />
+                    </div>
+                    <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                      الحضور
                     </span>
-                    <span className="text-muted-foreground group-hover:text-emerald-600 text-xs transition-transform group-hover:translate-x-[-2px]">
-                      تسجيل الحضور ←
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardHeader>
+                  <CardContent className="space-y-1.5 p-4 pt-0">
+                    <h3 className="font-black text-sm text-foreground group-hover:text-emerald-600 transition-colors">
+                      حضور وانصراف الدوام
+                    </h3>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                      تسجيل حضور اليوم، التأخيرات، الإجازات وحساب ساعات العمل الإضافية
+                    </p>
+                    <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
+                      <span className="text-emerald-600 dark:text-emerald-400">
+                        {attendanceStatsForDate.present} حاضر اليوم
+                      </span>
+                      <span className="text-muted-foreground group-hover:text-emerald-600 text-xs transition-transform group-hover:translate-x-[-2px]">
+                        تسجيل الحضور ←
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
-              <Card
-                onClick={() => setActiveTab("payroll")}
-                className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
-                  activeTab === "payroll"
-                    ? "border-amber-500 bg-amber-50/40 dark:bg-amber-950/20 shadow-sm ring-2 ring-amber-400/30"
-                    : "border-border/80 bg-card hover:border-amber-500/40 hover:bg-accent/30"
-                }`}
-              >
-                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
-                  <div className="rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 text-amber-600 dark:text-amber-400 p-2.5 shadow-xs">
-                    <FileSpreadsheet size={22} />
-                  </div>
-                  <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
-                    الرواتب
-                  </span>
-                </CardHeader>
-                <CardContent className="space-y-1.5 p-4 pt-0">
-                  <h3 className="font-black text-sm text-foreground group-hover:text-amber-600 transition-colors">
-                    مسيرات الأجور والرواتب
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
-                    احتساب الرواتب الشهرية، المكافآت، الخصومات وإصدار سندات الاستحقاق والصرف
-                  </p>
-                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
-                    <span className="text-amber-600 dark:text-amber-400">مسيرات معتمدة</span>
-                    <span className="text-muted-foreground group-hover:text-amber-600 text-xs transition-transform group-hover:translate-x-[-2px]">
-                      عرض المسيرات ←
+              {canViewPayroll && (
+                <Card
+                  onClick={() => setActiveTab("payroll")}
+                  className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
+                    activeTab === "payroll"
+                      ? "border-amber-500 bg-amber-50/40 dark:bg-amber-950/20 shadow-sm ring-2 ring-amber-400/30"
+                      : "border-border/80 bg-card hover:border-amber-500/40 hover:bg-accent/30"
+                  }`}
+                >
+                  <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
+                    <div className="rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 text-amber-600 dark:text-amber-400 p-2.5 shadow-xs">
+                      <FileSpreadsheet size={22} />
+                    </div>
+                    <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                      الرواتب
                     </span>
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardHeader>
+                  <CardContent className="space-y-1.5 p-4 pt-0">
+                    <h3 className="font-black text-sm text-foreground group-hover:text-amber-600 transition-colors">
+                      مسيرات الأجور والرواتب
+                    </h3>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                      احتساب الرواتب الشهرية، المكافآت، الخصومات وإصدار سندات الاستحقاق والصرف
+                    </p>
+                    <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
+                      <span className="text-amber-600 dark:text-amber-400">مسيرات معتمدة</span>
+                      <span className="text-muted-foreground group-hover:text-amber-600 text-xs transition-transform group-hover:translate-x-[-2px]">
+                        عرض المسيرات ←
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
-              <Card
-                onClick={() => setActiveTab("loans")}
-                className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
-                  activeTab === "loans"
-                    ? "border-teal-500 bg-teal-50/40 dark:bg-teal-950/20 shadow-sm ring-2 ring-teal-400/30"
-                    : "border-border/80 bg-card hover:border-teal-500/40 hover:bg-accent/30"
-                }`}
-              >
-                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
-                  <div className="rounded-xl bg-gradient-to-br from-teal-500/20 to-cyan-500/20 text-teal-600 dark:text-teal-400 p-2.5 shadow-xs">
-                    <Coins size={22} />
-                  </div>
-                  <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
-                    السلف
-                  </span>
-                </CardHeader>
-                <CardContent className="space-y-1.5 p-4 pt-0">
-                  <h3 className="font-black text-sm text-foreground group-hover:text-teal-600 transition-colors">
-                    القروض والسلف المالية
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
-                    صرف السلف النقدية، تتبع الأقساط الشهرية وخصمها آلياً من الراتب
-                  </p>
-                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
-                    <span className="text-teal-600 dark:text-teal-400">سلف نشطة</span>
-                    <span className="text-muted-foreground group-hover:text-teal-600 text-xs transition-transform group-hover:translate-x-[-2px]">
-                      متابعة السلف ←
+              {canViewLoans && (
+                <Card
+                  onClick={() => setActiveTab("loans")}
+                  className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
+                    activeTab === "loans"
+                      ? "border-teal-500 bg-teal-50/40 dark:bg-teal-950/20 shadow-sm ring-2 ring-teal-400/30"
+                      : "border-border/80 bg-card hover:border-teal-500/40 hover:bg-accent/30"
+                  }`}
+                >
+                  <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
+                    <div className="rounded-xl bg-gradient-to-br from-teal-500/20 to-cyan-500/20 text-teal-600 dark:text-teal-400 p-2.5 shadow-xs">
+                      <Coins size={22} />
+                    </div>
+                    <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                      السلف
                     </span>
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardHeader>
+                  <CardContent className="space-y-1.5 p-4 pt-0">
+                    <h3 className="font-black text-sm text-foreground group-hover:text-teal-600 transition-colors">
+                      القروض والسلف المالية
+                    </h3>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                      صرف السلف النقدية، تتبع الأقساط الشهرية وخصمها آلياً من الراتب
+                    </p>
+                    <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
+                      <span className="text-teal-600 dark:text-teal-400">سلف نشطة</span>
+                      <span className="text-muted-foreground group-hover:text-teal-600 text-xs transition-transform group-hover:translate-x-[-2px]">
+                        متابعة السلف ←
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
-              <Card
-                onClick={() => setActiveTab("users")}
-                className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
-                  activeTab === "users"
-                    ? "border-indigo-500 bg-indigo-50/40 dark:bg-indigo-950/20 shadow-sm ring-2 ring-indigo-400/30"
-                    : "border-border/80 bg-card hover:border-indigo-500/40 hover:bg-accent/30"
-                }`}
-              >
-                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
-                  <div className="rounded-xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 text-indigo-600 dark:text-indigo-400 p-2.5 shadow-xs">
-                    <UserCheck size={22} />
-                  </div>
-                  <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
-                    المستخدمين
-                  </span>
-                </CardHeader>
-                <CardContent className="space-y-1.5 p-4 pt-0">
-                  <h3 className="font-black text-sm text-foreground group-hover:text-indigo-600 transition-colors">
-                    المستخدمين والصلاحيات
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
-                    إدارة حسابات الدخول، تعيين الأدوار (مدير، كاشير، كابتن، مطبخ) وتخصيص الصلاحيات
-                  </p>
-                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
-                    <span className="text-indigo-600 dark:text-indigo-400">أمان وتحكم</span>
-                    <span className="text-muted-foreground group-hover:text-indigo-600 text-xs transition-transform group-hover:translate-x-[-2px]">
-                      إدارة الصلاحيات ←
+              {canViewUsers && (
+                <Card
+                  onClick={() => setActiveTab("users")}
+                  className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
+                    activeTab === "users"
+                      ? "border-indigo-500 bg-indigo-50/40 dark:bg-indigo-950/20 shadow-sm ring-2 ring-indigo-400/30"
+                      : "border-border/80 bg-card hover:border-indigo-500/40 hover:bg-accent/30"
+                  }`}
+                >
+                  <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
+                    <div className="rounded-xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 text-indigo-600 dark:text-indigo-400 p-2.5 shadow-xs">
+                      <UserCheck size={22} />
+                    </div>
+                    <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                      المستخدمين
                     </span>
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardHeader>
+                  <CardContent className="space-y-1.5 p-4 pt-0">
+                    <h3 className="font-black text-sm text-foreground group-hover:text-indigo-600 transition-colors">
+                      المستخدمين والصلاحيات
+                    </h3>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                      إدارة حسابات الدخول، تعيين الأدوار (مدير، كاشير، كابتن، مطبخ) وتخصيص الصلاحيات
+                    </p>
+                    <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
+                      <span className="text-indigo-600 dark:text-indigo-400">أمان وتحكم</span>
+                      <span className="text-muted-foreground group-hover:text-indigo-600 text-xs transition-transform group-hover:translate-x-[-2px]">
+                        إدارة الصلاحيات ←
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
-              <Card
-                onClick={() => setIsAddEmpOpen(true)}
-                className="group cursor-pointer rounded-2xl border border-primary/30 bg-primary/5 hover:border-primary hover:bg-primary/10 transition-all duration-200 hover:shadow-lg"
-              >
-                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
-                  <div className="rounded-xl bg-primary text-primary-foreground p-2.5 shadow-xs">
-                    <UserPlus size={22} />
-                  </div>
-                  <span className="rounded-full border border-primary/30 bg-primary/20 px-2 py-0.5 text-[10px] font-bold text-primary">
-                    موظف جديد
-                  </span>
-                </CardHeader>
-                <CardContent className="space-y-1.5 p-4 pt-0">
-                  <h3 className="font-black text-sm text-primary transition-colors">
-                    إضافة موظف جديد
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
-                    تسجيل موظف جديد في النظام مع الراتب، الفرع، القسم، وبيانات التواصل
-                  </p>
-                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
-                    <span className="text-primary font-bold">إضافة فورية</span>
-                    <span className="text-primary text-xs transition-transform group-hover:translate-x-[-2px]">
-                      فتح النموذج +
+              {canViewEmployees && (
+                <Card
+                  onClick={openAddEmployeeDialog}
+                  className="group cursor-pointer rounded-2xl border border-primary/30 bg-primary/5 hover:border-primary hover:bg-primary/10 transition-all duration-200 hover:shadow-lg"
+                >
+                  <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
+                    <div className="rounded-xl bg-primary text-primary-foreground p-2.5 shadow-xs">
+                      <UserPlus size={22} />
+                    </div>
+                    <span className="rounded-full border border-primary/30 bg-primary/20 px-2 py-0.5 text-[10px] font-bold text-primary">
+                      موظف جديد
                     </span>
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardHeader>
+                  <CardContent className="space-y-1.5 p-4 pt-0">
+                    <h3 className="font-black text-sm text-primary transition-colors">
+                      إضافة موظف جديد
+                    </h3>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                      تسجيل موظف جديد في النظام مع الراتب، الفرع، القسم، وبيانات التواصل
+                    </p>
+                    <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
+                      <span className="text-primary font-bold">إضافة فورية</span>
+                      <span className="text-primary text-xs transition-transform group-hover:translate-x-[-2px]">
+                        فتح النموذج +
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           </section>
         </div>
@@ -1175,29 +1789,39 @@ function HRPage() {
       {activeTab !== "grid" && (
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="bg-muted p-1 rounded-xl flex flex-wrap gap-1 h-auto w-full md:w-auto">
-            <TabsTrigger value="employees" className="rounded-lg font-bold py-2.5 px-5">
-              <Users size={16} className="ml-1.5 inline" />
-              دليل الكادر الوظيفي
-            </TabsTrigger>
-            <TabsTrigger value="attendance" className="rounded-lg font-bold py-2.5 px-5">
-              <CalendarDays size={16} className="ml-1.5 inline" />
-              حضور وانصراف اليوم
-            </TabsTrigger>
-            <TabsTrigger value="payroll" className="rounded-lg font-bold py-2.5 px-5">
-              <FileSpreadsheet size={16} className="ml-1.5 inline" />
-              مسيرات الأجور والرواتب
-            </TabsTrigger>
-            <TabsTrigger value="loans" className="rounded-lg font-bold py-2.5 px-5">
-              <Coins size={16} className="ml-1.5 inline" />
-              القروض والسلف المالية
-            </TabsTrigger>
-            <TabsTrigger
-              value="users"
-              className="rounded-lg font-bold py-2.5 px-5 text-indigo-700 dark:text-indigo-400"
-            >
-              <UserCheck size={16} className="ml-1.5 inline" />
-              المستخدمين والصلاحيات
-            </TabsTrigger>
+            {canViewEmployees && (
+              <TabsTrigger value="employees" className="rounded-lg font-bold py-2.5 px-5">
+                <Users size={16} className="ml-1.5 inline" />
+                دليل الكادر الوظيفي
+              </TabsTrigger>
+            )}
+            {canViewAttendance && (
+              <TabsTrigger value="attendance" className="rounded-lg font-bold py-2.5 px-5">
+                <CalendarDays size={16} className="ml-1.5 inline" />
+                حضور وانصراف اليوم
+              </TabsTrigger>
+            )}
+            {canViewPayroll && (
+              <TabsTrigger value="payroll" className="rounded-lg font-bold py-2.5 px-5">
+                <FileSpreadsheet size={16} className="ml-1.5 inline" />
+                مسيرات الأجور والرواتب
+              </TabsTrigger>
+            )}
+            {canViewLoans && (
+              <TabsTrigger value="loans" className="rounded-lg font-bold py-2.5 px-5">
+                <Coins size={16} className="ml-1.5 inline" />
+                القروض والسلف المالية
+              </TabsTrigger>
+            )}
+            {canViewUsers && (
+              <TabsTrigger
+                value="users"
+                className="rounded-lg font-bold py-2.5 px-5 text-indigo-700 dark:text-indigo-400"
+              >
+                <UserCheck size={16} className="ml-1.5 inline" />
+                المستخدمين والصلاحيات
+              </TabsTrigger>
+            )}
           </TabsList>
 
           {/* TAB 1: EMPLOYEE DIRECTORY */}
@@ -1206,7 +1830,7 @@ function HRPage() {
               <div className="relative w-full md:w-80">
                 <Search className="absolute right-3 top-3 text-muted-foreground" size={16} />
                 <Input
-                  placeholder="ابحث باسم الموظف أو وظيفته أو هاتفه..."
+                  placeholder="ابحث بالرقم الوظيفي أو اسم الموظف أو وظيفته أو هاتفه..."
                   value={empSearch}
                   onChange={(e) => setEmpSearch(e.target.value)}
                   className="pr-10 bg-card rounded-xl text-xs"
@@ -1246,7 +1870,10 @@ function HRPage() {
                     <CardHeader className="pb-3 border-b border-border/50">
                       <div className="flex items-start justify-between">
                         <div className="space-y-1">
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <Badge className="bg-primary/15 text-primary border border-primary/30 font-mono font-black text-xs px-2 py-0.5">
+                              الرقم الوظيفي: #{emp.employee_code || "1001"}
+                            </Badge>
                             <h3 className="font-black text-base text-slate-800 dark:text-slate-100">
                               {emp.name}
                             </h3>
@@ -1384,7 +2011,8 @@ function HRPage() {
                 <table className="w-full text-sm text-right">
                   <thead className="bg-muted/70 text-muted-foreground text-xs border-b border-border font-bold">
                     <tr>
-                      <th className="p-3.5 pr-6">اسم الموظف</th>
+                      <th className="p-3.5 pr-6">الرقم الوظيفي</th>
+                      <th className="p-3.5">اسم الموظف</th>
                       <th className="p-3.5">القسم</th>
                       <th className="p-3.5">المسمى الوظيفي</th>
                       <th className="p-3.5">حالة اليوم</th>
@@ -1398,7 +2026,10 @@ function HRPage() {
                         const currentStatus = getEmployeeAttendanceStatus(emp.id);
                         return (
                           <tr key={emp.id} className="hover:bg-muted/30 transition">
-                            <td className="p-3.5 pr-6 font-bold text-slate-800">{emp.name}</td>
+                            <td className="p-3.5 pr-6 font-mono font-black text-primary">
+                              #{emp.employee_code || "-"}
+                            </td>
+                            <td className="p-3.5 font-bold text-slate-800">{emp.name}</td>
                             <td className="p-3.5 text-xs text-muted-foreground font-bold">
                               {emp.department}
                             </td>
@@ -1479,46 +2110,71 @@ function HRPage() {
 
           {/* TAB 3: PAYROLL SHEETS */}
           <TabsContent value="payroll" className="mt-4 space-y-4">
-            <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-muted/40 p-4 rounded-xl">
-              <div className="flex items-center gap-3">
-                <FileSpreadsheet className="text-primary" size={20} />
-                <div className="space-y-0.5 text-right">
-                  <span className="text-[10px] text-muted-foreground font-bold block">
-                    شهر صرف الرواتب
-                  </span>
-                  <Input
-                    type="month"
-                    value={payrollMonth}
-                    onChange={(e) => setPayrollMonth(e.target.value)}
-                    className="bg-card border border-border text-xs rounded-xl px-3 h-9 py-1 font-bold outline-none"
-                  />
+            <div className="flex flex-col gap-3 bg-muted/40 p-4 rounded-2xl border border-border/60">
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <FileSpreadsheet className="text-primary" size={20} />
+                  <div className="space-y-0.5 text-right">
+                    <span className="text-[10px] text-muted-foreground font-bold block">
+                      شهر صرف الرواتب
+                    </span>
+                    <Input
+                      type="month"
+                      value={payrollMonth}
+                      onChange={(e) => setPayrollMonth(e.target.value)}
+                      className="bg-card border border-border text-xs rounded-xl px-3 h-9 py-1 font-bold outline-none"
+                    />
+                  </div>
                 </div>
-              </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  onClick={handleGeneratePayroll}
-                  variant="outline"
-                  className="gap-2 rounded-xl font-bold px-4"
-                >
-                  <PlusCircle size={16} />
-                  احتساب كشف الرواتب
-                </Button>
-                <Button
-                  onClick={handlePostPayrollAccrual}
-                  className="gap-2 rounded-xl font-bold px-5 bg-purple-600 hover:bg-purple-700 text-white shadow-sm"
-                >
-                  <CheckCircle2 size={16} />
-                  توليد قيود استحقاق المرتبات اوتوماتيك (M/N)
-                </Button>
-                <Button
-                  onClick={() => openAccrualVoucher(payrollMonth)}
-                  variant="outline"
-                  className="gap-2 rounded-xl font-bold px-4 border-purple-500/40 text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/30"
-                >
-                  <Printer size={16} />
-                  عرض/طباعة قيد الاستحقاق
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    onClick={handleGeneratePayroll}
+                    variant="outline"
+                    className="gap-2 rounded-xl font-bold px-4 text-xs"
+                  >
+                    <PlusCircle size={15} />
+                    احتساب كشف الرواتب
+                  </Button>
+                  <Button
+                    onClick={openDisbursementPreviewModal}
+                    className="gap-2 rounded-xl font-black px-4 text-xs bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+                  >
+                    <Eye size={15} />
+                    توليد ومعاينة قيود صرف المرتبات (اعتماد المدير العام)
+                  </Button>
+                  <Button
+                    onClick={() => setIsCuttableSlipsOpen(true)}
+                    variant="outline"
+                    className="gap-2 rounded-xl font-black px-4 text-xs border-amber-500/50 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                  >
+                    <Scissors size={15} />
+                    طباعة إيصالات تسليم الرواتب (مستطيلات للتقطيع ✂️)
+                  </Button>
+                  <Button
+                    onClick={handleSendAllEmployeesSalarySlipsPrivately}
+                    className="gap-2 rounded-xl font-black px-4 text-xs bg-[#006AFF] hover:bg-[#0055CC] text-white shadow-sm"
+                  >
+                    <Lock size={14} />
+                    إرسال تفاصيل الراتب لكل موظف بسرية (Messenger)
+                  </Button>
+                  <Button
+                    onClick={handlePostPayrollAccrual}
+                    variant="outline"
+                    className="gap-2 rounded-xl font-bold px-3.5 text-xs border-purple-500/40 text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/30"
+                  >
+                    <CheckCircle2 size={15} />
+                    قيد الاستحقاق (M/N)
+                  </Button>
+                  <Button
+                    onClick={() => openAccrualVoucher(payrollMonth)}
+                    variant="outline"
+                    className="gap-1.5 rounded-xl font-bold px-3 text-xs border-purple-500/40 text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/30"
+                  >
+                    <Printer size={14} />
+                    طباعة الاستحقاق
+                  </Button>
+                </div>
               </div>
             </div>
 
@@ -1527,7 +2183,8 @@ function HRPage() {
                 <table className="w-full text-sm text-right">
                   <thead className="bg-muted/70 text-muted-foreground text-xs border-b border-border font-bold">
                     <tr>
-                      <th className="p-3.5 pr-6">اسم الموظف</th>
+                      <th className="p-3.5 pr-6">الرقم الوظيفي</th>
+                      <th className="p-3.5">اسم الموظف</th>
                       <th className="p-3.5">الراتب الأساسي</th>
                       <th className="p-3.5 text-rose-600">خصومات الحضور والغياب</th>
                       <th className="p-3.5 text-amber-600">خصم قسط السلفة</th>
@@ -1541,7 +2198,7 @@ function HRPage() {
                   <tbody className="divide-y divide-border/60">
                     {payrolls.filter((p) => p.month === payrollMonth).length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="p-8 text-center text-muted-foreground">
+                        <td colSpan={10} className="p-8 text-center text-muted-foreground">
                           لم يتم توليد مسير رواتب لهذا الشهر بعد. يرجى الضغط على زر توليد مسير
                           الرواتب أعلاه.
                         </td>
@@ -1554,8 +2211,18 @@ function HRPage() {
                             const emp = employees.find((e) => e.id === p.employee_id);
                             return (
                               <tr key={p.id} className="hover:bg-muted/30 transition">
-                                <td className="p-3.5 pr-6 font-bold text-slate-800 dark:text-slate-100">
-                                  {emp ? emp.name : "موظف محذوف"}
+                                <td className="p-3.5 pr-6">
+                                  <Badge className="bg-primary/15 text-primary border border-primary/30 font-mono font-black text-xs px-2.5 py-0.5">
+                                    #{emp?.employee_code || "-"}
+                                  </Badge>
+                                </td>
+                                <td className="p-3.5 font-bold text-slate-800 dark:text-slate-100">
+                                  <div>{emp ? emp.name : "موظف محذوف"}</div>
+                                  {emp && (
+                                    <span className="text-[10px] font-semibold text-muted-foreground">
+                                      {emp.job_title} • {emp.department}
+                                    </span>
+                                  )}
                                 </td>
                                 <td className="p-3.5 font-mono font-bold">
                                   {formatTreasuryCurrency(p.basic_salary, p.currency)}
@@ -1587,28 +2254,38 @@ function HRPage() {
                                   )}
                                 </td>
                                 <td className="p-3.5 text-center pl-6">
-                                  <div className="flex items-center justify-center gap-2">
+                                  <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => handleSendSingleEmployeeSalarySlip(p)}
+                                      className="h-7 text-[11px] rounded-lg font-bold px-2.5 gap-1 border-[#0084FF]/40 text-[#006AFF] hover:bg-[#0084FF]/10"
+                                      title="إرسال تفاصيل الراتب في رسالة خاصة سرية لهذا الموظف فقط"
+                                    >
+                                      <Lock size={11} />
+                                      إرسال تفاصيل الراتب (خاص)
+                                    </Button>
                                     <Button
                                       size="sm"
                                       variant="outline"
                                       onClick={() => viewPayrollVoucher(p)}
-                                      className="h-7 text-xs rounded-lg font-bold px-3 gap-1"
+                                      className="h-7 text-xs rounded-lg font-bold px-2.5 gap-1"
                                     >
                                       <Printer size={12} />
-                                      عرض السند
+                                      السند
                                     </Button>
                                     {p.status === "paid" ? (
-                                      <div className="text-xs text-slate-400 font-bold font-mono">
-                                        تاريخ الدفع: {p.payment_date}
+                                      <div className="text-[11px] text-slate-400 font-bold font-mono">
+                                        دُفع: {p.payment_date}
                                       </div>
                                     ) : (
                                       <Button
                                         size="sm"
                                         onClick={() => openPaySalaryDialog(p)}
-                                        className="h-7 text-xs rounded-lg font-bold px-4 bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 gap-1"
+                                        className="h-7 text-xs rounded-lg font-bold px-3 bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 gap-1"
                                       >
                                         <CreditCard size={12} />
-                                        صرف الراتب نقداً
+                                        صرف نقداً
                                       </Button>
                                     )}
                                   </div>
@@ -1617,7 +2294,7 @@ function HRPage() {
                             );
                           })}
                         <tr className="bg-primary/5 font-black border-t-2 border-primary/20">
-                          <td className="p-3.5 pr-6 text-primary" colSpan={5}>
+                          <td className="p-3.5 pr-6 text-primary" colSpan={6}>
                             إجمالي صافي مسير الرواتب المقوم حسب عملة الصفحة ({currency}) والمعامل الحالي
                           </td>
                           <td className="p-3.5 font-mono text-primary text-base tabular-nums" colSpan={4}>
@@ -1754,14 +2431,27 @@ function HRPage() {
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleAddEmployeeSubmit} className="space-y-4">
-            <div className="space-y-1.5 text-right">
-              <Label className="font-bold text-xs">الاسم بالكامل *</Label>
-              <Input
-                value={empForm.name}
-                onChange={(e) => setEmpForm((prev) => ({ ...prev, name: e.target.value }))}
-                placeholder="أدخل الاسم الرباعي للموظف"
-                className="rounded-xl"
-              />
+            <div className="grid grid-cols-3 gap-3 text-right">
+              <div className="space-y-1.5 col-span-1">
+                <Label className="font-bold text-xs text-primary">الرقم الوظيفي (تلقائي) *</Label>
+                <Input
+                  value={empForm.employee_code}
+                  onChange={(e) =>
+                    setEmpForm((prev) => ({ ...prev, employee_code: e.target.value }))
+                  }
+                  placeholder="1006"
+                  className="rounded-xl font-mono font-black text-center bg-primary/5 border-primary/30 text-primary"
+                />
+              </div>
+              <div className="space-y-1.5 col-span-2">
+                <Label className="font-bold text-xs">الاسم بالكامل *</Label>
+                <Input
+                  value={empForm.name}
+                  onChange={(e) => setEmpForm((prev) => ({ ...prev, name: e.target.value }))}
+                  placeholder="أدخل الاسم الرباعي للموظف"
+                  className="rounded-xl"
+                />
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3 text-right">
@@ -1858,18 +2548,31 @@ function HRPage() {
           <DialogHeader>
             <DialogTitle className="font-black text-right">تعديل بيانات الموظف</DialogTitle>
             <DialogDescription className="text-right">
-              تحديث المعلومات الأساسية والرواتب للموظف المحدد
+              تحديث المعلومات الأساسية والرقم الوظيفي والرواتب للموظف المحدد
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleEditEmployeeSubmit} className="space-y-4">
-            <div className="space-y-1.5 text-right">
-              <Label className="font-bold text-xs">الاسم بالكامل *</Label>
-              <Input
-                value={empForm.name}
-                onChange={(e) => setEmpForm((prev) => ({ ...prev, name: e.target.value }))}
-                placeholder="أدخل الاسم الرباعي للموظف"
-                className="rounded-xl"
-              />
+            <div className="grid grid-cols-3 gap-3 text-right">
+              <div className="space-y-1.5 col-span-1">
+                <Label className="font-bold text-xs text-primary">الرقم الوظيفي *</Label>
+                <Input
+                  value={empForm.employee_code}
+                  onChange={(e) =>
+                    setEmpForm((prev) => ({ ...prev, employee_code: e.target.value }))
+                  }
+                  placeholder="1001"
+                  className="rounded-xl font-mono font-black text-center bg-primary/5 border-primary/30 text-primary"
+                />
+              </div>
+              <div className="space-y-1.5 col-span-2">
+                <Label className="font-bold text-xs">الاسم بالكامل *</Label>
+                <Input
+                  value={empForm.name}
+                  onChange={(e) => setEmpForm((prev) => ({ ...prev, name: e.target.value }))}
+                  placeholder="أدخل الاسم الرباعي للموظف"
+                  className="rounded-xl"
+                />
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3 text-right">
@@ -2436,6 +3139,365 @@ function HRPage() {
             >
               <Printer size={16} />
               طباعة وتصدير المستند الرسمي (Print Document)
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* DIALOG 7: AUTOMATIC PAYROLL DISBURSEMENT PREVIEW, APPROVAL & GM PRINTOUT */}
+      <Dialog open={isDisbursementPreviewOpen} onOpenChange={setIsDisbursementPreviewOpen}>
+        <DialogContent className="max-w-4xl bg-card border border-border text-right max-h-[92vh] overflow-y-auto">
+          <DialogHeader className="border-b border-border/60 pb-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <Badge className="bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 text-xs font-black px-3 py-1">
+                توليد ومعاينة قيود صرف المرتبات أوتوماتيكياً
+              </Badge>
+              <DialogTitle className="font-black text-lg text-slate-900 dark:text-slate-100">
+                معاينة واعتماد قيود وكشف صرف المرتبات — شهر ({payrollMonth})
+              </DialogTitle>
+            </div>
+            <DialogDescription className="text-xs text-muted-foreground pt-1">
+              يمكنك مراجعة ومعاينة القيود المحاسبية التلقائية وكشف المرتبات قبل اعتمادها، وطباعتها
+              للسيد المدير العام في صيغة (كشف للمرتبات) أو (صيغة قيود محاسبية) للاعتماد.
+            </DialogDescription>
+          </DialogHeader>
+
+          {disbursementPreviewData && (
+            <div className="space-y-4 py-2">
+              {/* Top Configuration Bar: Treasury Selector + Format Toggle */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-muted/40 p-3.5 rounded-2xl border border-border/60">
+                <div className="space-y-1 text-right">
+                  <Label className="font-black text-xs">
+                    اختر خزينة / بنك صرف المرتبات (حساب الدائن):
+                  </Label>
+                  <select
+                    value={disbursementTreasuryId}
+                    onChange={(e) => setDisbursementTreasuryId(e.target.value)}
+                    className="w-full bg-card border border-border text-xs rounded-xl h-10 px-3 font-bold outline-none"
+                  >
+                    {(erpState.treasuries || [])
+                      .filter((t) => !t.deleted)
+                      .map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.account_code ? `[${t.account_code}] ` : ""}
+                          {t.name_ar} — العملة: {t.currency} (الرصيد:{" "}
+                          {formatTreasuryCurrency(t.balance, t.currency)})
+                        </option>
+                      ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1 text-right">
+                  <Label className="font-black text-xs">صيغة العرض والمعاينة قبل الاعتماد:</Label>
+                  <div className="grid grid-cols-2 gap-2 p-1 bg-card border border-border rounded-xl h-10">
+                    <button
+                      type="button"
+                      onClick={() => setDisbursementViewMode("journal")}
+                      className={`rounded-lg text-xs font-black transition cursor-pointer ${
+                        disbursementViewMode === "journal"
+                          ? "bg-primary text-primary-foreground shadow-2xs"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      📘 صيغة قيود صرف المرتبات
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDisbursementViewMode("sheet")}
+                      className={`rounded-lg text-xs font-black transition cursor-pointer ${
+                        disbursementViewMode === "sheet"
+                          ? "bg-primary text-primary-foreground shadow-2xs"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      📊 صيغة كشف للمرتبات
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Preview Body: Journal Format vs Payroll Sheet Format */}
+              {disbursementViewMode === "journal" ? (
+                <div className="space-y-4">
+                  {Object.values(disbursementPreviewData.groupsByCurrency || {}).map((group) => {
+                    const totalDebit = group.journalLines.reduce(
+                      (s, l) => s + Number(l.debit || 0),
+                      0,
+                    );
+                    const totalCredit = group.journalLines.reduce(
+                      (s, l) => s + Number(l.credit || 0),
+                      0,
+                    );
+                    return (
+                      <div
+                        key={group.currency}
+                        className="border border-border rounded-2xl overflow-hidden"
+                      >
+                        <div className="bg-muted/70 px-4 py-2.5 flex items-center justify-between text-xs font-black border-b border-border">
+                          <span>
+                            قيد صرف المرتبات التلقائي بعملة ({group.currency}) — خزينة الصرف:{" "}
+                            {disbursementPreviewData.treasuryAccName}
+                          </span>
+                          <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-0">
+                            قيد مزدوج متزن (المدين = الدائن)
+                          </Badge>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs text-right">
+                            <thead className="bg-muted/40 text-muted-foreground font-bold border-b border-border">
+                              <tr>
+                                <th className="p-2.5 pr-4">كود الحساب</th>
+                                <th className="p-2.5">اسم الحساب المحاسبي</th>
+                                <th className="p-2.5">البيان والتفاصيل</th>
+                                <th className="p-2.5 text-left">مدين (Debit)</th>
+                                <th className="p-2.5 text-left pl-4">دائن (Credit)</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border/60 font-mono">
+                              {group.journalLines.map((line, idx) => (
+                                <tr key={idx} className="hover:bg-muted/20">
+                                  <td className="p-2.5 pr-4 font-bold text-slate-500">
+                                    {line.account_code}
+                                  </td>
+                                  <td className="p-2.5 font-sans font-bold text-foreground">
+                                    {line.account_name}
+                                  </td>
+                                  <td className="p-2.5 font-sans text-muted-foreground">
+                                    {line.description}
+                                  </td>
+                                  <td className="p-2.5 text-left font-black text-emerald-600">
+                                    {line.debit > 0
+                                      ? `${line.debit.toLocaleString()} ${line.currency}`
+                                      : "-"}
+                                  </td>
+                                  <td className="p-2.5 text-left pl-4 font-black text-rose-600">
+                                    {line.credit > 0
+                                      ? `${line.credit.toLocaleString()} ${line.currency}`
+                                      : "-"}
+                                  </td>
+                                </tr>
+                              ))}
+                              <tr className="bg-primary/5 font-black text-sm">
+                                <td colSpan={3} className="p-2.5 pr-4 font-sans text-primary">
+                                  إجمالي القيد المحاسبي ({group.currency})
+                                </td>
+                                <td className="p-2.5 text-left text-emerald-700 dark:text-emerald-400">
+                                  {totalDebit.toLocaleString()} {group.currency}
+                                </td>
+                                <td className="p-2.5 text-left pl-4 text-rose-700 dark:text-rose-400">
+                                  {totalCredit.toLocaleString()} {group.currency}
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {Object.values(disbursementPreviewData.groupsByCurrency || {}).map((group) => (
+                    <div
+                      key={group.currency}
+                      className="border border-border rounded-2xl overflow-hidden"
+                    >
+                      <div className="bg-muted/70 px-4 py-2.5 flex items-center justify-between text-xs font-black border-b border-border">
+                        <span>
+                          كشف مرتبات الموظفين التفصيلي ({group.currency}) — عدد الموظفين:{" "}
+                          {group.records.length}
+                        </span>
+                        <span className="font-mono text-emerald-600">
+                          إجمالي الصافي: {group.totalNet.toLocaleString()} {group.currency}
+                        </span>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs text-right">
+                          <thead className="bg-muted/40 text-muted-foreground font-bold border-b border-border">
+                            <tr>
+                              <th className="p-2.5 pr-4">م</th>
+                              <th className="p-2.5">الرقم الوظيفي</th>
+                              <th className="p-2.5">اسم الموظف</th>
+                              <th className="p-2.5">الوظيفة / القسم</th>
+                              <th className="p-2.5">الأساسي</th>
+                              <th className="p-2.5 text-rose-600">الخصومات</th>
+                              <th className="p-2.5 text-amber-600">قسط السلفة</th>
+                              <th className="p-2.5 text-emerald-600">صافي الراتب</th>
+                              <th className="p-2.5 pl-4">الحالة</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border/60">
+                            {group.records.map(({ payroll, employee }, idx) => (
+                              <tr key={payroll.id} className="hover:bg-muted/20">
+                                <td className="p-2.5 pr-4 font-mono">{idx + 1}</td>
+                                <td className="p-2.5 font-mono font-black text-primary">
+                                  #{employee?.employee_code || "-"}
+                                </td>
+                                <td className="p-2.5 font-black">{employee?.name || "موظف"}</td>
+                                <td className="p-2.5 text-muted-foreground">
+                                  {employee?.job_title} ({employee?.department})
+                                </td>
+                                <td className="p-2.5 font-mono font-bold">
+                                  {Number(payroll.basic_salary || 0).toLocaleString()}{" "}
+                                  {group.currency}
+                                </td>
+                                <td className="p-2.5 font-mono font-bold text-rose-600">
+                                  -{Number(payroll.deductions || 0).toLocaleString()}{" "}
+                                  {group.currency}
+                                </td>
+                                <td className="p-2.5 font-mono font-bold text-amber-600">
+                                  -{Number(payroll.loan_deduction || 0).toLocaleString()}{" "}
+                                  {group.currency}
+                                </td>
+                                <td className="p-2.5 font-mono font-black text-emerald-600">
+                                  {Number(payroll.net_salary || 0).toLocaleString()}{" "}
+                                  {group.currency}
+                                </td>
+                                <td className="p-2.5 pl-4">
+                                  {payroll.status === "paid" ? "تم الصرف ✅" : "جاهز للصرف"}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter className="flex flex-wrap items-center justify-between gap-2 pt-4 border-t border-border/60">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => handlePrintGeneralManagerApproval("sheet")}
+                className="rounded-xl font-black text-xs gap-1.5 border-sky-500/40 text-sky-700 dark:text-sky-300"
+              >
+                <Printer size={15} />
+                طباعة للمدير العام (صيغة كشف للمرتبات)
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => handlePrintGeneralManagerApproval("journal")}
+                className="rounded-xl font-black text-xs gap-1.5 border-purple-500/40 text-purple-700 dark:text-purple-300"
+              >
+                <Printer size={15} />
+                طباعة للمدير العام (صيغة قيود صرف)
+              </Button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsDisbursementPreviewOpen(false)}
+                className="rounded-xl font-bold text-xs"
+              >
+                إغلاق
+              </Button>
+              <Button
+                type="button"
+                onClick={handleApproveAndPostDisbursement}
+                className="rounded-xl font-black text-xs bg-emerald-600 hover:bg-emerald-700 text-white gap-2 px-5"
+              >
+                <CheckCircle2 size={16} />
+                اعتماد وترحيل قيود صرف المرتبات الآن
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* DIALOG 8: CUTTABLE RECTANGULAR SALARY RECEIPTS FOR ALL EMPLOYEES */}
+      <Dialog open={isCuttableSlipsOpen} onOpenChange={setIsCuttableSlipsOpen}>
+        <DialogContent className="max-w-4xl bg-card border border-border text-right max-h-[92vh] overflow-y-auto">
+          <DialogHeader className="border-b border-border/60 pb-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 text-xs font-black px-3 py-1">
+                توفير الورق • مقاس موحد قابل للتقطيع ✂️
+              </Badge>
+              <DialogTitle className="font-black text-lg text-slate-900 dark:text-slate-100">
+                معاينة وطباعة إيصالات تسليم المرتبات المستطيلة — شهر ({payrollMonth})
+              </DialogTitle>
+            </div>
+            <DialogDescription className="text-xs text-muted-foreground pt-1">
+              مستطيلات موحدة المقاس (تحتوي على الاسم، المبلغ الصافي، وتوقيع المستلم) مصممة لتقطيعها
+              إلى إيصالات صغيرة تسلم لكل عامل عند قبض الراتب، مع التوزيع التلقائي على عدة صفحات.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 py-3">
+            {cuttableSalarySlipsList.map((slip) => (
+              <div
+                key={slip.empId}
+                className="relative border-2 border-dashed border-slate-400 dark:border-slate-600 rounded-xl p-3.5 bg-white dark:bg-slate-900 flex flex-col justify-between gap-2.5 shadow-2xs"
+              >
+                <span className="absolute -top-2.5 right-3 bg-card px-2 text-[10px] font-black text-slate-500 flex items-center gap-1">
+                  <Scissors size={11} /> إيصال راتب #{slip.seq} • الرقم الوظيفي: #{slip.employeeCode}
+                </span>
+
+                <div className="flex items-center justify-between text-[11px] text-muted-foreground border-b border-border/60 pb-1.5">
+                  <span className="font-bold">مسير شهر: {slip.month}</span>
+                  <span>القسم: {slip.department}</span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-muted-foreground">
+                    اسم العامل (#{slip.employeeCode}):
+                  </span>
+                  <div className="text-right">
+                    <span className="text-sm font-black text-foreground">{slip.name}</span>
+                    <span className="text-[10px] font-bold text-primary mr-1">
+                      ({slip.jobTitle})
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/25 rounded-lg px-3 py-2">
+                  <div>
+                    <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300 block">
+                      المبلغ الصافي المستلم:
+                    </span>
+                    <span className="text-[10px] text-muted-foreground font-mono">
+                      أساسي: {slip.basic.toLocaleString()} | خصم: {slip.deductions.toLocaleString()}{" "}
+                      | سلفة: {slip.loanDed.toLocaleString()}
+                    </span>
+                  </div>
+                  <span className="font-mono font-black text-base text-emerald-700 dark:text-emerald-400">
+                    {slip.net.toLocaleString()} {slip.currency}
+                  </span>
+                </div>
+
+                <div className="pt-1 border-t border-border/50 flex items-center justify-between text-xs font-black text-slate-700 dark:text-slate-300">
+                  <span>توقيع المستلم بالاستلام:</span>
+                  <span className="text-slate-400 font-normal">
+                    ....................................
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <DialogFooter className="gap-2 pt-4 border-t border-border/60">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsCuttableSlipsOpen(false)}
+              className="rounded-xl font-bold text-xs"
+            >
+              إغلاق
+            </Button>
+            <Button
+              type="button"
+              onClick={handlePrintCuttableSalaryReceipts}
+              className="rounded-xl font-black text-xs bg-amber-600 hover:bg-amber-700 text-white gap-2 px-5"
+            >
+              <Printer size={16} />
+              طباعة جميع الإيصالات المستطيلة للتقطيع ({cuttableSalarySlipsList.length} إيصال)
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -30,61 +30,8 @@ import { AppBreadcrumbBar } from "@/components/navigation/AppBreadcrumbBar";
 
 export const Route = createFileRoute("/oven")({
   head: () => ({ meta: [{ title: "شاشة الفرن والمطبخ (KDS)" }] }),
-  component: OvenAccessGate,
+  component: OvenPage,
 });
-
-function OvenAccessGate() {
-  const navigate = useNavigate();
-  const [accessState, setAccessState] = useState<"checking" | "allowed" | "denied">("checking");
-  useEffect(() => {
-    let active = true;
-    currentUserHasPermission(["kitchen", "kitchen_view"])
-      .then((allowed) => {
-        if (active) setAccessState(allowed ? "allowed" : "denied");
-      })
-      .catch((error) => {
-        console.error("Kitchen route authorization failed.", error);
-        if (active) setAccessState("denied");
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  if (accessState === "allowed") return <OvenPage />;
-  if (accessState === "checking") {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-sm font-bold text-muted-foreground">
-        جاري التحقق من صلاحيات حسابك…
-      </div>
-    );
-  }
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-6" dir="rtl">
-      <div
-        role="alert"
-        className="max-w-md rounded-2xl border border-border bg-card p-8 text-center shadow-sm space-y-4"
-      >
-        <h1 className="text-xl font-black text-foreground">ليس لديك صلاحية شاشة المطبخ</h1>
-        <p className="text-sm text-muted-foreground">
-          يجب تفعيل صلاحية المطبخ من صفحة المستخدمين قبل فتح هذه الشاشة.
-        </p>
-        <div className="flex flex-wrap justify-center gap-2">
-          <Button onClick={() => navigate({ to: "/admin" })}>العودة إلى لوحة الإدارة</Button>
-          <Button
-            variant="outline"
-            onClick={async () => {
-              await signOutCurrentUser();
-              navigate({ to: "/login" });
-            }}
-          >
-            تسجيل الخروج
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function OvenPage() {
   const [orders, setOrders] = useState<any[]>([]);
@@ -146,6 +93,7 @@ function OvenPage() {
       .replace(/\[SELF_ORDER_PENDING_CAPTAIN\]/g, "")
       .replace(/\[SELF_ORDER_ACTIVE\]/g, "")
       .replace(/\[SENT_TO_KITCHEN\]/g, "")
+      .replace(/\[KITCHEN_START:[^\]]+\]/g, "")
       .replace(/\[SENT_TO_CASHIER\]/g, "")
       .replace(/\[CASHIER_PAID\]/g, "")
       .replace(/\[TABLE_ASSISTANCE_CALL\]/g, "")
@@ -184,12 +132,16 @@ function OvenPage() {
       if (!error && Array.isArray(data)) {
         dbOrders = data
           .filter((row) => {
+            if (tableOrdersStore.shouldIgnoreRemoteOrder(row.id, row.created_at)) {
+              return false;
+            }
             const notesStr = String(row.notes || "");
-            // Never show unapproved QR self-orders, table assistance calls, or already paid orders in Kitchen
+            // Never show unapproved QR self-orders, table assistance calls, cancelled, or already paid orders in Kitchen
             if (
               notesStr.includes("[SELF_ORDER_PENDING_CAPTAIN]") ||
               notesStr.includes("[TABLE_ASSISTANCE_CALL]") ||
-              notesStr.includes("[CASHIER_PAID]")
+              notesStr.includes("[CASHIER_PAID]") ||
+              notesStr.includes("[CANCELLED_BY_CAPTAIN]")
             ) {
               return false;
             }
@@ -203,11 +155,16 @@ function OvenPage() {
             }
             return true;
           })
-          .map((row) => ({
-            ...row,
-            table_number: extractTableNumber(row),
-            created_at: row.created_at || new Date().toISOString(),
-          }));
+          .map((row) => {
+            const notesStr = String(row.notes || "");
+            const kitchenStartMatch = notesStr.match(/\[KITCHEN_START:([^\]]+)\]/);
+            const kitchenStartedAt = kitchenStartMatch?.[1] || row.created_at || new Date().toISOString();
+            return {
+              ...row,
+              table_number: extractTableNumber(row),
+              created_at: kitchenStartedAt,
+            };
+          });
       }
 
       const allLocal = tableOrdersStore.getAllOrders();
@@ -225,7 +182,7 @@ function OvenPage() {
           order_type: lo.order_type || "dine_in",
           status: "preparing",
           notes: lo.notes || `طاولة #${lo.table_number}`,
-          created_at: lo.updated_at || lo.created_at || new Date().toISOString(),
+          created_at: lo.kitchen_started_at || lo.created_at || new Date().toISOString(),
           total: lo.total || 0,
           items: Array.isArray(lo.items)
             ? lo.items.map((i) => ({
@@ -283,16 +240,13 @@ function OvenPage() {
 
   const deleteSingleOrder = async (order: any) => {
     try {
-      if (!order.isLocalStore && order.id) {
-        const { error } = await supabase.from("orders").delete().eq("id", order.id);
-        if (error) throw error;
-      }
-      tableOrdersStore.markKitchenCompletedByTableId(
-        order.table_id,
-        order.table_number || extractTableNumber(order),
-        order.id,
-      );
-      toast({ title: "تم الحذف", description: "تم حذف الطلب بنجاح." });
+      await tableOrdersStore.cancelTableOrder({
+        tableId: order.table_id,
+        tableNumber: order.table_number || extractTableNumber(order),
+        orderId: order.localStoreId || order.id,
+        kitchenOrderId: order.id,
+      });
+      toast({ title: "تم الحذف", description: "تم حذف الطلب وإلغاؤه نهائياً بنجاح." });
       fetchPendingOrders();
     } catch (e: any) {
       toast({ title: "خطأ", description: e.message || "فشل حذف الطلب", variant: "destructive" });
@@ -301,19 +255,10 @@ function OvenPage() {
 
   const clearAllOrders = async () => {
     try {
-      const { error } = await supabase.from("orders").delete().not("id", "is", null);
-      if (error) throw error;
-
-      const localOrders = tableOrdersStore.getAllOrders();
-      localOrders.forEach((o) => {
-        if (o.table_id) {
-          tableOrdersStore.markKitchenCompletedByTableId(o.table_id);
-        }
-      });
-
+      await tableOrdersStore.clearAllPendingOrders();
       toast({
         title: "تم حذف كافة الطلبات",
-        description: "تم حذف جميع الطلبات نهائياً بنجاح.",
+        description: "تم مسح وإلغاء جميع الطلبات المعلقة نهائياً بنجاح.",
       });
       fetchPendingOrders();
     } catch (e: any) {

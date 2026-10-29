@@ -70,7 +70,7 @@ export const Route = createFileRoute("/pos")({
       },
     ],
   }),
-  component: PosAccessGate,
+  component: Index,
 });
 
 type Category = { id: string; name_ar: string; sort_order: number };
@@ -117,63 +117,7 @@ const additionsList = [
   { id: "water", label_ar: "مياه معدنية", label_en: "Mineral Water", price: 10 },
 ];
 
-function PosAccessGate() {
-  const navigate = useNavigate();
-  const [accessState, setAccessState] = useState<"checking" | "allowed" | "denied">("checking");
-  useEffect(() => {
-    let active = true;
-    currentUserHasPermission(["pos", "pos_access"])
-      .then((allowed) => {
-        if (active) setAccessState(allowed ? "allowed" : "denied");
-      })
-      .catch((error) => {
-        console.error("POS route authorization failed.", error);
-        if (active) setAccessState("denied");
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
 
-  if (accessState === "allowed") return <Index />;
-  if (accessState === "checking") {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-sm font-bold text-muted-foreground">
-        جاري التحقق من صلاحيات حسابك…
-      </div>
-    );
-  }
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-6" dir="rtl">
-      <div
-        role="alert"
-        className="max-w-md rounded-2xl border border-border bg-card p-8 text-center shadow-sm space-y-4"
-      >
-        <h1 className="text-xl font-black text-foreground">ليس لديك صلاحية نقطة البيع</h1>
-        <p className="text-sm text-muted-foreground">
-          يجب تفعيل صلاحية نقطة البيع من صفحة المستخدمين قبل فتح هذه الشاشة.
-        </p>
-        <div className="flex flex-wrap justify-center gap-2">
-          <button
-            className="rounded-lg bg-primary px-4 py-2 text-primary-foreground"
-            onClick={() => navigate({ to: "/admin" })}
-          >
-            العودة إلى لوحة الإدارة
-          </button>
-          <button
-            className="rounded-lg border px-4 py-2"
-            onClick={async () => {
-              await signOutCurrentUser();
-              navigate({ to: "/login" });
-            }}
-          >
-            تسجيل الخروج
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function Index() {
   const navigate = useNavigate();
@@ -1292,8 +1236,8 @@ function Index() {
 
         {/* Pending Table Orders Notification Bar */}
         {pendingCashierOrders.length > 0 && (
-          <div className="px-8 py-3.5 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white shadow-md animate-in slide-in-from-top-2 border-b border-orange-600/30">
-            <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="px-3 sm:px-6 lg:px-8 py-3 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white shadow-md animate-in slide-in-from-top-2 border-b border-orange-600/30">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur flex items-center justify-center font-black shrink-0">
                   <Bell size={20} className="animate-bounce" />
@@ -1361,8 +1305,8 @@ function Index() {
           </div>
         )}
 
-        <div className="px-8 py-4 border-b border-border bg-card">
-          <div className="flex gap-2 overflow-x-auto pb-1">
+        <div className="px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3.5 border-b border-border bg-card">
+          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
             <CategoryPill
               label={t.all}
               active={activeCategory === "all"}
@@ -1379,7 +1323,7 @@ function Index() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-8">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-6 lg:p-8 pb-24 lg:pb-8">
           {itemsQuery.isLoading ? (
             <div className="flex items-center justify-center h-64 text-muted-foreground">
               <Loader2 className="animate-spin" />
@@ -1417,12 +1361,12 @@ function Index() {
           ) : filteredItems.length === 0 ? (
             <div className="text-center text-muted-foreground py-20">{t.no_items}</div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 lg:gap-5">
               {filteredItems.map((item) => (
                 <button
                   key={item.id}
                   onClick={() => addToCart(item)}
-                  className={`group bg-card rounded-3xl overflow-hidden border border-border transition-all hover:-translate-y-1 active:scale-[0.98] ${lang === "ar" ? "text-right" : "text-left"}`}
+                  className={`group bg-card rounded-2xl sm:rounded-3xl overflow-hidden border border-border transition-all hover:-translate-y-1 active:scale-[0.98] ${lang === "ar" ? "text-right" : "text-left"}`}
                   style={{ boxShadow: "var(--shadow-card)" }}
                 >
                   <div className="relative aspect-[4/3] overflow-hidden bg-muted">
@@ -1435,20 +1379,20 @@ function Index() {
                         referrerPolicy="no-referrer"
                       />
                     )}
-                    <div className="absolute top-3 left-3 bg-primary text-primary-foreground text-xs font-bold px-2.5 py-1 rounded-full shadow">
+                    <div className="absolute top-2.5 left-2.5 bg-primary text-primary-foreground text-[11px] sm:text-xs font-bold px-2.5 py-1 rounded-full shadow">
                       {formatPrice(item.price)}
                     </div>
                     {item.badge && (
-                      <div className="absolute top-0 right-0 bg-slate-900/90 backdrop-blur-md text-white text-xs font-black px-3.5 py-1.5 rounded-bl-2xl shadow-md z-10">
+                      <div className="absolute top-0 right-0 bg-slate-900/90 backdrop-blur-md text-white text-[11px] font-black px-3 py-1 rounded-bl-2xl shadow-md z-10">
                         {item.badge}
                       </div>
                     )}
                   </div>
-                  <div className="p-4">
-                    <h4 className="font-bold text-sm text-card-foreground line-clamp-1">
+                  <div className="p-3 sm:p-4">
+                    <h4 className="font-bold text-xs sm:text-sm text-card-foreground line-clamp-1">
                       {item.name_ar}
                     </h4>
-                    <div className="mt-2 flex items-center gap-1.5 text-xs text-primary font-semibold">
+                    <div className="mt-1.5 sm:mt-2 flex items-center gap-1.5 text-xs text-primary font-semibold">
                       <Plus size={14} />
                       <span>{t.add_to_order}</span>
                     </div>
@@ -1646,8 +1590,8 @@ function Index() {
 
       {checkoutOpen && (
         <Modal onClose={() => setCheckoutOpen(false)}>
-          <div className="p-8">
-            <div className="flex items-center justify-between mb-6">
+          <div className="p-4 sm:p-6 md:p-8">
+            <div className="flex items-center justify-between mb-5">
               <h3 className="text-xl font-black">
                 {lang === "ar" ? "تفاصيل إتمام الطلب" : "Checkout Details"}
               </h3>
@@ -2138,26 +2082,33 @@ function Index() {
         </Modal>
       )}
 
-      {/* Mobile Floating Cart Trigger Button */}
-      <div className="lg:hidden fixed bottom-6 left-6 z-40">
+      {/* Mobile & Tablet Floating Cart Trigger Bar */}
+      <div className="lg:hidden fixed bottom-3 inset-x-3 sm:inset-x-6 z-40">
         <button
           onClick={() => setIsMobileCartOpen(true)}
-          className="flex items-center gap-3 bg-primary text-primary-foreground font-black text-sm px-5 py-3.5 rounded-full shadow-2xl hover:opacity-95 active:scale-95 transition-all border-2 border-primary-foreground/20 cursor-pointer"
+          className="w-full flex items-center justify-between gap-3 bg-slate-900 text-white font-black text-sm px-4 py-3.5 rounded-2xl shadow-2xl hover:bg-slate-800 active:scale-[0.99] transition-all border border-white/15 cursor-pointer"
         >
-          <div className="relative">
-            <ShoppingCart size={22} />
-            {itemCount > 0 && (
-              <span className="absolute -top-2.5 -right-2.5 bg-amber-400 text-slate-900 text-[11px] font-black w-5 h-5 rounded-full flex items-center justify-center shadow">
-                {itemCount}
+          <div className="flex items-center gap-3">
+            <div className="relative w-9 h-9 rounded-xl bg-primary text-primary-foreground flex items-center justify-center shrink-0">
+              <ShoppingCart size={18} />
+              {itemCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 bg-amber-400 text-slate-950 text-[11px] font-black min-w-5 h-5 px-1 rounded-full flex items-center justify-center shadow">
+                  {itemCount}
+                </span>
+              )}
+            </div>
+            <div className="flex flex-col items-start leading-tight">
+              <span className="text-xs sm:text-sm font-black">
+                {lang === "ar" ? "عرض سلة الطلب وإتمام الدفع" : "View Cart & Checkout"}
               </span>
-            )}
+              <span className="text-[11px] text-slate-300">
+                {itemCount} {lang === "ar" ? "أصناف في السلة" : "items in cart"}
+              </span>
+            </div>
           </div>
-          <div className="flex flex-col items-start leading-none">
-            <span className="text-[10px] opacity-80 uppercase tracking-wider">
-              {lang === "ar" ? "سلة الشراء" : "Cart"}
-            </span>
-            <span className="text-sm font-black">{formatPrice(subTotal)}</span>
-          </div>
+          <span className="text-sm sm:text-base font-black text-amber-400 tabular-nums">
+            {formatPrice(subTotal)}
+          </span>
         </button>
       </div>
 

@@ -51,6 +51,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { hasAnyRequestedPermission } from "@/shared/services/userAuthorization";
 
 export interface SectionItem {
   id: string;
@@ -76,6 +77,7 @@ export interface SectionItem {
     icon: React.ElementType;
     to: string;
     search?: Record<string, string>;
+    permissionKeys?: string[];
   }[];
 }
 
@@ -98,6 +100,7 @@ export const ADMIN_SECTIONS: SectionItem[] = [
       accentHover: "hover:text-amber-600",
     },
     permissionKeys: [
+      "page_restaurant",
       "orders",
       "pos",
       "captain",
@@ -113,30 +116,35 @@ export const ADMIN_SECTIONS: SectionItem[] = [
         description: "شاشة إصدار الفواتير وتحصيل الطلبات",
         icon: CreditCard,
         to: "/pos",
+        permissionKeys: ["pos", "pos_access", "orders"],
       },
       {
         title: "شاشة الكابتن والطاولات",
         description: "فتح الطاولات وإرسال طلبات الصالة",
         icon: Users,
         to: "/captain",
+        permissionKeys: ["captain", "captain_access"],
       },
       {
         title: "شاشة المطبخ والفرن (KDS)",
         description: "عرض طلبات الطهي وتحضير الوجبات",
         icon: Flame,
         to: "/oven",
+        permissionKeys: ["kitchen", "kitchen_view"],
       },
       {
         title: "سجل الطلبات والفواتير",
         description: "كشف المبيعات والطلبات المكتملة والمعلقة",
         icon: ClipboardList,
         to: "/admin/orders",
+        permissionKeys: ["orders", "orders_view"],
       },
       {
         title: "قائمة الطعام والوجبات",
         description: "إدارة أسعار وتصنيفات المنيو",
         icon: Coffee,
         to: "/admin/menu",
+        permissionKeys: ["page_restaurant_menu", "pos", "inventory"],
       },
       {
         title: "ورديات المطعم وتقارير الإغلاق",
@@ -144,6 +152,7 @@ export const ADMIN_SECTIONS: SectionItem[] = [
         icon: Clock,
         to: "/admin/restaurant",
         search: { tab: "shifts" },
+        permissionKeys: ["restaurant_open_shift", "pos"],
       },
       {
         title: "مصروفات وتسويات المطعم",
@@ -151,6 +160,7 @@ export const ADMIN_SECTIONS: SectionItem[] = [
         icon: DollarSign,
         to: "/admin/restaurant",
         search: { tab: "expenses" },
+        permissionKeys: ["page_restaurant_vouchers", "treasury"],
       },
     ],
   },
@@ -171,7 +181,7 @@ export const ADMIN_SECTIONS: SectionItem[] = [
       iconColor: "text-teal-600",
       accentHover: "hover:text-teal-600",
     },
-    permissionKeys: ["manage_park_shifts", "mall_garden_finance", "park_reports", "treasury"],
+    permissionKeys: ["page_park", "manage_park_shifts", "mall_garden_finance", "park_reports", "treasury"],
     subsections: [
       {
         title: "نقطة بيع تذاكر الحديقة (POS)",
@@ -179,6 +189,7 @@ export const ADMIN_SECTIONS: SectionItem[] = [
         icon: Ticket,
         to: "/admin/park",
         search: { tab: "tickets" },
+        permissionKeys: ["page_park_pos", "manage_park_shifts"],
       },
       {
         title: "ورديات كاشير الحديقة",
@@ -186,6 +197,7 @@ export const ADMIN_SECTIONS: SectionItem[] = [
         icon: Clock,
         to: "/admin/park",
         search: { tab: "shifts" },
+        permissionKeys: ["page_park_shifts", "manage_park_shifts"],
       },
       {
         title: "الخزائن التشغيلية الثمانية",
@@ -193,6 +205,7 @@ export const ADMIN_SECTIONS: SectionItem[] = [
         icon: Landmark,
         to: "/admin/park",
         search: { tab: "treasury" },
+        permissionKeys: ["page_park_treasury", "manage_park_shifts"],
       },
       {
         title: "أسعار وتصنيفات التذاكر",
@@ -200,6 +213,7 @@ export const ADMIN_SECTIONS: SectionItem[] = [
         icon: Settings,
         to: "/admin/park",
         search: { tab: "prices" },
+        permissionKeys: ["page_park_prices", "manage_park_shifts"],
       },
       {
         title: "دليل عملاء الحديقة",
@@ -207,6 +221,7 @@ export const ADMIN_SECTIONS: SectionItem[] = [
         icon: Users,
         to: "/admin/park",
         search: { tab: "customers" },
+        permissionKeys: ["page_park_customers", "manage_park_shifts"],
       },
       {
         title: "تقارير مبيعات وإيرادات الحديقة",
@@ -214,6 +229,7 @@ export const ADMIN_SECTIONS: SectionItem[] = [
         icon: TrendingUp,
         to: "/admin/park",
         search: { tab: "reports" },
+        permissionKeys: ["park_reports", "manage_park_shifts"],
       },
     ],
   },
@@ -234,7 +250,7 @@ export const ADMIN_SECTIONS: SectionItem[] = [
       iconColor: "text-sky-600",
       accentHover: "hover:text-sky-600",
     },
-    permissionKeys: ["mall_manage_shops", "accounting", "treasury"],
+    permissionKeys: ["page_mall", "mall_manage_shops", "accounting", "treasury"],
     subsections: [
       {
         title: "قائمة المحلات والمستأجرين",
@@ -242,6 +258,7 @@ export const ADMIN_SECTIONS: SectionItem[] = [
         icon: Store,
         to: "/admin/mall",
         search: { tab: "shops" },
+        permissionKeys: ["page_mall_shops", "mall_manage_shops"],
       },
       {
         title: "متابعة عقود الإيجار والدفعات",
@@ -249,6 +266,7 @@ export const ADMIN_SECTIONS: SectionItem[] = [
         icon: Calendar,
         to: "/admin/mall",
         search: { tab: "payments" },
+        permissionKeys: ["page_mall_payments", "mall_manage_shops"],
       },
       {
         title: "مصروفات وتشغيل المول",
@@ -256,6 +274,7 @@ export const ADMIN_SECTIONS: SectionItem[] = [
         icon: CreditCard,
         to: "/admin/mall",
         search: { tab: "expenses" },
+        permissionKeys: ["page_mall_expenses", "mall_manage_shops"],
       },
       {
         title: "التقارير المالية وإشغال المول",
@@ -263,6 +282,7 @@ export const ADMIN_SECTIONS: SectionItem[] = [
         icon: TrendingUp,
         to: "/admin/mall",
         search: { tab: "reports" },
+        permissionKeys: ["page_mall_reports", "mall_manage_shops", "reports"],
       },
     ],
   },
@@ -283,7 +303,7 @@ export const ADMIN_SECTIONS: SectionItem[] = [
       iconColor: "text-indigo-600",
       accentHover: "hover:text-indigo-600",
     },
-    permissionKeys: ["accounting", "accounting_view", "treasury", "reports"],
+    permissionKeys: ["page_finance", "accounting", "accounting_view", "treasury", "reports"],
     subsections: [
       {
         title: "كشف حساب الأستاذ العام",
@@ -291,6 +311,7 @@ export const ADMIN_SECTIONS: SectionItem[] = [
         icon: BookOpen,
         to: "/admin/ledger",
         search: { tab: "ledger" },
+        permissionKeys: ["page_finance_ledger", "accounting_view"],
       },
       {
         title: "دفتر اليومية العامة",
@@ -298,6 +319,7 @@ export const ADMIN_SECTIONS: SectionItem[] = [
         icon: FileText,
         to: "/admin/ledger",
         search: { tab: "journal" },
+        permissionKeys: ["page_finance_journal", "accounting"],
       },
       {
         title: "سندات الصرف والقبض",
@@ -305,6 +327,7 @@ export const ADMIN_SECTIONS: SectionItem[] = [
         icon: DollarSign,
         to: "/admin/ledger",
         search: { tab: "vouchers" },
+        permissionKeys: ["page_finance_vouchers", "accounting", "treasury"],
       },
       {
         title: "دليل وشجرة الحسابات",
@@ -312,6 +335,7 @@ export const ADMIN_SECTIONS: SectionItem[] = [
         icon: Layers,
         to: "/admin/ledger",
         search: { tab: "accounts" },
+        permissionKeys: ["page_finance_accounts", "accounting"],
       },
       {
         title: "إدارة الخزائن والصناديق",
@@ -319,6 +343,7 @@ export const ADMIN_SECTIONS: SectionItem[] = [
         icon: Wallet,
         to: "/admin/ledger",
         search: { tab: "treasury" },
+        permissionKeys: ["page_finance_treasury", "treasury"],
       },
       {
         title: "التقارير والقوائم المالية",
@@ -326,6 +351,7 @@ export const ADMIN_SECTIONS: SectionItem[] = [
         icon: BarChart3,
         to: "/admin/ledger",
         search: { tab: "reports" },
+        permissionKeys: ["page_finance_reports", "reports"],
       },
       {
         title: "ميزان المراجعة",
@@ -333,12 +359,14 @@ export const ADMIN_SECTIONS: SectionItem[] = [
         icon: Scale,
         to: "/admin/ledger",
         search: { tab: "trial" },
+        permissionKeys: ["page_finance_trial", "accounting"],
       },
       {
         title: "تصميم وإدارة الإيصالات",
         description: "تنسيق وطباعة قوالب السندات الرسمية",
         icon: Receipt,
         to: "/admin/receipts",
+        permissionKeys: ["page_finance_receipts", "accounting"],
       },
     ],
   },
@@ -360,6 +388,7 @@ export const ADMIN_SECTIONS: SectionItem[] = [
       accentHover: "hover:text-rose-600",
     },
     permissionKeys: [
+      "page_hr",
       "hr",
       "hr_view_attendance",
       "hr_manage_payroll_loans",
@@ -373,6 +402,7 @@ export const ADMIN_SECTIONS: SectionItem[] = [
         icon: Users,
         to: "/admin/hr",
         search: { tab: "employees" },
+        permissionKeys: ["page_hr_employees", "hr"],
       },
       {
         title: "المستخدمين والصلاحيات (ACL)",
@@ -380,6 +410,7 @@ export const ADMIN_SECTIONS: SectionItem[] = [
         icon: ShieldCheck,
         to: "/admin/hr",
         search: { tab: "users" },
+        permissionKeys: ["users_roles", "system_manage_users"],
       },
       {
         title: "حضور وانصراف اليوم",
@@ -387,6 +418,7 @@ export const ADMIN_SECTIONS: SectionItem[] = [
         icon: CalendarDays,
         to: "/admin/hr",
         search: { tab: "attendance" },
+        permissionKeys: ["page_hr_attendance", "hr_view_attendance"],
       },
       {
         title: "مسيرات الأجور والرواتب",
@@ -394,6 +426,7 @@ export const ADMIN_SECTIONS: SectionItem[] = [
         icon: FileSpreadsheet,
         to: "/admin/hr",
         search: { tab: "payroll" },
+        permissionKeys: ["page_hr_payroll", "hr_manage_payroll_loans"],
       },
       {
         title: "القروض والسلف المالية",
@@ -401,6 +434,7 @@ export const ADMIN_SECTIONS: SectionItem[] = [
         icon: Coins,
         to: "/admin/hr",
         search: { tab: "loans" },
+        permissionKeys: ["page_hr_loans", "hr_manage_payroll_loans"],
       },
     ],
   },
@@ -421,7 +455,7 @@ export const ADMIN_SECTIONS: SectionItem[] = [
       iconColor: "text-cyan-600",
       accentHover: "hover:text-cyan-600",
     },
-    permissionKeys: ["inventory", "inventory_view", "purchasing", "purchasing_view"],
+    permissionKeys: ["page_inventory", "inventory", "inventory_view", "purchasing", "purchasing_view"],
     subsections: [
       {
         title: "الأصناف والمواد الخام",
@@ -429,6 +463,7 @@ export const ADMIN_SECTIONS: SectionItem[] = [
         icon: Package,
         to: "/admin/inventory",
         search: { tab: "items" },
+        permissionKeys: ["page_inventory_items", "inventory"],
       },
       {
         title: "المستودعات وحركات التحويل",
@@ -436,6 +471,7 @@ export const ADMIN_SECTIONS: SectionItem[] = [
         icon: ArrowLeftRight,
         to: "/admin/inventory",
         search: { tab: "transfers" },
+        permissionKeys: ["page_inventory_transfers", "inventory"],
       },
       {
         title: "فواتير المشتريات والموردين",
@@ -443,6 +479,7 @@ export const ADMIN_SECTIONS: SectionItem[] = [
         icon: ShoppingCart,
         to: "/admin/inventory",
         search: { tab: "purchases" },
+        permissionKeys: ["page_inventory_purchases", "purchasing"],
       },
       {
         title: "محاضر الهالك والتسويات",
@@ -450,6 +487,7 @@ export const ADMIN_SECTIONS: SectionItem[] = [
         icon: AlertCircle,
         to: "/admin/inventory",
         search: { tab: "waste" },
+        permissionKeys: ["page_inventory_waste", "inventory"],
       },
     ],
   },
@@ -469,19 +507,21 @@ export const ADMIN_SECTIONS: SectionItem[] = [
       iconColor: "text-slate-700",
       accentHover: "hover:text-slate-700",
     },
-    permissionKeys: ["system_backup_update", "developer_options", "super_admin_full_access"],
+    permissionKeys: ["page_developer", "system_backup_update", "developer_options", "super_admin_full_access"],
     subsections: [
       {
         title: "استوديو المطور Pro (المحرر البصري)",
         description: "محرر بصري متقدم لتصميم الواجهات وإدارة المسودات والنشر الآمن",
         icon: Sparkles,
         to: "/admin/studio",
+        permissionKeys: ["developer_options", "super_admin_full_access"],
       },
       {
         title: "تحديثات ومزامنة GitHub",
         description: "رفع التعديلات واستلام التحديثات البرمجية",
         icon: RefreshCw,
         to: "/admin/system-update",
+        permissionKeys: ["page_system_github", "system_backup_update"],
       },
       {
         title: "سجل تدقيق ورقابة العمليات",
@@ -489,12 +529,14 @@ export const ADMIN_SECTIONS: SectionItem[] = [
         icon: History,
         to: "/admin/system-update",
         search: { tab: "audit" },
+        permissionKeys: ["page_audit_logs", "audit_logs"],
       },
       {
         title: "معلومات وحالة الخادم",
         description: "بيانات بيئة التشغيل والإصدار الحالي",
         icon: ShieldCheck,
         to: "/admin/system-update",
+        permissionKeys: ["page_system_status", "system_backup_update"],
       },
     ],
   },
@@ -508,9 +550,7 @@ export function AdminSectionsGrid({ userPermissions = {} }: AdminSectionsGridPro
   const navigate = useNavigate();
 
   const hasAccess = (permissionKeys: string[]) => {
-    if (userPermissions.super_admin_full_access === true) return true;
-    if (!permissionKeys || permissionKeys.length === 0) return true;
-    return permissionKeys.some((k) => userPermissions[k] === true);
+    return hasAnyRequestedPermission(userPermissions, permissionKeys);
   };
 
   const handleOpenSection = (section: SectionItem) => {
@@ -520,6 +560,23 @@ export function AdminSectionsGrid({ userPermissions = {} }: AdminSectionsGridPro
   const handleOpenSubsection = (sub: SectionItem["subsections"][0]) => {
     navigate({ to: sub.to, search: sub.search });
   };
+
+  const permittedSections = ADMIN_SECTIONS.map((section) => {
+    const mainKey = section.permissionKeys[0];
+    if (userPermissions.super_admin_full_access !== true && userPermissions[mainKey] === false) {
+      return null;
+    }
+    const filteredSubs = section.subsections.filter((sub) =>
+      hasAnyRequestedPermission(userPermissions, sub.permissionKeys || section.permissionKeys),
+    );
+    const hasSecAccess =
+      filteredSubs.length > 0 || hasAnyRequestedPermission(userPermissions, section.permissionKeys);
+    if (!hasSecAccess || filteredSubs.length === 0) return null;
+    return {
+      ...section,
+      subsections: filteredSubs,
+    };
+  }).filter((s): s is NonNullable<typeof s> => !!s);
 
   return (
     <div className="space-y-6">
@@ -539,13 +596,13 @@ export function AdminSectionsGrid({ userPermissions = {} }: AdminSectionsGridPro
           variant="outline"
           className="self-start sm:self-auto font-mono text-xs px-3 py-1 bg-muted/40"
         >
-          {ADMIN_SECTIONS.length} أقسام رئيسية
+          {permittedSections.length} أقسام رئيسية
         </Badge>
       </div>
 
       {/* Grid of Section Tiles */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-5">
-        {ADMIN_SECTIONS.filter((section) => hasAccess(section.permissionKeys)).map((section) => {
+        {permittedSections.map((section) => {
           const Icon = section.icon;
 
           return (

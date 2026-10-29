@@ -16,6 +16,7 @@ import {
 import { CURRENT_VERSION } from "@/shared/config/version";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { toast as sonnerToast } from "sonner";
 import {
   getActiveUserPermissionsSync,
   hasAnyRequestedPermission,
@@ -23,9 +24,11 @@ import {
   signOutCurrentUser,
 } from "@/shared/services/userAuthorization";
 import { erpStore } from "@/shared/services/erpStore";
+import { tableOrdersStore } from "@/shared/services/tableOrdersStore";
 import {
   NAVIGATION_DEPARTMENTS,
   resolveNavigationState,
+  isRestaurantScreenPath,
   dispatchSubTabCommand,
   type NavDepartment,
 } from "./navigationRegistry";
@@ -63,11 +66,41 @@ export function AppMainNavbar({
   const [pendingSelfOrdersCount, setPendingSelfOrdersCount] = useState<number>(0);
   const [hasUrgentTableCall, setHasUrgentTableCall] = useState<boolean>(false);
   const seenNavbarOrderIdsRef = useRef<Set<string>>(new Set());
+  const initialPollDoneRef = useRef<boolean>(false);
+  const wasRestaurantScreenRef = useRef<boolean>(false);
+
+  const isRestaurantScreen = isRestaurantScreenPath(
+    location.pathname,
+    location.search,
+    (location as { searchStr?: string }).searchStr,
+  );
 
   useEffect(() => {
+    if (!isRestaurantScreen) {
+      setPendingSelfOrdersCount(0);
+      setHasUrgentTableCall(false);
+      if (wasRestaurantScreenRef.current) {
+        sonnerToast.dismiss();
+      }
+      wasRestaurantScreenRef.current = false;
+      return;
+    }
+
+    wasRestaurantScreenRef.current = true;
     let mounted = true;
 
+    const getDismissedAssistanceIds = (): Set<string> => {
+      try {
+        const raw = localStorage.getItem("restocash_dismissed_assistance_ids_v1");
+        const parsed = raw ? JSON.parse(raw) : [];
+        return new Set(Array.isArray(parsed) ? parsed : []);
+      } catch {
+        return new Set();
+      }
+    };
+
     const checkPendingSelfOrders = async () => {
+      if (!mounted || !isRestaurantScreenPath()) return;
       try {
         const { data, error } = await supabase
           .from("orders")
@@ -79,18 +112,40 @@ export function AppMainNavbar({
           .order("created_at", { ascending: false })
           .limit(30);
 
-        if (error || !mounted) return;
-        const rows = data || [];
+        if (error || !mounted || !isRestaurantScreenPath()) return;
+        const dismissedIds = getDismissedAssistanceIds();
+        const rows = (data || []).filter((r) => {
+          if (!r?.id) return false;
+          if (dismissedIds.has(r.id)) return false;
+          if (tableOrdersStore.shouldIgnoreRemoteOrder(r.id, r.created_at)) return false;
+          const notes = String(r.notes || "");
+          if (
+            notes.includes("[CASHIER_PAID]") ||
+            notes.includes("[CANCELLED_BY_CAPTAIN]") ||
+            notes.includes("[SENT_TO_KITCHEN]") ||
+            notes.includes("[SENT_TO_CASHIER]")
+          ) {
+            return false;
+          }
+          return true;
+        });
+
         const calls = rows.filter((r) => String(r.notes || "").includes("[TABLE_ASSISTANCE_CALL]"));
         setPendingSelfOrdersCount(rows.length);
         setHasUrgentTableCall(calls.length > 0);
 
-        // If user is NOT on /captain, notify them via toast when a brand new self-order arrives
+        if (!initialPollDoneRef.current) {
+          rows.forEach((r) => seenNavbarOrderIdsRef.current.add(r.id));
+          initialPollDoneRef.current = true;
+          return;
+        }
+
+        // Only notify when inside a restaurant page (and not on /captain which already handles its own toast)
         const isCaptainPage = location.pathname.startsWith("/captain");
         for (const r of rows) {
           if (!seenNavbarOrderIdsRef.current.has(r.id)) {
             seenNavbarOrderIdsRef.current.add(r.id);
-            if (!isCaptainPage) {
+            if (!isCaptainPage && isRestaurantScreenPath()) {
               const isCall = String(r.notes || "").includes("[TABLE_ASSISTANCE_CALL]");
               toast({
                 title: isCall
@@ -114,7 +169,9 @@ export function AppMainNavbar({
       try {
         bc = new BroadcastChannel("restocash_self_orders_bc");
         bc.onmessage = () => {
-          void checkPendingSelfOrders();
+          if (isRestaurantScreenPath()) {
+            void checkPendingSelfOrders();
+          }
         };
       } catch {
         // Ignore BroadcastChannel error
@@ -132,7 +189,7 @@ export function AppMainNavbar({
         }
       }
     };
-  }, [location.pathname, toast]);
+  }, [isRestaurantScreen, location.pathname, toast]);
 
   useEffect(() => {
     const refresh = () => {
@@ -224,22 +281,23 @@ export function AppMainNavbar({
   return (
     <header
       className={cn(
-        "sticky top-0 z-40 shrink-0 bg-card/95 backdrop-blur-md border-b border-border px-3 sm:px-6 h-14 flex items-center justify-between gap-3 shadow-2xs",
+        "sticky top-0 z-40 shrink-0 bg-card/95 backdrop-blur-md border-b border-border px-2.5 sm:px-6 h-14 flex items-center justify-between gap-1.5 sm:gap-3 shadow-2xs",
         className,
       )}
       dir="rtl"
     >
       {/* Right Zone (RTL): Brand Logo & Program Name + Quick Departments Switcher */}
-      <div className="flex items-center gap-2.5 sm:gap-4 min-w-0">
+      <div className="flex items-center gap-1.5 sm:gap-4 min-w-0">
         <Link
           to="/admin"
           onClick={() => dispatchSubTabCommand("/admin", "")}
-          className="flex items-center gap-2 shrink-0 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-lg"
+          className="flex items-center gap-1.5 sm:gap-2 shrink-0 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-lg"
           title="العودة إلى لوحة الأقسام الرئيسية"
         >
-          <RestocashLogo size={26} />
-          <span className="font-black text-sm sm:text-base tracking-tight text-foreground group-hover:text-primary transition-colors whitespace-nowrap shrink-0">
-            Restocash ERP
+          <RestocashLogo size={24} />
+          <span className="font-black text-xs sm:text-base tracking-tight text-foreground group-hover:text-primary transition-colors whitespace-nowrap shrink-0">
+            <span className="hidden sm:inline">Restocash ERP</span>
+            <span className="sm:hidden">Restocash</span>
           </span>
         </Link>
 
@@ -250,7 +308,7 @@ export function AppMainNavbar({
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-muted/60 hover:bg-muted text-foreground border border-border/70 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              className="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg text-xs font-bold bg-muted/60 hover:bg-muted text-foreground border border-border/70 transition-colors cursor-pointer whitespace-nowrap shrink-0"
               title="الانتقال السريع بين أقسام النظام"
             >
               <Grid3X3 size={14} className="text-primary shrink-0" />
@@ -304,9 +362,9 @@ export function AppMainNavbar({
         </DropdownMenu>
       </div>
 
-      {/* Left Zone (RTL): QR Self-Order Alert, Language, Currency, Theme Toggle, Version & User Profile */}
+      {/* Left Zone (RTL): QR Self-Order Alert (Restaurant Screens Only), Language, Currency, Theme Toggle, Version & User Profile */}
       <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-        {pendingSelfOrdersCount > 0 && (
+        {isRestaurantScreen && pendingSelfOrdersCount > 0 && (
           <Link
             to="/captain"
             className={cn(

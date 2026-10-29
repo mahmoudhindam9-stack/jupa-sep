@@ -21,6 +21,7 @@ import type {
 export const DEFAULT_EMPLOYEES: Employee[] = [
   {
     id: "emp-1",
+    employee_code: "1001",
     name: "وليد أحمد محمد دويك",
     job_title: "رئيس الطهاة (Chef)",
     department: "المطبخ",
@@ -32,6 +33,7 @@ export const DEFAULT_EMPLOYEES: Employee[] = [
   },
   {
     id: "emp-2",
+    employee_code: "1002",
     name: "هشام نور",
     job_title: "مدير التشغيل العام",
     department: "الإدارة",
@@ -43,6 +45,7 @@ export const DEFAULT_EMPLOYEES: Employee[] = [
   },
   {
     id: "emp-3",
+    employee_code: "1003",
     name: "جمال عطا الله",
     job_title: "المحاسب المالي",
     department: "الإدارة",
@@ -54,6 +57,7 @@ export const DEFAULT_EMPLOYEES: Employee[] = [
   },
   {
     id: "emp-4",
+    employee_code: "1004",
     name: "محمد شريف",
     job_title: "كاشير الصالة",
     department: "الصالة والتوصيل",
@@ -65,6 +69,7 @@ export const DEFAULT_EMPLOYEES: Employee[] = [
   },
   {
     id: "emp-5",
+    employee_code: "1005",
     name: "أحمد حسام",
     job_title: "مشرف الفروع",
     department: "الإدارة",
@@ -75,6 +80,76 @@ export const DEFAULT_EMPLOYEES: Employee[] = [
     status: "active",
   },
 ];
+
+export function ensureEmployeesWithUniqueCodes(rawEmployees: unknown): Employee[] {
+  const list = Array.isArray(rawEmployees) && rawEmployees.length > 0
+    ? (rawEmployees as Employee[])
+    : DEFAULT_EMPLOYEES;
+
+  const usedCodes = new Set<string>();
+  let maxNumericCode = 1000;
+
+  // First pass: collect valid existing numeric codes
+  list.forEach((emp) => {
+    const rawCode = String((emp as any)?.employee_code || "").trim();
+    if (/^\d{3,6}$/.test(rawCode) && !usedCodes.has(rawCode)) {
+      usedCodes.add(rawCode);
+      const num = parseInt(rawCode, 10);
+      if (!Number.isNaN(num) && num > maxNumericCode) {
+        maxNumericCode = num;
+      }
+    }
+  });
+
+  // Second pass: ensure every employee has a clean, easy, unique employee_code
+  const seenAssign = new Set<string>();
+  return list.map((emp, idx) => {
+    const defaultMatch = DEFAULT_EMPLOYEES.find((d) => d.id === emp.id);
+    let candidate = String((emp as any)?.employee_code || defaultMatch?.employee_code || "").trim();
+
+    if (!candidate || !/^\d{3,6}$/.test(candidate) || seenAssign.has(candidate)) {
+      let nextNum = Math.max(1001 + idx, maxNumericCode + 1);
+      while (seenAssign.has(String(nextNum)) || usedCodes.has(String(nextNum))) {
+        nextNum++;
+      }
+      candidate = String(nextNum);
+      maxNumericCode = Math.max(maxNumericCode, nextNum);
+    }
+
+    seenAssign.add(candidate);
+    usedCodes.add(candidate);
+
+    return {
+      ...emp,
+      employee_code: candidate,
+    };
+  });
+}
+
+export function generateNextUniqueEmployeeCode(
+  employees: Employee[] = [],
+  users: SystemUser[] = [],
+): string {
+  const used = new Set<string>();
+  let maxCode = 1000;
+
+  [...(employees || []), ...(users || [])].forEach((item: any) => {
+    const code = String(item?.employee_code || "").trim();
+    if (code) {
+      used.add(code);
+      const parsed = parseInt(code, 10);
+      if (!Number.isNaN(parsed) && parsed >= 1000 && parsed < 999999 && parsed > maxCode) {
+        maxCode = parsed;
+      }
+    }
+  });
+
+  let next = maxCode + 1;
+  while (used.has(String(next))) {
+    next++;
+  }
+  return String(next);
+}
 
 export const DEFAULT_PARK_TICKET_ITEMS: ParkTicketItem[] = [
   {
@@ -1085,6 +1160,7 @@ export const DEFAULT_COMPLIANT_ADMIN_PASSWORD = "Admin@12345";
 
 export const ROOT_DEFAULT_ADMIN: SystemUser = {
   id: "u-admin",
+  employee_code: "1000",
   full_name: "المدير العام (System Admin)",
   username: "admin",
   email: "admin@restocash.com",
@@ -1100,6 +1176,9 @@ export const ROOT_DEFAULT_ADMIN: SystemUser = {
     delivery: true,
     inventory: true,
     hr: true,
+    hr_view_attendance: true,
+    hr_manage_payroll_loans: true,
+    messenger_broadcast: true,
     purchasing: true,
     production: true,
     treasury: true,
@@ -1130,6 +1209,7 @@ export const ROOT_DEFAULT_ADMIN: SystemUser = {
 
 export const OWNER_DEFAULT_ADMIN: SystemUser = {
   id: "u-owner-mahmoud",
+  employee_code: "1000",
   full_name: "المدير العام (mahmoudhindam9)",
   username: "mahmoud.admin",
   email: "mahmoudhindam9@gmail.com",
@@ -1163,7 +1243,10 @@ function isCompliantPasswordValue(pw: unknown): boolean {
   return /[A-Za-z]/.test(pw) && /[0-9]/.test(pw);
 }
 
-export function ensureCurrentManagedUsers(users: unknown): SystemUser[] {
+export function ensureCurrentManagedUsers(
+  users: unknown,
+  employees: Employee[] = DEFAULT_EMPLOYEES,
+): SystemUser[] {
   const rawList = Array.isArray(users)
     ? (users.filter(
         (user: any) =>
@@ -1176,6 +1259,9 @@ export function ensureCurrentManagedUsers(users: unknown): SystemUser[] {
 
   const usedUsernames = new Set<string>();
   const usedEmails = new Set<string>();
+  const usedCodes = new Set<string>();
+
+  const normalizedEmployees = ensureEmployeesWithUniqueCodes(employees);
 
   const normalizedList: SystemUser[] = rawList.map((user, idx) => {
     const rawUserStr = String(user.username || "").trim().toLowerCase();
@@ -1237,12 +1323,37 @@ export function ensureCurrentManagedUsers(users: unknown): SystemUser[] {
         ? { ...ROOT_DEFAULT_ADMIN.permissions, ...(user.permissions || {}) }
         : { ...(user.permissions || {}) };
 
+    const fullNameClean = String(user.full_name || compliantUsername).trim().slice(0, 120);
+
+    // Match employee_code with HR employee if linked by code or name, otherwise assign unique code
+    const matchedHrEmp = normalizedEmployees.find(
+      (e) =>
+        (user.employee_code && e.employee_code === String(user.employee_code).trim()) ||
+        e.name.trim() === fullNameClean,
+    );
+
+    let resolvedEmployeeCode = String(
+      matchedHrEmp?.employee_code ||
+        user.employee_code ||
+        (compliantUsername === "admin" ? "1000" : ""),
+    ).trim();
+
+    if (!resolvedEmployeeCode || usedCodes.has(resolvedEmployeeCode)) {
+      let candidateNum = compliantUsername === "admin" ? 1000 : 1001 + idx;
+      while (usedCodes.has(String(candidateNum))) {
+        candidateNum++;
+      }
+      resolvedEmployeeCode = String(candidateNum);
+    }
+    usedCodes.add(resolvedEmployeeCode);
+
     return {
       ...user,
-      full_name: String(user.full_name || compliantUsername).trim().slice(0, 120),
+      employee_code: resolvedEmployeeCode,
+      full_name: fullNameClean,
       username: compliantUsername,
       email: compliantEmail,
-      phone: String(user.phone || "").trim().slice(0, 40),
+      phone: String(user.phone || matchedHrEmp?.phone || "").trim().slice(0, 40),
       role: resolvedRole,
       password: resolvedPassword,
       permissions: resolvedPermissions,
@@ -1253,6 +1364,7 @@ export function ensureCurrentManagedUsers(users: unknown): SystemUser[] {
   if (!hasAdmin) {
     normalizedList.unshift({
       ...ROOT_DEFAULT_ADMIN,
+      employee_code: usedCodes.has("1000") ? "1000-A" : "1000",
       permissions: { ...ROOT_DEFAULT_ADMIN.permissions },
     });
   }
@@ -1269,6 +1381,7 @@ export const DEFAULT_PERMISSIONS: Record<string, UserPermission> = {
     delivery: true,
     inventory: true,
     hr: true,
+    messenger_broadcast: true,
     purchasing: true,
     production: true,
     treasury: true,
@@ -1290,6 +1403,7 @@ export const DEFAULT_PERMISSIONS: Record<string, UserPermission> = {
     delivery: true,
     inventory: true,
     hr: true,
+    messenger_broadcast: true,
     purchasing: true,
     production: true,
     treasury: false,

@@ -49,6 +49,7 @@ export interface NavSubItem {
   /** Local tab value used when the page manages tabs via React state */
   tabValue?: string;
   icon: LucideIcon;
+  permissionKeys?: string[];
   matchPath?: (pathname: string, activeTab: string) => boolean;
 }
 
@@ -185,6 +186,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
     to: "/admin/restaurant",
     icon: Store,
     permissionKeys: [
+      "page_restaurant",
       "orders",
       "pos",
       "captain",
@@ -201,6 +203,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         to: "/admin/restaurant",
         tabValue: "grid",
         icon: Store,
+        permissionKeys: ["page_restaurant"],
         matchPath: (p, tab) =>
           p === "/admin/restaurant" && (!tab || tab === "grid"),
       },
@@ -209,6 +212,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         label: "نقطة بيع الكاشير (POS)",
         to: "/pos",
         icon: CreditCard,
+        permissionKeys: ["pos", "pos_access", "orders", "orders_create_custom"],
         matchPath: (p) => p === "/pos",
       },
       {
@@ -216,6 +220,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         label: "شاشة الكابتن والصالة",
         to: "/captain",
         icon: Users,
+        permissionKeys: ["captain", "captain_access", "captain_create_order"],
         matchPath: (p) => p === "/captain",
       },
       {
@@ -223,6 +228,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         label: "شاشة المطبخ والفرن (KDS)",
         to: "/oven",
         icon: Flame,
+        permissionKeys: ["kitchen", "kitchen_view", "kitchen_change_status"],
         matchPath: (p) => p === "/oven",
       },
       {
@@ -230,6 +236,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         label: "شاشة الكاشير والخزينة",
         to: "/cashier-treasury",
         icon: Wallet,
+        permissionKeys: ["page_restaurant_cashier_treasury", "treasury", "treasury_view", "treasury_open_close", "pos", "pos_access"],
         matchPath: (p) => p === "/cashier-treasury",
       },
       {
@@ -237,6 +244,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         label: "سجل الطلبات والفواتير",
         to: "/admin/orders",
         icon: ClipboardList,
+        permissionKeys: ["orders", "orders_view", "delivery", "delivery_view"],
         matchPath: (p) => p.startsWith("/admin/orders"),
       },
       {
@@ -244,6 +252,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         label: "إدارة المنيو وقائمة الطعام",
         to: "/admin/menu",
         icon: Utensils,
+        permissionKeys: ["page_restaurant_menu", "pos", "pos_access", "inventory", "orders"],
         matchPath: (p) => p.startsWith("/admin/menu"),
       },
       {
@@ -253,6 +262,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "vouchers" },
         tabValue: "vouchers",
         icon: Receipt,
+        permissionKeys: ["page_restaurant_vouchers", "treasury", "accounting"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/restaurant") && tab === "vouchers",
       },
@@ -263,6 +273,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "shifts" },
         tabValue: "shifts",
         icon: Clock,
+        permissionKeys: ["restaurant_open_shift", "pos", "pos_access"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/restaurant") && tab === "shifts",
       },
@@ -273,6 +284,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "expenses" },
         tabValue: "expenses",
         icon: DollarSign,
+        permissionKeys: ["page_restaurant_vouchers", "treasury", "accounting"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/restaurant") && tab === "expenses",
       },
@@ -283,7 +295,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
     label: "إدارة المول",
     to: "/admin/mall",
     icon: Building2,
-    permissionKeys: ["mall_manage_shops"],
+    permissionKeys: ["page_mall", "mall_manage_shops", "mall_garden_finance"],
     children: [
       {
         id: "mall-hub",
@@ -291,6 +303,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         to: "/admin/mall",
         tabValue: "grid",
         icon: Building2,
+        permissionKeys: ["page_mall"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/mall") && (!tab || tab === "grid"),
       },
@@ -301,6 +314,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "shops" },
         tabValue: "shops",
         icon: Store,
+        permissionKeys: ["page_mall_shops", "mall_manage_shops"],
         matchPath: (p, tab) => p.startsWith("/admin/mall") && tab === "shops",
       },
       {
@@ -310,6 +324,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "payments" },
         tabValue: "payments",
         icon: Calendar,
+        permissionKeys: ["page_mall_payments", "mall_manage_shops", "accounting"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/mall") && tab === "payments",
       },
@@ -320,6 +335,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "expenses" },
         tabValue: "expenses",
         icon: CreditCard,
+        permissionKeys: ["page_mall_expenses", "mall_manage_shops", "mall_garden_finance"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/mall") && tab === "expenses",
       },
@@ -330,6 +346,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "vouchers" },
         tabValue: "vouchers",
         icon: Receipt,
+        permissionKeys: ["page_mall_vouchers", "mall_manage_shops", "treasury"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/mall") && tab === "vouchers",
       },
@@ -340,6 +357,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "reports" },
         tabValue: "reports",
         icon: TrendingUp,
+        permissionKeys: ["page_mall_reports", "mall_manage_shops", "reports"],
         matchPath: (p, tab) => p.startsWith("/admin/mall") && tab === "reports",
       },
       {
@@ -349,6 +367,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "garden" },
         tabValue: "garden",
         icon: Trees,
+        permissionKeys: ["page_park", "mall_garden_finance"],
         matchPath: (p, tab) => p.startsWith("/admin/mall") && tab === "garden",
       },
     ],
@@ -359,6 +378,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
     to: "/admin/park",
     icon: Trees,
     permissionKeys: [
+      "page_park",
       "manage_park_shifts",
       "delete_park_shifts",
       "park_reports",
@@ -371,6 +391,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         to: "/admin/park",
         tabValue: "grid",
         icon: LayoutDashboard,
+        permissionKeys: ["page_park"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/park") &&
           (!tab || tab === "grid" || tab === "overview"),
@@ -382,6 +403,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "tickets" },
         tabValue: "tickets",
         icon: Ticket,
+        permissionKeys: ["page_park_pos", "manage_park_shifts", "mall_garden_finance"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/park") && (tab === "tickets" || tab === "pos"),
       },
@@ -392,6 +414,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "shifts" },
         tabValue: "shifts",
         icon: Clock,
+        permissionKeys: ["page_park_shifts", "manage_park_shifts"],
         matchPath: (p, tab) => p.startsWith("/admin/park") && tab === "shifts",
       },
       {
@@ -401,6 +424,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "treasury" },
         tabValue: "treasury",
         icon: Landmark,
+        permissionKeys: ["page_park_treasury", "manage_park_shifts", "treasury"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/park") && tab === "treasury",
       },
@@ -411,6 +435,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "vouchers" },
         tabValue: "vouchers",
         icon: Receipt,
+        permissionKeys: ["page_park_vouchers", "mall_garden_finance"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/park") && tab === "vouchers",
       },
@@ -421,6 +446,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "prices" },
         tabValue: "prices",
         icon: Settings,
+        permissionKeys: ["page_park_prices", "manage_park_shifts"],
         matchPath: (p, tab) => p.startsWith("/admin/park") && tab === "prices",
       },
       {
@@ -430,6 +456,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "customers" },
         tabValue: "customers",
         icon: Users,
+        permissionKeys: ["page_park_customers", "manage_park_shifts"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/park") && tab === "customers",
       },
@@ -440,6 +467,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "reports" },
         tabValue: "reports",
         icon: TrendingUp,
+        permissionKeys: ["park_reports", "manage_park_shifts"],
         matchPath: (p, tab) => p.startsWith("/admin/park") && tab === "reports",
       },
     ],
@@ -449,7 +477,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
     label: "الإدارة المالية",
     to: "/admin/ledger",
     icon: Landmark,
-    permissionKeys: ["accounting", "accounting_view", "treasury"],
+    permissionKeys: ["page_finance", "accounting", "accounting_view", "treasury"],
     children: [
       {
         id: "financial-hub",
@@ -457,6 +485,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         to: "/admin/ledger",
         tabValue: "hub",
         icon: Landmark,
+        permissionKeys: ["page_finance"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/ledger") && (!tab || tab === "hub"),
       },
@@ -467,6 +496,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "financial_position" },
         tabValue: "financial_position",
         icon: TrendingUp,
+        permissionKeys: ["page_finance_position", "accounting", "accounting_view"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/ledger") && tab === "financial_position",
       },
@@ -477,6 +507,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "ledger" },
         tabValue: "ledger",
         icon: BookOpen,
+        permissionKeys: ["page_finance_ledger", "accounting_view"],
         matchPath: (p, tab) => p.startsWith("/admin/ledger") && tab === "ledger",
       },
       {
@@ -486,6 +517,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "journal" },
         tabValue: "journal",
         icon: FileText,
+        permissionKeys: ["page_finance_journal", "accounting", "accounting_post_journal"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/ledger") && tab === "journal",
       },
@@ -496,6 +528,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "vouchers" },
         tabValue: "vouchers",
         icon: Receipt,
+        permissionKeys: ["page_finance_vouchers", "accounting", "treasury"],
         matchPath: (p, tab) =>
           (p.startsWith("/admin/ledger") && tab === "vouchers") ||
           ((p === "/admin" || p === "/admin/") && tab === "vouchers_entry"),
@@ -507,6 +540,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "treasury" },
         tabValue: "treasury",
         icon: Wallet,
+        permissionKeys: ["page_finance_treasury", "treasury"],
         matchPath: (p, tab) =>
           (p.startsWith("/admin/ledger") && tab === "treasury") ||
           ((p === "/admin" || p === "/admin/") && tab === "treasury"),
@@ -517,6 +551,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         to: "/admin/accounts",
         tabValue: "accounts",
         icon: Layers,
+        permissionKeys: ["page_finance_accounts", "accounting"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/accounts") ||
           (p.startsWith("/admin/ledger") && tab === "accounts") ||
@@ -529,6 +564,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "trial" },
         tabValue: "trial",
         icon: Scale,
+        permissionKeys: ["page_finance_trial", "accounting"],
         matchPath: (p, tab) => p.startsWith("/admin/ledger") && tab === "trial",
       },
       {
@@ -538,6 +574,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "statements" },
         tabValue: "statements",
         icon: FileSpreadsheet,
+        permissionKeys: ["page_finance_statements", "reports"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/ledger") && tab === "statements",
       },
@@ -547,6 +584,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         to: "/admin/reports",
         tabValue: "reports",
         icon: BarChart3,
+        permissionKeys: ["page_finance_reports", "reports"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/reports") ||
           (p.startsWith("/admin/ledger") && tab === "reports"),
@@ -556,6 +594,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         label: "تصميم وإدارة الإيصالات والسندات",
         to: "/admin/receipts",
         icon: Receipt,
+        permissionKeys: ["page_finance_receipts", "accounting", "treasury"],
         matchPath: (p) => p.startsWith("/admin/receipts"),
       },
     ],
@@ -566,6 +605,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
     to: "/admin/hr",
     icon: UserCheck,
     permissionKeys: [
+      "page_hr",
       "hr",
       "hr_view_attendance",
       "hr_manage_payroll_loans",
@@ -580,6 +620,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         to: "/admin/hr",
         tabValue: "grid",
         icon: UserCheck,
+        permissionKeys: ["page_hr"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/hr") && (!tab || tab === "grid"),
       },
@@ -590,6 +631,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "employees" },
         tabValue: "employees",
         icon: Users,
+        permissionKeys: ["page_hr_employees", "hr"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/hr") && tab === "employees",
       },
@@ -600,6 +642,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "attendance" },
         tabValue: "attendance",
         icon: CalendarDays,
+        permissionKeys: ["page_hr_attendance", "hr_view_attendance"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/hr") && tab === "attendance",
       },
@@ -610,6 +653,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "payroll" },
         tabValue: "payroll",
         icon: FileSpreadsheet,
+        permissionKeys: ["page_hr_payroll", "hr_manage_payroll_loans"],
         matchPath: (p, tab) => p.startsWith("/admin/hr") && tab === "payroll",
       },
       {
@@ -619,6 +663,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "loans" },
         tabValue: "loans",
         icon: Coins,
+        permissionKeys: ["page_hr_loans", "hr_manage_payroll_loans"],
         matchPath: (p, tab) => p.startsWith("/admin/hr") && tab === "loans",
       },
       {
@@ -627,6 +672,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         to: "/admin/users",
         tabValue: "users",
         icon: ShieldCheck,
+        permissionKeys: ["users_roles", "system_manage_users"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/users") ||
           (p.startsWith("/admin/hr") && tab === "users"),
@@ -639,6 +685,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
     to: "/admin/inventory",
     icon: Package,
     permissionKeys: [
+      "page_inventory",
       "inventory",
       "inventory_view",
       "purchasing",
@@ -651,6 +698,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         to: "/admin/inventory",
         tabValue: "grid",
         icon: Package,
+        permissionKeys: ["page_inventory"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/inventory") && (!tab || tab === "grid"),
       },
@@ -661,6 +709,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "warehouses" },
         tabValue: "warehouses",
         icon: Building2,
+        permissionKeys: ["page_inventory_warehouses", "inventory"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/inventory") && tab === "warehouses",
       },
@@ -671,6 +720,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "stock" },
         tabValue: "stock",
         icon: Package,
+        permissionKeys: ["page_inventory_items", "inventory", "inventory_view"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/inventory") &&
           (tab === "items" || tab === "stock"),
@@ -682,6 +732,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "transfers" },
         tabValue: "transfers",
         icon: Truck,
+        permissionKeys: ["page_inventory_transfers", "inventory_adjust_transfer"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/inventory") && tab === "transfers",
       },
@@ -692,6 +743,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "transactions" },
         tabValue: "transactions",
         icon: ArrowLeftRight,
+        permissionKeys: ["page_inventory_transactions", "inventory"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/inventory") && tab === "transactions",
       },
@@ -702,6 +754,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "expiry" },
         tabValue: "expiry",
         icon: Calendar,
+        permissionKeys: ["page_inventory_expiry", "inventory"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/inventory") && tab === "expiry",
       },
@@ -712,6 +765,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "purchases" },
         tabValue: "purchases",
         icon: ShoppingCart,
+        permissionKeys: ["page_inventory_purchases", "purchasing"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/inventory") && tab === "purchases",
       },
@@ -722,6 +776,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "suppliers" },
         tabValue: "suppliers",
         icon: Users,
+        permissionKeys: ["page_inventory_suppliers", "purchasing_view"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/inventory") && tab === "suppliers",
       },
@@ -732,6 +787,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "waste" },
         tabValue: "waste",
         icon: AlertCircle,
+        permissionKeys: ["page_inventory_waste", "inventory_waste_dispose"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/inventory") && tab === "waste",
       },
@@ -742,6 +798,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "reports" },
         tabValue: "reports",
         icon: FileText,
+        permissionKeys: ["page_inventory_reports", "reports"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/inventory") && tab === "reports",
       },
@@ -752,6 +809,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "settings" },
         tabValue: "settings",
         icon: Settings,
+        permissionKeys: ["page_inventory_settings", "inventory"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/inventory") && tab === "settings",
       },
@@ -762,7 +820,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
     label: "خيارات المطور والرقابة",
     to: "/admin/system-update",
     icon: Settings,
-    permissionKeys: ["system_backup_update", "developer_options"],
+    permissionKeys: ["page_developer", "system_backup_update", "developer_options"],
     children: [
       {
         id: "system-hub",
@@ -770,6 +828,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         to: "/admin/system-update",
         tabValue: "system",
         icon: Settings,
+        permissionKeys: ["page_developer"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/system-update") &&
           (!tab || tab === "system"),
@@ -781,6 +840,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "access" },
         tabValue: "access",
         icon: Database,
+        permissionKeys: ["page_system_access_db", "system_backup_update"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/system-update") && tab === "access",
       },
@@ -791,6 +851,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "audit" },
         tabValue: "audit",
         icon: History,
+        permissionKeys: ["page_audit_logs", "audit_logs", "system_audit_logs"],
         matchPath: (p, tab) =>
           (p.startsWith("/admin/system-update") &&
             (tab === "audit" || tab === "audit_logs")) ||
@@ -804,6 +865,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "sync" },
         tabValue: "sync",
         icon: RefreshCw,
+        permissionKeys: ["page_system_github", "system_backup_update"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/system-update") &&
           (tab === "sync" || tab === "updates"),
@@ -815,6 +877,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "status" },
         tabValue: "status",
         icon: ShieldCheck,
+        permissionKeys: ["page_system_status", "system_backup_update"],
         matchPath: (p, tab) =>
           p.startsWith("/admin/system-update") && tab === "status",
       },
@@ -823,6 +886,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         label: "استوديو المطور Pro (المحرر البصري)",
         to: "/admin/studio",
         icon: Sparkles,
+        permissionKeys: ["developer_options", "super_admin_full_access"],
         matchPath: (p) =>
           p.startsWith("/admin/studio") ||
           p.startsWith("/admin/developer-studio"),
@@ -914,4 +978,37 @@ export function resolveNavigationState(
   };
 }
 
+export function isRestaurantScreenPath(
+  pathname?: string,
+  search?: unknown,
+  searchStr?: string,
+): boolean {
+  const rawPath =
+    pathname || (typeof window !== "undefined" ? window.location.pathname : "/");
+  const normPath = normalizePathname(rawPath);
+
+  if (
+    normPath === "/admin/restaurant" ||
+    normPath.startsWith("/admin/restaurant/") ||
+    normPath === "/pos" ||
+    normPath.startsWith("/pos/") ||
+    normPath === "/captain" ||
+    normPath.startsWith("/captain/") ||
+    normPath === "/oven" ||
+    normPath.startsWith("/oven/") ||
+    normPath === "/cashier-treasury" ||
+    normPath.startsWith("/cashier-treasury/") ||
+    normPath === "/admin/orders" ||
+    normPath.startsWith("/admin/orders/") ||
+    normPath === "/admin/menu" ||
+    normPath.startsWith("/admin/menu/")
+  ) {
+    return true;
+  }
+
+  const resolved = resolveNavigationState(normPath, search, searchStr);
+  return resolved.department?.id === "restaurant";
+}
+
 export { Grid3X3 };
+

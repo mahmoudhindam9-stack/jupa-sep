@@ -65,6 +65,8 @@ import {
   DEFAULT_TREASURIES,
   EGP_SEED_TRANSACTIONS,
   ensureCurrentManagedUsers,
+  ensureEmployeesWithUniqueCodes,
+  generateNextUniqueEmployeeCode,
   LEGACY_DEFAULT_USER_IDS,
   OWNER_DEFAULT_ADMIN,
   ROOT_DEFAULT_ADMIN,
@@ -76,7 +78,8 @@ export class ERPStore {
   listeners = [];
   constructor() {
     this.state = this.loadState();
-    this.state.users = ensureCurrentManagedUsers(this.state.users);
+    this.state.employees = ensureEmployeesWithUniqueCodes(this.state.employees);
+    this.state.users = ensureCurrentManagedUsers(this.state.users, this.state.employees);
     const activeLocalUsername = String(this.state.currentUser || "")
       .trim()
       .toLowerCase();
@@ -308,8 +311,10 @@ export class ERPStore {
                 this.saveToIDB(idbState);
               }
 
+              const cleanedIdbEmployees = ensureEmployeesWithUniqueCodes(idbState.employees);
+              idbState.employees = cleanedIdbEmployees;
               const originalIdbUsers = Array.isArray(idbState.users) ? idbState.users : [];
-              const cleanedIdbUsers = ensureCurrentManagedUsers(originalIdbUsers);
+              const cleanedIdbUsers = ensureCurrentManagedUsers(originalIdbUsers, cleanedIdbEmployees);
               const idbCurrentName = String(idbState.currentUser || "")
                 .trim()
                 .toLowerCase();
@@ -332,6 +337,12 @@ export class ERPStore {
                 this.saveToIDB(idbState);
               }
 
+              if (Array.isArray(idbState.auditLogs)) {
+                idbState.auditLogs = idbState.auditLogs
+                  .filter((l: any) => l && l.action !== "تحديث صلاحيات مستخدم")
+                  .slice(0, 150);
+              }
+
               const idbEntriesCount = idbState.journalEntries?.length || 0;
               const currentEntriesCount = this.state.journalEntries?.length || 0;
               const idbUpdated = idbState._updatedAt || 0;
@@ -344,8 +355,14 @@ export class ERPStore {
                 this.state = {
                   ...this.getDefaultState(),
                   ...idbState,
-                  users: ensureCurrentManagedUsers(idbState.users),
-                  currentUser: ensureCurrentManagedUsers(idbState.users).some(
+                  employees: cleanedIdbEmployees,
+                  auditLogs: Array.isArray(idbState.auditLogs)
+                    ? idbState.auditLogs
+                        .filter((l: any) => l && l.action !== "تحديث صلاحيات مستخدم")
+                        .slice(0, 150)
+                    : [],
+                  users: ensureCurrentManagedUsers(idbState.users, cleanedIdbEmployees),
+                  currentUser: ensureCurrentManagedUsers(idbState.users, cleanedIdbEmployees).some(
                     (user: any) =>
                       String(user.username || "")
                         .trim()
@@ -387,6 +404,25 @@ export class ERPStore {
   loadState() {
     if (typeof window === "undefined" || typeof localStorage === "undefined")
       return this.getDefaultState();
+    try {
+      if (!localStorage.getItem("restocash_force_logout_2026_10_29_v3")) {
+        localStorage.removeItem("restocash_auth_user");
+        localStorage.removeItem("restocash_user_role");
+        sessionStorage.removeItem("restocash_auth_user");
+        sessionStorage.removeItem("restocash_user_role");
+        for (const key of Object.keys(localStorage)) {
+          if (key.startsWith("sb-") && key.endsWith("-auth-token")) {
+            localStorage.removeItem(key);
+          }
+        }
+        for (const key of Object.keys(sessionStorage)) {
+          if (key.startsWith("sb-") && key.endsWith("-auth-token")) {
+            sessionStorage.removeItem(key);
+          }
+        }
+        localStorage.setItem("restocash_force_logout_2026_10_29_v3", "1");
+      }
+    } catch {}
     const raw = localStorage.getItem("erp_store_state");
     if (raw)
       try {
@@ -395,6 +431,11 @@ export class ERPStore {
           parsed.users = [];
           parsed.currentUser = "";
           parsed.wipe_all_users_clean_2026_10_12_v4 = true;
+        }
+        if (Array.isArray(parsed.auditLogs)) {
+          parsed.auditLogs = parsed.auditLogs
+            .filter((l: any) => l && l.action !== "تحديث صلاحيات مستخدم")
+            .slice(0, 150);
         }
         let treasuries =
           parsed.treasuries?.map((t) => {
@@ -663,7 +704,10 @@ export class ERPStore {
           reconciliations: loadedReconciliations,
           userPermissions: parsed.userPermissions || DEFAULT_PERMISSIONS,
           currentUser: parsed.currentUser || "",
-          users: ensureCurrentManagedUsers(parsed.users),
+          users: ensureCurrentManagedUsers(
+            parsed.users,
+            ensureEmployeesWithUniqueCodes(parsed.employees || DEFAULT_EMPLOYEES),
+          ),
           fiscalYearStatus: parsed.fiscalYearStatus || "open",
           inventorySettings: parsed.inventorySettings || {
             allowNegativeStock: true,
@@ -673,7 +717,7 @@ export class ERPStore {
           hard_reset_2026_08_18_final: true,
           mock_data_cleared_v6: true,
           wipe_journal_entries_2026_08_18_v3: true,
-          employees: parsed.employees || DEFAULT_EMPLOYEES,
+          employees: ensureEmployeesWithUniqueCodes(parsed.employees || DEFAULT_EMPLOYEES),
           attendance: parsed.attendance || [],
           loans: isFreshFinancialStart ? parsed.loans || [] : [],
           payrolls: isFreshFinancialStart ? parsed.payrolls || [] : [],
@@ -992,15 +1036,21 @@ export class ERPStore {
       after_value: afterValue,
       ip_address: "127.0.0.1",
     };
+    if (!Array.isArray(this.state.auditLogs)) this.state.auditLogs = [];
     this.state.auditLogs.unshift(log);
+    if (this.state.auditLogs.length > 150) {
+      this.state.auditLogs = this.state.auditLogs.slice(0, 150);
+    }
     this.saveState();
   }
   getUsers() {
-    return ensureCurrentManagedUsers(this.state.users || []);
+    this.state.employees = ensureEmployeesWithUniqueCodes(this.state.employees || DEFAULT_EMPLOYEES);
+    return ensureCurrentManagedUsers(this.state.users || [], this.state.employees);
   }
   replaceManagedUsers(users: SystemUser[]) {
+    this.state.employees = ensureEmployeesWithUniqueCodes(this.state.employees || DEFAULT_EMPLOYEES);
     // Reconcile authoritative Supabase directory with local-first users that may still be pending cloud sync.
-    const existingLocalUsers = ensureCurrentManagedUsers(this.state.users || []);
+    const existingLocalUsers = ensureCurrentManagedUsers(this.state.users || [], this.state.employees);
     const cloudUsers = (Array.isArray(users) ? users : [])
       .filter((user) => Boolean(user?.id && user?.username))
       .map((user) => {
@@ -1023,6 +1073,7 @@ export class ERPStore {
         return {
           ...matchedLocal,
           ...user,
+          employee_code: user.employee_code || matchedLocal?.employee_code,
           username: normalizedUsername,
           email: normalizedEmail,
           permissions: mergedPermissions,
@@ -1040,7 +1091,10 @@ export class ERPStore {
       return !cloudUsernames.has(uname) && (!uemail || !cloudEmails.has(uemail));
     });
 
-    const combinedUsers = ensureCurrentManagedUsers([...cloudUsers, ...unsyncedLocalUsers]);
+    const combinedUsers = ensureCurrentManagedUsers(
+      [...cloudUsers, ...unsyncedLocalUsers],
+      this.state.employees,
+    );
     this.state.users = combinedUsers;
 
     const permissionsByIdentity: Record<string, UserPermission> = {
@@ -1062,6 +1116,7 @@ export class ERPStore {
   }
   upsertUser(user: SystemUser) {
     if (!this.state.users) this.state.users = [];
+    this.state.employees = ensureEmployeesWithUniqueCodes(this.state.employees || DEFAULT_EMPLOYEES);
     const normalizedUsername = String(user.username || "").trim().toLowerCase();
     const normalizedEmail = String(
       user.email || `${normalizedUsername || "user"}@restocash.com`,
@@ -1084,9 +1139,26 @@ export class ERPStore {
       ...(user.permissions || {}),
     };
 
+    // Match or generate unique employee_code
+    const matchedHrEmp = (this.state.employees || []).find(
+      (e) =>
+        (user.employee_code && e.employee_code === String(user.employee_code).trim()) ||
+        (user.full_name && e.name.trim() === user.full_name.trim()),
+    );
+    const requestedCode = String(
+      user.employee_code ||
+        existingUser?.employee_code ||
+        matchedHrEmp?.employee_code ||
+        "",
+    ).trim();
+    const resolvedEmployeeCode =
+      requestedCode ||
+      generateNextUniqueEmployeeCode(this.state.employees || [], this.state.users || []);
+
     const nextUser: SystemUser = {
       ...existingUser,
       ...user,
+      employee_code: resolvedEmployeeCode,
       username: normalizedUsername,
       email: normalizedEmail,
       password:
@@ -1100,6 +1172,11 @@ export class ERPStore {
       this.state.users[idx] = nextUser;
     } else {
       this.state.users.push(nextUser);
+    }
+
+    // If matched to an HR employee, keep their employee_code in sync
+    if (matchedHrEmp && resolvedEmployeeCode) {
+      matchedHrEmp.employee_code = resolvedEmployeeCode;
     }
 
     if (!this.state.userPermissions) this.state.userPermissions = {};
@@ -1132,9 +1209,28 @@ export class ERPStore {
     this.saveState();
   }
   setCurrentUser(email: string) {
+    const prevUser = this.state.currentUser;
+    if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
+      try {
+        const rawMap = localStorage.getItem("restocash_online_sessions_v1");
+        const onlineMap: Record<string, number> = rawMap ? JSON.parse(rawMap) : {};
+        if (!email && prevUser) {
+          const prevKey = String(prevUser).trim().toLowerCase();
+          delete onlineMap[prevKey];
+          delete onlineMap[prevKey.split("@")[0]];
+        } else if (email) {
+          const normKey = String(email).trim().toLowerCase();
+          onlineMap[normKey] = Date.now();
+          onlineMap[normKey.split("@")[0]] = Date.now();
+        }
+        localStorage.setItem("restocash_online_sessions_v1", JSON.stringify(onlineMap));
+      } catch {
+        // ignore
+      }
+    }
+    if (this.state.currentUser === email) return;
     this.state.currentUser = email;
     this.saveState();
-    this.logAction("SYSTEM", "تغيير المستخدم النشط", `تم تسجيل دخول المستخدم: ${email}`, "SYSTEM");
   }
   updateUserPermission(identity: string, permissions: Partial<UserPermission>) {
     const normalizedIdentity = String(identity || "").trim().toLowerCase();
@@ -1155,6 +1251,16 @@ export class ERPStore {
       ...existing,
       ...permissions,
     };
+
+    const allKeys = new Set([...Object.keys(existing), ...Object.keys(nextPermissions)]);
+    let changed = false;
+    for (const k of allKeys) {
+      if (Boolean((existing as any)[k]) !== Boolean((nextPermissions as any)[k])) {
+        changed = true;
+        break;
+      }
+    }
+
     this.state.userPermissions[normalizedIdentity] = nextPermissions;
     this.state.userPermissions[identity] = nextPermissions;
 
@@ -1167,10 +1273,21 @@ export class ERPStore {
           String(u.id || "") === identity,
       );
       if (targetUser) {
-        targetUser.permissions = {
+        const mergedTarget = {
           ...(targetUser.permissions || {}),
           ...nextPermissions,
         };
+        const targetKeys = new Set([
+          ...Object.keys(targetUser.permissions || {}),
+          ...Object.keys(mergedTarget),
+        ]);
+        for (const k of targetKeys) {
+          if (Boolean((targetUser.permissions as any)?.[k]) !== Boolean((mergedTarget as any)[k])) {
+            changed = true;
+            break;
+          }
+        }
+        targetUser.permissions = mergedTarget;
         const uname = String(targetUser.username || "").trim().toLowerCase();
         const uemail = String(targetUser.email || "").trim().toLowerCase();
         if (uname) this.state.userPermissions[uname] = { ...targetUser.permissions };
@@ -1178,8 +1295,9 @@ export class ERPStore {
       }
     }
 
-    this.saveState();
-    this.logAction("ADMIN", "تحديث صلاحيات مستخدم", `تم تحديث صلاحيات ${identity}`, "UPDATE");
+    if (changed) {
+      this.saveState();
+    }
   }
   addBranch(name, name_ar, code) {
     const branch = {
@@ -4680,18 +4798,36 @@ export class ERPStore {
     );
   }
   getEmployees(): Employee[] {
-    return this.state.employees || [];
+    this.state.employees = ensureEmployeesWithUniqueCodes(this.state.employees || DEFAULT_EMPLOYEES);
+    return this.state.employees;
+  }
+  getNextEmployeeCode(): string {
+    return generateNextUniqueEmployeeCode(this.state.employees || [], this.state.users || []);
   }
   addEmployee(emp) {
+    if (!this.state.employees) this.state.employees = [];
+    this.state.employees = ensureEmployeesWithUniqueCodes(this.state.employees);
+    const requestedCode = String(emp.employee_code || "").trim();
+    const isCodeTaken =
+      requestedCode &&
+      this.state.employees.some((e) => String(e.employee_code || "").trim() === requestedCode);
+    const resolvedCode =
+      requestedCode && !isCodeTaken ? requestedCode : this.getNextEmployeeCode();
+
     const newEmp = {
       ...emp,
+      employee_code: resolvedCode,
       salary: Number(emp.salary) || 0,
       id: "emp-" + Date.now(),
     };
-    if (!this.state.employees) this.state.employees = [];
     this.state.employees.push(newEmp);
     this.saveState();
-    this.logAction("HR", "إضافة موظف جديد", `تم تسجيل الموظف: ${emp.name}`, "CREATE");
+    this.logAction(
+      "HR",
+      "إضافة موظف جديد",
+      `تم تسجيل الموظف: ${emp.name} (الرقم الوظيفي: #${resolvedCode})`,
+      "CREATE",
+    );
     this.notify();
     return newEmp;
   }
@@ -4699,10 +4835,39 @@ export class ERPStore {
     if (!this.state.employees) this.state.employees = [];
     const emp = this.state.employees.find((e) => e.id === id);
     if (emp) {
+      const requestedCode = String(payload.employee_code || emp.employee_code || "").trim();
+      const duplicateOther =
+        requestedCode &&
+        this.state.employees.some(
+          (other) => other.id !== id && String(other.employee_code || "").trim() === requestedCode,
+        );
+      if (duplicateOther) {
+        throw new Error(`الرقم الوظيفي (${requestedCode}) مستخدم بالفعل لموظف آخر.`);
+      }
       Object.assign(emp, payload);
+      if (requestedCode) {
+        emp.employee_code = requestedCode;
+      } else if (!emp.employee_code) {
+        emp.employee_code = this.getNextEmployeeCode();
+      }
       if (payload.salary !== undefined) emp.salary = Number(payload.salary) || 0;
+
+      // Also sync employee_code to any matching user in Users directory
+      if (Array.isArray(this.state.users)) {
+        this.state.users.forEach((u) => {
+          if (u.full_name && u.full_name.trim() === emp.name.trim()) {
+            u.employee_code = emp.employee_code;
+          }
+        });
+      }
+
       this.saveState();
-      this.logAction("HR", "تعديل بيانات موظف", `تم تعديل الموظف: ${emp.name}`, "UPDATE");
+      this.logAction(
+        "HR",
+        "تعديل بيانات موظف",
+        `تم تعديل الموظف: ${emp.name} (الرقم الوظيفي: #${emp.employee_code})`,
+        "UPDATE",
+      );
       this.notify();
     }
   }
@@ -5143,6 +5308,286 @@ export class ERPStore {
       count++;
     });
     return count;
+  }
+
+  buildPayrollDisbursementPreview(monthStr?: string, treasuryId?: string) {
+    const month = monthStr || new Date().toISOString().slice(0, 7);
+    if (!this.state.payrolls || this.state.payrolls.filter((p) => p.month === month).length === 0) {
+      this.generatePayroll(month);
+    }
+
+    const monthPayrolls = (this.state.payrolls || []).filter((p) => p.month === month);
+    const employees = this.state.employees || [];
+    const targetTreasury =
+      (this.state.treasuries || []).find((t) => t.id === treasuryId && !t.deleted) ||
+      (this.state.treasuries || []).find((t) => !t.deleted);
+
+    const treasuryAccCode =
+      targetTreasury?.account_code ||
+      (targetTreasury?.type === "bank"
+        ? "102000"
+        : targetTreasury?.branch_id === "branch-2"
+          ? "101001"
+          : "101000");
+
+    const treasuryAccName =
+      targetTreasury?.name_ar ||
+      this.getAccountName(treasuryAccCode) ||
+      "الخزينة النقدية الرئيسية";
+
+    const expenseAccObj = (this.state.accounts || []).find(
+      (a) =>
+        a.code === "502000" ||
+        a.code === "501000" ||
+        a.code === "501001" ||
+        a.name_ar.includes("رواتب") ||
+        a.name_ar.includes("مرتبات") ||
+        a.name_ar.includes("أجور"),
+    );
+    const expenseAcc = expenseAccObj?.code || "502000";
+    const expenseAccName = expenseAccObj?.name_ar || "رواتب وأجور الموظفين";
+
+    const loanAccObj = (this.state.accounts || []).find(
+      (a) => a.code === "15010240" || a.code === "103000" || a.name_ar.includes("سلف"),
+    );
+    const loanAcc = loanAccObj?.code || "15010240";
+    const loanAccName = loanAccObj?.name_ar || "سلف وقروض الموظفين";
+
+    const payableAccObj = (this.state.accounts || []).find(
+      (a) => a.code === "201200" || a.code === "202000" || a.name_ar.includes("مستحق"),
+    );
+    const payableAcc = payableAccObj?.code || "201200";
+    const payableAccName = payableAccObj?.name_ar || "رواتب وأجور مستحقة للصرف";
+
+    // Check if an accrual entry was already posted for this month
+    const hasAccrualEntry = (this.state.journalEntries || []).some((je) =>
+      String(je.id || "").startsWith(`PAYROLL-ACCRUAL-${month}`),
+    );
+
+    const byCurrency: Record<
+      string,
+      {
+        currency: string;
+        rate: number;
+        totalBasic: number;
+        totalBonuses: number;
+        totalDeductions: number;
+        totalLoans: number;
+        totalNet: number;
+        unpaidNet: number;
+        records: Array<{
+          payroll: any;
+          employee: any;
+        }>;
+        journalLines: Array<{
+          account_code: string;
+          account_name: string;
+          debit: number;
+          credit: number;
+          currency: string;
+          rate: number;
+          description: string;
+        }>;
+      }
+    > = {};
+
+    monthPayrolls.forEach((p) => {
+      const curr = (p.currency || "EGP").toUpperCase();
+      const emp = employees.find((e) => e.id === p.employee_id);
+      if (!byCurrency[curr]) {
+        byCurrency[curr] = {
+          currency: curr,
+          rate: this.getExchangeRate(curr),
+          totalBasic: 0,
+          totalBonuses: 0,
+          totalDeductions: 0,
+          totalLoans: 0,
+          totalNet: 0,
+          unpaidNet: 0,
+          records: [],
+          journalLines: [],
+        };
+      }
+      const group = byCurrency[curr];
+      const basic = Number(p.basic_salary || 0);
+      const bonuses = Number(p.bonuses || 0);
+      const deductions = Number(p.deductions || 0);
+      const loans = Number(p.loan_deduction || 0);
+      const net = Number(p.net_salary || 0);
+
+      group.totalBasic += basic;
+      group.totalBonuses += bonuses;
+      group.totalDeductions += deductions;
+      group.totalLoans += loans;
+      group.totalNet += net;
+      if (p.status !== "paid") {
+        group.unpaidNet += net;
+      }
+      group.records.push({ payroll: p, employee: emp });
+    });
+
+    Object.values(byCurrency).forEach((group) => {
+      const curr = group.currency;
+      const rate = group.rate;
+      const lines: typeof group.journalLines = [];
+
+      if (hasAccrualEntry) {
+        // If accrual was already posted, disbursement debits Salaries Payable (employee by employee) and credits Treasury
+        group.records.forEach(({ payroll, employee }) => {
+          const net = Number(payroll.net_salary || 0);
+          if (net <= 0) return;
+          lines.push({
+            account_code: payableAcc,
+            account_name: `${payableAccName} - ${employee?.name || "موظف"}`,
+            debit: net,
+            credit: 0,
+            currency: curr,
+            rate,
+            description: `صرف صافي راتب شهر ${month} للموظف: ${employee?.name || ""} (${employee?.job_title || ""})`,
+          });
+        });
+        if (group.totalNet > 0) {
+          lines.push({
+            account_code: treasuryAccCode,
+            account_name: treasuryAccName,
+            debit: 0,
+            credit: group.totalNet,
+            currency: curr,
+            rate,
+            description: `إجمالي المنصرف نقداً لرواتب شهر ${month} من ${treasuryAccName}`,
+          });
+        }
+      } else {
+        // Full direct disbursement journal entry (Debits Salary Expense per employee, Credits Loans, Deductions, and Treasury Net)
+        group.records.forEach(({ payroll, employee }) => {
+          const gross = Number(payroll.basic_salary || 0) + Number(payroll.bonuses || 0);
+          if (gross <= 0) return;
+          lines.push({
+            account_code: expenseAcc,
+            account_name: `${expenseAccName} (${employee?.name || "موظف"})`,
+            debit: gross,
+            credit: 0,
+            currency: curr,
+            rate,
+            description: `راتب شهر ${month} للموظف: ${employee?.name || ""} (${employee?.job_title || ""})`,
+          });
+        });
+
+        if (group.totalLoans > 0) {
+          lines.push({
+            account_code: loanAcc,
+            account_name: loanAccName,
+            debit: 0,
+            credit: group.totalLoans,
+            currency: curr,
+            rate,
+            description: `استقطاع أقساط سلف الموظفين من مسير رواتب شهر ${month}`,
+          });
+        }
+
+        if (group.totalDeductions > 0) {
+          lines.push({
+            account_code: expenseAcc,
+            account_name: `${expenseAccName} (خصومات حضور وغياب)`,
+            debit: 0,
+            credit: group.totalDeductions,
+            currency: curr,
+            rate,
+            description: `خصومات الغياب والتأخير لمسير رواتب شهر ${month}`,
+          });
+        }
+
+        if (group.totalNet > 0) {
+          lines.push({
+            account_code: treasuryAccCode,
+            account_name: treasuryAccName,
+            debit: 0,
+            credit: group.totalNet,
+            currency: curr,
+            rate,
+            description: `صرف صافي رواتب ومستحقات الموظفين لشهر ${month} من ${treasuryAccName}`,
+          });
+        }
+      }
+
+      group.journalLines = lines;
+    });
+
+    return {
+      month,
+      treasury: targetTreasury,
+      treasuryAccCode,
+      treasuryAccName,
+      hasAccrualEntry,
+      totalEmployees: monthPayrolls.length,
+      unpaidCount: monthPayrolls.filter((p) => p.status !== "paid").length,
+      paidCount: monthPayrolls.filter((p) => p.status === "paid").length,
+      groupsByCurrency: byCurrency,
+    };
+  }
+
+  approvePayrollDisbursementJournal(monthStr: string, treasuryId: string) {
+    const preview = this.buildPayrollDisbursementPreview(monthStr, treasuryId);
+    const targetTreasury =
+      (this.state.treasuries || []).find((t) => t.id === treasuryId && !t.deleted) ||
+      preview.treasury;
+
+    if (!targetTreasury) {
+      throw new Error("يرجى اختيار خزينة أو حساب بنكي صالح لصرف المرتبات");
+    }
+
+    const todayStr = new Date().toISOString().split("T")[0];
+    const createdEntries: any[] = [];
+
+    for (const [curr, group] of Object.entries(preview.groupsByCurrency)) {
+      if (!group.journalLines || group.journalLines.length < 2) continue;
+
+      const customId = `PAYROLL-DISBURSE-${preview.month}-${curr}`;
+      // Remove previous draft/duplicate of same disbursement id if re-approving
+      this.state.journalEntries = (this.state.journalEntries || []).filter(
+        (je) => je.id !== customId,
+      );
+
+      const entryDesc = `قيد صرف مرتبات وأجور الموظفين لشهر ${preview.month} (${curr}) - خزينة: ${targetTreasury.name_ar}`;
+      const ref = `PAY-DISB-${preview.month}`;
+
+      const entry = this.addJournalEntry(
+        entryDesc,
+        group.journalLines,
+        ref,
+        curr,
+        todayStr,
+        customId,
+      );
+      if (entry) createdEntries.push(entry);
+    }
+
+    // Also process unpaid individual payroll records (treasury withdrawal + loan repayment + status='paid')
+    const unpaidRecords = (this.state.payrolls || []).filter(
+      (p) => p.month === preview.month && p.status !== "paid",
+    );
+    let paidNowCount = 0;
+    unpaidRecords.forEach((p) => {
+      this.paySalary(p.id, targetTreasury.id);
+      paidNowCount++;
+    });
+
+    this.recalculateAccountBalances();
+    this.saveState();
+    this.logAction(
+      "HR",
+      "اعتماد وترحيل قيود صرف المرتبات",
+      `تم اعتماد وترحيل قيود صرف المرتبات لشهر ${preview.month} لعدد ${preview.totalEmployees} موظف من خزينة ${targetTreasury.name_ar}`,
+      "TRANSACTION",
+    );
+    this.notify();
+
+    return {
+      entries: createdEntries,
+      paidNowCount,
+      totalEmployees: preview.totalEmployees,
+      treasuryName: targetTreasury.name_ar,
+    };
   }
   importOracleBatchData(newAccounts, newJournalEntries) {
     this.state.accounts = newAccounts.map((acc) => ({

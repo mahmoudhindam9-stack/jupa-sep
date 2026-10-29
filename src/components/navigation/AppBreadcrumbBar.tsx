@@ -159,10 +159,10 @@ export function AppBreadcrumbBar({
         className,
       )}
     >
-      <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 text-xs sm:text-sm">
+      <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-3 text-xs sm:text-sm">
         {/* Interactive 3-Level Hierarchical Breadcrumb Trail */}
         <ol
-          className="flex items-center gap-1 sm:gap-1.5 flex-wrap min-w-0"
+          className="flex items-center gap-1 sm:gap-1.5 flex-nowrap overflow-x-auto scrollbar-none min-w-0 py-0.5"
           role="list"
         >
           {/* 1. Root Hub Link (لوحة الأقسام) */}
@@ -170,11 +170,12 @@ export function AppBreadcrumbBar({
             <button
               type="button"
               onClick={handleGoToRootHub}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-bold text-muted-foreground hover:text-foreground hover:bg-card/80 border border-transparent hover:border-border/60 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              className="inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg font-bold text-muted-foreground hover:text-foreground hover:bg-card/80 border border-transparent hover:border-border/60 transition-colors cursor-pointer whitespace-nowrap shrink-0"
               title="الانتقال إلى لوحة الأقسام الرئيسية"
             >
               <Grid3X3 size={14} className="text-primary shrink-0" />
-              <span>لوحة الأقسام</span>
+              <span className="hidden xs:inline">لوحة الأقسام</span>
+              <span className="xs:hidden">الرئيسية</span>
             </button>
           </li>
 
@@ -303,40 +304,47 @@ export function AppBreadcrumbBar({
                         الأقسام الفرعية داخل {department.label}
                       </DropdownMenuLabel>
                       <DropdownMenuSeparator className="my-1" />
-                      {department.children.map((sibling) => {
-                        const SiblingIcon = sibling.icon;
-                        const isActiveSibling = sibling.id === subItem?.id;
-                        return (
-                          <DropdownMenuItem
-                            key={sibling.id}
-                            onClick={() => handleNavigateSubItem(sibling)}
-                            className={cn(
-                              "flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-xs font-bold cursor-pointer",
-                              isActiveSibling &&
-                                "bg-primary/10 text-primary font-black",
-                            )}
-                          >
-                            <div className="flex items-center gap-2 truncate">
-                              <SiblingIcon
-                                size={14}
-                                className={cn(
-                                  "shrink-0",
-                                  isActiveSibling
-                                    ? "text-primary"
-                                    : "text-muted-foreground",
-                                )}
-                              />
-                              <span className="truncate">{sibling.label}</span>
-                            </div>
-                            {isActiveSibling && (
-                              <Check
-                                size={13}
-                                className="text-primary shrink-0"
-                              />
-                            )}
-                          </DropdownMenuItem>
-                        );
-                      })}
+                      {department.children
+                        .filter((sibling) =>
+                          hasAnyRequestedPermission(
+                            activePerms,
+                            sibling.permissionKeys || department.permissionKeys || [],
+                          ),
+                        )
+                        .map((sibling) => {
+                          const SiblingIcon = sibling.icon;
+                          const isActiveSibling = sibling.id === subItem?.id;
+                          return (
+                            <DropdownMenuItem
+                              key={sibling.id}
+                              onClick={() => handleNavigateSubItem(sibling)}
+                              className={cn(
+                                "flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-xs font-bold cursor-pointer",
+                                isActiveSibling &&
+                                  "bg-primary/10 text-primary font-black",
+                              )}
+                            >
+                              <div className="flex items-center gap-2 truncate">
+                                <SiblingIcon
+                                  size={14}
+                                  className={cn(
+                                    "shrink-0",
+                                    isActiveSibling
+                                      ? "text-primary"
+                                      : "text-muted-foreground",
+                                  )}
+                                />
+                                <span className="truncate">{sibling.label}</span>
+                              </div>
+                              {isActiveSibling && (
+                                <Check
+                                  size={13}
+                                  className="text-primary shrink-0"
+                                />
+                              )}
+                            </DropdownMenuItem>
+                          );
+                        })}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 ) : (

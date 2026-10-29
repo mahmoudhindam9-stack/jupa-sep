@@ -1,5 +1,4 @@
 import "./lib/error-capture";
-import { GoogleGenAI } from "@google/genai";
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
@@ -86,55 +85,6 @@ export default {
     try {
       const url = new URL(request.url);
 
-      if (url.pathname === "/api/chat" && request.method === "POST") {
-        const { messages, model = "gemini-3.5-flash" } = await request.json();
-        const ai = new GoogleGenAI({
-          apiKey: process.env.GEMINI_API_KEY,
-          httpOptions: {
-            headers: {
-              "User-Agent": "aistudio-build",
-            },
-          },
-        });
-
-        const contents = messages.map((m: any) => ({
-          role: m.role,
-          parts: [{ text: m.text }],
-        }));
-
-        const response = await ai.models.generateContentStream({
-          model: model,
-          contents: contents,
-          config: {
-            systemInstruction:
-              "You are a helpful and professional AI assistant for Restocash, a restaurant management and point-of-sale system. Help users with their questions, suggest features, and provide clear and concise answers.",
-          },
-        });
-
-        const encoder = new TextEncoder();
-        const stream = new ReadableStream({
-          async start(controller) {
-            try {
-              for await (const chunk of response) {
-                if (chunk.text) {
-                  controller.enqueue(encoder.encode(chunk.text));
-                }
-              }
-            } catch (err) {
-              console.error("Gemini stream error:", err);
-            } finally {
-              controller.close();
-            }
-          },
-        });
-
-        return new Response(stream, {
-          headers: {
-            "Content-Type": "text/plain",
-            "Transfer-Encoding": "chunked",
-          },
-        });
-      }
 
       if (url.pathname === "/api/github/push" && request.method === "POST") {
         try {

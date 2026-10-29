@@ -101,6 +101,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
     to: "/admin/restaurant",
     icon: UtensilsCrossed,
     permissionKeys: [
+      "page_restaurant",
       "orders",
       "orders_view",
       "pos",
@@ -164,14 +165,14 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "tables" },
         icon: Grid3X3,
         desc: "تخطيط الصالة والباركود الذكي",
-        permissionKeys: ["orders", "orders_generate_qr", "captain", "captain_transfer_tables"],
+        permissionKeys: ["page_restaurant_tables", "orders", "orders_generate_qr", "captain", "captain_transfer_tables"],
       },
       {
         title: "قائمة الطعام والوجبات (المنيو)",
         to: "/admin/menu",
         icon: Coffee,
         desc: "تعديل الأصناف والأسعار",
-        permissionKeys: ["pos", "inventory", "orders"],
+        permissionKeys: ["page_restaurant_menu", "pos", "inventory", "orders"],
       },
       {
         title: "مستودع وخامات المطعم",
@@ -179,7 +180,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "inventory" },
         icon: Package,
         desc: "المخزون الداخلي السريع",
-        permissionKeys: ["inventory", "inventory_view", "production", "production_view"],
+        permissionKeys: ["page_restaurant_inventory", "inventory", "inventory_view", "production", "production_view"],
       },
       {
         title: "إغلاق وردية كاشير المطعم",
@@ -187,7 +188,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "shifts" },
         icon: History,
         desc: "تقارير وتصفية وردية الكاشير",
-        permissionKeys: ["pos", "pos_access", "restaurant_open_shift", "treasury_open_close"],
+        permissionKeys: ["page_restaurant_cashier_treasury", "restaurant_open_shift", "pos", "pos_access", "treasury_open_close"],
       },
     ],
   },
@@ -199,7 +200,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
       "دليل المحلات والمستأجرين، عقود الإيجار السنوية والشهرية، متابعة التحصيل والدفعات، ومصروفات وتشغيل المول.",
     to: "/admin/mall",
     icon: Building2,
-    permissionKeys: ["mall_manage_shops", "mall_garden_finance", "accounting"],
+    permissionKeys: ["page_mall", "mall_manage_shops", "mall_garden_finance", "accounting"],
     colorScheme: {
       bgLight: "bg-blue-500/5",
       border: "border-blue-500/20",
@@ -218,7 +219,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "shops" },
         icon: Store,
         desc: "قائمة الوحدات والمستأجرين والعقود",
-        permissionKeys: ["mall_manage_shops"],
+        permissionKeys: ["page_mall_shops", "mall_manage_shops"],
       },
       {
         title: "متابعة الإيجارات والدفعات الشهرية",
@@ -226,7 +227,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "payments" },
         icon: Calendar,
         desc: "سجل التحصيل الشهري والمستحقات",
-        permissionKeys: ["mall_manage_shops", "accounting"],
+        permissionKeys: ["page_mall_payments", "mall_manage_shops", "accounting"],
       },
       {
         title: "مصروفات وتشغيل وصيانة المول",
@@ -234,7 +235,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "expenses" },
         icon: CreditCard,
         desc: "تكاليف التشغيل والصيانة والأمن",
-        permissionKeys: ["mall_manage_shops", "mall_garden_finance", "accounting"],
+        permissionKeys: ["page_mall_expenses", "mall_manage_shops", "mall_garden_finance", "accounting"],
       },
       {
         title: "التقارير المالية ونسب الإشغال",
@@ -242,7 +243,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "reports" },
         icon: TrendingUp,
         desc: "الملخص الإحصائي والمالي للمول",
-        permissionKeys: ["mall_manage_shops", "reports", "accounting"],
+        permissionKeys: ["page_mall_reports", "mall_manage_shops", "reports", "accounting"],
       },
     ],
   },
@@ -255,6 +256,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
     to: "/admin/park",
     icon: Trees,
     permissionKeys: [
+      "page_park",
       "manage_park_shifts",
       "delete_park_shifts",
       "park_reports",
@@ -280,7 +282,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "tickets" },
         icon: Ticket,
         desc: "إصدار تذاكر الدخول والباركود",
-        permissionKeys: ["manage_park_shifts", "park_open_shift", "mall_garden_finance"],
+        permissionKeys: ["page_park_pos", "manage_park_shifts", "park_open_shift", "mall_garden_finance"],
       },
       {
         title: "فتح وردية كاشير جديدة",
@@ -288,7 +290,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "shifts" },
         icon: Plus,
         desc: "إطلاق وردية كاشير مع العهدة النقدية",
-        permissionKeys: ["manage_park_shifts", "park_open_shift"],
+        permissionKeys: ["page_park_shifts", "manage_park_shifts", "park_open_shift"],
       },
       {
         title: "إغلاق وتسوية وردية الكاشير",
@@ -296,7 +298,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "closing" },
         icon: History,
         desc: "تقارير الوردية والتسوية المالية",
-        permissionKeys: ["manage_park_shifts", "delete_park_shifts", "park_open_shift"],
+        permissionKeys: ["page_park_shifts", "manage_park_shifts", "delete_park_shifts", "park_open_shift"],
       },
       {
         title: "الخزائن التشغيلية الثمانية (8)",
@@ -304,7 +306,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "treasury" },
         icon: Landmark,
         desc: "متابعة أرصدة صناديق الحديقة",
-        permissionKeys: ["manage_park_shifts", "mall_garden_finance", "treasury"],
+        permissionKeys: ["page_park_treasury", "manage_park_shifts", "mall_garden_finance", "treasury"],
       },
       {
         title: "إدارة العملاء واشتراكات الزوار",
@@ -312,7 +314,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "customers" },
         icon: Users,
         desc: "سجل الزوار والعملاء الدائمين",
-        permissionKeys: ["manage_park_shifts", "park_open_shift", "mall_garden_finance"],
+        permissionKeys: ["page_park_customers", "manage_park_shifts", "park_open_shift", "mall_garden_finance"],
       },
       {
         title: "أسعار التذاكر وفئات الألعاب",
@@ -320,7 +322,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "prices" },
         icon: Settings,
         desc: "تحديد تعرفة الدخول والألعاب",
-        permissionKeys: ["manage_park_shifts", "mall_garden_finance"],
+        permissionKeys: ["page_park_prices", "manage_park_shifts", "mall_garden_finance"],
       },
       {
         title: "تقارير إيرادات الحديقة والورديات",
@@ -328,7 +330,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "reports" },
         icon: FileBarChart,
         desc: "إحصائيات المبيعات والتحصيل",
-        permissionKeys: ["park_reports", "manage_park_shifts", "mall_garden_finance"],
+        permissionKeys: ["page_park_vouchers", "park_reports", "manage_park_shifts", "mall_garden_finance"],
       },
     ],
   },
@@ -341,6 +343,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
     to: "/admin/ledger",
     icon: Landmark,
     permissionKeys: [
+      "page_finance",
       "accounting",
       "accounting_view",
       "accounting_post_journal",
@@ -367,7 +370,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "financial_position" },
         icon: TrendingUp,
         desc: "عرض الأصول والخصوم وقائمة الدخل الموحدة",
-        permissionKeys: ["accounting", "accounting_view", "reports_view_financials"],
+        permissionKeys: ["page_finance_position", "accounting", "accounting_view", "reports_view_financials"],
       },
       {
         title: "كشف حساب الأستاذ العام",
@@ -375,7 +378,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "ledger" },
         icon: BookOpen,
         desc: "كشف حساب مفصل وأرصدة الحسابات",
-        permissionKeys: ["accounting", "accounting_view"],
+        permissionKeys: ["page_finance_ledger", "accounting", "accounting_view"],
       },
       {
         title: "دفتر اليومية العامة والقيود المزدوجة",
@@ -383,7 +386,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "journal" },
         icon: FileText,
         desc: "تسجيل وترحيل قيود اليومية",
-        permissionKeys: ["accounting", "accounting_view", "accounting_post_journal"],
+        permissionKeys: ["page_finance_journal", "accounting", "accounting_view", "accounting_post_journal"],
       },
       {
         title: "إدارة الخزائن والحسابات البنكية",
@@ -391,7 +394,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "treasury" },
         icon: Wallet,
         desc: "الصناديق النقدية وحركات الخزينة",
-        permissionKeys: ["treasury", "treasury_view", "accounting"],
+        permissionKeys: ["page_finance_treasury", "treasury", "treasury_view", "accounting"],
       },
       {
         title: "دليل وشجرة الحسابات (Oracle)",
@@ -399,7 +402,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "accounts" },
         icon: FileBarChart,
         desc: "شجرة الحسابات بالأصول والخصوم",
-        permissionKeys: ["accounting", "accounting_view"],
+        permissionKeys: ["page_finance_accounts", "accounting", "accounting_view"],
       },
       {
         title: "سندات الصرف والقبض المرحّلة",
@@ -407,7 +410,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "vouchers" },
         icon: Receipt,
         desc: "سندات الإيرادات والمصروفات",
-        permissionKeys: ["accounting", "treasury", "expense_approval", "revenue_approval"],
+        permissionKeys: ["page_finance_vouchers", "accounting", "treasury", "expense_approval", "revenue_approval"],
       },
       {
         title: "ميزان المراجعة المحاسبي",
@@ -415,7 +418,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "trial" },
         icon: Scale,
         desc: "توازن الأرصدة والمجاميع",
-        permissionKeys: ["accounting", "accounting_view", "reports_view_financials"],
+        permissionKeys: ["page_finance_trial", "accounting", "accounting_view", "reports_view_financials"],
       },
       {
         title: "التقارير والميزانية العمومية",
@@ -423,14 +426,14 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "reports" },
         icon: TrendingUp,
         desc: "قائمة الدخل والمركز المالي",
-        permissionKeys: ["reports", "reports_view_financials", "accounting"],
+        permissionKeys: ["page_finance_reports", "page_finance_statements", "reports", "reports_view_financials", "accounting"],
       },
       {
         title: "تصميم وإدارة الإيصالات والسندات",
         to: "/admin/receipts",
         icon: Receipt,
         desc: "نماذج الطباعة الرسمية",
-        permissionKeys: ["accounting", "treasury", "orders", "pos"],
+        permissionKeys: ["page_finance_receipts", "accounting", "treasury", "orders", "pos"],
       },
     ],
   },
@@ -443,6 +446,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
     to: "/admin/hr",
     icon: UserCheck,
     permissionKeys: [
+      "page_hr",
       "hr",
       "hr_view_attendance",
       "hr_manage_payroll_loans",
@@ -467,7 +471,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "employees" },
         icon: Users,
         desc: "الملفات الشخصية والوظائف",
-        permissionKeys: ["hr", "hr_view_attendance"],
+        permissionKeys: ["page_hr_employees", "hr", "hr_view_attendance"],
       },
       {
         title: "تسجيل الحضور والانصراف",
@@ -475,7 +479,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "attendance" },
         icon: CalendarDays,
         desc: "متابعة أوقات العمل والورديات",
-        permissionKeys: ["hr", "hr_view_attendance"],
+        permissionKeys: ["page_hr_attendance", "hr", "hr_view_attendance"],
       },
       {
         title: "مسيرات الرواتب الشهرية والبدلات",
@@ -483,7 +487,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "payroll" },
         icon: DollarSign,
         desc: "احتساب المستحقات الشهرية",
-        permissionKeys: ["hr", "hr_manage_payroll_loans"],
+        permissionKeys: ["page_hr_payroll", "hr", "hr_manage_payroll_loans"],
       },
       {
         title: "السلف والخصومات والمكافآت",
@@ -491,7 +495,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "loans" },
         icon: Coins,
         desc: "حركات السلف والاستقطاعات",
-        permissionKeys: ["hr", "hr_manage_payroll_loans"],
+        permissionKeys: ["page_hr_loans", "hr", "hr_manage_payroll_loans"],
       },
       {
         title: "إدارة مستخدمي النظام والصلاحيات",
@@ -512,6 +516,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
     to: "/admin/inventory",
     icon: Package,
     permissionKeys: [
+      "page_inventory",
       "inventory",
       "inventory_view",
       "inventory_adjust_transfer",
@@ -539,7 +544,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "items" },
         icon: Package,
         desc: "متابعة أرصدة المواد وتنبيهات النواقص",
-        permissionKeys: ["inventory", "inventory_view"],
+        permissionKeys: ["page_inventory_items", "inventory", "inventory_view"],
       },
       {
         title: "التحويلات الداخلية بين المستودعات",
@@ -547,7 +552,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "transfers" },
         icon: ArrowLeftRight,
         desc: "نقل الخامات بين الفروع والمخازن",
-        permissionKeys: ["inventory", "inventory_adjust_transfer"],
+        permissionKeys: ["page_inventory_transfers", "inventory", "inventory_adjust_transfer"],
       },
       {
         title: "فواتير المشتريات وسندات الاستلام",
@@ -555,7 +560,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "purchases" },
         icon: FileSpreadsheet,
         desc: "تسجيل فواتير الشراء الواردة",
-        permissionKeys: ["purchasing", "purchasing_view", "purchasing_add_invoice"],
+        permissionKeys: ["page_inventory_purchases", "purchasing", "purchasing_view", "purchasing_add_invoice"],
       },
       {
         title: "إدارة الموردين والشركات",
@@ -563,7 +568,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "suppliers" },
         icon: Users,
         desc: "بيانات وحسابات الموردين",
-        permissionKeys: ["purchasing", "purchasing_view", "purchasing_returns"],
+        permissionKeys: ["page_inventory_suppliers", "purchasing", "purchasing_view", "purchasing_returns"],
       },
       {
         title: "تسويات الهالك والتوالف",
@@ -571,7 +576,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "waste" },
         icon: Trash2,
         desc: "إثبات الفاقد وتكلفة الهدر",
-        permissionKeys: ["inventory", "inventory_waste_dispose"],
+        permissionKeys: ["page_inventory_waste", "inventory", "inventory_waste_dispose"],
       },
     ],
   },
@@ -585,6 +590,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
     search: { tab: "shift_audit" },
     icon: Database,
     permissionKeys: [
+      "page_shift_audit",
       "treasury",
       "treasury_view",
       "treasury_open_close",
@@ -612,6 +618,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "shift_audit" },
         icon: Database,
         desc: "فحص تقارير الإغلاق وحالات الترحيل",
+        permissionKeys: ["page_shift_audit_matching", "treasury_transfer_reconcile", "treasury", "accounting"],
       },
       {
         title: "فحص العجز والزيادة النقدية",
@@ -619,6 +626,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "shift_audit" },
         icon: Scale,
         desc: "مقارنة المبيعات المسجلة مع النقد الفعلي",
+        permissionKeys: ["page_shift_audit_variance", "treasury_transfer_reconcile", "treasury", "accounting"],
       },
     ],
   },
@@ -631,7 +639,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
     to: "/admin",
     search: { tab: "audit_logs" },
     icon: History,
-    permissionKeys: ["audit_logs", "system_audit_logs", "super_admin_full_access"],
+    permissionKeys: ["page_audit_logs", "audit_logs", "system_audit_logs", "super_admin_full_access"],
     colorScheme: {
       bgLight: "bg-indigo-500/5",
       border: "border-indigo-500/20",
@@ -650,6 +658,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "audit_logs" },
         icon: History,
         desc: "سجل زمني لجميع الحركات والتعديلات",
+        permissionKeys: ["page_audit_logs", "audit_logs", "system_audit_logs"],
       },
       {
         title: "تصفية الحركات والرقابة الأمنية",
@@ -657,6 +666,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "audit_logs" },
         icon: ShieldCheck,
         desc: "تتبع دقيق لكشف التلاعب ومطابقة التغييرات",
+        permissionKeys: ["system_audit_logs", "audit_logs"],
       },
     ],
   },
@@ -668,7 +678,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
       "فحص المزامنة مع GitHub، سجل التحديثات التلقائية للنظام، والتحكم في إعدادات التطوير والنسخ الاحتياطي.",
     to: "/admin/system-update",
     icon: Settings,
-    permissionKeys: ["system_backup_update", "developer_options", "super_admin_full_access"],
+    permissionKeys: ["page_developer", "system_backup_update", "developer_options", "super_admin_full_access"],
     colorScheme: {
       bgLight: "bg-slate-500/5",
       border: "border-slate-500/20",
@@ -693,14 +703,14 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         to: "/admin/system-update",
         icon: RefreshCw,
         desc: "الإصدار والتحديثات التلقائية",
-        permissionKeys: ["system_backup_update", "developer_options", "super_admin_full_access"],
+        permissionKeys: ["page_system_github", "system_backup_update", "developer_options", "super_admin_full_access"],
       },
       {
         title: "فحص الاتصال والنسخ الاحتياطي",
         to: "/admin/system-update",
         icon: Database,
         desc: "فحص حالة قاعدة البيانات والتخزين",
-        permissionKeys: ["system_backup_update", "developer_options", "super_admin_full_access"],
+        permissionKeys: ["page_system_status", "system_backup_update", "developer_options", "super_admin_full_access"],
       },
     ],
   },
@@ -737,6 +747,12 @@ export function DepartmentsGridHub({
   }, [propPermissions]);
 
   const visibleDepartments = DEPARTMENTS.map((dept) => {
+    // If the department's main page permission is explicitly false, hide it entirely!
+    const mainKey = dept.permissionKeys[0];
+    if (activePermissions.super_admin_full_access !== true && activePermissions[mainKey] === false) {
+      return null;
+    }
+
     const allowedSubSections = dept.subSections.filter((sub) =>
       hasAnyRequestedPermission(activePermissions, sub.permissionKeys || dept.permissionKeys),
     );
@@ -748,7 +764,7 @@ export function DepartmentsGridHub({
       subSections: allowedSubSections,
       hasDeptAccess,
     };
-  }).filter((dept) => dept.hasDeptAccess && dept.subSections.length > 0);
+  }).filter((dept): dept is NonNullable<typeof dept> => !!dept && dept.hasDeptAccess && dept.subSections.length > 0);
 
   return (
     <div className="space-y-6">
@@ -892,6 +908,30 @@ export function DepartmentsGridHub({
           );
         })}
       </div>
+
+      {visibleDepartments.length === 0 && (
+        <Card className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-8 text-center">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600 mb-4">
+            <ShieldCheck size={28} />
+          </div>
+          <h3 className="text-lg font-black text-foreground">
+            لم يتم تفعيل أقسام لهذا الحساب بعد
+          </h3>
+          <p className="mt-2 text-xs text-muted-foreground max-w-md mx-auto leading-relaxed">
+            يرجى مراجعة مدير النظام لتفعيل الصلاحيات والأقسام المسموح بها لهذا الحساب، أو إعادة تسجيل الدخول بحساب مدير النظام.
+          </p>
+          <div className="mt-5 flex items-center justify-center gap-3">
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => navigate({ to: "/login" })}
+              className="rounded-xl font-bold text-xs px-4"
+            >
+              تبديل الحساب / تسجيل الدخول
+            </Button>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }

@@ -17,7 +17,11 @@ import {
 import { resetLocalManagedUserDirectoryForBootstrap } from "@/features/auth/services/userDirectorySync";
 import { useSettings } from "@/hooks/use-settings";
 import { isAiStudioPreview, isHostedDeployment } from "@/shared/services/previewAccess";
-import { notifyPermissionsUpdated } from "@/shared/services/userAuthorization";
+import {
+  getDefaultPermissionsForRole,
+  hasAnyEnabledPermission,
+  notifyPermissionsUpdated,
+} from "@/shared/services/userAuthorization";
 
 export const Route = createFileRoute("/login")({
   head: () => ({ meta: [{ title: "تسجيل الدخول" }] }),
@@ -135,9 +139,18 @@ function LoginPage() {
   }, []);
 
   useEffect(() => {
-    const redirectTo = safeInternalRedirect(
-      new URLSearchParams(window.location.search).get("redirect"),
-    );
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("logout") === "1") {
+      localStorage.removeItem("restocash_auth_user");
+      localStorage.removeItem("restocash_user_role");
+      sessionStorage.removeItem("restocash_auth_user");
+      sessionStorage.removeItem("restocash_user_role");
+      erpStore.setCurrentUser("");
+      void supabase.auth.signOut().catch(() => undefined);
+      return;
+    }
+
+    const redirectTo = safeInternalRedirect(params.get("redirect"));
     const hosted = isHostedDeployment();
     const storedLocalUser =
       localStorage.getItem("restocash_auth_user") || sessionStorage.getItem("restocash_auth_user");
@@ -181,19 +194,26 @@ function LoginPage() {
         return false;
       }
       const activeUsername = String(profile.username).trim().toLowerCase();
+      const activeRole = String(profile.role || "cashier").trim().toLowerCase();
+      const resolvedPerms =
+        activeRole === "admin" || activeRole === "super_admin" || activeUsername === "admin"
+          ? getDefaultPermissionsForRole("admin")
+          : hasAnyEnabledPermission(profile.permissions)
+            ? profile.permissions
+            : getDefaultPermissionsForRole(activeRole);
       const storage =
         localStorage.getItem("remember_me") === "false" ? sessionStorage : localStorage;
       storage.setItem("restocash_auth_user", session.user.email || activeUsername);
-      storage.setItem("restocash_user_role", profile.role || "cashier");
-      erpStore.updateUserPermission(activeUsername, profile.permissions || {});
+      storage.setItem("restocash_user_role", activeRole);
+      erpStore.updateUserPermission(activeUsername, resolvedPerms);
       erpStore.upsertUser({
         id: profile.id,
         full_name: profile.full_name || activeUsername,
         username: activeUsername,
         email: profile.email || session.user.email || "",
         phone: profile.phone || "",
-        role: profile.role || "cashier",
-        permissions: profile.permissions || {},
+        role: activeRole,
+        permissions: resolvedPerms,
         created_at: profile.created_at || new Date().toISOString(),
       } as SystemUser);
       erpStore.setCurrentUser(activeUsername);
@@ -416,9 +436,15 @@ function LoginPage() {
           localStorage.removeItem("restocash_user_role");
           sessionStorage.removeItem("restocash_user_role");
           const storage = rememberMe ? localStorage : sessionStorage;
+          const activeRole = String(profile.role || "cashier").trim().toLowerCase();
           storage.setItem("restocash_auth_user", activeEmail);
-          storage.setItem("restocash_user_role", String(profile.role || "cashier"));
-          const permissions = profile.permissions || {};
+          storage.setItem("restocash_user_role", activeRole);
+          const permissions =
+            activeRole === "admin" || activeRole === "super_admin" || activeUsername === "admin"
+              ? getDefaultPermissionsForRole("admin")
+              : hasAnyEnabledPermission(profile.permissions)
+                ? profile.permissions
+                : getDefaultPermissionsForRole(activeRole);
           erpStore.updateUserPermission(activeUsername, permissions);
           erpStore.upsertUser({
             id: profile.id,
@@ -426,13 +452,13 @@ function LoginPage() {
             username: activeUsername,
             email: profile.email || session.user.email || "",
             phone: profile.phone || "",
-            role: profile.role || "cashier",
+            role: activeRole,
             permissions,
             created_at: profile.created_at || new Date().toISOString(),
           } as SystemUser);
           erpStore.setCurrentUser(activeUsername);
           notifyPermissionsUpdated();
-          const role = String(profile.role || "cashier");
+          const role = activeRole;
           const finalDestination = new URLSearchParams(window.location.search).has("redirect")
             ? destination
             : role === "captain"
@@ -478,6 +504,7 @@ function LoginPage() {
 
       if (foundUser && passwordMatches) {
         const activeUsername = String(foundUser.username).trim().toLowerCase();
+        const activeRole = String(foundUser.role || "cashier").trim().toLowerCase();
         const activeEmail =
           foundUser.email ||
           (activeUsername.includes("@")
@@ -489,19 +516,23 @@ function LoginPage() {
         sessionStorage.removeItem("restocash_user_role");
         const storage = rememberMe ? localStorage : sessionStorage;
         storage.setItem("restocash_auth_user", activeEmail);
-        storage.setItem("restocash_user_role", foundUser.role || "cashier");
+        storage.setItem("restocash_user_role", activeRole);
         const statePermissions = erpStore.getState().userPermissions;
         const permissions =
-          (foundUser.permissions && Object.keys(foundUser.permissions).length > 0
-            ? foundUser.permissions
-            : null) ||
-          statePermissions[activeUsername] ||
-          statePermissions[foundUser.role] ||
-          {};
+          activeRole === "admin" || activeRole === "super_admin" || activeUsername === "admin"
+            ? getDefaultPermissionsForRole("admin")
+            : (hasAnyEnabledPermission(foundUser.permissions) ? foundUser.permissions : null) ||
+              (hasAnyEnabledPermission(statePermissions?.[activeUsername])
+                ? statePermissions[activeUsername]
+                : null) ||
+              (hasAnyEnabledPermission(statePermissions?.[activeRole])
+                ? statePermissions[activeRole]
+                : null) ||
+              getDefaultPermissionsForRole(activeRole);
         erpStore.updateUserPermission(activeUsername, permissions);
         erpStore.setCurrentUser(activeUsername);
         notifyPermissionsUpdated();
-        const role = String(foundUser.role || "cashier");
+        const role = activeRole;
         const finalDestination = new URLSearchParams(window.location.search).has("redirect")
           ? destination
           : role === "captain"

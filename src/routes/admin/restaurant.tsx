@@ -28,6 +28,11 @@ import { inventoryService } from "@/features/inventory/services/inventoryService
 import { tableOrdersStore } from "@/shared/services/tableOrdersStore";
 import { supabase } from "@/integrations/supabase/client";
 import { VouchersLedgerSection } from "@/components/admin/VouchersLedgerSection";
+import {
+  getActiveUserPermissionsSync,
+  hasAnyRequestedPermission,
+  PERMISSIONS_UPDATED_EVENT,
+} from "@/shared/services/userAuthorization";
 
 export const Route = createFileRoute("/admin/restaurant")({
   head: () => ({ meta: [{ title: "إدارة المطعم - النظام الشامل" }] }),
@@ -109,6 +114,20 @@ function RestaurantHubPage() {
   const [activeTab, setActiveTab] = useState<"grid" | "vouchers">(
     tabParam === "vouchers" ? "vouchers" : "grid",
   );
+  const [activePerms, setActivePerms] = useState<Record<string, boolean>>(() =>
+    getActiveUserPermissionsSync(),
+  );
+
+  useEffect(() => {
+    const refreshPerms = () => setActivePerms(getActiveUserPermissionsSync());
+    refreshPerms();
+    const unsub = erpStore.subscribe(refreshPerms);
+    window.addEventListener(PERMISSIONS_UPDATED_EVENT, refreshPerms);
+    return () => {
+      unsub();
+      window.removeEventListener(PERMISSIONS_UPDATED_EVENT, refreshPerms);
+    };
+  }, []);
 
   useEffect(() => {
     setActiveTab(tabParam === "vouchers" ? "vouchers" : "grid");
@@ -197,7 +216,7 @@ function RestaurantHubPage() {
     };
   }, []);
 
-  const modules = [
+  const allModules = [
     {
       title: "نقطة البيع (POS)",
       description: "شاشة البيع السريعة لإدخال الطلبات، الدفع، وطباعة الفواتير",
@@ -206,6 +225,7 @@ function RestaurantHubPage() {
       color: "from-blue-500/20 to-indigo-500/20 text-blue-600 dark:text-blue-400",
       badge: "الرئيسية",
       stats: "مبيعات سريعة",
+      permissionKeys: ["pos", "pos_access", "orders", "orders_create_custom"],
     },
     {
       title: "سندات الصرف والقبض",
@@ -215,6 +235,7 @@ function RestaurantHubPage() {
       color: "from-emerald-500/25 to-teal-500/25 text-emerald-600 dark:text-emerald-400",
       badge: "سندات مالية",
       stats: "إدارة السندات",
+      permissionKeys: ["accounting", "treasury", "expense_approval", "revenue_approval", "pos"],
     },
     {
       title: "شاشة الكاشير والخزينة",
@@ -224,6 +245,7 @@ function RestaurantHubPage() {
       color: "from-emerald-500/25 to-teal-500/25 text-emerald-600 dark:text-emerald-400",
       badge: "مالي",
       stats: "الخزينة والشيفتات",
+      permissionKeys: ["treasury", "treasury_view", "treasury_open_close", "pos", "pos_access"],
     },
     {
       title: "شاشة المطبخ (الفرن)",
@@ -233,6 +255,7 @@ function RestaurantHubPage() {
       color: "from-amber-500/20 to-orange-500/20 text-amber-600 dark:text-amber-400",
       badge: "تشغيل",
       stats: "المطبخ والفرن",
+      permissionKeys: ["kitchen", "kitchen_view", "kitchen_change_status"],
     },
     {
       title: "شاشة طلبات العملاء (Captain)",
@@ -242,6 +265,7 @@ function RestaurantHubPage() {
       color: "from-purple-500/20 to-pink-500/20 text-purple-600 dark:text-purple-400",
       badge: "الصالة",
       stats: "طلبات الكابتن",
+      permissionKeys: ["captain", "captain_access", "captain_create_order"],
     },
     {
       title: "إدارة الطلبات والفواتير",
@@ -251,6 +275,7 @@ function RestaurantHubPage() {
       color: "from-cyan-500/20 to-blue-500/20 text-cyan-600 dark:text-cyan-400",
       badge: "متابعة",
       stats: `${counts.orders} طلب مسجل`,
+      permissionKeys: ["orders", "orders_view", "delivery", "delivery_view"],
     },
     {
       title: "إدارة المنيو والأصناف",
@@ -260,6 +285,7 @@ function RestaurantHubPage() {
       color: "from-rose-500/20 to-red-500/20 text-rose-600 dark:text-rose-400",
       badge: "القائمة",
       stats: `${counts.menu} صنف في المنيو`,
+      permissionKeys: ["pos", "pos_access", "inventory", "orders"],
     },
     {
       title: "المخزن والمستودع",
@@ -269,8 +295,19 @@ function RestaurantHubPage() {
       color: "from-amber-600/20 to-yellow-600/20 text-amber-700 dark:text-amber-400",
       badge: "المخزون",
       stats: `${counts.inventory} صنف مخزني`,
+      permissionKeys: ["inventory", "inventory_view", "production", "production_view"],
     },
   ];
+
+  const modules = allModules.filter((m) =>
+    hasAnyRequestedPermission(activePerms, m.permissionKeys),
+  );
+  const hasPosAccess = hasAnyRequestedPermission(activePerms, [
+    "pos",
+    "pos_access",
+    "orders",
+    "orders_create_custom",
+  ]);
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 pb-12">
@@ -282,13 +319,15 @@ function RestaurantHubPage() {
             نظام تشغيل المطعم، نقاط البيع، المطبخ، الصالة، والورديات اليومية
           </p>
         </div>
-        <Button
-          onClick={() => setIsLauncherOpen(true)}
-          className="gap-2 bg-primary font-black text-primary-foreground shadow-sm rounded-xl text-xs h-9 self-start sm:self-auto cursor-pointer"
-        >
-          <Grid3X3 size={16} />
-          فتح نقطة البيع (POS)
-        </Button>
+        {hasPosAccess && (
+          <Button
+            onClick={() => setIsLauncherOpen(true)}
+            className="gap-2 bg-primary font-black text-primary-foreground shadow-sm rounded-xl text-xs h-9 self-start sm:self-auto cursor-pointer"
+          >
+            <Grid3X3 size={16} />
+            فتح نقطة البيع (POS)
+          </Button>
+        )}
       </div>
 
       {activeTab === "vouchers" ? (
@@ -329,10 +368,6 @@ function RestaurantHubPage() {
           <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
             {modules.map((module) => {
               const Icon = module.icon;
-              const Component = module.action ? "button" : "a";
-              const props = module.action
-                ? { onClick: module.action, type: "button" }
-                : { href: module.to };
 
               return (
                 <div
@@ -340,88 +375,50 @@ function RestaurantHubPage() {
                   className="group rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
                 >
                   <Card
-                    onClick={module.action}
-                    className={`flex h-full flex-col overflow-hidden rounded-2xl border border-border/80 bg-card shadow-sm transition-all duration-300 group-hover:border-primary/50 group-hover:bg-accent/30 group-hover:shadow-xl ${module.action ? "cursor-pointer" : ""}`}
+                    onClick={() => {
+                      if (module.action) {
+                        module.action();
+                      } else if (module.to) {
+                        navigate({ to: module.to as any });
+                      }
+                    }}
+                    className="flex h-full flex-col overflow-hidden rounded-2xl border border-border/80 bg-card shadow-sm transition-all duration-300 group-hover:border-primary/50 group-hover:bg-accent/30 group-hover:shadow-xl cursor-pointer"
                   >
-                    {!module.action && (
-                      // @ts-ignore
-                      <a href={module.to} className="contents">
-                        <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
-                          <div
-                            className={`rounded-2xl bg-gradient-to-br p-3 shadow-inner ${module.color}`}
-                          >
-                            <Icon size={24} aria-hidden="true" />
-                          </div>
-                          <span className="rounded-full border border-border/60 bg-muted px-2.5 py-1 text-[11px] font-bold text-muted-foreground">
-                            {module.badge}
-                          </span>
-                        </CardHeader>
-                        <CardContent className="flex flex-1 flex-col justify-between space-y-4 pt-1">
-                          <div className="space-y-1.5">
-                            <h3 className="flex items-center justify-between gap-3 text-lg font-black text-foreground transition group-hover:text-primary">
-                              <span>{module.title}</span>
-                              <ArrowUpRight
-                                size={18}
-                                className="shrink-0 text-primary opacity-0 transition-opacity group-hover:opacity-100"
-                                aria-hidden="true"
-                              />
-                            </h3>
-                            <CardDescription className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-                              {module.description}
-                            </CardDescription>
-                          </div>
-                          <div className="flex items-center justify-between border-t border-border/60 pt-3 text-xs font-bold text-muted-foreground">
-                            <span className="inline-flex items-center gap-1.5 font-black text-primary">
-                              <Clock size={13} aria-hidden="true" />
-                              {module.stats}
-                            </span>
-                            <span className="inline-flex items-center gap-1 text-primary">
-                              فتح الواجهة
-                              <ArrowUpRight size={14} aria-hidden="true" />
-                            </span>
-                          </div>
-                        </CardContent>
-                      </a>
-                    )}
-                    {module.action && (
-                      <>
-                        <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
-                          <div
-                            className={`rounded-2xl bg-gradient-to-br p-3 shadow-inner ${module.color}`}
-                          >
-                            <Icon size={24} aria-hidden="true" />
-                          </div>
-                          <span className="rounded-full border border-border/60 bg-muted px-2.5 py-1 text-[11px] font-bold text-muted-foreground">
-                            {module.badge}
-                          </span>
-                        </CardHeader>
-                        <CardContent className="flex flex-1 flex-col justify-between space-y-4 pt-1">
-                          <div className="space-y-1.5">
-                            <h3 className="flex items-center justify-between gap-3 text-lg font-black text-foreground transition group-hover:text-primary">
-                              <span>{module.title}</span>
-                              <ArrowUpRight
-                                size={18}
-                                className="shrink-0 text-primary opacity-0 transition-opacity group-hover:opacity-100"
-                                aria-hidden="true"
-                              />
-                            </h3>
-                            <CardDescription className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-                              {module.description}
-                            </CardDescription>
-                          </div>
-                          <div className="flex items-center justify-between border-t border-border/60 pt-3 text-xs font-bold text-muted-foreground">
-                            <span className="inline-flex items-center gap-1.5 font-black text-primary">
-                              <Clock size={13} aria-hidden="true" />
-                              {module.stats}
-                            </span>
-                            <span className="inline-flex items-center gap-1 text-primary">
-                              فتح الواجهة
-                              <ArrowUpRight size={14} aria-hidden="true" />
-                            </span>
-                          </div>
-                        </CardContent>
-                      </>
-                    )}
+                    <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
+                      <div
+                        className={`rounded-2xl bg-gradient-to-br p-3 shadow-inner ${module.color}`}
+                      >
+                        <Icon size={24} aria-hidden="true" />
+                      </div>
+                      <span className="rounded-full border border-border/60 bg-muted px-2.5 py-1 text-[11px] font-bold text-muted-foreground">
+                        {module.badge}
+                      </span>
+                    </CardHeader>
+                    <CardContent className="flex flex-1 flex-col justify-between space-y-4 pt-1">
+                      <div className="space-y-1.5">
+                        <h3 className="flex items-center justify-between gap-3 text-lg font-black text-foreground transition group-hover:text-primary">
+                          <span>{module.title}</span>
+                          <ArrowUpRight
+                            size={18}
+                            className="shrink-0 text-primary opacity-0 transition-opacity group-hover:opacity-100"
+                            aria-hidden="true"
+                          />
+                        </h3>
+                        <CardDescription className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                          {module.description}
+                        </CardDescription>
+                      </div>
+                      <div className="flex items-center justify-between border-t border-border/60 pt-3 text-xs font-bold text-muted-foreground">
+                        <span className="inline-flex items-center gap-1.5 font-black text-primary">
+                          <Clock size={13} aria-hidden="true" />
+                          {module.stats}
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-primary">
+                          فتح الواجهة
+                          <ArrowUpRight size={14} aria-hidden="true" />
+                        </span>
+                      </div>
+                    </CardContent>
                   </Card>
                 </div>
               );

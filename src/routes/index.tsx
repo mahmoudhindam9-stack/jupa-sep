@@ -57,8 +57,13 @@ export const Route = createFileRoute("/")({
       });
     }
 
+    const hasStoredUser = Boolean(
+      localStorage.getItem("restocash_auth_user") ||
+        sessionStorage.getItem("restocash_auth_user"),
+    );
+
     throw redirect({
-      to: "/admin",
+      to: hasStoredUser ? "/admin" : "/login",
     });
   },
   head: () => ({
@@ -100,9 +105,28 @@ function IndexRouteComponent() {
         replace: true,
       });
     } else {
-      void navigate({ to: "/admin", replace: true });
+      const hasStoredUser = Boolean(
+        localStorage.getItem("restocash_auth_user") ||
+          sessionStorage.getItem("restocash_auth_user"),
+      );
+      void navigate({ to: hasStoredUser ? "/admin" : "/login", replace: true });
     }
   }, [navigate, search]);
 
-  return null;
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background p-6" dir="rtl">
+      <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 text-center shadow-sm space-y-4">
+        <p className="text-sm font-bold text-foreground">جاري تحويلك إلى شاشة تسجيل الدخول…</p>
+        <div className="flex items-center justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => void navigate({ to: "/login", replace: true })}
+            className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl text-xs font-bold transition cursor-pointer"
+          >
+            صفحة تسجيل الدخول
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }

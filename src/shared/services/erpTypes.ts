@@ -260,6 +260,7 @@ export interface TreasuryReconciliation {
 
 export interface SystemUser {
   id: string;
+  employee_code?: string;
   full_name: string;
   username: string;
   email?: string;
@@ -326,6 +327,7 @@ export interface UserPermission {
   production_execute?: boolean;
   hr_view_attendance?: boolean;
   hr_manage_payroll_loans?: boolean;
+  messenger_broadcast?: boolean;
   treasury_view?: boolean;
   treasury_open_close?: boolean;
   treasury_transfer_reconcile?: boolean;
@@ -343,10 +345,68 @@ export interface UserPermission {
   manage_park_shifts?: boolean;
   delete_park_shifts?: boolean;
   park_reports?: boolean;
+  // Main section page entry permissions
+  page_restaurant?: boolean;
+  page_mall?: boolean;
+  page_park?: boolean;
+  page_finance?: boolean;
+  page_hr?: boolean;
+  page_inventory?: boolean;
+  page_shift_audit?: boolean;
+  page_audit_logs?: boolean;
+  page_developer?: boolean;
+  // Sub-section page entry permissions
+  page_restaurant_tables?: boolean;
+  page_restaurant_menu?: boolean;
+  page_restaurant_inventory?: boolean;
+  page_restaurant_vouchers?: boolean;
+  page_restaurant_cashier_treasury?: boolean;
+  page_mall_shops?: boolean;
+  page_mall_payments?: boolean;
+  page_mall_expenses?: boolean;
+  page_mall_vouchers?: boolean;
+  page_mall_reports?: boolean;
+  page_park_pos?: boolean;
+  page_park_shifts?: boolean;
+  page_park_treasury?: boolean;
+  page_park_tickets_log?: boolean;
+  page_park_customers?: boolean;
+  page_park_prices?: boolean;
+  page_park_vouchers?: boolean;
+  page_finance_position?: boolean;
+  page_finance_ledger?: boolean;
+  page_finance_journal?: boolean;
+  page_finance_vouchers?: boolean;
+  page_finance_accounts?: boolean;
+  page_finance_treasury?: boolean;
+  page_finance_reports?: boolean;
+  page_finance_trial?: boolean;
+  page_finance_statements?: boolean;
+  page_finance_receipts?: boolean;
+  page_hr_employees?: boolean;
+  page_hr_attendance?: boolean;
+  page_hr_payroll?: boolean;
+  page_hr_loans?: boolean;
+  page_inventory_warehouses?: boolean;
+  page_inventory_items?: boolean;
+  page_inventory_transfers?: boolean;
+  page_inventory_purchases?: boolean;
+  page_inventory_suppliers?: boolean;
+  page_inventory_transactions?: boolean;
+  page_inventory_expiry?: boolean;
+  page_inventory_waste?: boolean;
+  page_inventory_reports?: boolean;
+  page_inventory_settings?: boolean;
+  page_shift_audit_matching?: boolean;
+  page_shift_audit_variance?: boolean;
+  page_system_github?: boolean;
+  page_system_access_db?: boolean;
+  page_system_status?: boolean;
 }
 
 export interface Employee {
   id: string;
+  employee_code: string;
   name: string;
   job_title: string;
   department: string;
