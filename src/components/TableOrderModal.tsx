@@ -362,7 +362,7 @@ export function TableOrderModal({
               total: Number(finalTotal.toFixed(2)),
               status: "preparing",
               notes: formattedNotes,
-              items: dbItems,
+              items: dbItems as any,
             })
             .eq("id", existingDbOrderId);
         } else {
@@ -377,7 +377,7 @@ export function TableOrderModal({
               table_id: cleanTableId(table.id),
               status: "preparing",
               notes: formattedNotes,
-              items: dbItems,
+              items: dbItems as any,
             })
             .select("id, order_number")
             .single();

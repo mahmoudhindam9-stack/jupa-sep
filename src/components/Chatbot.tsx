@@ -551,6 +551,12 @@ export function Chatbot() {
     return false;
   }, [location.pathname, (location as any).searchStr]);
 
+  // Prevent SSR hydration mismatch on client-dependent auth / local storage
+  const [isMounted, setIsMounted] = useState(false);
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   // Subscribe to HR Employees & Users/Permissions in erpStore
   const [erpState, setErpState] = useState(() => erpStore.getState());
   useEffect(() => {
@@ -1822,7 +1828,7 @@ export function Chatbot() {
     );
   }, [activeConversationMessages]);
 
-  if (isHiddenRoute) {
+  if (!isMounted || isHiddenRoute) {
     return null;
   }
 
@@ -1939,14 +1945,14 @@ export function Chatbot() {
               <MessageCircle className="h-6 w-6 fill-white text-white" />
               <span className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-emerald-400 ring-2 ring-[#0078FF]" />
             </div>
-            <div className="text-right hidden sm:block min-w-0">
+            <div className="text-right hidden sm:block min-w-0" suppressHydrationWarning>
               <div className="flex items-center gap-1.5">
                 <span className="font-black text-sm tracking-tight">ماسنجر الزملاء</span>
                 <span className="text-[10px] font-extrabold bg-white/20 px-1.5 py-0.5 rounded-full">
                   أونلاين
                 </span>
               </div>
-              <p className="text-[11px] text-blue-100 font-semibold truncate max-w-[180px]">
+              <p className="text-[11px] text-blue-100 font-semibold truncate max-w-[180px]" suppressHydrationWarning>
                 {currentSenderEmployee.name} •{" "}
                 <span className="opacity-90">#{currentSenderEmployee.employee_code}</span>
               </p>

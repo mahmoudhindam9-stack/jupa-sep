@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
-import { erpStore, SystemUser, ROOT_DEFAULT_ADMIN } from "@/shared/services/erpStore";
+import { erpStore, SystemUser, ROOT_DEFAULT_ADMIN, type UserPermission } from "@/shared/services/erpStore";
 import { authService } from "@/features/auth/services/authService";
 import {
   normalizeManagedDigits,
@@ -205,7 +205,10 @@ function LoginPage() {
         localStorage.getItem("remember_me") === "false" ? sessionStorage : localStorage;
       storage.setItem("restocash_auth_user", session.user.email || activeUsername);
       storage.setItem("restocash_user_role", activeRole);
-      erpStore.updateUserPermission(activeUsername, resolvedPerms);
+      erpStore.updateUserPermission(
+        activeUsername,
+        (resolvedPerms || {}) as Partial<UserPermission>,
+      );
       erpStore.upsertUser({
         id: profile.id,
         full_name: profile.full_name || activeUsername,
@@ -213,7 +216,7 @@ function LoginPage() {
         email: profile.email || session.user.email || "",
         phone: profile.phone || "",
         role: activeRole,
-        permissions: resolvedPerms,
+        permissions: (resolvedPerms || {}) as Partial<UserPermission>,
         created_at: profile.created_at || new Date().toISOString(),
       } as SystemUser);
       erpStore.setCurrentUser(activeUsername);

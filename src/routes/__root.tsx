@@ -6,7 +6,7 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { Chatbot } from "@/components/Chatbot";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -132,6 +132,12 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
   useEffect(() => {
     // Only clear the one-reload recovery guard after the app has actually mounted.
     // Clearing it in client.tsx would allow a persistent route-chunk failure to loop.
@@ -354,7 +360,7 @@ function RootComponent() {
         <QueryClientProvider client={queryClient}>
           <Outlet />
           <Toaster />
-          <Chatbot />
+          {isClient && <Chatbot />}
         </QueryClientProvider>
         <Scripts />
       </body>
