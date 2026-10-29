@@ -115,6 +115,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         children: String.raw`try{const k="restocash:chunk-recovery-attempted";const recover=(r,ev)=>{const m=String(r||"").toLowerCase();if(!m.includes("failed to fetch dynamically imported module")&&!m.includes("error loading dynamically imported module")&&!m.includes("importing a module script failed")&&!m.includes("loading chunk")&&!m.includes("dynamically imported module"))return;if(ev&&typeof ev.preventDefault==="function"){ev.preventDefault();}try{const now=Date.now();const raw=sessionStorage.getItem(k);let data={count:0,time:0};if(raw){try{data=JSON.parse(raw);}catch(e){}}if(!data.time||(now-data.time>8000)){data={count:0,time:now};}if(data.count<4){data.count++;data.time=now;sessionStorage.setItem(k,JSON.stringify(data));setTimeout(()=>{window.location.reload();},1000);}else{sessionStorage.removeItem(k);}}catch(e){setTimeout(()=>{window.location.reload();},1000);}};window.addEventListener("error",e=>recover(e.message||"",e));window.addEventListener("unhandledrejection",e=>recover(e.reason?.message||String(e.reason||""),e));}catch(e){}`,
       },
       {
+        children: `try{const p=window.location.pathname.replace(/\\/+$/,"");if(p==="/menu"){const q=window.location.search?window.location.search.slice(1):"";const next="/?page=menu"+(q?"&"+q:"")+window.location.hash;window.history.replaceState(null,"",next);}}catch(e){}`,
+      },
+      {
         children: `try{const s=localStorage.getItem("restocash-theme");if(s==="dark"||(!s&&window.matchMedia("(prefers-color-scheme: dark)").matches)){document.documentElement.classList.add("dark");}}catch(e){}`,
       },
       {

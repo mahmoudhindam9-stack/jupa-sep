@@ -46,11 +46,13 @@ export function TableOrderModal({
   isOpen,
   onClose,
   onOrderSent,
+  onChangeTableStatus,
 }: {
   table: Table;
   isOpen: boolean;
   onClose: () => void;
   onOrderSent?: () => void;
+  onChangeTableStatus?: (status: "available" | "occupied" | "cleaning") => void;
 }) {
   const { lang, currency, formatPrice, exchangeRates } = useSettings();
   const { toast } = useToast();
@@ -69,10 +71,35 @@ export function TableOrderModal({
 
   useEffect(() => {
     if (isOpen && table) {
-      const existing = tableOrdersStore.getOrderByTableId(table.id);
+      const existing = tableOrdersStore.getOrderByTableId(table.id, table.number);
       if (existing) {
-        setCart(existing.items || []);
-        setOrderNotes(existing.notes || "");
+        const normalizedLines: TableCartLine[] = (existing.items || []).map((raw: any) => {
+          const itemObj = raw?.item || {
+            id: raw?.id || raw?.menu_item_id || `item-${Math.random()}`,
+            name_ar: raw?.name_ar || raw?.name || "صنف",
+            price: Number(raw?.price ?? 0),
+            category_id: raw?.category_id || "all",
+            image_url: raw?.image_url || null,
+            requires_oven: Boolean(raw?.requires_oven ?? raw?.item?.requires_oven),
+          };
+          return {
+            item: itemObj,
+            quantity: Number(raw?.quantity ?? 1),
+            notes: raw?.notes || raw?.note || "",
+            selectedAdditions: raw?.selectedAdditions || [],
+          };
+        });
+        setCart(normalizedLines);
+        const cleanedNotes = String(existing.notes || "")
+          .replace(/\[SELF_ORDER_PENDING_CAPTAIN\]/g, "")
+          .replace(/\[SELF_ORDER_ACTIVE\]/g, "")
+          .replace(/\[SENT_TO_KITCHEN\]/g, "")
+          .replace(/\[SENT_TO_CASHIER\]/g, "")
+          .replace(/\[CASHIER_PAID\]/g, "")
+          .replace(/\[طاولة:\s*[^\]]+\]/g, "")
+          .replace(/\[المكان:\s*[^\]]+\]/g, "")
+          .trim();
+        setOrderNotes(cleanedNotes);
         setSelectedAdditions(existing.selectedAdditions || []);
       } else {
         setCart([]);
@@ -146,7 +173,15 @@ export function TableOrderModal({
     return acc + (add ? add.price : 0);
   }, 0);
 
-  const subTotal = cart.reduce((acc, c) => acc + c.item.price * c.quantity, 0) + additionsTotal;
+  const subTotal =
+    cart.reduce(
+      (acc, c) =>
+        acc +
+        (Number(c.item.price || 0) +
+          (c.selectedAdditions?.reduce((s, a) => s + Number(a.price || 0), 0) || 0)) *
+          c.quantity,
+      0,
+    ) + additionsTotal;
   const tax = subTotal * TAX_RATE;
   const total = subTotal + tax;
   const itemCount = cart.reduce((a, c) => a + c.quantity, 0);
@@ -162,7 +197,11 @@ export function TableOrderModal({
       return;
     }
 
+    const existingOrder = tableOrdersStore.getOrderByTableId(table.id, table.number);
+
     tableOrdersStore.saveOrder({
+      id: existingOrder?.id,
+      kitchenOrderId: existingOrder?.kitchenOrderId,
       table_id: table.id,
       table_number: table.number,
       table_name: table.name,
@@ -173,15 +212,21 @@ export function TableOrderModal({
       subtotal: Number(subTotal.toFixed(2)),
       tax: Number(tax.toFixed(2)),
       total: Number(total.toFixed(2)),
-      status: "draft",
+      status: existingOrder?.status === "sent_to_cashier" ? "sent_to_cashier" : "draft",
+      sentToKitchen: Boolean(existingOrder?.sentToKitchen),
+      kitchenCompleted: Boolean(existingOrder?.kitchenCompleted),
+      sentToCashier: Boolean(existingOrder?.sentToCashier),
+      is_self_order: Boolean(existingOrder?.is_self_order),
     });
 
+    onChangeTableStatus?.("occupied");
+
     toast({
-      title: lang === "ar" ? "تم حفظ المسودة" : "Draft Saved",
+      title: lang === "ar" ? "تم حفظ الطلب على الطاولة" : "Order Saved",
       description:
         lang === "ar"
           ? `تم حفظ طلب طاولة #${table.number} بنجاح`
-          : `Order for table #${table.number} saved as draft`,
+          : `Order for table #${table.number} saved`,
     });
 
     onClose();
@@ -205,75 +250,118 @@ export function TableOrderModal({
     const finalTax = currency === "EGP" ? tax : tax / rate;
     const finalTotal = currency === "EGP" ? total : total / rate;
 
+    const existingOrder = tableOrdersStore.getOrderByTableId(table.id, table.number);
+    const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+    const existingDbOrderId =
+      existingOrder?.kitchenOrderId ||
+      (existingOrder?.id && uuidRegex.test(existingOrder.id) ? existingOrder.id : undefined);
+
     try {
-      let kitchenOrderId: string | undefined;
+      let kitchenOrderId: string | undefined = existingDbOrderId;
+      const cleanOrderNotes = String(orderNotes || "")
+        .replace(/\[SELF_ORDER_PENDING_CAPTAIN\]/g, "")
+        .replace(/\[SELF_ORDER_ACTIVE\]/g, "")
+        .replace(/\[SENT_TO_KITCHEN\]/g, "")
+        .trim();
+
+      const alreadySentToCashier =
+        existingOrder?.status === "sent_to_cashier" || Boolean(existingOrder?.sentToCashier);
+
+      const formattedNotes = [
+        existingOrder?.is_self_order ? "[SELF_ORDER_ACTIVE]" : "",
+        "[SENT_TO_KITCHEN]",
+        alreadySentToCashier ? "[SENT_TO_CASHIER]" : "",
+        `[طاولة: ${table.number}]`,
+        cleanOrderNotes
+          ? `${cleanOrderNotes}${currency && currency !== "EGP" ? ` | العملة: ${currency}` : ""}`
+          : `طاولة #${table.number}${currency && currency !== "EGP" ? ` | العملة: ${currency}` : ""}`,
+      ]
+        .filter(Boolean)
+        .join(" ");
+
+      const dbItems = cart.map((c) => ({
+        id: c.item.id,
+        menu_item_id: c.item.id,
+        name_ar: c.item.name_ar,
+        price: c.item.price,
+        quantity: c.quantity,
+        notes: c.notes || "",
+        selectedAdditions: c.selectedAdditions || [],
+        requires_oven: c.item.requires_oven || false,
+        item: c.item,
+        meta: {
+          table_id: table.id,
+          table_number: table.number,
+          table_name: table.name || `طاولة ${table.number}`,
+        },
+      }));
 
       try {
-        const { data, error } = await supabase
-          .from("orders")
-          .insert({
-            subtotal: Number(finalSubtotal.toFixed(2)),
-            tax: Number(finalTax.toFixed(2)),
-            total: Number(finalTotal.toFixed(2)),
-            payment_method: "cash",
-            order_type: "dine_in",
-            table_id: cleanTableId(table.id),
-            status: "pending",
-            notes: orderNotes
-              ? `طاولة #${table.number} - ${orderNotes}${currency && currency !== "EGP" ? ` | العملة: ${currency}` : ""}`
-              : `طاولة #${table.number}${currency && currency !== "EGP" ? ` | العملة: ${currency}` : ""}`,
-            items: cart.map((c) => ({
-              id: c.item.id,
-              menu_item_id: c.item.id,
-              name_ar: c.item.name_ar,
-              price: c.item.price,
-              quantity: c.quantity,
-              notes: c.notes || "",
-              selectedAdditions: c.selectedAdditions || [],
-              requires_oven: c.item.requires_oven || false,
-            })),
-          })
-          .select("id, order_number")
-          .single();
+        if (existingDbOrderId) {
+          await supabase
+            .from("orders")
+            .update({
+              subtotal: Number(finalSubtotal.toFixed(2)),
+              tax: Number(finalTax.toFixed(2)),
+              total: Number(finalTotal.toFixed(2)),
+              status: "preparing",
+              notes: formattedNotes,
+              items: dbItems,
+            })
+            .eq("id", existingDbOrderId);
+        } else {
+          const { data, error } = await supabase
+            .from("orders")
+            .insert({
+              subtotal: Number(finalSubtotal.toFixed(2)),
+              tax: Number(finalTax.toFixed(2)),
+              total: Number(finalTotal.toFixed(2)),
+              payment_method: "cash",
+              order_type: "dine_in",
+              table_id: cleanTableId(table.id),
+              status: "preparing",
+              notes: formattedNotes,
+              items: dbItems,
+            })
+            .select("id, order_number")
+            .single();
 
-        if (!error && data) {
-          kitchenOrderId = data.id;
+          if (!error && data) {
+            kitchenOrderId = data.id;
+          }
         }
       } catch (sbErr) {
-        console.warn("Supabase kitchen order insert fallback to local store:", sbErr);
+        console.warn("Supabase kitchen order sync fallback to local store:", sbErr);
       }
 
       tableOrdersStore.saveOrder({
+        id: existingOrder?.id || kitchenOrderId,
         table_id: table.id,
         table_number: table.number,
         table_name: table.name,
         items: cart,
         order_type: "dine_in",
-        notes: orderNotes,
+        notes: formattedNotes,
         selectedAdditions,
         subtotal: Number(subTotal.toFixed(2)),
         tax: Number(tax.toFixed(2)),
         total: Number(total.toFixed(2)),
-        status: "draft",
+        status: alreadySentToCashier ? "sent_to_cashier" : "draft",
         sentToKitchen: true,
+        kitchenCompleted: false,
+        sentToCashier: alreadySentToCashier,
         kitchenOrderId,
+        is_self_order: Boolean(existingOrder?.is_self_order),
       });
 
-      try {
-        const validUuid = cleanTableId(table.id);
-        if (validUuid) {
-          await supabase.from("tables").update({ status: "occupied" }).eq("id", validUuid);
-        }
-      } catch (tErr) {
-        console.warn("Table status update warning:", tErr);
-      }
+      onChangeTableStatus?.("occupied");
 
       toast({
-        title: lang === "ar" ? "تم الإرسال إلى المطبخ 👨‍🍳" : "Sent to Kitchen 👨‍🍳",
+        title: lang === "ar" ? "تم الإرسال إلى المطبخ والفرن 👨‍🍳" : "Sent to Kitchen 👨‍🍳",
         description:
           lang === "ar"
-            ? `تم إرسال طلب طاولة #${table.number} للمطبخ للتجهيز بنجاح.`
-            : `Table #${table.number} order sent to kitchen for preparation.`,
+            ? `تم إرسال طلب طاولة #${table.number} للمطبخ وبدأ المؤقت على مربع الطاولة وفي شاشة الفرن.`
+            : `Table #${table.number} order sent to kitchen.`,
       });
 
       onOrderSent?.();
@@ -303,36 +391,73 @@ export function TableOrderModal({
       return;
     }
 
-    const existingOrder = tableOrdersStore.getOrderByTableId(table.id);
+    const existingOrder = tableOrdersStore.getOrderByTableId(table.id, table.number);
+    const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+    const existingDbOrderId =
+      existingOrder?.kitchenOrderId ||
+      (existingOrder?.id && uuidRegex.test(existingOrder.id) ? existingOrder.id : undefined);
+
+    const cleanOrderNotes = String(orderNotes || "")
+      .replace(/\[SELF_ORDER_PENDING_CAPTAIN\]/g, "")
+      .replace(/\[SELF_ORDER_ACTIVE\]/g, "")
+      .replace(/\[SENT_TO_CASHIER\]/g, "")
+      .trim();
+
+    const updatedNotes = [
+      existingOrder?.is_self_order ? "[SELF_ORDER_ACTIVE]" : "",
+      existingOrder?.sentToKitchen ? "[SENT_TO_KITCHEN]" : "",
+      "[SENT_TO_CASHIER]",
+      `[طاولة: ${table.number}]`,
+      cleanOrderNotes,
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    if (existingDbOrderId) {
+      try {
+        await supabase
+          .from("orders")
+          .update({
+            notes: updatedNotes,
+            subtotal: Number(subTotal.toFixed(2)),
+            tax: Number(tax.toFixed(2)),
+            total: Number(total.toFixed(2)),
+          })
+          .eq("id", existingDbOrderId);
+      } catch (e) {
+        console.warn("Supabase cashier order update warning:", e);
+      }
+    }
 
     tableOrdersStore.saveOrder({
+      id: existingOrder?.id,
       table_id: table.id,
       table_number: table.number,
       table_name: table.name,
       items: cart,
       order_type: "dine_in",
-      notes: orderNotes,
+      notes: updatedNotes,
       selectedAdditions,
       subtotal: Number(subTotal.toFixed(2)),
       tax: Number(tax.toFixed(2)),
       total: Number(total.toFixed(2)),
       status: "sent_to_cashier",
       sentToKitchen: existingOrder?.sentToKitchen || false,
-      kitchenOrderId: existingOrder?.kitchenOrderId,
+      kitchenCompleted: existingOrder?.kitchenCompleted || false,
+      sentToCashier: true,
+      kitchenOrderId: existingOrder?.kitchenOrderId || existingDbOrderId,
+      is_self_order: Boolean(existingOrder?.is_self_order),
     });
 
-    try {
-      await supabase.from("tables").update({ status: "cleaning" }).eq("id", table.id);
-    } catch (e) {
-      console.error("Failed to update table status:", e);
-    }
+    // Keep table status as "occupied" until Cashier completes payment (after which it automatically switches to "cleaning")
+    onChangeTableStatus?.("occupied");
 
     toast({
       title: lang === "ar" ? "تم الإرسال للكاشير 🚀" : "Sent to Cashier 🚀",
       description:
         lang === "ar"
-          ? `تم إرسال طلب طاولة #${table.number} إلى الكاشير، وتحولت الطاولة إلى وضع التنظيف.`
-          : `Table #${table.number} order sent to Cashier and table switched to cleaning mode.`,
+          ? `تم إرسال طلب طاولة #${table.number} إلى الكاشير، وعند إتمام الدفع سيمسح الطلب وتتحول الطاولة للتنظيف تلقائياً.`
+          : `Table #${table.number} order sent to Cashier.`,
     });
 
     onOrderSent?.();
@@ -348,33 +473,53 @@ export function TableOrderModal({
         dir={lang === "ar" ? "rtl" : "ltr"}
         style={{ fontFamily: '"Tajawal", "Cairo", system-ui, sans-serif' }}
       >
-        <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
+        <div className="px-4 sm:px-6 py-3.5 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-2 border-b border-slate-800">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white font-black shadow">
               #{table.number}
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-lg font-black tracking-tight">
+                <h2 className="text-base sm:text-lg font-black tracking-tight">
                   {lang === "ar"
-                    ? `طلب أوردر — طاولة #${table.number}`
-                    : `Order Request — Table #${table.number}`}
+                    ? `طلب طاولة #${table.number}`
+                    : `Table #${table.number} Order`}
                 </h2>
                 {table.name && <span className="text-xs text-slate-400">({table.name})</span>}
               </div>
-              <p className="text-xs text-slate-400 mt-0.5">
+              <p className="text-[11px] text-slate-400 mt-0.5">
                 {lang === "ar"
-                  ? "اختر الأصناف والإضافات، ثم اضغط إرسال إلى الكاشير"
-                  : "Select items, additions, then send to cashier"}
+                  ? "أرسل الطلب للمطبخ أو الكاشير، أو تحكم في حالة الطاولة"
+                  : "Send order to kitchen or cashier, or change table status"}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/30 px-3 py-1 font-bold text-xs">
-              <Clock size={12} className="inline ml-1" />
-              {lang === "ar" ? "قيد التجهيز للطاولة" : "Table Order in progress"}
-            </Badge>
+          <div className="flex items-center gap-2 flex-wrap">
+            {onChangeTableStatus && (
+              <div className="flex items-center gap-1 bg-slate-800 p-1 rounded-xl border border-slate-700">
+                {(
+                  [
+                    { key: "available", label: "متاح", cls: "bg-emerald-600 text-white" },
+                    { key: "occupied", label: "مشغول", cls: "bg-rose-600 text-white" },
+                    { key: "cleaning", label: "تنظيف", cls: "bg-sky-600 text-white" },
+                  ] as const
+                ).map((st) => (
+                  <button
+                    key={st.key}
+                    type="button"
+                    onClick={() => onChangeTableStatus(st.key)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                      table.status === st.key
+                        ? st.cls
+                        : "text-slate-300 hover:bg-slate-700"
+                    }`}
+                  >
+                    {st.label}
+                  </button>
+                ))}
+              </div>
+            )}
             <button
               onClick={onClose}
               className="w-9 h-9 rounded-full bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-300 transition"

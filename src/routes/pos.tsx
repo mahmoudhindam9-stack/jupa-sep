@@ -263,15 +263,122 @@ function Index() {
   const [activeTableOrderSentToKitchen, setActiveTableOrderSentToKitchen] =
     useState<boolean>(false);
   const [activeTableKitchenOrderId, setActiveTableKitchenOrderId] = useState<string | null>(null);
+  const [activeTableOrderId, setActiveTableOrderId] = useState<string | null>(null);
+  const [activeTableNumber, setActiveTableNumber] = useState<number | null>(null);
+
+  // Sync any orders sent to cashier via Supabase (cross-device Captain -> Cashier sync)
+  useEffect(() => {
+    let active = true;
+    const syncRemoteCashierOrders = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("orders")
+          .select(
+            "id,order_number,table_id,total,subtotal,tax,status,items,notes,order_type,created_at",
+          )
+          .in("status", ["pending", "preparing", "ready"])
+          .ilike("notes", "%[SENT_TO_CASHIER]%")
+          .order("created_at", { ascending: false })
+          .limit(30);
+
+        if (error || !active || !Array.isArray(data)) return;
+        const currentLocal = tableOrdersStore.getAllOrders();
+
+        for (const row of data) {
+          const notesStr = String(row.notes || "");
+          if (notesStr.includes("[CASHIER_PAID]")) continue;
+          const existsLocally = currentLocal.some(
+            (lo) => lo.id === row.id || lo.kitchenOrderId === row.id,
+          );
+          if (!existsLocally) {
+            const tableMatch = notesStr.match(/\[طاولة:\s*([^\]]+)\]/);
+            const parsedNum = tableMatch ? parseInt(tableMatch[1].trim(), 10) : NaN;
+            const tableNum = !isNaN(parsedNum) && parsedNum > 0 ? parsedNum : 999;
+            const tableId = row.table_id || `tbl-${tableNum}`;
+            tableOrdersStore.saveOrder({
+              id: row.id,
+              kitchenOrderId: row.id,
+              table_id: tableId,
+              table_number: tableNum,
+              table_name: tableNum !== 999 ? `طاولة ${tableNum}` : "طلب سفري / عام",
+              items: (Array.isArray(row.items) ? row.items : []).map((line: any, idx: number) => ({
+                ...line,
+                item: line?.item || {
+                  id: line?.menu_item_id || line?.id || `item-${idx}`,
+                  name_ar: line?.name_ar || line?.name || "صنف",
+                  price: Number(line?.price ?? 0),
+                  category_id: line?.category_id || "all",
+                  image_url: line?.image_url || null,
+                  requires_oven: Boolean(line?.requires_oven),
+                },
+                quantity: Number(line?.quantity ?? 1),
+                notes: line?.notes || line?.note || "",
+                selectedAdditions: line?.selectedAdditions || [],
+              })),
+              order_type: (row.order_type as OrderType) || "dine_in",
+              notes: notesStr,
+              selectedAdditions: [],
+              subtotal: Number(row.subtotal ?? row.total ?? 0),
+              tax: Number(row.tax ?? 0),
+              total: Number(row.total ?? 0),
+              status: "sent_to_cashier",
+              sentToKitchen: notesStr.includes("[SENT_TO_KITCHEN]") || row.status === "preparing",
+              sentToCashier: true,
+              is_self_order:
+                notesStr.includes("[SELF_ORDER_ACTIVE]") ||
+                notesStr.includes("[SELF_ORDER_PENDING_CAPTAIN]"),
+            });
+          }
+        }
+      } catch {
+        // ignore polling error
+      }
+    };
+
+    void syncRemoteCashierOrders();
+    const timer = setInterval(syncRemoteCashierOrders, 3000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, []);
 
   const handleLoadTableOrderToCart = (tableOrder: TableOrder) => {
-    setCart(tableOrder.items || []);
+    const normalizedItems: CartLine[] = (tableOrder.items || []).map((line: any, idx: number) => ({
+      item: line?.item || {
+        id: line?.menu_item_id || line?.id || `item-${idx}`,
+        name_ar: line?.name_ar || line?.name || "صنف",
+        price: Number(line?.price ?? 0),
+        category_id: line?.category_id || "all",
+        image_url: line?.image_url || null,
+      },
+      quantity: Number(line?.quantity ?? 1),
+      notes: line?.notes || line?.note || "",
+      selectedAdditions: line?.selectedAdditions || [],
+    }));
+
+    const cleanedNotes = String(tableOrder.notes || "")
+      .replace(/\[SELF_ORDER_PENDING_CAPTAIN\]/g, "")
+      .replace(/\[SELF_ORDER_ACTIVE\]/g, "")
+      .replace(/\[SENT_TO_KITCHEN\]/g, "")
+      .replace(/\[SENT_TO_CASHIER\]/g, "")
+      .replace(/\[CASHIER_PAID\]/g, "")
+      .trim();
+
+    const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+    const resolvedDbOrderId =
+      tableOrder.kitchenOrderId ||
+      (tableOrder.id && uuidRegex.test(tableOrder.id) ? tableOrder.id : null);
+
+    setCart(normalizedItems);
     setSelectedTable(tableOrder.table_id || "");
-    setOrderType("dine_in");
-    setOrderNotes(tableOrder.notes || "");
+    setOrderType(tableOrder.order_type || "dine_in");
+    setOrderNotes(cleanedNotes);
     setSelectedAdditions(tableOrder.selectedAdditions || []);
     setActiveTableOrderSentToKitchen(!!tableOrder.sentToKitchen);
-    setActiveTableKitchenOrderId(tableOrder.kitchenOrderId || null);
+    setActiveTableKitchenOrderId(resolvedDbOrderId);
+    setActiveTableOrderId(tableOrder.id);
+    setActiveTableNumber(tableOrder.table_number || null);
 
     updateStatus(tableOrder.id, "in_checkout");
 
@@ -739,25 +846,64 @@ function Index() {
           };
         }),
       };
+      const uuidRegex =
+        /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+      const existingSupabaseOrderId =
+        (activeTableKitchenOrderId && uuidRegex.test(activeTableKitchenOrderId)
+          ? activeTableKitchenOrderId
+          : null) ||
+        (activeTableOrderId && uuidRegex.test(activeTableOrderId) ? activeTableOrderId : null);
+
+      const isFromCaptainOrSelfOrder = Boolean(
+        existingSupabaseOrderId || activeTableOrderId || activeTableOrderSentToKitchen,
+      );
+
+      const paidPayload = {
+        ...payload,
+        // Once Cashier finishes checkout and collects cash for a Captain/Self-Order, mark it 'served'
+        // so it disappears from Captain's pending list immediately!
+        status: isFromCaptainOrSelfOrder ? "served" : payload.status,
+        notes: isFromCaptainOrSelfOrder
+          ? `${payload.notes ? payload.notes + " | " : ""}[CASHIER_PAID]`
+          : payload.notes,
+      };
+
       let data: any = null;
       try {
-        const res = await supabase
-          .from("orders")
-          .insert(payload)
-          .select(
-            "id,order_number,subtotal,tax,total,payment_method,order_type,table_id,status,items,created_at",
-          )
-          .single();
-        if (res.error) throw res.error;
-        data = res.data;
+        if (existingSupabaseOrderId) {
+          const updateRes = await supabase
+            .from("orders")
+            .update(paidPayload)
+            .eq("id", existingSupabaseOrderId)
+            .select(
+              "id,order_number,subtotal,tax,total,payment_method,order_type,table_id,status,items,created_at",
+            )
+            .single();
+
+          if (!updateRes.error && updateRes.data) {
+            data = updateRes.data;
+          }
+        }
+
+        if (!data) {
+          const res = await supabase
+            .from("orders")
+            .insert(paidPayload)
+            .select(
+              "id,order_number,subtotal,tax,total,payment_method,order_type,table_id,status,items,created_at",
+            )
+            .single();
+          if (res.error) throw res.error;
+          data = res.data;
+        }
       } catch (sbErr) {
-        console.warn("Supabase order insert failed, using local fallback:", sbErr);
-        const localId = "local-" + Date.now();
+        console.warn("Supabase order save failed, using local fallback:", sbErr);
+        const localId = existingSupabaseOrderId || "local-" + Date.now();
         const localOrderNumber = 1000 + Math.floor(Math.random() * 9000);
         data = {
           id: localId,
           order_number: localOrderNumber,
-          ...payload,
+          ...paidPayload,
           created_at: new Date().toISOString(),
         };
         try {
@@ -794,18 +940,102 @@ function Index() {
       );
 
       if (!deductionResult.success) {
-        // If deduction failed (e.g. strict stock and run out), we should ideally roll back or inform
         console.error("Inventory deduction failed during order placement:", deductionResult.error);
       }
 
-      if (activeTableKitchenOrderId) {
+      // Ensure both activeTableKitchenOrderId and activeTableOrderId are marked served in Supabase
+      const idsToClose = Array.from(
+        new Set([activeTableKitchenOrderId, activeTableOrderId, existingSupabaseOrderId]),
+      ).filter((id): id is string => Boolean(id && uuidRegex.test(id)));
+
+      for (const closeId of idsToClose) {
         try {
           await supabase
             .from("orders")
-            .update({ status: "served" })
-            .eq("id", activeTableKitchenOrderId);
+            .update({
+              status: "served",
+              notes: `${payload.notes ? payload.notes + " | " : ""}[CASHIER_PAID]`,
+            })
+            .eq("id", closeId);
         } catch (err) {
-          console.error("Failed to update active kitchen order status:", err);
+          console.error("Failed to mark order served:", err);
+        }
+      }
+
+      // Automatically switch the table status to "cleaning" (تنظيف) after payment
+      if (selectedTable || activeTableNumber) {
+        const matchedTableObj = (tablesQuery.data || []).find(
+          (t) =>
+            (selectedTable && t.id === selectedTable) ||
+            (activeTableNumber && Number(t.number) === Number(activeTableNumber)),
+        );
+        const resolvedTblNum =
+          activeTableNumber ||
+          matchedTableObj?.number ||
+          parseInt(String(selectedTable || "").replace(/^tbl-/, ""), 10) ||
+          0;
+        const resolvedTblId = selectedTable || matchedTableObj?.id || "";
+
+        try {
+          if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
+            const rawLocal = localStorage.getItem(LOCAL_TABLES_KEY);
+            const currentLocal: any[] = rawLocal ? JSON.parse(rawLocal) : [];
+            const nowTs = Date.now();
+            let updatedLocal = false;
+            const nextLocal = currentLocal.map((lt) => {
+              if (
+                (resolvedTblId && lt.id === resolvedTblId) ||
+                (resolvedTblNum > 0 && Number(lt.number) === Number(resolvedTblNum))
+              ) {
+                updatedLocal = true;
+                return { ...lt, status: "cleaning", status_updated_at: nowTs };
+              }
+              return lt;
+            });
+            if (!updatedLocal && (resolvedTblId || resolvedTblNum > 0)) {
+              nextLocal.push({
+                id: resolvedTblId || `tbl-${resolvedTblNum}`,
+                number: resolvedTblNum || 1,
+                name: matchedTableObj?.name || `طاولة ${resolvedTblNum || 1}`,
+                capacity: 4,
+                status: "cleaning",
+                status_updated_at: nowTs,
+              });
+            }
+            localStorage.setItem(LOCAL_TABLES_KEY, JSON.stringify(nextLocal));
+          }
+        } catch (localErr) {
+          console.warn("Local table status cleaning update warning:", localErr);
+        }
+
+        const validTableUuid = cleanTableId(resolvedTblId);
+        try {
+          if (validTableUuid) {
+            await supabase.from("tables").update({ status: "cleaning" }).eq("id", validTableUuid);
+          }
+          if (resolvedTblNum > 0) {
+            await supabase
+              .from("tables")
+              .update({ status: "cleaning" })
+              .eq("number", resolvedTblNum);
+          }
+        } catch {
+          // ignore table status update warning
+        }
+
+        if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+          try {
+            const bc = new BroadcastChannel("restocash_self_orders_bc");
+            bc.postMessage({
+              type: "TABLE_PAID_AND_CLEANING",
+              tableId: resolvedTblId,
+              tableNumber: resolvedTblNum,
+              orderId: activeTableOrderId,
+            });
+            bc.close();
+          } catch {
+            // ignore BroadcastChannel error
+          }
         }
       }
 
@@ -818,11 +1048,16 @@ function Index() {
       } as unknown as CompletedOrder;
     },
     onSuccess: (order) => {
-      if (selectedTable) {
-        tableOrdersStore.clearTableOrder(selectedTable);
-      }
+      tableOrdersStore.completeCashierOrder({
+        orderId: activeTableOrderId,
+        kitchenOrderId: activeTableKitchenOrderId,
+        tableId: selectedTable || null,
+        tableNumber: activeTableNumber,
+      });
       setActiveTableOrderSentToKitchen(false);
       setActiveTableKitchenOrderId(null);
+      setActiveTableOrderId(null);
+      setActiveTableNumber(null);
       setInvoice(order);
       setCart([]);
       setSelectedTable("");
@@ -832,6 +1067,7 @@ function Index() {
       setMobileNumber("");
       setCheckoutOpen(false);
       queryClient.invalidateQueries({ queryKey: ["orders"] });
+      queryClient.invalidateQueries({ queryKey: ["captain-self-orders"] });
       queryClient.invalidateQueries({ queryKey: ["tables"] });
       queryClient.invalidateQueries({ queryKey: ["admin", "orders"] });
       queryClient.invalidateQueries({ queryKey: ["admin", "tables"] });

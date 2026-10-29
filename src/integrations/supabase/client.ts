@@ -13,7 +13,16 @@ function isValidSupabaseKey(key: string): boolean {
 function isValidHttpUrl(url: string | undefined | null): boolean {
   if (!url || typeof url !== "string") return false;
   const trimmed = url.trim();
-  if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
+  const lower = trimmed.toLowerCase();
+  if (!lower.startsWith("http://") && !lower.startsWith("https://")) {
+    return false;
+  }
+  if (
+    lower.includes("your-project-id") ||
+    lower.includes("your_project") ||
+    lower.includes("example.com") ||
+    lower.includes("placeholder")
+  ) {
     return false;
   }
   try {
@@ -78,25 +87,26 @@ function createSupabaseClient() {
 
   const SUPABASE_URL = rawUrlCandidates.find(isValidHttpUrl) || DEFAULT_SUPABASE_URL;
 
-  let SUPABASE_PUBLISHABLE_KEY =
-    (typeof import.meta !== "undefined" && import.meta.env
-      ? import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
-      : undefined) ||
-    (typeof process !== "undefined" && process.env
-      ? process.env.VITE_SUPABASE_ANON_KEY ||
-        process.env.SUPABASE_ANON_KEY ||
-        process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-        process.env.SUPABASE_PUBLISHABLE_KEY
-      : undefined);
+  const rawKeyCandidates = [
+    typeof import.meta !== "undefined" && import.meta.env
+      ? import.meta.env.VITE_SUPABASE_ANON_KEY
+      : undefined,
+    typeof import.meta !== "undefined" && import.meta.env
+      ? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
+      : undefined,
+    typeof process !== "undefined" && process.env ? process.env.VITE_SUPABASE_ANON_KEY : undefined,
+    typeof process !== "undefined" && process.env ? process.env.SUPABASE_ANON_KEY : undefined,
+    typeof process !== "undefined" && process.env
+      ? process.env.VITE_SUPABASE_PUBLISHABLE_KEY
+      : undefined,
+    typeof process !== "undefined" && process.env
+      ? process.env.SUPABASE_PUBLISHABLE_KEY
+      : undefined,
+  ];
 
-  // If the key was mistakenly provided as a URL or is missing/invalid, fallback to default key
-  if (
-    !SUPABASE_PUBLISHABLE_KEY ||
-    SUPABASE_PUBLISHABLE_KEY.startsWith("http://") ||
-    SUPABASE_PUBLISHABLE_KEY.startsWith("https://")
-  ) {
-    SUPABASE_PUBLISHABLE_KEY = MYQTV_ANON_KEY;
-  }
+  let SUPABASE_PUBLISHABLE_KEY =
+    rawKeyCandidates.find((k) => typeof k === "string" && isValidSupabaseKey(k.trim())) ||
+    MYQTV_ANON_KEY;
 
   // If connected to myqtvbfibvgxkqwxvuru, ensure the key belongs to this project ref (prevent stale env tokens from other projects)
   if (
@@ -106,7 +116,7 @@ function createSupabaseClient() {
     SUPABASE_PUBLISHABLE_KEY = MYQTV_ANON_KEY;
   }
 
-  if (!SUPABASE_PUBLISHABLE_KEY) {
+  if (!SUPABASE_PUBLISHABLE_KEY || !isValidSupabaseKey(SUPABASE_PUBLISHABLE_KEY)) {
     SUPABASE_PUBLISHABLE_KEY = MYQTV_ANON_KEY;
   }
 

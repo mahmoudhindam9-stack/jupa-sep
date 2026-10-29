@@ -22,6 +22,7 @@ export interface TableOrder {
   total: number;
   status: "draft" | "sent_to_cashier" | "in_checkout" | "completed" | "cancelled";
   sentToKitchen?: boolean;
+  sentToCashier?: boolean;
   kitchenCompleted?: boolean;
   kitchenOrderId?: string;
   is_self_order?: boolean;
@@ -31,10 +32,12 @@ export interface TableOrder {
 
 const STORAGE_KEY = "restocash_table_orders_v1";
 const OVEN_CHANNEL = "oven_orders_channel";
+const UUID_REGEX = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
 class TableOrdersStore {
   private orders: TableOrder[] = [];
   private listeners = new Set<() => void>();
+  private persistingKitchenIds = new Set<string>();
 
   constructor() {
     this.loadState();
@@ -131,10 +134,33 @@ class TableOrdersStore {
   }
 
   private persistKitchenOrderToDatabase(order: TableOrder) {
-    if (!order.sentToKitchen || order.kitchenOrderId) return;
+    if (!order.sentToKitchen) return;
+
+    // If the order already exists in Supabase (e.g. a QR Self-Order with a UUID or already has kitchenOrderId),
+    // never insert a second row into public.orders!
+    if (order.kitchenOrderId || order.is_self_order || UUID_REGEX.test(String(order.id || ""))) {
+      if (!order.kitchenOrderId && UUID_REGEX.test(String(order.id || ""))) {
+        const idx = this.orders.findIndex((o) => o.id === order.id);
+        if (idx >= 0) {
+          this.orders[idx] = {
+            ...this.orders[idx],
+            kitchenOrderId: order.id,
+          };
+          this.saveState();
+        }
+      }
+      return;
+    }
+
+    if (this.persistingKitchenIds.has(order.id)) return;
+    this.persistingKitchenIds.add(order.id);
 
     void (async () => {
       try {
+        const cleanNotes = String(order.notes || "")
+          .replace(/\[SELF_ORDER_PENDING_CAPTAIN\]/g, "")
+          .trim();
+
         const { data, error } = await supabase
           .from("orders")
           .insert({
@@ -144,9 +170,9 @@ class TableOrdersStore {
             payment_method: "cash",
             order_type: order.order_type,
             table_id:
-              order.table_id && /^[0-9a-fA-F-]{36}$/.test(order.table_id) ? order.table_id : null,
-            status: "pending",
-            notes: order.notes || null,
+              order.table_id && UUID_REGEX.test(order.table_id) ? order.table_id : null,
+            status: "preparing",
+            notes: cleanNotes ? `[SENT_TO_KITCHEN] ${cleanNotes}` : `[SENT_TO_KITCHEN] طاولة #${order.table_number}`,
             items: (order.items || []).map((line: any) => ({
               id: line?.item?.id || line?.id,
               menu_item_id: line?.item?.id || line?.menu_item_id || line?.id,
@@ -180,6 +206,8 @@ class TableOrdersStore {
       } catch (error) {
         console.warn("Kitchen DB bridge failed; keeping local order:", error);
         this.broadcastKitchenOrder(order);
+      } finally {
+        this.persistingKitchenIds.delete(order.id);
       }
     })();
   }
@@ -197,10 +225,15 @@ class TableOrdersStore {
     return this.orders;
   }
 
-  public getOrderByTableId(tableId: string) {
+  public getOrderByTableId(tableId: string, tableNumber?: number) {
     return this.orders.find(
       (o) =>
-        o.table_id === tableId && ["draft", "sent_to_cashier", "in_checkout"].includes(o.status),
+        (o.table_id === tableId ||
+          (tableNumber !== undefined &&
+            Number(tableNumber) > 0 &&
+            Number(tableNumber) !== 999 &&
+            Number(o.table_number) === Number(tableNumber))) &&
+        ["draft", "sent_to_cashier", "in_checkout"].includes(o.status),
     );
   }
 
@@ -213,9 +246,14 @@ class TableOrdersStore {
     const existingIndex = this.orders.findIndex(
       (o) =>
         (orderData.id && o.id === orderData.id) ||
-        (!!orderData.table_id &&
-          o.table_id === orderData.table_id &&
-          ["draft", "sent_to_cashier", "in_checkout"].includes(o.status)),
+        (orderData.kitchenOrderId &&
+          (o.kitchenOrderId === orderData.kitchenOrderId || o.id === orderData.kitchenOrderId)) ||
+        ((!!orderData.table_id && o.table_id === orderData.table_id) ||
+          (orderData.table_number !== undefined &&
+            Number(orderData.table_number) > 0 &&
+            Number(orderData.table_number) !== 999 &&
+            Number(o.table_number) === Number(orderData.table_number))) &&
+          ["draft", "sent_to_cashier", "in_checkout"].includes(o.status),
     );
 
     if (existingIndex >= 0) {
@@ -307,14 +345,65 @@ class TableOrdersStore {
     this.notify();
   }
 
-  public clearOrder(tableId: string) {
-    this.clearTableOrder(tableId);
+  public clearOrder(tableId: string, tableNumber?: number) {
+    this.clearTableOrder(tableId, tableNumber);
   }
 
-  public clearTableOrder(tableId: string) {
-    this.orders = this.orders.filter((o) => o.table_id !== tableId);
+  public clearTableOrder(tableId: string, tableNumber?: number) {
+    this.orders = this.orders.filter((o) => {
+      if (tableId && o.table_id === tableId) return false;
+      if (
+        tableNumber !== undefined &&
+        Number(tableNumber) > 0 &&
+        Number(tableNumber) !== 999 &&
+        Number(o.table_number) === Number(tableNumber)
+      ) {
+        return false;
+      }
+      return true;
+    });
     this.saveState();
     this.notify();
+  }
+
+  public completeCashierOrder(params: {
+    orderId?: string | null;
+    kitchenOrderId?: string | null;
+    tableId?: string | null;
+    tableNumber?: number | null;
+  }) {
+    const { orderId, kitchenOrderId, tableId, tableNumber } = params;
+    this.orders = this.orders.filter((o) => {
+      if (orderId && (o.id === orderId || o.kitchenOrderId === orderId)) return false;
+      if (kitchenOrderId && (o.id === kitchenOrderId || o.kitchenOrderId === kitchenOrderId)) {
+        return false;
+      }
+      if (tableId && o.table_id === tableId) return false;
+      if (
+        tableNumber &&
+        Number(tableNumber) > 0 &&
+        Number(tableNumber) !== 999 &&
+        Number(o.table_number) === Number(tableNumber)
+      ) {
+        return false;
+      }
+      return true;
+    });
+    this.saveState();
+    this.notify();
+
+    if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+      try {
+        const bc = new BroadcastChannel("restocash_self_orders_bc");
+        bc.postMessage({
+          type: "ORDER_COMPLETED_BY_CASHIER",
+          payload: params,
+        });
+        bc.close();
+      } catch {
+        // ignore BroadcastChannel error
+      }
+    }
   }
 
   public clearAll() {
@@ -323,10 +412,21 @@ class TableOrdersStore {
     this.notify();
   }
 
-  public markKitchenCompletedByTableId(tableId: string) {
+  public markKitchenCompletedByTableId(
+    tableId?: string | null,
+    tableNumber?: number | null,
+    orderId?: string | null,
+  ) {
     let changed = false;
     this.orders.forEach((o) => {
-      if (o.table_id === tableId && o.sentToKitchen && !o.kitchenCompleted) {
+      const matched =
+        (tableId && o.table_id === tableId) ||
+        (tableNumber &&
+          Number(tableNumber) > 0 &&
+          Number(tableNumber) !== 999 &&
+          Number(o.table_number) === Number(tableNumber)) ||
+        (orderId && (o.id === orderId || o.kitchenOrderId === orderId));
+      if (matched && o.sentToKitchen && !o.kitchenCompleted) {
         o.kitchenCompleted = true;
         o.updated_at = new Date().toISOString();
         changed = true;

@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { ChevronDown, Grid3X3, LogOut } from "lucide-react";
+import { BellRing, ChevronDown, Grid3X3, LogOut } from "lucide-react";
 import { RestocashLogo } from "@/components/RestocashLogo";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { CurrencySwitcher } from "@/components/CurrencySwitcher";
@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { CURRENT_VERSION } from "@/shared/config/version";
 import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 import {
   getActiveUserPermissionsSync,
   hasAnyRequestedPermission,
@@ -54,10 +55,84 @@ export function AppMainNavbar({
 }: AppMainNavbarProps) {
   const location = useLocation();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [fallbackUser, setFallbackUser] = useState<AppMainNavbarUser | null>(null);
   const [activePerms, setActivePerms] = useState<Record<string, boolean>>(() =>
     getActiveUserPermissionsSync(),
   );
+  const [pendingSelfOrdersCount, setPendingSelfOrdersCount] = useState<number>(0);
+  const [hasUrgentTableCall, setHasUrgentTableCall] = useState<boolean>(false);
+  const seenNavbarOrderIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    let mounted = true;
+
+    const checkPendingSelfOrders = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("orders")
+          .select("id, status, notes, created_at")
+          .in("status", ["pending_captain", "pending"])
+          .or(
+            "status.eq.pending_captain,notes.ilike.%[SELF_ORDER_PENDING_CAPTAIN]%,notes.ilike.%[TABLE_ASSISTANCE_CALL]%",
+          )
+          .order("created_at", { ascending: false })
+          .limit(30);
+
+        if (error || !mounted) return;
+        const rows = data || [];
+        const calls = rows.filter((r) => String(r.notes || "").includes("[TABLE_ASSISTANCE_CALL]"));
+        setPendingSelfOrdersCount(rows.length);
+        setHasUrgentTableCall(calls.length > 0);
+
+        // If user is NOT on /captain, notify them via toast when a brand new self-order arrives
+        const isCaptainPage = location.pathname.startsWith("/captain");
+        for (const r of rows) {
+          if (!seenNavbarOrderIdsRef.current.has(r.id)) {
+            seenNavbarOrderIdsRef.current.add(r.id);
+            if (!isCaptainPage) {
+              const isCall = String(r.notes || "").includes("[TABLE_ASSISTANCE_CALL]");
+              toast({
+                title: isCall
+                  ? "🚨 استدعاء كابتن من طاولة عميل (QR)"
+                  : "🔔 طلب ذاتي جديد من العميل (QR)",
+                description: "افتح شاشة الكابتن لمراجعة الطلب وموقع الطاولة واعتماده للمطبخ.",
+              });
+            }
+          }
+        }
+      } catch {
+        // Ignore polling errors
+      }
+    };
+
+    void checkPendingSelfOrders();
+    const interval = setInterval(checkPendingSelfOrders, 4000);
+
+    let bc: BroadcastChannel | null = null;
+    if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+      try {
+        bc = new BroadcastChannel("restocash_self_orders_bc");
+        bc.onmessage = () => {
+          void checkPendingSelfOrders();
+        };
+      } catch {
+        // Ignore BroadcastChannel error
+      }
+    }
+
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+      if (bc) {
+        try {
+          bc.close();
+        } catch {
+          // Ignore close error
+        }
+      }
+    };
+  }, [location.pathname, toast]);
 
   useEffect(() => {
     const refresh = () => {
@@ -229,8 +304,29 @@ export function AppMainNavbar({
         </DropdownMenu>
       </div>
 
-      {/* Left Zone (RTL): Language, Currency, Theme Toggle, Version & User Profile */}
+      {/* Left Zone (RTL): QR Self-Order Alert, Language, Currency, Theme Toggle, Version & User Profile */}
       <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+        {pendingSelfOrdersCount > 0 && (
+          <Link
+            to="/captain"
+            className={cn(
+              "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-black border shadow-xs transition-all animate-pulse shrink-0",
+              hasUrgentTableCall
+                ? "bg-red-600 text-white border-red-700 hover:bg-red-700"
+                : "bg-amber-500 text-slate-950 border-amber-600 hover:bg-amber-400",
+            )}
+            title="اضغط لفتح شاشة الكابتن ومراجعة طلبات العملاء الذاتية"
+          >
+            <BellRing size={14} className="animate-bounce shrink-0" />
+            <span className="hidden sm:inline">
+              {hasUrgentTableCall ? "استدعاء طاولة / طلبات QR" : "طلبات عملاء QR"}
+            </span>
+            <span className="inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-black/20 text-[11px] font-black">
+              {pendingSelfOrdersCount}
+            </span>
+          </Link>
+        )}
+
         <div
           data-studio-preserve="currency-switcher-tools"
           className="flex items-center gap-1.5 sm:gap-2 shrink-0"

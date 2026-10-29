@@ -21,9 +21,22 @@ if (!sourceDir) {
   console.warn("[build-complete] Warning: No index.html found in dist or dist/client.");
 } else {
   console.log(`[build-complete] Using source directory: ${sourceDir}`);
+  const rootIndexHtml = path.join(sourceDir, "index.html");
 
   // Targets to populate so artifact uploaders (Vite dist, React build, or Nitro .output/public) never find empty artifacts
-  const targets = [distDir, buildDir, outputPublicDir];
+  const targets = [distDir, distClientDir, buildDir, outputPublicDir];
+
+  // Key SPA entry routes that must resolve with HTTP 200 on static hosts (Lovable, Cloudflare, Netlify, Vercel)
+  const spaRouteDirs = [
+    "menu",
+    "captain",
+    "pos",
+    "oven",
+    "login",
+    "admin",
+    "cashier-treasury",
+    "setup",
+  ];
 
   targets.forEach((target) => {
     if (!fs.existsSync(target)) {
@@ -35,17 +48,31 @@ if (!sourceDir) {
       const srcItem = path.join(sourceDir, item);
       const destItem = path.join(target, item);
       if (srcItem === destItem) return;
-      // Do not copy client dir recursively into dist
-      if (item === "client" && target === distDir) return;
+      // Do not copy client dir recursively into dist or itself
+      if (item === "client" && (target === distDir || target === distClientDir)) return;
       fs.cpSync(srcItem, destItem, { recursive: true, force: true });
     });
 
+    // Ensure 404.html fallback exists for static hosts
+    if (fs.existsSync(rootIndexHtml)) {
+      const fallback404 = path.join(target, "404.html");
+      fs.cpSync(rootIndexHtml, fallback404, { force: true });
+
+      // Mirror index.html into key SPA route directories so direct QR scans to /menu?... return HTTP 200 with fresh asset hashes
+      spaRouteDirs.forEach((routeDir) => {
+        const routePath = path.join(target, routeDir);
+        fs.mkdirSync(routePath, { recursive: true });
+        const routeIndex = path.join(routePath, "index.html");
+        fs.cpSync(rootIndexHtml, routeIndex, { force: true });
+      });
+    }
+
     // Ensure _redirects file exists for SPA routing on hosts like Netlify/Cloudflare
     const redirectsFile = path.join(target, "_redirects");
-    if (!fs.existsSync(redirectsFile)) {
-      fs.writeFileSync(redirectsFile, "/*    /index.html   200\n", "utf8");
-    }
+    fs.writeFileSync(redirectsFile, "/*    /index.html   200\n", "utf8");
   });
 
-  console.log("[build-complete] Successfully mirrored artifacts to dist/, build/, and .output/public/");
+  console.log(
+    "[build-complete] Successfully mirrored artifacts and SPA route fallbacks to dist/, build/, and .output/public/",
+  );
 }

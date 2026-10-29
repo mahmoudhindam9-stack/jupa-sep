@@ -8,20 +8,39 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Sanitize malformed environment variables (e.g. if an API key was mistakenly assigned to SUPABASE_URL)
-if (
-  process.env.VITE_SUPABASE_URL &&
-  !process.env.VITE_SUPABASE_URL.startsWith("http://") &&
-  !process.env.VITE_SUPABASE_URL.startsWith("https://")
-) {
-  process.env.VITE_SUPABASE_URL = "https://myqtvbfibvgxkqwxvuru.supabase.co";
+const REAL_SUPABASE_URL = "https://myqtvbfibvgxkqwxvuru.supabase.co";
+const REAL_SUPABASE_ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im15cXR2YmZpYnZneGtxd3h2dXJ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ4MjY0NjgsImV4cCI6MjEwMDQwMjQ2OH0.LDFW826N2GRzG9WnLHgYxoeOcTkDOeLjTiFK6aQ-BSE";
+
+function isPlaceholderUrl(val?: string) {
+  if (!val) return true;
+  const v = val.trim().toLowerCase();
+  return (
+    (!v.startsWith("http://") && !v.startsWith("https://")) ||
+    v.includes("your-project-id") ||
+    v.includes("your_project") ||
+    v.includes("example.com") ||
+    v.includes("placeholder")
+  );
 }
-if (
-  process.env.SUPABASE_URL &&
-  !process.env.SUPABASE_URL.startsWith("http://") &&
-  !process.env.SUPABASE_URL.startsWith("https://")
-) {
-  process.env.SUPABASE_URL = "https://myqtvbfibvgxkqwxvuru.supabase.co";
+
+function isPlaceholderKey(val?: string) {
+  if (!val) return true;
+  const v = val.trim();
+  return !v.startsWith("eyJ") && !v.startsWith("sb_publishable_") && !v.startsWith("sb_secret_");
+}
+
+if (isPlaceholderUrl(process.env.VITE_SUPABASE_URL)) {
+  process.env.VITE_SUPABASE_URL = REAL_SUPABASE_URL;
+}
+if (isPlaceholderUrl(process.env.SUPABASE_URL)) {
+  process.env.SUPABASE_URL = REAL_SUPABASE_URL;
+}
+if (isPlaceholderKey(process.env.VITE_SUPABASE_ANON_KEY)) {
+  process.env.VITE_SUPABASE_ANON_KEY = REAL_SUPABASE_ANON_KEY;
+}
+if (isPlaceholderKey(process.env.VITE_SUPABASE_PUBLISHABLE_KEY)) {
+  process.env.VITE_SUPABASE_PUBLISHABLE_KEY = REAL_SUPABASE_ANON_KEY;
 }
 
 export default defineConfig({

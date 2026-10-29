@@ -1,15 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { currentUserHasPermission, signOutCurrentUser } from "@/shared/services/userAuthorization";
-import { CaptainSelfOrderPanel } from "@/components/CaptainSelfOrderPanel";
 import { useSettings } from "@/hooks/use-settings";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowRight, UtensilsCrossed, Plus, Settings2, Trash2, Save, X } from "lucide-react";
+import { UtensilsCrossed, Plus, Settings2, Trash2, Save } from "lucide-react";
 import { TableOrderModal } from "@/components/TableOrderModal";
 import { AppMainNavbar } from "@/components/navigation/AppMainNavbar";
 import { AppBreadcrumbBar } from "@/components/navigation/AppBreadcrumbBar";
@@ -30,11 +29,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { tableOrdersStore, TableOrder } from "@/shared/services/tableOrdersStore";
+import { tableOrdersStore } from "@/shared/services/tableOrdersStore";
 import { OrderTimer } from "@/components/OrderTimer";
 import { QRCodeSVG } from "qrcode.react";
 import { QrCode, Printer } from "lucide-react";
 import { useSyncExternalStore } from "react";
+import { cleanTableId } from "@/shared/utils/inventoryUtils";
 
 export const Route = createFileRoute("/captain")({
   head: () => ({ meta: [{ title: "Captain Order" }] }),
@@ -100,6 +100,7 @@ type Table = {
   name: string | null;
   capacity: number;
   status: "available" | "occupied" | "reserved" | "cleaning";
+  status_updated_at?: number;
 };
 
 const statusLabels: Record<string, string> = {
@@ -137,12 +138,67 @@ function saveLocalTables(tables: Table[]) {
   }
 }
 
+function playCaptainNotificationSound() {
+  try {
+    if (typeof window === "undefined") return;
+    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const playTone = (freq: number, startOffset: number, duration: number) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, ctx.currentTime + startOffset);
+      gain.gain.setValueAtTime(0.18, ctx.currentTime + startOffset);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + startOffset + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(ctx.currentTime + startOffset);
+      osc.stop(ctx.currentTime + startOffset + duration);
+    };
+    playTone(587.33, 0, 0.16);
+    playTone(880, 0.18, 0.28);
+  } catch {
+    // Ignore audio context autoplay restrictions
+  }
+}
+
+function extractTableNumberFromOrder(order: any): number {
+  if (order?.table_number && Number(order.table_number) > 0 && Number(order.table_number) !== 999) {
+    return Number(order.table_number);
+  }
+  const firstMeta = Array.isArray(order?.items) ? order.items[0]?.meta : null;
+  if (
+    firstMeta?.table_number &&
+    Number(firstMeta.table_number) > 0 &&
+    Number(firstMeta.table_number) !== 999
+  ) {
+    return Number(firstMeta.table_number);
+  }
+  const notes = String(order?.notes || "");
+  const matchBracket = notes.match(/\[طاولة:\s*(\d+)\]/);
+  if (matchBracket && Number(matchBracket[1]) > 0) {
+    return Number(matchBracket[1]);
+  }
+  const matchHash = notes.match(/طاولة\s*#?(\d+)/);
+  if (matchHash && Number(matchHash[1]) > 0) {
+    return Number(matchHash[1]);
+  }
+  const tblIdStr = String(order?.table_id || firstMeta?.table_id || "");
+  const matchId = tblIdStr.match(/^tbl-(\d+)$/);
+  if (matchId && Number(matchId[1]) > 0 && Number(matchId[1]) !== 999) {
+    return Number(matchId[1]);
+  }
+  return 0;
+}
+
 const EMPTY_ORDERS: any[] = [];
 
 function CaptainPage() {
   const { lang, currency } = useSettings();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const notifiedOrderIdsRef = useRef<Set<string>>(new Set());
 
   const [isMounted, setIsMounted] = useState(false);
   useEffect(() => {
@@ -163,20 +219,44 @@ function CaptainPage() {
   const [manageTableOpen, setManageTableOpen] = useState(false);
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
   const [qrTableId, setQrTableId] = useState("");
+  const [qrZone, setQrZone] = useState("الصالة الداخلية");
+  const [qrMenuLang, setQrMenuLang] = useState<"ar" | "en">("ar");
+  const [qrAllowLangSwitch, setQrAllowLangSwitch] = useState<boolean>(true);
   const [qrWelcomeMessage, setQrWelcomeMessage] = useState("أهلاً بك! يمكنك الطلب الآن.");
   const [qrCurrency, setQrCurrency] = useState("EGP");
-  const [customBaseUrl, setCustomBaseUrl] = useState<string>("https://cart-bliss-02.lovable.app");
-
-  useEffect(() => {
+  const [customBaseUrl, setCustomBaseUrl] = useState<string>(() => {
     if (typeof window !== "undefined") {
-      const orig = window.location.origin || "";
+      const saved = window.localStorage.getItem("restocash_qr_base_url_v1");
+      if (saved && saved.trim()) return saved.trim().replace(/\/+$/, "");
+      const orig = (window.location.origin || "").replace(/\/+$/, "");
       if (
         orig &&
         orig !== "null" &&
         !orig.includes("localhost") &&
         !orig.includes("127.0.0.1") &&
-        !orig.includes("::1") &&
-        !orig.includes("run.app")
+        !orig.includes("::1")
+      ) {
+        return orig;
+      }
+    }
+    return "https://jupa-sep.vercel.app";
+  });
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = window.localStorage.getItem("restocash_qr_base_url_v1");
+      const orig = (window.location.origin || "").replace(/\/+$/, "");
+      if (orig && orig.includes(".vercel.app")) {
+        setCustomBaseUrl(orig);
+        window.localStorage.setItem("restocash_qr_base_url_v1", orig);
+      } else if (saved && saved.trim()) {
+        setCustomBaseUrl(saved.trim().replace(/\/+$/, ""));
+      } else if (
+        orig &&
+        orig !== "null" &&
+        !orig.includes("localhost") &&
+        !orig.includes("127.0.0.1") &&
+        !orig.includes("::1")
       ) {
         setCustomBaseUrl(orig);
       }
@@ -201,9 +281,27 @@ function CaptainPage() {
       }
 
       const localTables = getLocalTables();
-      const dbIds = new Set(dbTables.map((t) => t.id));
-      const uniqueLocal = localTables.filter((lt) => !dbIds.has(lt.id));
-      const merged = [...dbTables, ...uniqueLocal].sort((a, b) => a.number - b.number);
+      const mergedMap = new Map<number, Table>();
+
+      for (const dt of dbTables) {
+        mergedMap.set(Number(dt.number), { ...dt });
+      }
+
+      for (const lt of localTables) {
+        const existing = mergedMap.get(Number(lt.number));
+        if (!existing) {
+          mergedMap.set(Number(lt.number), { ...lt });
+        } else if (lt.status_updated_at && Date.now() - lt.status_updated_at < 120000) {
+          // Preserve recent local status override if DB hasn't caught up or ID is non-UUID
+          mergedMap.set(Number(lt.number), {
+            ...existing,
+            status: lt.status,
+            status_updated_at: lt.status_updated_at,
+          });
+        }
+      }
+
+      const merged = Array.from(mergedMap.values()).sort((a, b) => a.number - b.number);
 
       if (merged.length === 0) {
         const defaultTables: Table[] = [
@@ -216,139 +314,299 @@ function CaptainPage() {
         return defaultTables;
       }
 
+      saveLocalTables(merged);
       return merged;
     },
-    refetchInterval: 5000,
+    refetchInterval: 3000,
   });
 
   const tablesList = tablesQuery.data || getLocalTables() || [];
 
-  // Realtime Incoming Pending Orders
-
-  // Load from local storage to survive reloads
-
-  // Save to local storage whenever it changes
-
+  // Default QR table selection to first table so customer QR codes always target a real table card
   useEffect(() => {
-    const channel = supabase
-      .channel("orders_channel")
-      .on("broadcast", { event: "NEW_ORDER" }, (payload) => {
-        const order = payload.payload;
+    if (!qrTableId && tablesList.length > 0) {
+      setQrTableId(tablesList[0].id);
+    }
+  }, [qrTableId, tablesList]);
 
-        // Find table number
-        const tblId = order.table_id || "tbl-999";
-        const tblMatch = tablesList.find((t) => t.id === tblId);
-        const tblNum = tblMatch ? tblMatch.number : parseInt(tblId.replace("tbl-", "")) || 999;
-        const tblName = tblMatch ? tblMatch.name : null;
+  const handleChangeTableStatus = useCallback(
+    async (
+      table: { id: string; number: number; name?: string | null; capacity?: number },
+      newStatus: Table["status"],
+      e?: React.MouseEvent,
+    ) => {
+      if (e) {
+        e.stopPropagation();
+      }
 
-        // Save as a TableOrder directly
-        tableOrdersStore.saveOrder({
-          id: order.id,
-          table_id: tblId,
-          table_number: tblNum,
-          table_name: tblName,
-          items: order.items,
-          order_type: order.order_type || "dine_in",
-          notes: order.notes || "طلب ذاتي من العميل",
-          selectedAdditions: [],
-          subtotal: order.subtotal,
-          tax: order.tax,
-          total: order.total,
-          status: "draft",
-          is_self_order: true,
+      // 1. Update local storage immediately
+      const currentLocal = getLocalTables();
+      const nowTs = Date.now();
+      const idx = currentLocal.findIndex(
+        (lt) => lt.id === table.id || Number(lt.number) === Number(table.number),
+      );
+      if (idx >= 0) {
+        currentLocal[idx] = {
+          ...currentLocal[idx],
+          status: newStatus,
+          status_updated_at: nowTs,
+        };
+      } else {
+        currentLocal.push({
+          id: table.id,
+          number: table.number,
+          name: table.name || `طاولة ${table.number}`,
+          capacity: table.capacity || 4,
+          status: newStatus,
+          status_updated_at: nowTs,
         });
+      }
+      saveLocalTables(currentLocal);
 
+      // Optimistically update React Query cache
+      queryClient.setQueryData(["tables"], (old: Table[] | undefined) => {
+        if (!Array.isArray(old)) return currentLocal;
+        return old.map((t) =>
+          t.id === table.id || Number(t.number) === Number(table.number)
+            ? { ...t, status: newStatus, status_updated_at: nowTs }
+            : t,
+        );
+      });
+
+      // 2. Sync with Supabase tables (both by UUID if valid and by table number)
+      try {
+        const validUuid = cleanTableId(table.id);
+        if (validUuid) {
+          await supabase.from("tables").update({ status: newStatus }).eq("id", validUuid);
+        }
+        await supabase.from("tables").update({ status: newStatus }).eq("number", table.number);
+      } catch (err) {
+        console.warn("Supabase table status update warning:", err);
+      }
+
+      // 3. Broadcast across tabs
+      if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+        try {
+          const bc = new BroadcastChannel("restocash_self_orders_bc");
+          bc.postMessage({
+            type: "TABLE_STATUS_CHANGED",
+            tableId: table.id,
+            tableNumber: table.number,
+            status: newStatus,
+          });
+          bc.close();
+        } catch {
+          // ignore
+        }
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["tables"] });
+
+      if (e) {
         toast({
-          title: "طلب ذاتي جديد!",
-          description: `تم استلام طلب ذاتي جديد من طاولة ${tblNum}.`,
-          variant: "default",
+          title: `طاولة #${table.number}: ${statusLabels[newStatus] || newStatus}`,
+          description: "تم تحديث حالة الطاولة بنجاح.",
         });
-      })
-      .subscribe();
+      }
+    },
+    [queryClient, toast],
+  );
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [tablesList]);
+  // Sync incoming customer QR self-orders & table status directly onto Table Cards
+  useEffect(() => {
+    const attachIncomingSelfOrderToTable = (order: any, shouldNotify = true) => {
+      if (!order || order.is_table_call) return;
+      const notesStr = String(order.notes || "");
 
-  const handleAcceptOrder = async (order: any) => {
-    if (order?.id) {
-      const { error } = await supabase
-        .from("orders")
-        .update({ status: "sent_to_cashier" })
-        .eq("id", order.id);
-      if (error) {
-        toast({
-          title: "تعذر إرسال الطلب للكاشير",
-          description: error.message,
-          variant: "destructive",
+      if (notesStr.includes("[TABLE_ASSISTANCE_CALL]")) {
+        if (order.id && !notifiedOrderIdsRef.current.has(order.id)) {
+          notifiedOrderIdsRef.current.add(order.id);
+          const tblNum = extractTableNumberFromOrder(order) || 1;
+          playCaptainNotificationSound();
+          toast({
+            title: `🔔 تنبيه من طاولة #${tblNum}`,
+            description: notesStr.replace(/\[TABLE_ASSISTANCE_CALL\]/g, "").trim(),
+          });
+          supabase.from("orders").update({ status: "served" }).eq("id", order.id).then(() => {});
+        }
+        return;
+      }
+
+      if (notesStr.includes("[CASHIER_PAID]") || order.status === "served" || order.status === "cancelled") {
+        const tblNum = extractTableNumberFromOrder(order);
+        tableOrdersStore.completeCashierOrder({
+          orderId: order.id,
+          kitchenOrderId: order.id,
+          tableId: order.table_id || null,
+          tableNumber: tblNum || null,
         });
         return;
       }
+
+      const extractedNum = extractTableNumberFromOrder(order);
+      const rawId = order.table_id || order.items?.[0]?.meta?.table_id || "";
+      const tblMatch =
+        tablesList.find(
+          (t) =>
+            (rawId && t.id === rawId) ||
+            (extractedNum > 0 && Number(t.number) === Number(extractedNum)),
+        ) || tablesList[0];
+
+      const finalTblId = tblMatch ? tblMatch.id : rawId || "tbl-1";
+      const finalTblNum = tblMatch ? tblMatch.number : extractedNum > 0 ? extractedNum : 1;
+      const finalTblName =
+        tblMatch?.name || order.table_name || `طاولة ${finalTblNum}`;
+
+      const normalizedItems = (Array.isArray(order.items) ? order.items : []).map((rawLine: any) => {
+        const baseItem = rawLine?.item || {
+          id: rawLine?.id || rawLine?.menu_item_id || `item-${Math.random()}`,
+          name_ar: rawLine?.name_ar || rawLine?.name || "صنف",
+          price: Number(rawLine?.price ?? 0),
+          category_id: rawLine?.category_id || "all",
+          image_url: rawLine?.image_url || null,
+          requires_oven: Boolean(rawLine?.requires_oven ?? rawLine?.item?.requires_oven),
+        };
+        return {
+          item: baseItem,
+          quantity: Number(rawLine?.quantity ?? 1),
+          notes: rawLine?.notes || rawLine?.note || "",
+          selectedAdditions: rawLine?.selectedAdditions || [],
+        };
+      });
+
+      const existingLocal = tableOrdersStore.getOrderByTableId(finalTblId, finalTblNum);
+      const isAlreadyInStore = Boolean(
+        existingLocal &&
+          (existingLocal.id === order.id || existingLocal.kitchenOrderId === order.id),
+      );
+
+      const sentToKitchenFlag =
+        Boolean(existingLocal?.sentToKitchen) ||
+        notesStr.includes("[SENT_TO_KITCHEN]") ||
+        order.status === "preparing" ||
+        order.status === "in_kitchen" ||
+        order.status === "ready";
+      const kitchenCompletedFlag =
+        Boolean(existingLocal?.kitchenCompleted) || order.status === "ready";
+      const sentToCashierFlag =
+        Boolean(existingLocal?.sentToCashier) ||
+        existingLocal?.status === "sent_to_cashier" ||
+        notesStr.includes("[SENT_TO_CASHIER]");
+
+      tableOrdersStore.saveOrder({
+        id: order.id,
+        kitchenOrderId: order.id,
+        table_id: finalTblId,
+        table_number: finalTblNum,
+        table_name: finalTblName,
+        items: existingLocal?.items?.length ? existingLocal.items : normalizedItems,
+        order_type: order.order_type || "dine_in",
+        notes: order.notes || `طاولة #${finalTblNum}`,
+        selectedAdditions: existingLocal?.selectedAdditions || [],
+        subtotal: Number(order.subtotal ?? order.total ?? 0),
+        tax: Number(order.tax ?? 0),
+        total: Number(order.total ?? 0),
+        status: sentToCashierFlag ? "sent_to_cashier" : "draft",
+        sentToKitchen: sentToKitchenFlag,
+        kitchenCompleted: kitchenCompletedFlag,
+        sentToCashier: sentToCashierFlag,
+        is_self_order:
+          notesStr.includes("[SELF_ORDER") || Boolean(order.is_self_order || existingLocal?.is_self_order),
+        created_at: order.created_at || existingLocal?.created_at || new Date().toISOString(),
+      });
+
+      if (!isAlreadyInStore && order.id && !notifiedOrderIdsRef.current.has(order.id)) {
+        notifiedOrderIdsRef.current.add(order.id);
+        handleChangeTableStatus({ id: finalTblId, number: finalTblNum, name: finalTblName }, "occupied");
+        if (shouldNotify) {
+          playCaptainNotificationSound();
+          toast({
+            title: `🔔 طلب جديد على طاولة #${finalTblNum}`,
+            description: `وصل طلب (${normalizedItems.length} أصناف) على مربع طاولة #${finalTblNum}. اضغط على الطاولة لعرضه وإرساله للمطبخ أو الكاشير.`,
+          });
+        }
+      }
+    };
+
+    const syncRecentSelfOrdersFromDb = async (isInitial = false) => {
+      try {
+        const { data, error } = await supabase
+          .from("orders")
+          .select("*")
+          .in("status", ["pending", "preparing", "in_kitchen", "ready", "served"])
+          .order("created_at", { ascending: false })
+          .limit(25);
+
+        if (error || !Array.isArray(data)) return;
+
+        for (const row of data) {
+          const notes = String(row.notes || "");
+          const isSelfOrTableOrder =
+            notes.includes("[SELF_ORDER_PENDING_CAPTAIN]") ||
+            notes.includes("[SELF_ORDER_ACTIVE]") ||
+            notes.includes("[SENT_TO_KITCHEN]") ||
+            notes.includes("[SENT_TO_CASHIER]") ||
+            notes.includes("[TABLE_ASSISTANCE_CALL]");
+          if (!isSelfOrTableOrder) continue;
+          attachIncomingSelfOrderToTable(row, !isInitial);
+        }
+      } catch {
+        // Ignore transient network errors
+      }
+    };
+
+    syncRecentSelfOrdersFromDb(true);
+    const pollTimer = setInterval(() => syncRecentSelfOrdersFromDb(false), 2500);
+
+    const channel = supabase
+      .channel("orders_channel_captain_cards")
+      .on("broadcast", { event: "NEW_ORDER" }, (payload) => {
+        attachIncomingSelfOrderToTable(payload.payload, true);
+      })
+      .on("broadcast", { event: "TABLE_ASSISTANCE_REQUEST" }, (payload) => {
+        attachIncomingSelfOrderToTable(payload.payload, true);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, (payload) => {
+        if (payload.new) {
+          attachIncomingSelfOrderToTable(payload.new, true);
+        }
+      })
+      .subscribe();
+
+    let bc: BroadcastChannel | null = null;
+    if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+      try {
+        bc = new BroadcastChannel("restocash_self_orders_bc");
+        bc.onmessage = (ev) => {
+          if ((ev.data?.type === "NEW_SELF_ORDER" || ev.data?.type === "NEW_ORDER") && (ev.data?.order || ev.data?.payload)) {
+            attachIncomingSelfOrderToTable(ev.data.order || ev.data.payload, true);
+          } else if (ev.data?.type === "TABLE_ASSISTANCE_REQUEST" && ev.data?.payload) {
+            attachIncomingSelfOrderToTable(ev.data.payload, true);
+          } else if (
+            ev.data?.type === "TABLE_STATUS_CHANGED" ||
+            ev.data?.type === "TABLE_PAID_AND_CLEANING" ||
+            ev.data?.type === "ORDER_COMPLETED_BY_CASHIER"
+          ) {
+            queryClient.invalidateQueries({ queryKey: ["tables"] });
+          }
+        };
+      } catch {
+        // Ignore BroadcastChannel errors
+      }
     }
 
-    tableOrdersStore.saveOrder({
-      status: "sent_to_cashier",
-      table_id: order.table_id,
-      table_number: parseInt(order.table_id.replace("tbl-", "")) || 999,
-      table_name: `طاولة ${order.table_id.replace("tbl-", "")}`,
-      items: (order.items || []).map((item: any) => ({
-        ...item,
-        notes: item?.notes || item?.note || "",
-        selectedAdditions: item?.selectedAdditions || [],
-      })),
-      order_type: "dine_in",
-      notes: order.notes,
-      selectedAdditions: order.selectedAdditions || [],
-      subtotal: order.subtotal,
-      tax: order.tax,
-      total: order.total,
-      sentToKitchen: Boolean(order.sentToKitchen),
-      kitchenCompleted: Boolean(order.kitchenCompleted),
-      kitchenOrderId: order.kitchenOrderId,
-    });
-
-    toast({ title: "تم قبول الطلب وإرساله للكاشير بنجاح." });
-  };
-
-  const handleEditOrder = async (order: any) => {
-    tableOrdersStore.saveOrder({
-      table_id: order.table_id,
-      table_number: parseInt(order.table_id.replace("tbl-", "")) || 999,
-      table_name: `طاولة ${order.table_id.replace("tbl-", "")}`,
-      items: (order.items || []).map((item: any) => ({
-        ...item,
-        notes: item?.notes || item?.note || "",
-        selectedAdditions: item?.selectedAdditions || [],
-      })),
-      order_type: "dine_in",
-      notes: order.notes,
-      selectedAdditions: order.selectedAdditions || [],
-      subtotal: order.subtotal,
-      tax: order.tax,
-      total: order.total,
-      status: "draft",
-    });
-
-    // We should also delete it from Supabase so it's not pending anymore
-
-    // find the table in tablesQuery.data and set it
-    let t = tablesList.find((t) => t.id === order.table_id);
-    if (!t) {
-      t = {
-        id: order.table_id,
-        number: parseInt(order.table_id.replace("tbl-", "")) || 999,
-        name: `طاولة ${order.table_id.replace("tbl-", "")}`,
-        capacity: 4,
-        status: "available",
-      };
-    }
-    setSelectedTable(t);
-  };
-
-  const handleRejectOrder = async (orderId: string) => {
-    toast({ title: "تم رفض الطلب.", variant: "destructive" });
-  };
+    return () => {
+      clearInterval(pollTimer);
+      supabase.removeChannel(channel);
+      if (bc) {
+        try {
+          bc.close();
+        } catch {
+          // Ignore close error
+        }
+      }
+    };
+  }, [tablesList, queryClient, toast, handleChangeTableStatus]);
 
   useEffect(() => {
     const channel = supabase
@@ -509,7 +767,12 @@ function CaptainPage() {
           <div className="flex items-center gap-2 flex-wrap">
             <Button
               size="sm"
-              onClick={() => setIsQrModalOpen(true)}
+              onClick={() => {
+                if (!qrTableId && tablesList.length > 0) {
+                  setQrTableId(tablesList[0].id);
+                }
+                setIsQrModalOpen(true);
+              }}
               className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold gap-1.5 h-8 text-xs shadow-2xs"
             >
               <QrCode size={14} />
@@ -541,19 +804,34 @@ function CaptainPage() {
           </div>
         </div>
       </div>
-      <CaptainSelfOrderPanel />
 
       <main className="flex-1 max-w-7xl mx-auto w-full p-4 overflow-auto">
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 mt-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 mt-4">
           {(tablesQuery.data ?? []).map((t) => {
             const activeOrder = tableOrders.find(
               (o) =>
-                o.table_id === t.id && (o.status === "draft" || o.status === "sent_to_cashier"),
+                (o.table_id === t.id || Number(o.table_number) === Number(t.number)) &&
+                (o.status === "draft" ||
+                  o.status === "sent_to_cashier" ||
+                  o.status === "in_checkout"),
             );
+            const totalItemsCount = Array.isArray(activeOrder?.items)
+              ? activeOrder.items.reduce(
+                  (sum: number, line: any) => sum + Number(line?.quantity || 1),
+                  0,
+                )
+              : 0;
+
             return (
               <div
                 key={t.id}
-                className={`bg-white border-2 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all flex flex-col h-full cursor-pointer relative overflow-hidden group ${isEditMode ? "border-amber-400 ring-2 ring-amber-400/20" : statusColors[t.status]}`}
+                className={`bg-white border-2 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all flex flex-col h-full cursor-pointer relative overflow-hidden group ${
+                  isEditMode
+                    ? "border-amber-400 ring-2 ring-amber-400/20"
+                    : activeOrder
+                      ? "border-rose-400 ring-2 ring-rose-400/20 bg-rose-50/40"
+                      : statusColors[t.status]
+                }`}
                 onClick={() => {
                   if (isEditMode) {
                     handleOpenManage(t);
@@ -562,69 +840,149 @@ function CaptainPage() {
                   }
                 }}
               >
-                <div className="absolute -right-4 -bottom-4 opacity-10 group-hover:scale-110 transition-transform">
+                <div className="absolute -right-4 -bottom-4 opacity-10 group-hover:scale-110 transition-transform pointer-events-none">
                   <UtensilsCrossed size={80} />
                 </div>
 
-                <div className="flex items-center justify-between mb-2 relative z-10">
-                  <span className="font-black text-2xl text-slate-900">#{t.number}</span>
-                  {isEditMode && (
+                <div className="flex items-center justify-between mb-1.5 relative z-10">
+                  <div className="flex items-center gap-2">
+                    <span className="font-black text-2xl text-slate-900">#{t.number}</span>
+                    <span className="text-xs font-extrabold px-2 py-0.5 rounded-full bg-white/80 border border-current">
+                      {lang === "ar" ? statusLabels[t.status] : t.status}
+                    </span>
+                  </div>
+                  {isEditMode ? (
                     <div className="bg-amber-100 text-amber-700 p-1.5 rounded-lg">
                       <Settings2 size={16} />
                     </div>
+                  ) : (
+                    <button
+                      type="button"
+                      title={lang === "ar" ? "باركود هذه الطاولة" : "QR for this table"}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setQrTableId(t.id);
+                        setIsQrModalOpen(true);
+                      }}
+                      className="p-1.5 rounded-lg bg-white/90 hover:bg-indigo-50 text-indigo-600 border border-indigo-200 transition-colors"
+                    >
+                      <QrCode size={15} />
+                    </button>
                   )}
                 </div>
 
-                <div className="mb-2 relative z-10">
-                  <div className="font-bold text-slate-700">
-                    {t.name || (lang === "ar" ? "طاولة" : "Table")}
+                <div className="mb-2 relative z-10 flex items-center justify-between">
+                  <div className="font-bold text-sm text-slate-800">
+                    {t.name || (lang === "ar" ? `طاولة ${t.number}` : `Table ${t.number}`)}
                   </div>
-                  {!isEditMode && (
-                    <div className="text-xs font-semibold mt-1 bg-white/50 inline-block px-2 py-0.5 rounded-full border border-current">
-                      {lang === "ar" ? statusLabels[t.status] : t.status}
-                    </div>
-                  )}
+                  <div className="text-[11px] font-bold text-slate-600">
+                    {lang === "ar" ? "السعة:" : "Cap:"} {t.capacity} {lang === "ar" ? "أفراد" : "pax"}
+                  </div>
                 </div>
 
-                {activeOrder && (
-                  <div className="relative z-10 mt-1 mb-2">
-                    <div className="flex flex-col gap-1.5">
-                      {activeOrder.sentToKitchen && !activeOrder.kitchenCompleted && (
-                        <div className="flex justify-between items-center bg-orange-100/80 border border-orange-200 px-2 py-1 rounded-lg">
-                          <span className="text-[10px] font-bold text-orange-800">
-                            في المطبخ/الفرن 👨‍🍳
-                          </span>
-                          <OrderTimer
-                            createdAt={activeOrder.updated_at || activeOrder.created_at}
-                          />
-                        </div>
-                      )}
-                      {activeOrder.status === "sent_to_cashier" && (
-                        <div className="flex justify-between items-center bg-emerald-100/80 border border-emerald-200 px-2 py-1 rounded-lg">
-                          <span className="text-[10px] font-bold text-emerald-800">
-                            بانتظار الدفع 💰
-                          </span>
-                          <span className="font-bold text-xs text-emerald-900">
-                            {Number(activeOrder.total ?? 0).toFixed(2)} {currency}
-                          </span>
-                        </div>
-                      )}
-                      {activeOrder.status === "draft" && !activeOrder.sentToKitchen && (
-                        <div className="flex justify-between items-center bg-sky-100/80 border border-sky-200 px-2 py-1 rounded-lg">
-                          <span className="text-[10px] font-bold text-sky-800">طلب جديد 🛒</span>
-                          <span className="font-bold text-xs text-sky-900">
-                            {Number(activeOrder.total ?? 0).toFixed(2)} {currency}
-                          </span>
-                        </div>
-                      )}
+                {/* Active Order Summary & Live Oven Timer directly on Table Card */}
+                {activeOrder ? (
+                  <div className="relative z-10 my-1.5 p-2.5 rounded-xl bg-white/95 border border-slate-200 shadow-2xs space-y-1.5">
+                    <div className="flex items-center justify-between gap-1">
+                      <span
+                        className={`text-[11px] font-black px-2 py-0.5 rounded-md ${
+                          activeOrder.is_self_order
+                            ? "bg-indigo-100 text-indigo-900"
+                            : "bg-amber-100 text-amber-900"
+                        }`}
+                      >
+                        {activeOrder.is_self_order ? "طلب عميل QR 🔔" : "طلب بالطاولة 🛒"}
+                      </span>
+                      <span className="font-black text-xs text-slate-900">
+                        {Number(activeOrder.total ?? 0).toFixed(2)} {currency}
+                      </span>
                     </div>
+
+                    {Array.isArray(activeOrder.items) && activeOrder.items.length > 0 && (
+                      <div className="text-[11px] font-bold text-slate-700 line-clamp-2 leading-snug">
+                        {activeOrder.items
+                          .map(
+                            (line: any) =>
+                              `${line?.item?.name_ar || line?.name_ar || "صنف"} ×${line?.quantity || 1}`,
+                          )
+                          .join("، ")}
+                      </div>
+                    )}
+
+                    {/* Live Oven / Kitchen Timer on Table Card */}
+                    {activeOrder.sentToKitchen && !activeOrder.kitchenCompleted && (
+                      <div className="flex justify-between items-center bg-orange-100 border border-orange-300 px-2 py-1 rounded-lg">
+                        <span className="text-[11px] font-black text-orange-900">
+                          في الفرن/المطبخ 👨‍🍳
+                        </span>
+                        <OrderTimer
+                          createdAt={activeOrder.updated_at || activeOrder.created_at}
+                        />
+                      </div>
+                    )}
+
+                    {activeOrder.kitchenCompleted && (
+                      <div className="flex justify-between items-center bg-emerald-100 border border-emerald-300 px-2 py-1 rounded-lg">
+                        <span className="text-[11px] font-black text-emerald-900">
+                          جاهز من الفرن ✅
+                        </span>
+                        <span className="text-[10px] font-bold text-emerald-800">
+                          {totalItemsCount} أصناف
+                        </span>
+                      </div>
+                    )}
+
+                    {(activeOrder.status === "sent_to_cashier" ||
+                      activeOrder.status === "in_checkout" ||
+                      activeOrder.sentToCashier) && (
+                      <div className="flex justify-between items-center bg-emerald-50 border border-emerald-300 px-2 py-1 rounded-lg">
+                        <span className="text-[11px] font-black text-emerald-800">
+                          مرسل للكاشير (بانتظار الدفع) 💰
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="text-[10px] font-extrabold text-indigo-700 text-center pt-0.5">
+                      اضغط لفتح الطلب (للمطبخ / للكاشير)
+                    </div>
+                  </div>
+                ) : (
+                  <div className="relative z-10 my-2 py-3 text-center rounded-xl border border-dashed border-current/25 bg-white/40 text-[11px] font-bold text-slate-600">
+                    لا يوجد طلب حالي — اضغط لإضافة طلب
                   </div>
                 )}
 
-                <div className="mt-auto relative z-10 flex items-center gap-1 text-xs font-bold text-slate-800">
-                  {lang === "ar" ? "السعة:" : "Capacity:"} {t.capacity}{" "}
-                  {lang === "ar" ? "أفراد" : "pax"}
-                </div>
+                {/* Manual Table Status Control (متاح / مشغول / تنظيف) */}
+                {!isEditMode && (
+                  <div
+                    className="mt-auto pt-2 border-t border-black/10 relative z-10 flex items-center gap-1"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {(
+                      [
+                        { key: "available", label: "متاح", activeCls: "bg-emerald-600 text-white border-emerald-600" },
+                        { key: "occupied", label: "مشغول", activeCls: "bg-rose-600 text-white border-rose-600" },
+                        { key: "cleaning", label: "تنظيف", activeCls: "bg-sky-600 text-white border-sky-600" },
+                      ] as const
+                    ).map((st) => {
+                      const isActive = t.status === st.key;
+                      return (
+                        <button
+                          key={st.key}
+                          type="button"
+                          onClick={(e) => handleChangeTableStatus(t, st.key, e)}
+                          className={`flex-1 py-1 px-1.5 rounded-lg text-[11px] font-black border transition-all cursor-pointer ${
+                            isActive
+                              ? `${st.activeCls} shadow-2xs`
+                              : "bg-white/85 hover:bg-white text-slate-700 border-slate-300"
+                          }`}
+                        >
+                          {st.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -659,6 +1017,10 @@ function CaptainPage() {
           isOpen={true}
           onClose={() => setSelectedTable(null)}
           onOrderSent={() => setSelectedTable(null)}
+          onChangeTableStatus={(status) => {
+            handleChangeTableStatus(selectedTable, status);
+            setSelectedTable((prev) => (prev ? { ...prev, status } : null));
+          }}
         />
       )}
 
@@ -780,97 +1142,229 @@ function CaptainPage() {
       <Dialog open={isQrModalOpen} onOpenChange={setIsQrModalOpen}>
         <DialogContent
           dir={lang === "ar" ? "rtl" : "ltr"}
-          className="sm:max-w-md bg-white p-4 sm:p-5 max-h-[90vh] overflow-y-auto"
+          className="sm:max-w-lg bg-white p-4 sm:p-5 max-h-[92vh] overflow-y-auto"
         >
           <DialogHeader className={lang === "ar" ? "text-right" : "text-left"}>
             <DialogTitle className="flex items-center gap-2 text-lg">
               <QrCode className="text-indigo-600" />
-              {lang === "ar" ? "باركود الطلب الذاتي" : "Self-Ordering QR Code"}
+              {lang === "ar" ? "إصدار باركود الطلب الذاتي للعملاء" : "Self-Ordering QR Code"}
             </DialogTitle>
           </DialogHeader>
 
           {(() => {
             const selectedT = tablesList.find((t) => t.id === qrTableId);
             const displayedTableNumber = selectedT ? selectedT.number : "";
-            const qrUrl = `${customBaseUrl || "https://cart-bliss-02.lovable.app"}/menu${qrTableId ? `?tableId=${qrTableId}&table=${displayedTableNumber}` : ""}${qrCurrency !== "EGP" ? `${qrTableId ? "&" : "?"}currency=${qrCurrency}` : ""}`;
+            const displayedTableName = selectedT?.name || "";
+            const cleanBaseUrl = (customBaseUrl || "https://jupa-sep.vercel.app")
+              .trim()
+              .replace(/\/+$/, "")
+              .replace(/\/menu$/i, "");
+
+            const params = new URLSearchParams();
+            params.set("page", "menu");
+            if (qrTableId) params.set("tableId", qrTableId);
+            if (displayedTableNumber) params.set("table", String(displayedTableNumber));
+            if (displayedTableName) params.set("tableName", displayedTableName);
+            if (qrZone.trim()) params.set("zone", qrZone.trim());
+            if (qrCurrency) params.set("currency", qrCurrency);
+            params.set("lang", qrMenuLang);
+            params.set("allowLangSwitch", qrAllowLangSwitch ? "1" : "0");
+            if (qrWelcomeMessage.trim()) params.set("welcome", qrWelcomeMessage.trim());
+
+            const isLovableHost = cleanBaseUrl.includes(".lovable.app");
+            // On Vercel (which has SPA rewrites in vercel.json), /menu?... opens the customer menu directly.
+            // On Lovable static hosts, /?page=menu&... avoids 404 and routes straight to /menu.
+            const qrUrl = isLovableHost
+              ? `${cleanBaseUrl}/?${params.toString()}`
+              : `${cleanBaseUrl}/menu?${params.toString()}`;
+            const directPreviewPath = `/menu?${params.toString()}`;
 
             return (
               <>
                 <div className="space-y-3 py-1 print:hidden">
                   <div className="space-y-1.5">
-                    <Label
-                      className={
-                        lang === "ar"
-                          ? "text-right block text-xs font-bold text-slate-700"
-                          : "text-left block text-xs font-bold text-slate-700"
-                      }
-                    >
-                      {lang === "ar"
-                        ? "رابط النظام (النطاق العام للعملاء)"
-                        : "System Base URL (Public Domain)"}
-                    </Label>
+                    <div className="flex items-center justify-between gap-2">
+                      <Label
+                        className={
+                          lang === "ar"
+                            ? "text-right block text-xs font-bold text-slate-700"
+                            : "text-left block text-xs font-bold text-slate-700"
+                        }
+                      >
+                        {lang === "ar"
+                          ? "رابط منصة Vercel (النطاق العام لصفحة طلبات العملاء)"
+                          : "Vercel Domain (Public Customer Menu URL)"}
+                      </Label>
+                      {typeof window !== "undefined" &&
+                        window.location.origin &&
+                        !window.location.origin.includes("localhost") && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const orig = window.location.origin.replace(/\/+$/, "");
+                              setCustomBaseUrl(orig);
+                              window.localStorage.setItem("restocash_qr_base_url_v1", orig);
+                            }}
+                            className="text-[11px] font-bold text-indigo-600 hover:underline cursor-pointer"
+                          >
+                            {lang === "ar" ? "استخدام الرابط الحالي" : "Use current domain"}
+                          </button>
+                        )}
+                    </div>
                     <Input
                       value={customBaseUrl}
-                      onChange={(e) => setCustomBaseUrl(e.target.value)}
-                      placeholder="https://..."
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setCustomBaseUrl(val);
+                        if (typeof window !== "undefined") {
+                          window.localStorage.setItem(
+                            "restocash_qr_base_url_v1",
+                            val.trim().replace(/\/+$/, ""),
+                          );
+                        }
+                      }}
+                      placeholder="https://your-project.vercel.app"
                       className={`h-10 text-xs font-mono ${lang === "ar" ? "text-right" : "text-left"}`}
                     />
-                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                    <p className="text-[11px] text-slate-500 font-medium">
                       {lang === "ar"
-                        ? "⚠️ تلميح: عند الفتح محلياً، يرجى إدخال الرابط المشترك (Shared URL) لكي يفتح الباركود على هواتف العملاء."
-                        : "⚠️ Hint: When running locally, enter the Shared URL so the barcode opens on clients' phones."}
+                        ? `الرابط النهائي للباركود على Vercel: ${qrUrl}`
+                        : `Final QR URL on Vercel: ${qrUrl}`}
                     </p>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <Label
-                      className={
-                        lang === "ar"
-                          ? "text-right block text-xs font-bold text-slate-700"
-                          : "text-left block text-xs font-bold text-slate-700"
-                      }
-                    >
-                      {lang === "ar" ? "رقم الطاولة (اختياري)" : "Table Number (Optional)"}
-                    </Label>
-                    <select
-                      value={qrTableId}
-                      onChange={(e) => setQrTableId(e.target.value)}
-                      className={`w-full h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 ${lang === "ar" ? "text-right" : "text-left"}`}
-                    >
-                      <option value="">
-                        {lang === "ar"
-                          ? "-- بدون طاولة محددة (عام) --"
-                          : "-- No specific table (General) --"}
-                      </option>
-                      {tablesList.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name || `طاولة ${t.number}`}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label
+                        className={
+                          lang === "ar"
+                            ? "text-right block text-xs font-bold text-slate-700"
+                            : "text-left block text-xs font-bold text-slate-700"
+                        }
+                      >
+                        {lang === "ar" ? "رقم الطاولة" : "Table Number"}
+                      </Label>
+                      <select
+                        value={qrTableId}
+                        onChange={(e) => setQrTableId(e.target.value)}
+                        className={`w-full h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 ${lang === "ar" ? "text-right" : "text-left"}`}
+                      >
+                        <option value="">
+                          {lang === "ar"
+                            ? "-- بدون طاولة محددة (سفري / عام) --"
+                            : "-- No specific table (Takeaway / General) --"}
                         </option>
-                      ))}
-                    </select>
+                        {tablesList.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            #{t.number} — {t.name || `طاولة ${t.number}`}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label
+                        className={
+                          lang === "ar"
+                            ? "text-right block text-xs font-bold text-slate-700"
+                            : "text-left block text-xs font-bold text-slate-700"
+                        }
+                      >
+                        {lang === "ar"
+                          ? "مكان الطاولة / القسم (يظهر للكابتن)"
+                          : "Table Location / Zone"}
+                      </Label>
+                      <Input
+                        list="captain-qr-zones"
+                        value={qrZone}
+                        onChange={(e) => setQrZone(e.target.value)}
+                        placeholder={lang === "ar" ? "مثال: الصالة الداخلية، التراس..." : "e.g. Indoor Hall, Terrace"}
+                        className={`h-10 text-xs font-semibold ${lang === "ar" ? "text-right" : "text-left"}`}
+                      />
+                      <datalist id="captain-qr-zones">
+                        <option value="الصالة الداخلية" />
+                        <option value="التراس الخارجي" />
+                        <option value="قسم العائلات" />
+                        <option value="الحديقة" />
+                        <option value="VIP" />
+                      </datalist>
+                    </div>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <Label
-                      className={
-                        lang === "ar"
-                          ? "text-right block text-xs font-bold text-slate-700"
-                          : "text-left block text-xs font-bold text-slate-700"
-                      }
-                    >
-                      {lang === "ar" ? "العملة المفضلة في المنيو" : "Preferred Currency in Menu"}
-                    </Label>
-                    <select
-                      value={qrCurrency}
-                      onChange={(e) => setQrCurrency(e.target.value)}
-                      className={`w-full h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 ${lang === "ar" ? "text-right" : "text-left"}`}
-                    >
-                      <option value="EGP">جنيه مصري (EGP)</option>
-                      <option value="USD">دولار أمريكي (USD)</option>
-                      <option value="EUR">يورو (EUR)</option>
-                      <option value="SAR">ريال سعودي (SAR)</option>
-                      <option value="AED">درهم إماراتي (AED)</option>
-                    </select>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label
+                        className={
+                          lang === "ar"
+                            ? "text-right block text-xs font-bold text-slate-700"
+                            : "text-left block text-xs font-bold text-slate-700"
+                        }
+                      >
+                        {lang === "ar"
+                          ? "لغة صفحة طلب العملاء عند المسح"
+                          : "Customer Menu Language"}
+                      </Label>
+                      <select
+                        value={qrMenuLang}
+                        onChange={(e) => {
+                          const nextLang = e.target.value as "ar" | "en";
+                          setQrMenuLang(nextLang);
+                          if (
+                            nextLang === "en" &&
+                            qrWelcomeMessage === "أهلاً بك! يمكنك الطلب الآن."
+                          ) {
+                            setQrWelcomeMessage("Welcome! Scan to order directly.");
+                          } else if (
+                            nextLang === "ar" &&
+                            qrWelcomeMessage === "Welcome! Scan to order directly."
+                          ) {
+                            setQrWelcomeMessage("أهلاً بك! يمكنك الطلب الآن.");
+                          }
+                        }}
+                        className={`w-full h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 ${lang === "ar" ? "text-right" : "text-left"}`}
+                      >
+                        <option value="ar">العربية (Arabic - RTL)</option>
+                        <option value="en">الإنجليزية (English - LTR)</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label
+                        className={
+                          lang === "ar"
+                            ? "text-right block text-xs font-bold text-slate-700"
+                            : "text-left block text-xs font-bold text-slate-700"
+                        }
+                      >
+                        {lang === "ar" ? "العملة المفضلة في المنيو" : "Preferred Currency in Menu"}
+                      </Label>
+                      <select
+                        value={qrCurrency}
+                        onChange={(e) => setQrCurrency(e.target.value)}
+                        className={`w-full h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 ${lang === "ar" ? "text-right" : "text-left"}`}
+                      >
+                        <option value="EGP">جنيه مصري (EGP)</option>
+                        <option value="USD">دولار أمريكي (USD)</option>
+                        <option value="EUR">يورو (EUR)</option>
+                        <option value="SAR">ريال سعودي (SAR)</option>
+                        <option value="AED">درهم إماراتي (AED)</option>
+                        <option value="SSP">جنيه جنوب السودان (SSP)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+                    <span className="text-xs font-bold text-slate-700">
+                      {lang === "ar"
+                        ? "السماح للعميل بتبديل اللغة (عربي / EN) داخل صفحة الطلب"
+                        : "Allow customer to switch language (AR / EN) inside menu"}
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={qrAllowLangSwitch}
+                      onChange={(e) => setQrAllowLangSwitch(e.target.checked)}
+                      className="h-4 w-4 accent-indigo-600 rounded cursor-pointer"
+                    />
                   </div>
 
                   <div className="space-y-1.5">
@@ -892,32 +1386,66 @@ function CaptainPage() {
                 </div>
 
                 <div
-                  className="flex flex-col items-center justify-center p-4 bg-slate-50 rounded-2xl border border-slate-100 my-1"
+                  className="flex flex-col items-center justify-center p-4 bg-slate-50 rounded-2xl border border-slate-200 my-1"
                   id="print-qr-area"
                 >
-                  <h3 className="text-base font-black text-slate-800 mb-1">
-                    {qrWelcomeMessage || (lang === "ar" ? "أهلاً بك!" : "Welcome!")}
+                  <h3 className="text-base font-black text-slate-800 mb-1 text-center">
+                    {qrWelcomeMessage ||
+                      (qrMenuLang === "en" ? "Welcome!" : "أهلاً بك!")}
                   </h3>
-                  {displayedTableNumber && (
-                    <p className="text-sm font-bold text-slate-500 mb-3" id="print-table-number">
-                      {lang === "ar"
-                        ? `طاولة رقم ${displayedTableNumber}`
-                        : `Table #${displayedTableNumber}`}
+                  {(displayedTableNumber || qrZone) && (
+                    <p className="text-sm font-bold text-indigo-700 mb-3" id="print-table-number">
+                      {[
+                        displayedTableNumber
+                          ? qrMenuLang === "en"
+                            ? `Table #${displayedTableNumber}`
+                            : `طاولة رقم ${displayedTableNumber}`
+                          : "",
+                        qrZone,
+                      ]
+                        .filter(Boolean)
+                        .join(" — ")}
                     </p>
                   )}
-                  {!displayedTableNumber && <div className="mb-3" />}
+                  {!displayedTableNumber && !qrZone && <div className="mb-3" />}
 
                   <div
-                    className="bg-white p-2.5 rounded-xl shadow-xs border border-slate-200"
+                    className="bg-white p-3 rounded-2xl shadow-xs border border-slate-200"
                     id="print-qr-svg"
                   >
-                    <QRCodeSVG value={qrUrl} size={160} level={"H"} includeMargin={true} />
+                    <QRCodeSVG value={qrUrl} size={170} level={"M"} includeMargin={true} />
                   </div>
-                  <p className="text-[11px] font-bold text-slate-400 mt-3 text-center">
-                    {lang === "ar"
-                      ? "قم بمسح الباركود للطلب المباشر"
-                      : "Scan QR code to order directly"}
+                  <p className="text-[11px] font-bold text-slate-500 mt-3 text-center">
+                    {qrMenuLang === "en"
+                      ? "Scan QR code with your phone camera to order directly"
+                      : "قم بمسح الباركود بكاميرا الهاتف للطلب المباشر"}
                   </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 print:hidden">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (typeof navigator !== "undefined" && navigator.clipboard) {
+                        navigator.clipboard.writeText(qrUrl);
+                        toast({
+                          title: lang === "ar" ? "تم نسخ رابط الباركود" : "QR Link Copied",
+                          description: qrUrl,
+                        });
+                      }
+                    }}
+                    className="flex-1 h-9 text-xs font-bold rounded-xl"
+                  >
+                    {lang === "ar" ? "نسخ رابط الباركود" : "Copy QR Link"}
+                  </Button>
+                  <Link
+                    to={directPreviewPath as any}
+                    className="flex-1 inline-flex items-center justify-center h-9 px-3 text-xs font-bold rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors"
+                  >
+                    {lang === "ar" ? "معاينة صفحة العميل الآن" : "Preview Customer Page"}
+                  </Link>
                 </div>
 
                 <DialogFooter className="sm:justify-between mt-2 pt-2 border-t border-slate-100 flex-row gap-2">
@@ -931,40 +1459,7 @@ function CaptainPage() {
                   <Button
                     className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2 print:hidden flex-1 sm:flex-none h-10 rounded-xl"
                     onClick={() => {
-                      const titleEl = document.querySelector("#print-qr-area h3");
-                      const tableEl = document.getElementById("print-table-number");
-                      const svgEl = document.getElementById("print-qr-svg");
-                      const printWindow = window.open("", "", "width=600,height=600");
-                      if (printWindow) {
-                        printWindow.document.write(`
-                            <html>
-                              <head>
-                                <title>Print QR Code</title>
-                                <style>
-                                  body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; flex-direction: column; background: #fff; }
-                                  .qr-container { text-align: center; }
-                                  h3 { margin-bottom: 4px; font-size: 24px; color: #0f172a; font-weight: 900; }
-                                  p.table-num { margin-top: 0; color: #475569; font-size: 18px; margin-bottom: 24px; font-weight: bold; }
-                                  .footer { font-size: 14px; color: #94a3b8; margin-top: 24px; font-weight: bold; }
-                                </style>
-                              </head>
-                              <body>
-                                <div class="qr-container">
-                                  <h3>${titleEl ? titleEl.textContent : ""}</h3>
-                                  <p class="table-num">${tableEl ? tableEl.textContent : ""}</p>
-                                  ${svgEl ? svgEl.innerHTML : ""}
-                                  <div class="footer">${lang === "ar" ? "قم بمسح الباركود للطلب المباشر" : "Scan QR code to order directly"}</div>
-                                </div>
-                              </body>
-                            </html>
-                          `);
-                        printWindow.document.close();
-                        printWindow.focus();
-                        setTimeout(() => {
-                          printWindow.print();
-                          printWindow.close();
-                        }, 250);
-                      }
+                      window.print();
                     }}
                   >
                     <Printer size={16} />

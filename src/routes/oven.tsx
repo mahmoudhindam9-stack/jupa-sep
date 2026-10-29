@@ -96,6 +96,7 @@ function OvenPage() {
 
   useEffect(() => {
     fetchPendingOrders();
+    const pollInterval = setInterval(fetchPendingOrders, 3000);
 
     const unsubscribeStore = tableOrdersStore.subscribe(() => {
       fetchPendingOrders();
@@ -112,14 +113,45 @@ function OvenPage() {
       .subscribe();
 
     return () => {
+      clearInterval(pollInterval);
       unsubscribeStore();
       supabase.removeChannel(channel);
     };
   }, []);
 
+  const extractTableNumber = (row: any): number | null => {
+    if (row?.table_number && Number(row.table_number) > 0 && Number(row.table_number) !== 999) {
+      return Number(row.table_number);
+    }
+    const itemsArr = Array.isArray(row?.items) ? row.items : [];
+    const metaNum = itemsArr[0]?.meta?.table_number;
+    if (metaNum && Number(metaNum) > 0 && Number(metaNum) !== 999) {
+      return Number(metaNum);
+    }
+    const notesStr = String(row?.notes || "");
+    const matchBracket = notesStr.match(/\[طاولة:\s*(\d+)\]/);
+    if (matchBracket && Number(matchBracket[1]) > 0) {
+      return Number(matchBracket[1]);
+    }
+    const matchHash = notesStr.match(/طاولة\s*#?(\d+)/);
+    if (matchHash && Number(matchHash[1]) > 0) {
+      return Number(matchHash[1]);
+    }
+    return null;
+  };
+
   const getKitchenNotes = (rawNotes: string | null | undefined): string => {
     if (!rawNotes) return "";
-    const cleaned = String(rawNotes)
+    const withoutTags = String(rawNotes)
+      .replace(/\[SELF_ORDER_PENDING_CAPTAIN\]/g, "")
+      .replace(/\[SELF_ORDER_ACTIVE\]/g, "")
+      .replace(/\[SENT_TO_KITCHEN\]/g, "")
+      .replace(/\[SENT_TO_CASHIER\]/g, "")
+      .replace(/\[CASHIER_PAID\]/g, "")
+      .replace(/\[TABLE_ASSISTANCE_CALL\]/g, "")
+      .trim();
+
+    const cleaned = withoutTags
       .split("|")
       .map((part) => part.trim())
       .filter((part) => {
@@ -146,29 +178,54 @@ function OvenPage() {
       const { data, error } = await supabase
         .from("orders")
         .select("*")
-        .or("status.eq.pending,status.eq.in_kitchen")
+        .in("status", ["pending", "preparing", "in_kitchen"])
         .order("created_at", { ascending: true });
 
-      if (!error && data) {
-        dbOrders = data;
+      if (!error && Array.isArray(data)) {
+        dbOrders = data
+          .filter((row) => {
+            const notesStr = String(row.notes || "");
+            // Never show unapproved QR self-orders, table assistance calls, or already paid orders in Kitchen
+            if (
+              notesStr.includes("[SELF_ORDER_PENDING_CAPTAIN]") ||
+              notesStr.includes("[TABLE_ASSISTANCE_CALL]") ||
+              notesStr.includes("[CASHIER_PAID]")
+            ) {
+              return false;
+            }
+            // If it's an active QR self-order, only show it in Kitchen if the Captain pressed "إرسال للمطبخ"
+            if (
+              notesStr.includes("[SELF_ORDER_ACTIVE]") &&
+              !notesStr.includes("[SENT_TO_KITCHEN]") &&
+              row.status !== "preparing"
+            ) {
+              return false;
+            }
+            return true;
+          })
+          .map((row) => ({
+            ...row,
+            table_number: extractTableNumber(row),
+            created_at: row.created_at || new Date().toISOString(),
+          }));
       }
 
       const allLocal = tableOrdersStore.getAllOrders();
       const localStoreOrders = allLocal
         .filter(
           (o) =>
-            (o.status === "draft" || o.status === "sent_to_cashier") &&
+            (o.status === "draft" || o.status === "sent_to_cashier" || o.status === "in_checkout") &&
             o.sentToKitchen &&
             !o.kitchenCompleted,
         )
         .map((lo) => ({
           id: lo.kitchenOrderId || lo.id,
           table_id: lo.table_id,
-          table_number: lo.table_number,
+          table_number: lo.table_number || extractTableNumber(lo),
           order_type: lo.order_type || "dine_in",
-          status: "pending",
+          status: "preparing",
           notes: lo.notes || `طاولة #${lo.table_number}`,
-          created_at: lo.created_at || new Date().toISOString(),
+          created_at: lo.updated_at || lo.created_at || new Date().toISOString(),
           total: lo.total || 0,
           items: Array.isArray(lo.items)
             ? lo.items.map((i) => ({
@@ -200,15 +257,23 @@ function OvenPage() {
   const markAsCompleted = async (order: any) => {
     try {
       if (order.id && !order.isLocalStore) {
+        const notesStr = String(order.notes || "");
+        const isUnpaidTableOrSelfOrder =
+          (notesStr.includes("[SELF_ORDER_ACTIVE]") ||
+            notesStr.includes("[SENT_TO_KITCHEN]") ||
+            notesStr.includes("[SENT_TO_CASHIER]")) &&
+          !notesStr.includes("[CASHIER_PAID]");
         const { error } = await supabase
           .from("orders")
-          .update({ status: "served" })
+          .update({ status: isUnpaidTableOrSelfOrder ? "ready" : "served" })
           .eq("id", order.id);
         if (error) throw error;
       }
-      if (order.table_id) {
-        tableOrdersStore.markKitchenCompletedByTableId(order.table_id);
-      }
+      tableOrdersStore.markKitchenCompletedByTableId(
+        order.table_id,
+        order.table_number || extractTableNumber(order),
+        order.id,
+      );
       toast({ title: "الطلب جاهز! 👨‍🍳", description: "تم تحديث حالة الطلب إلى جاهز/مكتمل." });
       fetchPendingOrders();
     } catch (e: any) {
@@ -222,9 +287,11 @@ function OvenPage() {
         const { error } = await supabase.from("orders").delete().eq("id", order.id);
         if (error) throw error;
       }
-      if (order.table_id) {
-        tableOrdersStore.markKitchenCompletedByTableId(order.table_id);
-      }
+      tableOrdersStore.markKitchenCompletedByTableId(
+        order.table_id,
+        order.table_number || extractTableNumber(order),
+        order.id,
+      );
       toast({ title: "تم الحذف", description: "تم حذف الطلب بنجاح." });
       fetchPendingOrders();
     } catch (e: any) {
