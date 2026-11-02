@@ -52,6 +52,7 @@ import {
   PERMISSIONS_UPDATED_EVENT,
   getDefaultPermissionsForRole,
   hasAnyRequestedPermission,
+  isDepartmentPermitted,
 } from "@/shared/services/userAuthorization";
 
 export const Route = createFileRoute("/admin")({
@@ -183,21 +184,26 @@ function permissionsForUser(
   const normalizedRole = String(user?.role || "cashier").trim().toLowerCase();
   const normalizedUsername = String(user?.username || "").trim().toLowerCase();
 
-  if (hasAnyTrueValue(current) && current.super_admin_full_access === false) {
-    return current as Record<string, boolean>;
-  }
-
-  if (
-    current.super_admin_full_access === true ||
+  const isAdmin =
     normalizedRole === "admin" ||
     normalizedRole === "super_admin" ||
-    normalizedUsername === "admin"
-  ) {
-    return defaultPermissionsForRole("super_admin");
-  }
+    normalizedUsername === "admin";
 
   if (hasAnyTrueValue(current)) {
+    if (isAdmin || current.super_admin_full_access === true) {
+      return {
+        ...defaultPermissionsForRole("super_admin"),
+        ...current,
+        super_admin_full_access: true,
+        users_roles: true,
+        system_manage_users: true,
+      };
+    }
     return current as Record<string, boolean>;
+  }
+
+  if (isAdmin || current.super_admin_full_access === true) {
+    return defaultPermissionsForRole("super_admin");
   }
 
   return defaultPermissionsForRole(normalizedRole);
@@ -268,7 +274,41 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
         );
       });
 
+      const explicitPerms =
+        (localRecord && hasAnyTrueValue(localRecord.permissions) ? localRecord.permissions : null) ||
+        (localRecord && hasAnyTrueValue(state.userPermissions?.[localRecord.username])
+          ? state.userPermissions[localRecord.username]
+          : null) ||
+        (hasAnyTrueValue(state.userPermissions?.[username])
+          ? state.userPermissions[username]
+          : null) ||
+        (hasAnyTrueValue(state.userPermissions?.[normalized])
+          ? state.userPermissions[normalized]
+          : null);
+
       if (!localRecord) {
+        const isAdminUser =
+          normalized === "admin" ||
+          normalized.startsWith("admin@") ||
+          username === "admin" ||
+          (typeof window !== "undefined" &&
+            (localStorage.getItem("restocash_user_role") === "admin" ||
+              sessionStorage.getItem("restocash_user_role") === "admin"));
+
+        if (isAdminUser) {
+          const explicitAdminPerms =
+            explicitPerms ||
+            (hasAnyTrueValue(state.userPermissions?.["admin"]) ? state.userPermissions["admin"] : null);
+          return {
+            email: storedUser.includes("@") ? storedUser : "admin@restocash.com",
+            username: username || "admin",
+            role: "admin",
+            permissions: explicitAdminPerms
+              ? { ...defaultPermissionsForRole("admin"), ...explicitAdminPerms, super_admin_full_access: true }
+              : defaultPermissionsForRole("admin"),
+            permissionsManaged: true,
+          };
+        }
         return null;
       }
 
@@ -280,19 +320,12 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
           email: localRecord.email || storedUser,
           username: resolvedUsername,
           role: "admin",
-          permissions: defaultPermissionsForRole("admin"),
+          permissions: explicitPerms
+            ? { ...defaultPermissionsForRole("admin"), ...explicitPerms, super_admin_full_access: true }
+            : defaultPermissionsForRole("admin"),
           permissionsManaged: true,
         };
       }
-
-      const explicitPerms =
-        (hasAnyTrueValue(localRecord.permissions) ? localRecord.permissions : null) ||
-        (hasAnyTrueValue(state.userPermissions?.[localRecord.username])
-          ? state.userPermissions[localRecord.username]
-          : null) ||
-        (hasAnyTrueValue(state.userPermissions?.[username])
-          ? state.userPermissions[username]
-          : null);
 
       const permissions = explicitPerms || defaultPermissionsForRole(role);
 
@@ -317,12 +350,18 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
         const activeUsername = String(profile.username).toLowerCase();
         const activeRole = String(profile.role || "cashier").toLowerCase();
         const rawPerms = (profile.permissions || {}) as Record<string, any>;
+        const explicitPerms = hasAnyTrueValue(rawPerms)
+          ? rawPerms
+          : (hasAnyTrueValue(erpStore.getState().userPermissions?.[activeUsername])
+              ? erpStore.getState().userPermissions[activeUsername]
+              : null);
+
         const resolvedPermissions =
           activeRole === "admin" || activeRole === "super_admin" || activeUsername === "admin"
-            ? defaultPermissionsForRole("admin")
-            : hasAnyTrueValue(rawPerms)
-              ? rawPerms
-              : defaultPermissionsForRole(activeRole);
+            ? (explicitPerms
+                ? { ...defaultPermissionsForRole("admin"), ...explicitPerms, super_admin_full_access: true }
+                : defaultPermissionsForRole("admin"))
+            : (explicitPerms || defaultPermissionsForRole(activeRole));
 
         const activeUser = {
           email: session.user.email || profile.email || profile.username,
@@ -552,9 +591,7 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
       <AppMainNavbar
         user={user}
         onSignOut={handleSignOut}
-        hasDepartmentPermission={(dept) =>
-          !dept.permissionKeys || hasAnyPermission(user, dept.permissionKeys)
-        }
+        hasDepartmentPermission={(dept) => isDepartmentPermitted(permissionsForUser(user), dept)}
         showSystemVersionLink={hasAnyPermission(user, [
           "system_backup_update",
           "developer_options",

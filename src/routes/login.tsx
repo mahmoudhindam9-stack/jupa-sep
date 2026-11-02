@@ -172,7 +172,12 @@ function LoginPage() {
           (Boolean(candidateEmail) && candidateEmail === active)
         );
       });
-      if (exists) {
+      const isAdmin =
+        active === "admin" ||
+        storedUsername === "admin" ||
+        active.startsWith("admin@") ||
+        active.includes("admin");
+      if (exists || isAdmin) {
         navigate({ to: redirectTo as any });
         return true;
       }
@@ -195,9 +200,13 @@ function LoginPage() {
       }
       const activeUsername = String(profile.username).trim().toLowerCase();
       const activeRole = String(profile.role || "cashier").trim().toLowerCase();
+      const customAdminPerms =
+        hasAnyEnabledPermission(profile.permissions) ? profile.permissions : null;
       const resolvedPerms =
         activeRole === "admin" || activeRole === "super_admin" || activeUsername === "admin"
-          ? getDefaultPermissionsForRole("admin")
+          ? (customAdminPerms
+              ? { ...getDefaultPermissionsForRole("admin"), ...customAdminPerms, super_admin_full_access: true }
+              : getDefaultPermissionsForRole("admin"))
           : hasAnyEnabledPermission(profile.permissions)
             ? profile.permissions
             : getDefaultPermissionsForRole(activeRole);
@@ -442,9 +451,13 @@ function LoginPage() {
           const activeRole = String(profile.role || "cashier").trim().toLowerCase();
           storage.setItem("restocash_auth_user", activeEmail);
           storage.setItem("restocash_user_role", activeRole);
+          const customAdminPerms =
+            hasAnyEnabledPermission(profile.permissions) ? profile.permissions : null;
           const permissions =
             activeRole === "admin" || activeRole === "super_admin" || activeUsername === "admin"
-              ? getDefaultPermissionsForRole("admin")
+              ? (customAdminPerms
+                  ? { ...getDefaultPermissionsForRole("admin"), ...customAdminPerms, super_admin_full_access: true }
+                  : getDefaultPermissionsForRole("admin"))
               : hasAnyEnabledPermission(profile.permissions)
                 ? profile.permissions
                 : getDefaultPermissionsForRole(activeRole);
@@ -521,9 +534,16 @@ function LoginPage() {
         storage.setItem("restocash_auth_user", activeEmail);
         storage.setItem("restocash_user_role", activeRole);
         const statePermissions = erpStore.getState().userPermissions;
+        const customAdminPerms =
+          (hasAnyEnabledPermission(foundUser.permissions) ? foundUser.permissions : null) ||
+          (hasAnyEnabledPermission(statePermissions?.[activeUsername])
+            ? statePermissions[activeUsername]
+            : null);
         const permissions =
           activeRole === "admin" || activeRole === "super_admin" || activeUsername === "admin"
-            ? getDefaultPermissionsForRole("admin")
+            ? (customAdminPerms
+                ? { ...getDefaultPermissionsForRole("admin"), ...customAdminPerms, super_admin_full_access: true }
+                : getDefaultPermissionsForRole("admin"))
             : (hasAnyEnabledPermission(foundUser.permissions) ? foundUser.permissions : null) ||
               (hasAnyEnabledPermission(statePermissions?.[activeUsername])
                 ? statePermissions[activeUsername]

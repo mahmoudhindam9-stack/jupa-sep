@@ -20,6 +20,7 @@ import { toast as sonnerToast } from "sonner";
 import {
   getActiveUserPermissionsSync,
   hasAnyRequestedPermission,
+  isDepartmentPermitted,
   PERMISSIONS_UPDATED_EVENT,
   signOutCurrentUser,
 } from "@/shared/services/userAuthorization";
@@ -257,8 +258,7 @@ export function AppMainNavbar({
 
   const visibleDepartments = NAVIGATION_DEPARTMENTS.filter((dept) => {
     if (hasDepartmentPermission) return hasDepartmentPermission(dept);
-    if (!dept.permissionKeys || dept.permissionKeys.length === 0) return true;
-    return hasAnyRequestedPermission(activePerms, dept.permissionKeys);
+    return isDepartmentPermitted(activePerms, dept);
   });
 
   const handleLogout = async () => {

@@ -418,29 +418,72 @@ export function getDefaultPermissionsForRole(role: string): Record<string, boole
   return Object.fromEntries(keys.map((k) => [k, true]));
 }
 
+export function isDepartmentPermitted(
+  perms: Record<string, boolean> | undefined,
+  dept: { permissionKeys?: string[] } | null | undefined,
+): boolean {
+  if (!dept || !dept.permissionKeys || dept.permissionKeys.length === 0) return true;
+  if (!perms || typeof perms !== "object") return true;
+
+  // 1. Primary department page key (e.g. "page_restaurant", "page_mall", "page_park", etc.)
+  const primaryKey =
+    dept.permissionKeys.find((k) => k.startsWith("page_")) || dept.permissionKeys[0];
+  if (primaryKey && perms[primaryKey] === false) {
+    return false;
+  }
+
+  // 2. If any page_ key in permissionKeys is explicitly false, hide it
+  for (const k of dept.permissionKeys) {
+    if (k.startsWith("page_") && perms[k] === false) {
+      return false;
+    }
+  }
+
+  // 3. If super_admin and not explicitly disabled, allow access
+  if (perms.super_admin_full_access === true) return true;
+
+  // 4. If primary page key is explicitly true, allow access
+  if (primaryKey && perms[primaryKey] === true) return true;
+
+  // 5. Fallback: check if ANY requested key is true
+  return dept.permissionKeys.some((k) => perms[k] === true);
+}
+
 export function hasAnyRequestedPermission(
   permissions: Record<string, any> | null | undefined,
   keys: string[],
 ): boolean {
   if (!keys || keys.length === 0) return true;
   if (!permissions) return false;
-  if (permissions.super_admin_full_access === true) return true;
 
-  const primaryKey = keys[0];
-  if (primaryKey) {
-    // 1. If this key belongs to a Main Section and that Main Section is explicitly false, hide it
-    const parentMainKey = SUB_SECTION_TO_MAIN_PAGE[primaryKey];
+  // 1. If any primary page key or parent section is explicitly FALSE, it MUST be hidden!
+  const pageKey = keys.find((k) => k.startsWith("page_")) || keys[0];
+  if (pageKey) {
+    if (permissions[pageKey] === false) {
+      return false;
+    }
+    const parentMainKey = SUB_SECTION_TO_MAIN_PAGE[pageKey];
     if (parentMainKey && permissions[parentMainKey] === false) {
       return false;
     }
+  }
 
-    // 2. If the primary page/sub-section key itself is explicitly configured (true or false), respect it strictly
-    if (typeof permissions[primaryKey] === "boolean") {
-      return permissions[primaryKey] === true;
+  // Check if any page_ key is explicitly disabled
+  for (const k of keys) {
+    if (k.startsWith("page_") && permissions[k] === false) {
+      return false;
     }
   }
 
-  // 3. Fallback for legacy user records where primaryKey hasn't been explicitly saved yet
+  // 2. If the user has super_admin_full_access and this section was not explicitly set to false, grant access
+  if (permissions.super_admin_full_access === true) return true;
+
+  // 3. If the primary page/sub-section key is explicitly true, allow access
+  if (pageKey && permissions[pageKey] === true) {
+    return true;
+  }
+
+  // 4. Fallback: check if any of the keys is explicitly true
   return keys.some((key) => permissions[key] === true);
 }
 
@@ -510,8 +553,16 @@ export function getActiveUserPermissionsSync(): Record<string, boolean> {
         ? state.userPermissions[normalizedRole]
         : null);
 
-    // If custom permissions were saved on this user and super_admin_full_access was explicitly disabled, respect candidatePerms
-    if (candidatePerms && candidatePerms.super_admin_full_access === false) {
+    if (candidatePerms) {
+      if (isAdminIdentity) {
+        return {
+          ...getDefaultPermissionsForRole("admin"),
+          ...candidatePerms,
+          super_admin_full_access: candidatePerms.super_admin_full_access ?? true,
+          users_roles: true,
+          system_manage_users: true,
+        } as Record<string, boolean>;
+      }
       return candidatePerms as Record<string, boolean>;
     }
 
@@ -519,19 +570,15 @@ export function getActiveUserPermissionsSync(): Record<string, boolean> {
       return getDefaultPermissionsForRole("admin");
     }
 
-    if (candidatePerms) {
-      return candidatePerms as Record<string, boolean>;
-    }
-
     return getDefaultPermissionsForRole(normalizedRole);
-  }
-
-  if (base === "admin" || storedRole === "admin" || storedRole === "super_admin") {
-    return getDefaultPermissionsForRole("admin");
   }
 
   if (base && hasAnyEnabledPermission(state.userPermissions?.[base])) {
     return state.userPermissions[base] as Record<string, boolean>;
+  }
+
+  if (base === "admin" || storedRole === "admin" || storedRole === "super_admin") {
+    return getDefaultPermissionsForRole("admin");
   }
 
   if (storedRole) {

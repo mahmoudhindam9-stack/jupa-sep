@@ -51,7 +51,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { hasAnyRequestedPermission } from "@/shared/services/userAuthorization";
+import { hasAnyRequestedPermission, isDepartmentPermitted } from "@/shared/services/userAuthorization";
 
 export interface SectionItem {
   id: string;
@@ -562,11 +562,11 @@ export function AdminSectionsGrid({ userPermissions = {} }: AdminSectionsGridPro
   };
 
   const permittedSections = ADMIN_SECTIONS.map((section) => {
-    const mainKey = section.permissionKeys[0];
-    if (userPermissions.super_admin_full_access !== true && userPermissions[mainKey] === false) {
+    if (!isDepartmentPermitted(userPermissions, section)) {
       return null;
     }
     const filteredSubs = section.subsections.filter((sub) =>
+      isDepartmentPermitted(userPermissions, sub) &&
       hasAnyRequestedPermission(userPermissions, sub.permissionKeys || section.permissionKeys),
     );
     const hasSecAccess =

@@ -26,6 +26,7 @@ import {
 import {
   getActiveUserPermissionsSync,
   hasAnyRequestedPermission,
+  isDepartmentPermitted,
   PERMISSIONS_UPDATED_EVENT,
 } from "@/shared/services/userAuthorization";
 import { erpStore } from "@/shared/services/erpStore";
@@ -84,8 +85,7 @@ export function AppBreadcrumbBar({
   }, []);
 
   const visibleDepartments = NAVIGATION_DEPARTMENTS.filter((dept) => {
-    if (!dept.permissionKeys || dept.permissionKeys.length === 0) return true;
-    return hasAnyRequestedPermission(activePerms, dept.permissionKeys);
+    return isDepartmentPermitted(activePerms, dept);
   });
 
   const resolved = resolveNavigationState(
@@ -306,10 +306,7 @@ export function AppBreadcrumbBar({
                       <DropdownMenuSeparator className="my-1" />
                       {department.children
                         .filter((sibling) =>
-                          hasAnyRequestedPermission(
-                            activePerms,
-                            sibling.permissionKeys || department.permissionKeys || [],
-                          ),
+                          isDepartmentPermitted(activePerms, sibling),
                         )
                         .map((sibling) => {
                           const SiblingIcon = sibling.icon;

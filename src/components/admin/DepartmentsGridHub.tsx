@@ -58,6 +58,7 @@ import { erpStore } from "@/shared/services/erpStore";
 import {
   getActiveUserPermissionsSync,
   hasAnyRequestedPermission,
+  isDepartmentPermitted,
   PERMISSIONS_UPDATED_EVENT,
 } from "@/shared/services/userAuthorization";
 
@@ -747,18 +748,15 @@ export function DepartmentsGridHub({
   }, [propPermissions]);
 
   const visibleDepartments = DEPARTMENTS.map((dept) => {
-    // If the department's main page permission is explicitly false, hide it entirely!
-    const mainKey = dept.permissionKeys[0];
-    if (activePermissions.super_admin_full_access !== true && activePermissions[mainKey] === false) {
+    // If the department is not permitted (e.g. explicitly false), hide it entirely!
+    if (!isDepartmentPermitted(activePermissions, dept)) {
       return null;
     }
 
     const allowedSubSections = dept.subSections.filter((sub) =>
-      hasAnyRequestedPermission(activePermissions, sub.permissionKeys || dept.permissionKeys),
+      isDepartmentPermitted(activePermissions, sub),
     );
-    const hasDeptAccess =
-      allowedSubSections.length > 0 ||
-      hasAnyRequestedPermission(activePermissions, dept.permissionKeys);
+    const hasDeptAccess = allowedSubSections.length > 0 || isDepartmentPermitted(activePermissions, dept);
     return {
       ...dept,
       subSections: allowedSubSections,

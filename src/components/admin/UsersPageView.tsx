@@ -1080,16 +1080,19 @@ function samePermissionMap(
 
 function currentActorPermissions(
   state: any,
-  authoritativeProfile?: { permissions?: Record<string, any> } | null,
+  authoritativeProfile?: { role?: string; permissions?: Record<string, any> } | null,
 ): Record<string, boolean> {
-  if (authoritativeProfile?.permissions && Object.keys(authoritativeProfile.permissions).length > 0) {
-    return authoritativeProfile.permissions as Record<string, boolean>;
-  }
-
   const activeStored = (
     typeof window !== "undefined"
       ? localStorage.getItem("restocash_auth_user") ||
         sessionStorage.getItem("restocash_auth_user") ||
+        ""
+      : ""
+  ).trim().toLowerCase();
+  const storedRole = (
+    typeof window !== "undefined"
+      ? localStorage.getItem("restocash_user_role") ||
+        sessionStorage.getItem("restocash_user_role") ||
         ""
       : ""
   ).trim().toLowerCase();
@@ -1102,22 +1105,47 @@ function currentActorPermissions(
     const candidateEmail = String(user.email || "").trim().toLowerCase();
     return candidateUsername === username || (!!activeStored && candidateEmail === activeStored);
   });
-  const permissions = record?.permissions;
-  if (permissions && Object.keys(permissions).length > 0) {
-    return permissions as Record<string, boolean>;
+
+  const actorRole = String(
+    authoritativeProfile?.role || record?.role || storedRole || "cashier",
+  ).trim().toLowerCase();
+
+  const isAdminActor =
+    actorRole === "admin" ||
+    actorRole === "super_admin" ||
+    username === "admin" ||
+    activeStored === "admin" ||
+    activeStored.startsWith("admin@") ||
+    storedRole === "admin" ||
+    storedRole === "super_admin";
+
+  const effectivePerms =
+    (authoritativeProfile?.permissions && Object.keys(authoritativeProfile.permissions).length > 0
+      ? authoritativeProfile.permissions
+      : record?.permissions && Object.keys(record.permissions).length > 0
+        ? record.permissions
+        : state?.userPermissions?.[username]) || {};
+
+  if (isAdminActor) {
+    return {
+      ...defaultPermissionsForRole("admin"),
+      ...effectivePerms,
+      super_admin_full_access: true,
+      users_roles: true,
+      system_manage_users: true,
+    } as Record<string, boolean>;
   }
-  if (record?.role === "admin" || record?.role === "super_admin") {
-    return { super_admin_full_access: true };
+
+  if (effectivePerms && Object.keys(effectivePerms).length > 0) {
+    return effectivePerms as Record<string, boolean>;
   }
-  return (state?.userPermissions?.[username] || { super_admin_full_access: true }) as Record<
-    string,
-    boolean
-  >;
+
+  return defaultPermissionsForRole(actorRole) as unknown as Record<string, boolean>;
 }
 
 function canGrantElevatedPermissions(
   state: any,
-  authoritativeProfile?: { permissions?: Record<string, any> } | null,
+  authoritativeProfile?: { role?: string; permissions?: Record<string, any> } | null,
 ): boolean {
   return currentActorPermissions(state, authoritativeProfile).super_admin_full_access === true;
 }
@@ -1143,7 +1171,7 @@ function assertNoPrivilegeEscalation(
   if (actorPermissions.super_admin_full_access === true) return;
 
   if (role === "admin" || role === "super_admin") {
-    throw new Error("لا يمكن إلا للمدير الأعلى منح دور المدير أو المدير العام.");
+    throw new Error("لا يمكن إلا للمدير العام منح دور المدير أو المدير العام.");
   }
 
   for (const [key, value] of Object.entries(proposed)) {
@@ -1164,8 +1192,8 @@ function defaultPermissionsForRole(role: string): UserPermission {
   for (const [k, v] of Object.entries(roleDefaults)) {
     permissions[k] = !!v;
   }
-  if (role === "admin") {
-    permissions.super_admin_full_access = false;
+  if (role === "admin" || role === "super_admin") {
+    permissions.super_admin_full_access = true;
   }
   return permissions as UserPermission;
 }

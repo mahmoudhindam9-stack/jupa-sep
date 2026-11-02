@@ -115,16 +115,24 @@ function IndexRouteComponent() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-6" dir="rtl">
+      <script
+        dangerouslySetInnerHTML={{
+          __html: `try{var u=new URLSearchParams(window.location.search);if(u.get("page")==="menu"||u.get("selfOrder")==="1"||u.get("tableId")||u.get("table_id")||u.get("table")){window.location.replace("/menu"+window.location.search);}else{var hasUser=Boolean(localStorage.getItem("restocash_auth_user")||sessionStorage.getItem("restocash_auth_user"));window.location.replace(hasUser?"/admin":"/login");}}catch(e){}`,
+        }}
+      />
       <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 text-center shadow-sm space-y-4">
-        <p className="text-sm font-bold text-foreground">جاري تحويلك إلى شاشة تسجيل الدخول…</p>
+        <p className="text-sm font-bold text-foreground">جاري تحويلك إلى النظام…</p>
         <div className="flex items-center justify-center gap-2">
-          <button
-            type="button"
-            onClick={() => void navigate({ to: "/login", replace: true })}
-            className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl text-xs font-bold transition cursor-pointer"
+          <a
+            href="/login"
+            onClick={(e) => {
+              e.preventDefault();
+              void navigate({ to: "/login", replace: true });
+            }}
+            className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl text-xs font-bold transition cursor-pointer inline-block"
           >
             صفحة تسجيل الدخول
-          </button>
+          </a>
         </div>
       </div>
     </div>
