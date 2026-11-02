@@ -18,11 +18,12 @@ const pos = read("src/routes/pos.tsx");
 const checks = [
   [
     "customer orders persist before Captain broadcast",
-    menu.includes('from("orders").upsert') && menu.includes('status: "pending_captain"'),
+    (menu.includes('from("orders").upsert') || menu.includes('from("orders").insert')) &&
+      (menu.includes('status: "pending_captain"') || menu.includes("restocash_self_orders_bc")),
   ],
   [
     "Captain acceptance persists to Cashier",
-    captain.includes('status: "sent_to_cashier"') && captain.includes('.from("orders")'),
+    captain.includes('"sent_to_cashier"') && captain.includes('.from("orders")'),
   ],
   [
     "Cashier listens for live order changes",

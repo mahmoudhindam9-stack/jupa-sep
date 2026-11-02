@@ -1653,50 +1653,338 @@ export class ERPStore {
       base_usd_amount: baseUsd,
     };
   }
+  ensureTreasuryParentHierarchy(type: "cash" | "bank" = "cash", currency: string = "EGP") {
+    if (!Array.isArray(this.state.accounts)) {
+      this.state.accounts = [];
+    }
+    const cleanCurr = currency === "MULTI" ? "USD" : currency || "EGP";
+    if (!this.state.accounts.some((a) => a.code === "1")) {
+      this.state.accounts.push({
+        code: "1",
+        name_ar: "الموجودات والأصول (Assets)",
+        name_en: "Assets",
+        type: "asset",
+        level: 1,
+        balance: 0,
+        initial_balance: 0,
+        status: "active",
+        currency: cleanCurr,
+        system_binding: "none",
+      });
+    }
+    if (!this.state.accounts.some((a) => a.code === "130")) {
+      this.state.accounts.push({
+        code: "130",
+        name_ar: "النقدية بالصناديق والبنوك وما في حكمها",
+        name_en: "Cash & Banks",
+        type: "asset",
+        level: 2,
+        parent_code: "1",
+        balance: 0,
+        initial_balance: 0,
+        status: "active",
+        currency: cleanCurr,
+        system_binding: "none",
+      });
+    }
+    if (type === "bank") {
+      if (!this.state.accounts.some((a) => a.code === "13020")) {
+        this.state.accounts.push({
+          code: "13020",
+          name_ar: "الحسابات الجارية بالبنوك والمصارف",
+          name_en: "Bank Current Accounts",
+          type: "asset",
+          level: 3,
+          parent_code: "130",
+          balance: 0,
+          initial_balance: 0,
+          status: "active",
+          currency: cleanCurr,
+          system_binding: "bank_account",
+        });
+      }
+    } else {
+      if (!this.state.accounts.some((a) => a.code === "13010")) {
+        this.state.accounts.push({
+          code: "13010",
+          name_ar: "النقدية بالصناديق والخزائن",
+          name_en: "Cash Treasuries & Desks",
+          type: "asset",
+          level: 3,
+          parent_code: "130",
+          balance: 0,
+          initial_balance: 0,
+          status: "active",
+          currency: cleanCurr,
+          system_binding: "cash_treasury",
+        });
+      }
+    }
+  }
+
+  getNextTreasuryAccountCode(type: "cash" | "bank" = "cash"): string {
+    const parentPrefix = type === "bank" ? "13020" : "13010";
+    const allCodes = new Set<string>([
+      ...(this.state.accounts || []).map((a) => String(a.code || "").trim()),
+      ...(this.state.treasuries || []).map((t) => String(t.account_code || "").trim()),
+      ...(ORACLE_MIGRATION_ACCOUNTS || []).map((a: any) => String(a.code || "").trim()),
+    ]);
+
+    let maxSuffix = type === "bank" ? 160 : 130;
+    allCodes.forEach((code) => {
+      if (code.startsWith(parentPrefix) && code.length === 8) {
+        const suffix = parseInt(code.substring(5), 10);
+        if (!isNaN(suffix) && suffix > maxSuffix) {
+          maxSuffix = suffix;
+        }
+      }
+    });
+
+    let nextSuffix = maxSuffix + 10;
+    if (nextSuffix > 999) nextSuffix = maxSuffix + 1;
+    let candidate = `${parentPrefix}${String(nextSuffix).padStart(3, "0")}`;
+    while (allCodes.has(candidate)) {
+      nextSuffix++;
+      candidate = `${parentPrefix}${String(nextSuffix).padStart(3, "0")}`;
+    }
+    return candidate;
+  }
+
   addTreasury(
-    name_ar,
-    type,
-    currency,
+    nameOrObj: any,
+    type: "cash" | "bank" = "cash",
+    currency: string = "EGP",
     openingBalance = 0,
     employee = "غير محدد",
-    containers = [],
+    containers: any[] = [],
     linked_to_restaurant = false,
-    account_code,
+    account_code?: string,
+    autoCreateAccount: boolean = true,
   ) {
+    let resolvedName = "";
+    let resolvedType: "cash" | "bank" = type || "cash";
+    let resolvedCurrency = currency || "EGP";
+    let resolvedOpeningBalance = Number(openingBalance) || 0;
+    let resolvedEmployee = employee || "غير محدد";
+    let resolvedContainers: any[] = Array.isArray(containers) ? containers : [];
+    let resolvedLinked = Boolean(linked_to_restaurant);
+    let requestedAccountCode = account_code ? String(account_code).trim() : "";
+    let shouldAutoCreate = autoCreateAccount !== false;
+    let customId = "";
+    let customBranchId = "";
+
+    if (nameOrObj && typeof nameOrObj === "object") {
+      resolvedName = String(nameOrObj.name_ar || "").trim();
+      resolvedType = nameOrObj.type === "bank" ? "bank" : "cash";
+      resolvedCurrency = String(nameOrObj.currency || "EGP");
+      resolvedOpeningBalance = Number(nameOrObj.opening_balance ?? nameOrObj.balance ?? 0) || 0;
+      resolvedEmployee = String(nameOrObj.responsible_employee || "غير محدد");
+      resolvedContainers = Array.isArray(nameOrObj.containers) ? nameOrObj.containers : [];
+      resolvedLinked = Boolean(nameOrObj.linked_to_restaurant);
+      requestedAccountCode = nameOrObj.account_code ? String(nameOrObj.account_code).trim() : "";
+      if (typeof nameOrObj.auto_create_account === "boolean") {
+        shouldAutoCreate = nameOrObj.auto_create_account;
+      }
+      customId = nameOrObj.id ? String(nameOrObj.id) : "";
+      customBranchId = nameOrObj.branch_id ? String(nameOrObj.branch_id) : "";
+    } else {
+      resolvedName = String(nameOrObj || "").trim();
+    }
+
+    this.ensureTreasuryParentHierarchy(resolvedType, resolvedCurrency);
+
+    const parentCode = resolvedType === "bank" ? "13020" : "13010";
+    const cleanAccountCurr = resolvedCurrency === "MULTI" ? "USD" : resolvedCurrency;
+    let finalAccountCode = requestedAccountCode;
+
+    if (!finalAccountCode && shouldAutoCreate) {
+      finalAccountCode = this.getNextTreasuryAccountCode(resolvedType);
+    }
+
+    if (finalAccountCode) {
+      const existingAcc = this.state.accounts.find((a) => String(a.code) === finalAccountCode);
+      if (!existingAcc) {
+        const inferredParent =
+          finalAccountCode.length > 5 ? finalAccountCode.slice(0, 5) : parentCode;
+        const newAcc: Account = {
+          code: finalAccountCode,
+          name_ar: resolvedName,
+          name_en: resolvedType === "bank" ? `Bank - ${resolvedName}` : `Treasury - ${resolvedName}`,
+          type: "asset",
+          level: 4,
+          parent_code: inferredParent,
+          balance: resolvedOpeningBalance,
+          initial_balance: resolvedOpeningBalance,
+          status: "active",
+          currency: cleanAccountCurr,
+          system_binding: resolvedType === "bank" ? "bank_account" : "cash_treasury",
+        };
+        this.state.accounts.push(newAcc);
+      }
+    }
+
     const treasury = {
-      id: "tr-" + Date.now(),
-      branch_id: this.state.currentBranchId,
-      name_ar,
-      type,
-      currency,
-      balance: openingBalance,
+      id: customId || "tr-" + Date.now(),
+      branch_id: customBranchId || this.state.currentBranchId,
+      name_ar: resolvedName,
+      type: resolvedType,
+      currency: resolvedCurrency,
+      balance: resolvedOpeningBalance,
       is_open: true,
-      account_code: void 0,
-      opening_balance: openingBalance,
-      available_balance: openingBalance,
-      responsible_employee: employee,
-      status: "active",
+      account_code: finalAccountCode || undefined,
+      opening_balance: resolvedOpeningBalance,
+      available_balance: resolvedOpeningBalance,
+      responsible_employee: resolvedEmployee,
+      status: "active" as const,
       deleted: false,
-      containers,
-      linked_to_restaurant,
+      containers: resolvedContainers,
+      linked_to_restaurant: resolvedLinked,
     };
     this.state.treasuries.push(treasury);
+    this.recalculateAccountBalances();
     this.saveState();
     this.logAction(
       "ADMIN",
       "إضافة حساب خزينة/بنك",
-      `تم إنشاء حساب ${name_ar} برصيد إفتتاحي ${openingBalance} ${currency}`,
+      `تم إنشاء حساب ${resolvedName} (${finalAccountCode || "بدون كود"}) برصيد افتتاحي ${resolvedOpeningBalance} ${resolvedCurrency}`,
       "CREATE",
     );
+    this.notify();
     return treasury;
   }
   updateTreasury(id, payload) {
     const tr = this.state.treasuries.find((t) => t.id === id);
     if (tr) {
       Object.assign(tr, payload);
+      if (tr.account_code && payload?.name_ar) {
+        const linkedAcc = this.state.accounts.find((a) => a.code === tr.account_code);
+        if (linkedAcc) {
+          linkedAcc.name_ar = payload.name_ar;
+        }
+      }
       this.saveState();
       this.logAction("ADMIN", "تعديل حساب خزينة/بنك", `تم تعديل حساب: ${tr.name_ar}`, "UPDATE");
+      this.notify();
     }
+  }
+  depositToTreasury(
+    treasuryId: string,
+    amount: number,
+    currency: string = "EGP",
+    note: string = "إيداع نقدي مباشر",
+    createdBy?: string,
+  ) {
+    this.addTreasuryTransaction(
+      treasuryId,
+      "deposit",
+      Number(amount) || 0,
+      currency,
+      note,
+      undefined,
+      "cash",
+    );
+    if (createdBy && this.state.treasuryTransactions[0]) {
+      (this.state.treasuryTransactions[0] as any).created_by = createdBy;
+      this.saveState();
+    }
+  }
+  withdrawFromTreasury(
+    treasuryId: string,
+    amount: number,
+    currency: string = "EGP",
+    note: string = "سحب نقدي مباشر",
+    createdBy?: string,
+  ) {
+    this.addTreasuryTransaction(
+      treasuryId,
+      "withdrawal",
+      Number(amount) || 0,
+      currency,
+      note,
+      undefined,
+      "cash",
+    );
+    if (createdBy && this.state.treasuryTransactions[0]) {
+      (this.state.treasuryTransactions[0] as any).created_by = createdBy;
+      this.saveState();
+    }
+  }
+  transferBetweenTreasuries(
+    sourceTreasuryId: string,
+    targetTreasuryId: string,
+    amount: number,
+    currency: string = "EGP",
+    note?: string,
+    createdBy?: string,
+  ) {
+    const src = this.state.treasuries.find((t) => t.id === sourceTreasuryId);
+    const dst = this.state.treasuries.find((t) => t.id === targetTreasuryId);
+    const amt = Number(amount) || 0;
+    if (!src || !dst || amt <= 0) return;
+
+    const ref = `TRF-${Date.now().toString().slice(-6)}`;
+    const outNote = note || `تحويل مالي صادر إلى ${dst.name_ar}`;
+    const inNote = note || `تحويل مالي وارد من ${src.name_ar}`;
+
+    this.addTreasuryTransaction(
+      sourceTreasuryId,
+      "transfer_out",
+      amt,
+      currency,
+      outNote,
+      ref,
+      "cash",
+      undefined,
+      true,
+    );
+    if (createdBy && this.state.treasuryTransactions[0]) {
+      (this.state.treasuryTransactions[0] as any).created_by = createdBy;
+    }
+
+    this.addTreasuryTransaction(
+      targetTreasuryId,
+      "transfer_in",
+      amt,
+      currency,
+      inNote,
+      ref,
+      "cash",
+      undefined,
+      true,
+    );
+    if (createdBy && this.state.treasuryTransactions[0]) {
+      (this.state.treasuryTransactions[0] as any).created_by = createdBy;
+    }
+
+    const srcCode = src.account_code || (src.type === "bank" ? "13020140" : "13010100");
+    const dstCode = dst.account_code || (dst.type === "bank" ? "13020140" : "13010100");
+    const rate = this.getExchangeRate(currency);
+
+    this.addJournalEntry(
+      `مناقلة نقدية بين الخزائن: من ${src.name_ar} إلى ${dst.name_ar}`,
+      [
+        {
+          account_code: dstCode,
+          debit: amt,
+          credit: 0,
+          currency,
+          rate,
+          description: inNote,
+        },
+        {
+          account_code: srcCode,
+          debit: 0,
+          credit: amt,
+          currency,
+          rate,
+          description: outNote,
+        },
+      ],
+      ref,
+      currency,
+    );
+    this.saveState();
+    this.notify();
   }
   setTreasuryOpenStatus(treasuryId, isOpen) {
     const tr = this.state.treasuries.find((t) => t.id === treasuryId);
@@ -1713,6 +2001,7 @@ export class ERPStore {
         `isOpen: ${oldState}`,
         `isOpen: ${isOpen}`,
       );
+      this.notify();
     }
   }
   deleteTreasury(id) {
@@ -1728,6 +2017,7 @@ export class ERPStore {
       this.state.treasuries.splice(trIndex, 1);
       this.saveState();
       this.logAction("ADMIN", "حذف خزينة", `تم حذف الخزينة ${tr.name_ar}`, "DELETE");
+      this.notify();
     }
   }
   reconcileTreasury(treasuryId, actualCount, notes) {
@@ -1757,12 +2047,14 @@ export class ERPStore {
       `تم تسوية خزينة ${tr.name_ar} بفارق ${difference.toFixed(2)} ج.م (جرد فعلي: ${actualCount})`,
       "TRANSACTION",
     );
+    this.notify();
   }
   postReconciliationJournal(recon, tr) {
     const treasuryAccountCode =
-      tr.type === "bank" ? "102000" : tr.branch_id === "branch-2" ? "101001" : "101000";
+      tr.account_code ||
+      (tr.type === "bank" ? "102000" : tr.branch_id === "branch-2" ? "101001" : "101000");
     const diff = recon.difference;
-    const curr = tr.currency || "USD";
+    const curr = tr.currency === "MULTI" ? "USD" : tr.currency || "USD";
     const rate = this.getExchangeRate(curr);
     const lines = [];
     if (diff > 0) {
@@ -1859,7 +2151,7 @@ export class ERPStore {
       treasury_id: treasuryId,
       type,
       amount,
-      currency: currency || tr.currency || "USD",
+      currency: currency || (tr.currency === "MULTI" ? "USD" : tr.currency) || "USD",
       payment_method: paymentMethod || "cash",
       note,
       related_entity_id: relatedId,
@@ -1878,16 +2170,22 @@ export class ERPStore {
     if (!skipJournal) {
       this.postTreasuryJournal(tx, tr);
     }
+    this.notify();
   }
   postTreasuryJournal(tx, tr) {
-    let debitAccount = "101000";
+    let debitAccount =
+      tr.account_code ||
+      (this.state.currentBranchId === "branch-2"
+        ? "101001"
+        : tr.type === "bank"
+          ? "102000"
+          : "101000");
     let creditAccount = "301000";
-    if (this.state.currentBranchId === "branch-2") debitAccount = "101001";
-    else if (tr.type === "bank") debitAccount = "102000";
     if (tx.type === "sales") creditAccount = "401000";
-    else if (tx.type === "expense") creditAccount = "504000";
+    else if (tx.type === "expense" || tx.type === "withdrawal") creditAccount = "504000";
     else if (tx.type === "purchase") creditAccount = "103000";
-    const curr = tx.currency || tr.currency || "USD";
+    else if (tx.type === "transfer_in" || tx.type === "transfer_out") creditAccount = "110199";
+    const curr = tx.currency || (tr.currency === "MULTI" ? "USD" : tr.currency) || "USD";
     const rate = this.getExchangeRate(curr);
     const lines = [];
     if (tx.type === "deposit" || tx.type === "sales" || tx.type === "transfer_in") {

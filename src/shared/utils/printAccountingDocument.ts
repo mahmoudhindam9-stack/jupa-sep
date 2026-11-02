@@ -18,6 +18,8 @@ export function printAccountingDocument(options: {
   totals?: { label: string; value: string }[];
   documentNo?: string;
   summaryHtml?: string;
+  metaItems?: { label: string; value: string }[];
+  landscape?: boolean;
 }) {
   if (typeof window === "undefined") return false;
 
@@ -47,12 +49,24 @@ export function printAccountingDocument(options: {
     )
     .join("");
 
+  const metaGrid = (options.metaItems || [])
+    .map(
+      (item) =>
+        `<div class="meta-item"><span class="meta-label">${escapeHtml(item.label)}:</span> <strong>${escapeHtml(item.value)}</strong></div>`,
+    )
+    .join("");
+
+  const pageOrientation = options.landscape ? "landscape" : "portrait";
+
   const htmlContent = `<!doctype html><html lang="ar"><head><meta charset="utf-8"/><title>${escapeHtml(options.title)}</title><style>
-  @page{size:A4 portrait;margin:12mm}
+  @page{size:A4 ${pageOrientation};margin:12mm}
   body{font-family:Tahoma,Arial,sans-serif;color:#0f172a;margin:0;padding:16px;background:#fff;direction:rtl;text-align:right}
   h1{font-size:20px;margin:0 0 4px;color:#1e293b;text-align:center}
-  .sub{color:#475569;font-size:12px;margin-bottom:18px;text-align:center}
+  .sub{color:#475569;font-size:12px;margin-bottom:14px;text-align:center}
   .meta{display:flex;justify-content:space-between;font-size:12px;margin-bottom:12px;border-bottom:2px solid #0284c7;padding-bottom:8px;font-weight:bold}
+  .meta-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;padding:10px;margin-bottom:12px;font-size:11px}
+  .meta-item{display:flex;justify-content:space-between;gap:6px}
+  .meta-label{color:#64748b}
   table{width:100%;border-collapse:collapse;font-size:11px;margin-top:10px}
   th{background:#f1f5f9;color:#0f172a;font-weight:bold;padding:8px;border:1px solid #cbd5e1}
   td{border:1px solid #cbd5e1;padding:8px;vertical-align:top}
@@ -66,114 +80,198 @@ export function printAccountingDocument(options: {
   }
   </style></head><body>
   <div class="meta">
-    <span>مستند رقم: ${escapeHtml(options.documentNo || "")}</span>
+    <span>مستند رقم: ${escapeHtml(options.documentNo || `DOC-${Date.now().toString().slice(-6)}`)}</span>
     <span>تاريخ الطباعة: ${escapeHtml(new Date().toLocaleDateString("ar-EG") + " " + new Date().toLocaleTimeString("ar-EG"))}</span>
   </div>
   <h1>${escapeHtml(options.title)}</h1>
-  <div class="sub">${escapeHtml(options.subtitle || "سند قيد يومية عامة - Restocash ERP")}</div>
+  <div class="sub">${escapeHtml(options.subtitle || "سند وتقرير مالي رسمي - Restocash ERP")}</div>
+  ${metaGrid ? `<div class="meta-grid">${metaGrid}</div>` : ""}
   <table><thead><tr>${head}</tr></thead><tbody>${body || `<tr><td colspan="${options.columns.length}" style="text-align:center">لا توجد بيانات</td></tr>`}</tbody></table>
   ${totals ? `<div class="totals">${totals}</div>` : ""}
   ${options.summaryHtml ? `<div class="summary-section" style="margin-top:16px; border:1px solid #cbd5e1; padding:10px; border-radius:6px; background-color:#f8fafc;">${options.summaryHtml}</div>` : ""}
   <div class="signatures">
-    <div><div class="sig-line">إعداد المحاسب</div></div>
+    <div><div class="sig-line">إعداد المحاسب / المسؤول</div></div>
     <div><div class="sig-line">المراجعة والتدقيق</div></div>
-    <div><div class="sig-line">اعتماد المدير المالي</div></div>
+    <div><div class="sig-line">اعتماد الإدارة المالية</div></div>
   </div>
   <div class="footer"><span>مستند محاسبي صادر من نظام Restocash ERP</span><span>صفحة 1 من 1</span></div>
   </body></html>`;
 
-  // First try opening popup window
-  const printWindow = window.open("", "_blank", "width=1100,height=800");
-  if (printWindow) {
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => {
-      printWindow.print();
-      setTimeout(() => printWindow.close(), 500);
-    }, 250);
-    return true;
-  }
-
-  // Fallback for popups blocked in iframe: hidden print iframe
-  try {
-    let iframe = document.getElementById("print-document-iframe") as HTMLIFrameElement;
-    if (!iframe) {
-      iframe = document.createElement("iframe");
-      iframe.id = "print-document-iframe";
-      iframe.style.position = "fixed";
-      iframe.style.right = "0";
-      iframe.style.bottom = "0";
-      iframe.style.width = "0";
-      iframe.style.height = "0";
-      iframe.style.border = "0";
-      document.body.appendChild(iframe);
-    }
-    const doc = iframe.contentWindow?.document || iframe.contentDocument;
-    if (doc) {
-      doc.open();
-      doc.write(htmlContent);
-      doc.close();
-      setTimeout(() => {
-        iframe.contentWindow?.focus();
-        iframe.contentWindow?.print();
-      }, 300);
-      return true;
-    }
-  } catch (err) {
-    console.error("[Print Fallback]", err);
-  }
-
-  // Ultimate fallback
-  // window.print();
-  return true;
+  return printRawHtml(htmlContent);
 }
 
-export function printRawHtml(htmlContent: string) {
-  if (typeof window === "undefined") return false;
-
-  const printWindow = window.open("", "_blank", "width=1100,height=800");
-  if (printWindow) {
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => {
-      printWindow.print();
-      setTimeout(() => printWindow.close(), 500);
-    }, 250);
-    return true;
-  }
+export function printRawHtml(htmlContent: string): boolean {
+  if (typeof window === "undefined" || typeof document === "undefined") return false;
 
   try {
-    let iframe = document.getElementById("print-document-iframe") as HTMLIFrameElement;
-    if (!iframe) {
-      iframe = document.createElement("iframe");
-      iframe.id = "print-document-iframe";
-      iframe.style.position = "fixed";
-      iframe.style.right = "0";
-      iframe.style.bottom = "0";
-      iframe.style.width = "0";
-      iframe.style.height = "0";
-      iframe.style.border = "0";
-      document.body.appendChild(iframe);
+    // Remove any existing preview overlay
+    const existingOverlay = document.getElementById("erp-print-preview-overlay");
+    if (existingOverlay) {
+      existingOverlay.remove();
     }
+
+    // Extract title from HTML if available
+    const titleMatch = htmlContent.match(/<title>(.*?)<\/title>/i);
+    const docTitle = titleMatch?.[1] ? titleMatch[1].trim() : "معاينة وطباعة المستند المالي";
+
+    const overlay = document.createElement("div");
+    overlay.id = "erp-print-preview-overlay";
+    overlay.dir = "rtl";
+    overlay.style.cssText =
+      "position:fixed;inset:0;z-index:99999;background:rgba(15,23,42,0.82);backdrop-filter:blur(4px);display:flex;flex-direction:column;font-family:'Cairo','Tajawal',system-ui,sans-serif;";
+
+    // Top control bar
+    const toolbar = document.createElement("div");
+    toolbar.id = "erp-print-preview-toolbar";
+    toolbar.style.cssText =
+      "display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;padding:12px 20px;background:#0f172a;color:#f8fafc;border-bottom:1px solid #334155;box-shadow:0 4px 12px rgba(0,0,0,0.25);";
+
+    const titleWrap = document.createElement("div");
+    titleWrap.style.cssText = "display:flex;align-items:center;gap:10px;";
+    titleWrap.innerHTML = `
+      <span style="display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;background:#10b981;color:#fff;font-size:18px;font-weight:900;">🖨️</span>
+      <div>
+        <div style="font-size:14px;font-weight:800;color:#fff;">${docTitle}</div>
+        <div style="font-size:11px;color:#94a3b8;">معاينة حية للتقرير قبل الطباعة — جاهز للطباعة المباشرة أو الحفظ كملف PDF</div>
+      </div>
+    `;
+
+    const actionsWrap = document.createElement("div");
+    actionsWrap.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;";
+
+    const btnStyleBase =
+      "display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:10px;font-size:12px;font-weight:800;cursor:pointer;border:none;transition:all 0.15s ease;font-family:inherit;";
+
+    const printBtn = document.createElement("button");
+    printBtn.type = "button";
+    printBtn.style.cssText = `${btnStyleBase}background:#10b981;color:#ffffff;box-shadow:0 2px 8px rgba(16,185,129,0.35);`;
+    printBtn.innerHTML = "🖨️ طباعة التقرير الآن / حفظ PDF";
+
+    const popupBtn = document.createElement("button");
+    popupBtn.type = "button";
+    popupBtn.style.cssText = `${btnStyleBase}background:#2563eb;color:#ffffff;`;
+    popupBtn.innerHTML = "🗔 فتح في نافذة مستقلة";
+
+    const downloadBtn = document.createElement("button");
+    downloadBtn.type = "button";
+    downloadBtn.style.cssText = `${btnStyleBase}background:#334155;color:#f8fafc;border:1px solid #475569;`;
+    downloadBtn.innerHTML = "📥 تنزيل التقرير";
+
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.style.cssText = `${btnStyleBase}background:#e11d48;color:#ffffff;`;
+    closeBtn.innerHTML = "✕ إغلاق المعاينة";
+
+    actionsWrap.appendChild(printBtn);
+    actionsWrap.appendChild(popupBtn);
+    actionsWrap.appendChild(downloadBtn);
+    actionsWrap.appendChild(closeBtn);
+
+    toolbar.appendChild(titleWrap);
+    toolbar.appendChild(actionsWrap);
+
+    // Preview container & iframe
+    const previewContainer = document.createElement("div");
+    previewContainer.style.cssText =
+      "flex:1;overflow:auto;padding:20px;display:flex;justify-content:center;align-items:flex-start;";
+
+    const iframe = document.createElement("iframe");
+    iframe.id = "erp-print-preview-iframe";
+    iframe.style.cssText =
+      "width:100%;max-width:1050px;min-height:calc(100vh - 105px);background:#ffffff;border:none;border-radius:12px;box-shadow:0 20px 50px rgba(0,0,0,0.45);";
+
+    previewContainer.appendChild(iframe);
+    overlay.appendChild(toolbar);
+    overlay.appendChild(previewContainer);
+    document.body.appendChild(overlay);
+    document.body.classList.add("erp-print-modal-open");
+
+    const closeOverlay = () => {
+      document.body.classList.remove("erp-print-modal-open");
+      window.removeEventListener("keydown", onEscKey);
+      overlay.remove();
+    };
+
+    const onEscKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeOverlay();
+    };
+    window.addEventListener("keydown", onEscKey);
+
+    closeBtn.onclick = closeOverlay;
+    overlay.onclick = (e) => {
+      if (e.target === previewContainer) closeOverlay();
+    };
+
+    // Write HTML into the preview iframe
     const doc = iframe.contentWindow?.document || iframe.contentDocument;
     if (doc) {
       doc.open();
       doc.write(htmlContent);
       doc.close();
-      setTimeout(() => {
+    }
+
+    const triggerIframePrint = () => {
+      try {
+        if (iframe.contentWindow) {
+          iframe.contentWindow.focus();
+          iframe.contentWindow.print();
+          return;
+        }
+      } catch (err) {
+        console.warn("[Print Preview] iframe print fallback:", err);
+      }
+      // Fallback if iframe print is restricted
+      const w = window.open("", "_blank", "width=1100,height=850");
+      if (w) {
+        w.document.write(htmlContent);
+        w.document.close();
+        w.focus();
+        setTimeout(() => w.print(), 300);
+      }
+    };
+
+    printBtn.onclick = triggerIframePrint;
+
+    popupBtn.onclick = () => {
+      const w = window.open("", "_blank", "width=1100,height=850");
+      if (w) {
+        w.document.write(htmlContent);
+        w.document.close();
+        w.focus();
+        setTimeout(() => w.print(), 350);
+      } else {
+        triggerIframePrint();
+      }
+    };
+
+    downloadBtn.onclick = () => {
+      const blob = new Blob([htmlContent], { type: "text/html;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const safeName = docTitle.replace(/[^\u0600-\u06FFa-zA-Z0-9_-]+/g, "_");
+      a.download = `${safeName || "financial_report"}_${new Date().toISOString().slice(0, 10)}.html`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    };
+
+    // Automatically trigger browser print dialog once the iframe finishes rendering
+    setTimeout(() => {
+      try {
         iframe.contentWindow?.focus();
         iframe.contentWindow?.print();
-      }, 300);
-      return true;
-    }
-  } catch (err) {
-    console.error("[Print Fallback]", err);
-  }
+      } catch {
+        // User still sees the full interactive preview modal and can click Print/Download
+      }
+    }, 350);
 
-  // window.print();
-  return true;
+    return true;
+  } catch (err) {
+    console.error("[Print Engine Error]", err);
+    return false;
+  }
 }
 
 export function printImportReportDocument(reportData: any) {

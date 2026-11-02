@@ -15,6 +15,7 @@ import {
   printRawHtml,
   printSmartStocktakingSheet,
 } from "@/shared/utils/printAccountingDocument";
+import { AdvancedFinancialReportsSuite } from "@/components/admin/AdvancedFinancialReportsSuite";
 import * as XLSX from "xlsx";
 import {
   ResponsiveContainer,
@@ -928,6 +929,9 @@ export function ReportsPage() {
           <TabsTrigger value="cashflow" className="rounded-lg font-bold py-2 px-4">
             التدفقات النقدية
           </TabsTrigger>
+          <TabsTrigger value="advanced_financial" className="rounded-lg font-bold py-2 px-4">
+            تفصيل ومقارنة الحسابات وميزان المراجعة ⭐
+          </TabsTrigger>
           <TabsTrigger value="vouchers" className="rounded-lg font-bold py-2 px-4">
             سندات الصرف والقبض
           </TabsTrigger>
@@ -935,6 +939,10 @@ export function ReportsPage() {
             شجرة الحسابات والقيود
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="advanced_financial" className="space-y-6 mt-4">
+          <AdvancedFinancialReportsSuite initialSection="account_status" compactHeader />
+        </TabsContent>
 
         {/* 1. SALES ANALYTICS TAB */}
         <TabsContent value="sales" className="space-y-6 mt-4">

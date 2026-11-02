@@ -3,6 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
 import { erpStore, type Account } from "@/shared/services/erpStore";
+import { printAccountingDocument } from "@/shared/utils/printAccountingDocument";
 import { useToast } from "@/hooks/use-toast";
 import { useSettings } from "@/hooks/use-settings";
 import {
@@ -1890,7 +1891,46 @@ export function AccountsPage() {
           <DialogFooter className="gap-2 border-t border-border pt-3">
             <Button
               variant="outline"
-              onClick={() => window.print()}
+              onClick={() => {
+                const acc = ledgerData.account;
+                if (!acc) return;
+                const totalDr = ledgerData.entries.reduce((s, e) => s + (Number(e.debit) || 0), 0);
+                const totalCr = ledgerData.entries.reduce((s, e) => s + (Number(e.credit) || 0), 0);
+                printAccountingDocument({
+                  title: `كشف حساب تفصيلي — ${acc.name_ar || acc.name}`,
+                  subtitle: `كود الحساب: ${acc.code} | العملة: ${acc.currency || "USD"}`,
+                  metaItems: [
+                    { label: "كود الحساب", value: acc.code },
+                    { label: "اسم الحساب", value: acc.name_ar || acc.name },
+                    {
+                      label: "الرصيد الافتتاحي",
+                      value: (Number(acc.initial_balance) || 0).toLocaleString(),
+                    },
+                    { label: "عدد الحركات", value: `${ledgerData.entries.length} حركة` },
+                  ],
+                  columns: [
+                    { key: "date", label: "التاريخ" },
+                    { key: "reference", label: "رقم المرجع" },
+                    { key: "description", label: "البيان / الشرح المحاسبي" },
+                    { key: "debit", label: "مدين (Debit)" },
+                    { key: "credit", label: "دائن (Credit)" },
+                    { key: "runningBalance", label: "الرصيد التراكمي" },
+                  ],
+                  rows: ledgerData.entries.map((entry) => ({
+                    date: entry.date,
+                    reference: entry.reference || entry.id,
+                    description: entry.description,
+                    debit: entry.debit > 0 ? entry.debit.toLocaleString() : "-",
+                    credit: entry.credit > 0 ? entry.credit.toLocaleString() : "-",
+                    runningBalance: Number(entry.runningBalance || 0).toLocaleString(),
+                  })),
+                  totals: [
+                    { label: "إجمالي المدين", value: totalDr.toLocaleString() },
+                    { label: "إجمالي الدائن", value: totalCr.toLocaleString() },
+                    { label: "الرصيد الحالي", value: formatPrice(acc.balance || 0) },
+                  ],
+                });
+              }}
               className="font-bold text-xs gap-1.5"
             >
               <Printer size={14} />

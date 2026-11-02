@@ -7,6 +7,7 @@ import {
 } from "@/components/navigation/navigationRegistry";
 import { useState, useMemo, useEffect } from "react";
 import { VouchersLedgerSection } from "@/components/admin/VouchersLedgerSection";
+import { printRawHtml } from "@/shared/utils/printAccountingDocument";
 import {
   Building2,
   Receipt,
@@ -1059,20 +1060,16 @@ function MallManagementPage() {
   };
 
   const handlePrintHTML = (title: string, contentHTML: string) => {
-    const printWindow = window.open("", "_blank", "width=800,height=900");
-    if (!printWindow) {
-      toast.error("الرجاء السماح بفتح النوافذ المنبثقة للطباعة (Pop-ups blocked)");
-      return;
-    }
-    printWindow.document.write(`
+    const htmlDoc = `
       <!DOCTYPE html>
-      <html lang="ar">
+      <html lang="ar" dir="rtl">
         <head>
           <meta charset="utf-8" />
           <title>${title}</title>
           <style>
+            @page { size: A4; margin: 12mm; }
             body {
-              font-family: system-ui, -apple-system, sans-serif;
+              font-family: 'Cairo', 'Tajawal', system-ui, -apple-system, sans-serif;
               direction: rtl;
               text-align: right;
               padding: 24px;
@@ -1080,13 +1077,16 @@ function MallManagementPage() {
               background: #fff;
             }
             .print-container {
-              max-width: 700px;
+              max-width: 780px;
               margin: 0 auto;
               border: 1px solid #cbd5e1;
               padding: 24px;
               border-radius: 12px;
             }
             h2, h3, h4 { color: #0f172a; margin-bottom: 8px; }
+            table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 12px; }
+            th, td { border: 1px solid #cbd5e1; padding: 8px; text-align: right; }
+            th { background: #f1f5f9; font-weight: bold; }
             .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
             .font-bold { font-weight: bold; }
             .text-primary { color: #059669; }
@@ -1100,8 +1100,8 @@ function MallManagementPage() {
           ${contentHTML}
         </body>
       </html>
-    `);
-    printWindow.document.close();
+    `;
+    printRawHtml(htmlDoc);
   };
 
   const exportToExcel = (data: any[], fileName: string) => {

@@ -88,8 +88,12 @@ export function OracleAccountsViewer({
               : code.length > 1
                 ? code.slice(0, 1)
                 : undefined),
-        initial_balance: Number(acc.balance ?? acc.initial_balance ?? oracleFallback?.initial_balance ?? 0),
-        balance: Number(acc.balance ?? acc.initial_balance ?? oracleFallback?.initial_balance ?? 0),
+        initial_balance: Number(
+          acc.balance ?? acc.initial_balance ?? (oracleFallback as any)?.initial_balance ?? 0,
+        ),
+        balance: Number(
+          acc.balance ?? acc.initial_balance ?? (oracleFallback as any)?.initial_balance ?? 0,
+        ),
       });
     });
 
@@ -102,7 +106,7 @@ export function OracleAccountsViewer({
         seenCodes.add(code);
         merged.push({
           ...oracleAcc,
-          balance: Number(oracleAcc.initial_balance || 0),
+          balance: Number((oracleAcc as any).initial_balance || 0),
         });
       }
     });

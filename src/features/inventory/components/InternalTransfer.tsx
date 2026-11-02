@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { inventoryService } from "@/features/inventory/services/inventoryService";
+import { printAccountingDocument } from "@/shared/utils/printAccountingDocument";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -173,16 +174,40 @@ export function InternalTransfer() {
   };
 
   const handlePrintTransfer = (t?: any) => {
-    if (t) {
-      setSelectedTransfer(t);
-      setIsViewOpen(true);
-      // Give a small delay for state update/render before printing
-      setTimeout(() => {
-        window.print();
-      }, 300);
-    } else {
+    const target = t || selectedTransfer;
+    if (!target) {
       window.print();
+      return;
     }
+    const srcWh = warehouses.find((w: any) => w.id === target.source_warehouse_id);
+    const dstWh = warehouses.find((w: any) => w.id === target.destination_warehouse_id);
+    const itemsList = target.items || [];
+    printAccountingDocument({
+      title: `سند تحويل مخزني داخلي — ${target.transfer_no || target.id}`,
+      subtitle: `من: ${srcWh?.name || target.source_warehouse_id} ← إلى: ${dstWh?.name || target.destination_warehouse_id}`,
+      metaItems: [
+        { label: "رقم التحويل", value: target.transfer_no || target.id },
+        { label: "التاريخ", value: (target.created_at || "").slice(0, 10) },
+        { label: "من مستودع", value: srcWh?.name || "-" },
+        { label: "إلى مستودع", value: dstWh?.name || "-" },
+      ],
+      columns: [
+        { key: "idx", label: "م" },
+        { key: "name", label: "الصنف" },
+        { key: "unit", label: "الوحدة" },
+        { key: "quantity", label: "الكمية" },
+      ],
+      rows: itemsList.map((item: any, idx: number) => {
+        const inv = inventory.find((i: any) => i.id === item.inventory_id);
+        return {
+          idx: idx + 1,
+          name: inv?.name_ar || (inv as any)?.name || item.inventory_id,
+          unit: inv?.unit || "وحدة",
+          quantity: item.quantity,
+        };
+      }),
+      totals: [{ label: "إجمالي الأصناف", value: `${itemsList.length} صنف` }],
+    });
   };
 
   const openViewDialog = (t: any) => {

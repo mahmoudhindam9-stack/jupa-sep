@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { inventoryService } from "../services/inventoryService";
+import { printAccountingDocument } from "@/shared/utils/printAccountingDocument";
 import { Warehouse, InventoryItem, WarehouseInventory, WarehouseTransfer } from "@/shared/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -277,15 +278,45 @@ export const WarehouseManagement: React.FC = () => {
   };
 
   const handlePrintTransfer = (t?: WarehouseTransfer) => {
-    if (t) {
-      setSelectedTransfer(t);
-      setIsViewOpen(true);
-      setTimeout(() => {
-        window.print();
-      }, 300);
-    } else {
+    const target = t || selectedTransfer;
+    if (!target) {
       window.print();
+      return;
     }
+    const srcWh = warehouses.find((w) => w.id === target.source_warehouse_id);
+    const dstWh = warehouses.find((w) => w.id === target.destination_warehouse_id);
+    const rawItems = (target as any).items;
+    const itemsList =
+      Array.isArray(rawItems) && rawItems.length > 0
+        ? rawItems
+        : [{ inventory_id: target.inventory_id, quantity: target.quantity }];
+    const transferRef = (target as any).transfer_no || target.transfer_number || target.id;
+    printAccountingDocument({
+      title: `سند تحويل مخزني — ${transferRef}`,
+      subtitle: `من: ${srcWh?.name || target.source_warehouse_id} ← إلى: ${dstWh?.name || target.destination_warehouse_id}`,
+      metaItems: [
+        { label: "رقم السند", value: transferRef },
+        { label: "التاريخ", value: (target.created_at || "").slice(0, 10) },
+        { label: "المستودع المصدر", value: srcWh?.name || "-" },
+        { label: "المستودع المستلم", value: dstWh?.name || "-" },
+      ],
+      columns: [
+        { key: "idx", label: "م" },
+        { key: "name", label: "الصنف المخزني" },
+        { key: "unit", label: "الوحدة" },
+        { key: "quantity", label: "الكمية المحولة" },
+      ],
+      rows: itemsList.map((item: any, idx: number) => {
+        const inv = inventoryItems.find((i) => i.id === item.inventory_id);
+        return {
+          idx: idx + 1,
+          name: inv?.name_ar || (inv as any)?.name || item.inventory_id,
+          unit: inv?.unit || target.unit || "وحدة",
+          quantity: item.quantity,
+        };
+      }),
+      totals: [{ label: "إجمالي عدد الأصناف المحولة", value: `${itemsList.length} صنف` }],
+    });
   };
 
   const openViewDialog = (t: WarehouseTransfer) => {

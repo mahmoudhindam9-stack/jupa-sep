@@ -212,7 +212,7 @@
   }
 }
 
-/* Print Optimization for Thermal Receipts & Invoices */
+/* Print Optimization for Reports, Receipts & Invoices */
 @media print {
   html,
   body {
@@ -220,54 +220,32 @@
     color: #000 !important;
     height: auto !important;
     overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
-  div,
-  section,
-  main,
-  article {
-    background: transparent !important;
-    box-shadow: none !important;
-    backdrop-filter: none !important;
-  }
-  body * {
-    visibility: hidden !important;
-  }
-  #invoice,
-  #invoice *,
-  .printable-area,
-  .printable-area * {
-    visibility: visible !important;
-  }
-  #invoice {
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
-    width: 80mm !important;
-    max-width: 100% !important;
-    margin: 0 !important;
-    padding: 10px !important;
-    box-shadow: none !important;
-    border: none !important;
-    background: #fff !important;
-    color: #000 !important;
-  }
-  .printable-area {
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
-    width: 100% !important;
-    margin: 0 !important;
-    padding: 20px !important;
-    box-shadow: none !important;
-    border: none !important;
-    background: #fff !important;
-    color: #000 !important;
-  }
-  .print\:hidden {
+  .no-print,
+  .print\:hidden,
+  nav,
+  aside,
+  #erp-print-preview-toolbar {
     display: none !important;
+  }
+  body.erp-print-modal-open > *:not(#erp-print-preview-overlay) {
+    display: none !important;
+  }
+  body.erp-print-modal-open #erp-print-preview-overlay {
+    position: static !important;
+    inset: auto !important;
+    background: #fff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
   }
   @page {
     size: A4 portrait;
-    margin: 15mm;
+    margin: 12mm;
   }
 }
+

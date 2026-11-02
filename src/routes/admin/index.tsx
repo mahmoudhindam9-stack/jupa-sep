@@ -604,7 +604,7 @@ function AdminDashboard() {
       return;
     }
 
-    erpStore.addTreasury(
+    const createdTr = erpStore.addTreasury(
       newTreasuryForm.name_ar,
       newTreasuryForm.type,
       newTreasuryForm.currency,
@@ -612,7 +612,8 @@ function AdminDashboard() {
       newTreasuryForm.responsible_employee || "أمين الخزينة",
       newTreasuryForm.containers,
       newTreasuryForm.linked_to_restaurant,
-      newTreasuryForm.account_code,
+      newTreasuryForm.account_code === "NONE" ? undefined : newTreasuryForm.account_code,
+      newTreasuryForm.account_code !== "NONE",
     );
 
     setNewTreasuryForm({
@@ -627,8 +628,8 @@ function AdminDashboard() {
     });
     setErpState(erpStore.getState());
     toast({
-      title: "✅ تم التأسيس بنجاح",
-      description: `تم تأسيس حساب الخزينة الجديد "${newTreasuryForm.name_ar}" برصيد افتتاحي ${Number(newTreasuryForm.balance).toLocaleString()} ${newTreasuryForm.currency} بنجاح.`,
+      title: "✅ تم تأسيس الخزينة وإنشاء حسابها المحاسبي",
+      description: `تم تأسيس حساب الخزينة الجديد "${createdTr.name_ar}" وربطه بالحساب الشجري رقم (${createdTr.account_code || "تلقائي"}) برصيد افتتاحي ${Number(newTreasuryForm.balance).toLocaleString()} ${newTreasuryForm.currency}.`,
     });
   };
 
@@ -1233,7 +1234,18 @@ function AdminDashboard() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2.5 shrink-0 w-full md:w-auto">
+            <div className="flex items-center gap-2.5 flex-wrap shrink-0 w-full md:w-auto">
+              <Button
+                onClick={() => {
+                  setReportInitialTreasuryId("all");
+                  setReportInitialType("combined" as any);
+                  setIsTreasuryReportModalOpen(true);
+                }}
+                className="flex-1 md:flex-none bg-cyan-600 hover:bg-cyan-700 text-white font-black text-xs h-10 px-4 rounded-2xl flex items-center justify-center gap-2 shadow-md active:scale-95 transition"
+              >
+                <Printer size={16} />
+                <span>تقرير مجمع للخزائن</span>
+              </Button>
               <Button
                 onClick={() => {
                   setReportInitialTreasuryId("all");
@@ -1243,10 +1255,7 @@ function AdminDashboard() {
                 className="flex-1 md:flex-none bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-600 hover:to-blue-700 text-white font-black text-xs h-10 px-5 rounded-2xl flex items-center justify-center gap-2 shadow-md hover:shadow-indigo-500/20 active:scale-95 transition"
               >
                 <Printer size={16} />
-                <span>طباعة وتقارير الخزائن</span>
-                <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full font-bold">
-                  سندات & Excel
-                </span>
+                <span>طباعة وتقارير الخزائن (منفرد / قيود / فترة)</span>
               </Button>
             </div>
           </div>
@@ -1538,7 +1547,7 @@ function AdminDashboard() {
 
                       <div className="text-right">
                         <Label className="text-[10px] font-bold">
-                          ربط بحساب الدليل المحاسبي (اختياري)
+                          حساب شجرة الحسابات (تلقائي أو ربط)
                         </Label>
                         <select
                           className="mt-1 w-full h-8 rounded-md border border-input bg-background px-1.5 text-[10px] font-bold focus:outline-none text-right"
@@ -1547,7 +1556,9 @@ function AdminDashboard() {
                             setNewTreasuryForm((s) => ({ ...s, account_code: e.target.value }))
                           }
                         >
-                          <option value="">-- بدون ربط --</option>
+                          <option value="">
+                            ⚡ إنشاء حساب جديد تلقائياً ({erpStore.getNextTreasuryAccountCode(newTreasuryForm.type)})
+                          </option>
                           {oracleAccounts
                             .filter((acc) => acc.type === "asset" || acc.type === "liability")
                             .map((acc) => (

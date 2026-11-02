@@ -34,6 +34,7 @@ import { ComprehensiveFinancialPositionCard } from "@/components/admin/Comprehen
 import { AccountsPage } from "@/components/admin/AccountsPageView";
 import { ReportsPage } from "@/components/admin/ReportsPageView";
 import { TreasuryManagementView } from "@/components/admin/TreasuryManagementView";
+import { AdvancedFinancialReportsSuite } from "@/components/admin/AdvancedFinancialReportsSuite";
 import {
   printAccountingDocument,
   printJournalEntryDocument,
@@ -1119,12 +1120,10 @@ function LedgerPage() {
 
     // Assets
     const assetAccounts = trialBalance.rows.filter((r) => r.type === "asset");
-    console.log("DEBUG: assetAccounts", assetAccounts);
     const totalAssets = assetAccounts.reduce(
       (sum, r) => sum + (r.balanceType === "Dr" ? r.endingBalance : -r.endingBalance),
       0,
     );
-    console.log("DEBUG: totalAssets", totalAssets);
 
     // Liabilities
     const liabilityAccounts = trialBalance.rows.filter((r) => r.type === "liability");
@@ -1135,15 +1134,10 @@ function LedgerPage() {
 
     // Equity
     const equityAccounts = trialBalance.rows.filter((r) => r.type === "equity");
-    console.log("DEBUG: equityAccounts", equityAccounts);
     const totalEquity = equityAccounts.reduce((sum, r) => {
       const val = r.balanceType === "Cr" ? r.endingBalance : -r.endingBalance;
-      console.log(
-        `DEBUG: Equity Account ${r.code} (${r.name_ar}): Type=${r.balanceType}, Bal=${r.endingBalance}, Contribution=${val}`,
-      );
       return sum + val;
     }, 0);
-    console.log("DEBUG: totalEquity", totalEquity);
 
     return {
       revenueAccounts,
@@ -3180,13 +3174,13 @@ function LedgerPage() {
               </CardHeader>
               <CardContent className="space-y-1.5 p-4 pt-0">
                 <h3 className="font-black text-sm text-foreground group-hover:text-emerald-600 transition-colors">
-                  التقارير المالية والميزانية
+                  التقارير المالية وتفصيل ومقارنة الحسابات
                 </h3>
                 <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
-                  قائمة الدخل، الأرباح والخسائر، الميزانية العمومية والتدفقات النقدية
+                  تفصيل الحالة الحسابية لكل حساب، مقارنات بين حسابات بعينها، ميزان مراجعة عام ومختصر والقوائم المالية
                 </p>
                 <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
-                  <span className="text-emerald-600 dark:text-emerald-400">تقارير ختامية</span>
+                  <span className="text-emerald-600 dark:text-emerald-400">6 منظومات تقارير شاملة</span>
                   <span className="text-muted-foreground group-hover:text-emerald-600 text-xs transition-transform group-hover:translate-x-[-2px]">
                     عرض التقارير ←
                   </span>
@@ -3203,18 +3197,18 @@ function LedgerPage() {
                   <Scale size={22} />
                 </div>
                 <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
-                  الميزان
+                  عام ومختصر
                 </span>
               </CardHeader>
               <CardContent className="space-y-1.5 p-4 pt-0">
                 <h3 className="font-black text-sm text-foreground group-hover:text-purple-600 transition-colors">
-                  ميزان المراجعة بالأرصدة
+                  ميزان المراجعة العام والمختصر
                 </h3>
                 <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
-                  فحص اتزان الأرصدة المدينة والدائنة مع خيارات تصدير Excel والطباعة
+                  ميزان مراجعة عام بالمجاميع والأرصدة وميزان مراجعة مختصر مع الطباعة المباشرة وتصدير Excel
                 </p>
                 <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
-                  <span className="text-purple-600 dark:text-purple-400">فحص فوري</span>
+                  <span className="text-purple-600 dark:text-purple-400">عام + مختصر</span>
                   <span className="text-muted-foreground group-hover:text-purple-600 text-xs transition-transform group-hover:translate-x-[-2px]">
                     فتح الميزان ←
                   </span>
@@ -3517,7 +3511,76 @@ function LedgerPage() {
                       الحركات والقيود التي تمت على هذا الحساب بالتسلسل الزمني
                     </CardDescription>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        if (!currentAccount) return;
+                        printAccountingDocument({
+                          title: `كشف حساب الأستاذ العام — ${currentAccount.name_ar || currentAccount.name}`,
+                          subtitle: `كود الحساب: ${currentAccount.code} | التصنيف: ${ACCOUNT_TYPE_LABELS[currentAccount.type]}`,
+                          metaItems: [
+                            { label: "كود الحساب", value: currentAccount.code },
+                            {
+                              label: "اسم الحساب",
+                              value: currentAccount.name_ar || currentAccount.name,
+                            },
+                            {
+                              label: "الرصيد الافتتاحي",
+                              value: formatCurrency(
+                                currentAccount.initial_balance || 0,
+                                ledgerSummary.currency,
+                              ),
+                            },
+                            { label: "عدد الحركات", value: `${ledgerLines.length} حركة` },
+                          ],
+                          columns: [
+                            { key: "date", label: "التاريخ" },
+                            { key: "reference", label: "المرجع" },
+                            { key: "description", label: "شرح وتفاصيل الحركة" },
+                            { key: "debit", label: "مدين (Debit)" },
+                            { key: "credit", label: "دائن (Credit)" },
+                            { key: "runningBalance", label: "الرصيد التراكمي" },
+                          ],
+                          rows: ledgerLines.map((line) => ({
+                            date: line.date,
+                            reference: line.reference,
+                            description: line.description,
+                            debit: line.debit > 0 ? formatCurrency(line.debit, line.currency) : "-",
+                            credit:
+                              line.credit > 0 ? formatCurrency(line.credit, line.currency) : "-",
+                            runningBalance: formatCurrency(line.runningBalance, line.currency),
+                          })),
+                          totals: [
+                            {
+                              label: "إجمالي المدين",
+                              value: formatCurrency(
+                                ledgerSummary.totalDebit,
+                                ledgerSummary.currency,
+                              ),
+                            },
+                            {
+                              label: "إجمالي الدائن",
+                              value: formatCurrency(
+                                ledgerSummary.totalCredit,
+                                ledgerSummary.currency,
+                              ),
+                            },
+                            {
+                              label: "صافي الرصيد النهائي",
+                              value: formatCurrency(
+                                ledgerSummary.netBalance,
+                                ledgerSummary.currency,
+                              ),
+                            },
+                          ],
+                        });
+                      }}
+                      className="gap-1.5 rounded-xl bg-primary text-primary-foreground font-bold"
+                    >
+                      <Printer className="h-4 w-4" />
+                      طباعة كشف الحساب
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"
@@ -4121,8 +4184,10 @@ function LedgerPage() {
           </Card>
         </TabsContent>
 
-        {/* Tab 3: Trial Balance */}
+        {/* Tab 3: Trial Balance (General + Summary + Account Comparisons) */}
         <TabsContent value="trial" className="space-y-6">
+          <AdvancedFinancialReportsSuite initialSection="general_trial" />
+
           <Card className="rounded-2xl">
             <CardHeader className="flex flex-row items-center justify-between pb-3">
               <div>
@@ -4133,7 +4198,56 @@ function LedgerPage() {
                   عرض لجميع أرصدة الحسابات للتأكد من صحة وتوازن الجانبين الدائن والمدين للدفاتر
                 </CardDescription>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  onClick={() =>
+                    printAccountingDocument({
+                      title: "ميزان المراجعة بالأرصدة والحركات",
+                      subtitle: `عدد الحسابات: ${trialBalance.rows.length} | الحالة: ${trialBalance.isBalanced ? "متوازن" : "غير متوازن"}`,
+                      columns: [
+                        { key: "code", label: "كود الحساب" },
+                        { key: "name", label: "اسم الحساب" },
+                        { key: "type", label: "نوع الحساب" },
+                        { key: "debitSum", label: "الحركات المدينة (Dr)" },
+                        { key: "creditSum", label: "الحركات الدائنة (Cr)" },
+                        { key: "endDr", label: "رصيد نهائي (مدين)" },
+                        { key: "endCr", label: "رصيد نهائي (دائن)" },
+                      ],
+                      rows: trialBalance.rows.map((row) => ({
+                        code: row.code,
+                        name: row.name,
+                        type: ACCOUNT_TYPE_LABELS[row.type],
+                        debitSum:
+                          row.debitSum > 0 ? formatCurrency(row.debitSum, row.currency) : "-",
+                        creditSum:
+                          row.creditSum > 0 ? formatCurrency(row.creditSum, row.currency) : "-",
+                        endDr:
+                          row.balanceType === "Dr" && row.endingBalance > 0
+                            ? formatCurrency(row.endingBalance, row.currency)
+                            : "-",
+                        endCr:
+                          row.balanceType === "Cr" && row.endingBalance > 0
+                            ? formatCurrency(row.endingBalance, row.currency)
+                            : "-",
+                      })),
+                      totals: [
+                        {
+                          label: "إجمالي الأرصدة المدينة",
+                          value: formatCurrency(trialBalance.totalDebits, "USD"),
+                        },
+                        {
+                          label: "إجمالي الأرصدة الدائنة",
+                          value: formatCurrency(trialBalance.totalCredits, "USD"),
+                        },
+                      ],
+                    })
+                  }
+                  className="gap-1.5 rounded-xl bg-primary text-primary-foreground font-bold"
+                >
+                  <Printer className="h-4 w-4" />
+                  طباعة ميزان المراجعة
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
@@ -4247,6 +4361,7 @@ function LedgerPage() {
 
         {/* Tab 4: Financial Statements */}
         <TabsContent value="statements" className="space-y-6">
+          <AdvancedFinancialReportsSuite initialSection="statements" />
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Income Statement (قائمة الدخل) */}
             <Card className="rounded-2xl">
@@ -4490,6 +4605,7 @@ function LedgerPage() {
 
         {/* Tab 8: Financial Reports (التقارير المالية) */}
         <TabsContent value="reports" className="space-y-6">
+          <AdvancedFinancialReportsSuite initialSection="account_status" />
           <div className="bg-card rounded-2xl border border-border p-2 sm:p-4">
             <ReportsPage />
           </div>

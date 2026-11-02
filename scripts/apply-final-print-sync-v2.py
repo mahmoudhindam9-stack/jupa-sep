@@ -48,7 +48,9 @@ export function printAccountingDocument(options: {
   return true;
 }
 '''
-(ROOT / 'src/shared/utils/printAccountingDocument.ts').write_text(print_util, encoding='utf-8')
+print_path = ROOT / 'src/shared/utils/printAccountingDocument.ts'
+if not print_path.exists() or 'printAccountingDocument' not in print_path.read_text(encoding='utf-8'):
+    print_path.write_text(print_util, encoding='utf-8')
 
 # 2) Cashier treasury: reliable shift/date print + Excel + accounting document.
 p = ROOT / 'src/routes/cashier-treasury.tsx'
