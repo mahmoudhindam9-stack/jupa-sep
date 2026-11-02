@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { currentUserHasPermission, signOutCurrentUser } from "@/shared/services/userAuthorization";
 import { RestocashLogo } from "@/components/RestocashLogo";
@@ -10,6 +9,7 @@ import {
 import { useMemo, useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Banknote,
   CreditCard,
@@ -31,12 +31,18 @@ import {
   Sparkles,
   FileText,
   CheckCircle2,
+  Lock,
+  Play,
+  UserCheck,
+  Eye,
   type LucideIcon,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Label } from "@/components/ui/label";
 import { convertToInventoryUnit, cleanTableId } from "@/shared/utils/inventoryUtils";
-import { erpStore } from "@/shared/services/erpStore";
+import { erpStore, RestaurantShift } from "@/shared/services/erpStore";
+import { RestaurantShiftLauncherModal } from "@/components/restaurant/RestaurantShiftLauncherModal";
+import { RestaurantShiftClosingReportModal } from "@/components/restaurant/RestaurantShiftClosingReportModal";
 import { printerService } from "@/shared/services/printerService";
 import * as XLSX from "xlsx";
 import { useSettings, translations } from "@/hooks/use-settings";
@@ -153,15 +159,22 @@ function Index() {
 
   const queryClient = useQueryClient();
   const [mounted, setMounted] = useState(false);
-  const [erpState, setErpState] = useState(erpStore.getState());
+  const [erpState, setErpState] = useState(() => erpStore.getState());
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
+  const [isShiftLauncherOpen, setIsShiftLauncherOpen] = useState(false);
+  const [closingShift, setClosingShift] = useState<RestaurantShift | null>(null);
 
   useEffect(() => {
     setMounted(true);
     return erpStore.subscribe(() => {
-      setErpState(erpStore.getState());
+      setErpState({ ...erpStore.getState() });
     });
   }, []);
+
+  const activeRestaurantShift = erpStore.getActiveRestaurantShift();
+  const openRestaurantShifts = (erpState.restaurantShifts || []).filter(
+    (s) => s.status === "open",
+  );
 
   const [cart, setCart] = useState<CartLine[]>([]);
   const [search, setSearch] = useState("");
@@ -550,6 +563,14 @@ function Index() {
 
   const placeOrder = useMutation({
     mutationFn: async () => {
+      const currentShift = erpStore.getActiveRestaurantShift();
+      if (!currentShift || currentShift.status !== "open") {
+        throw new Error(
+          lang === "ar"
+            ? "لا توجد وردية مطعم مفتوحة حالياً! يجب فتح وردية أولاً لتسجيل المبيعات."
+            : "No active restaurant shift! Please open a shift first to record sales.",
+        );
+      }
       // 1. Fetch SUB-STORE (Oven & Kitchen) and MAIN-STORE inventory levels for validation
       const OPERATIONAL_WH = await inventoryService.getOperationalWarehouseId();
       const kitchenInv = await inventoryService.getWarehouseInventory(OPERATIONAL_WH);
@@ -848,14 +869,30 @@ function Index() {
           id: localId,
           order_number: localOrderNumber,
           ...paidPayload,
+          shift_id: currentShift.id,
+          shift_number: currentShift.shift_number,
           created_at: new Date().toISOString(),
         };
-        try {
-          const existing = JSON.parse(localStorage.getItem("pos_local_orders") || "[]");
-          localStorage.setItem("pos_local_orders", JSON.stringify([data, ...existing]));
-        } catch (lErr) {
-          console.warn("Local storage save error:", lErr);
-        }
+      }
+
+      try {
+        const existing = JSON.parse(localStorage.getItem("pos_local_orders") || "[]");
+        const enrichedOrder = {
+          ...data,
+          shift_id: currentShift.id,
+          shift_number: currentShift.shift_number,
+        };
+        const filteredExisting = Array.isArray(existing)
+          ? existing.filter(
+              (o: any) => o?.id !== enrichedOrder.id && o?.order_number !== enrichedOrder.order_number,
+            )
+          : [];
+        localStorage.setItem(
+          "pos_local_orders",
+          JSON.stringify([enrichedOrder, ...filteredExisting]),
+        );
+      } catch (lErr) {
+        console.warn("Local storage save error:", lErr);
       }
 
       // Post to ERP automated journal entries and update treasury balances (Cashier / Bank)
@@ -1171,8 +1208,8 @@ function Index() {
 
         {/* Contextual POS Search & Quick Operational Actions Toolbar */}
         <div className="px-4 sm:px-6 py-2.5 bg-card/95 backdrop-blur border-b border-border flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0 flex-1 max-w-xl">
-            <div className="relative flex-1 min-w-[200px]">
+          <div className="flex items-center gap-3 min-w-0 flex-1 max-w-2xl flex-wrap">
+            <div className="relative flex-1 min-w-[180px]">
               <Search
                 className={`absolute ${lang === "ar" ? "right-3.5" : "left-3.5"} top-1/2 -translate-y-1/2 text-muted-foreground`}
                 size={16}
@@ -1185,9 +1222,67 @@ function Index() {
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
+
+            {/* Active Shift / Preview Mode Indicator Badge (matching Park POS) */}
+            {activeRestaurantShift ? (
+              <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-800 dark:text-emerald-300 px-3 py-1 rounded-xl text-xs font-bold">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span>{activeRestaurantShift.shift_number}</span>
+                <span className="text-muted-foreground">•</span>
+                <span className="flex items-center gap-1">
+                  <UserCheck size={13} className="text-emerald-600" />
+                  {activeRestaurantShift.cashier_name}
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 px-3 py-1 rounded-xl text-xs font-bold">
+                <Eye size={14} className="text-amber-600 shrink-0" />
+                <span>
+                  {lang === "ar"
+                    ? "وضع المعاينة (الوردية مغلقة)"
+                    : "Preview Mode (Shift Closed)"}
+                </span>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-2 flex-wrap shrink-0">
+            {activeRestaurantShift ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setIsShiftLauncherOpen(true)}
+                  className="inline-flex items-center gap-1.5 bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 rounded-lg px-3 h-8 transition text-xs font-bold text-teal-700 dark:text-teal-300 whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  <Play size={13} className="text-teal-600 shrink-0" />
+                  <span>{lang === "ar" ? "تبديل / إدارة الوردية" : "Manage Shift"}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setClosingShift(activeRestaurantShift)}
+                  className="inline-flex items-center gap-1.5 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 rounded-lg px-3 h-8 transition text-xs font-bold text-rose-700 dark:text-rose-300 whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  <Lock size={13} className="text-rose-600 shrink-0" />
+                  <span>{lang === "ar" ? "إغلاق الوردية" : "Close Shift"}</span>
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsShiftLauncherOpen(true)}
+                className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg px-3.5 h-8 transition text-xs font-black whitespace-nowrap shrink-0 shadow-xs cursor-pointer"
+              >
+                <Plus size={14} className="shrink-0" />
+                <span>
+                  {openRestaurantShifts.length > 0
+                    ? `دخول وردية مفتوحة (${openRestaurantShifts.length}) / فتح جديدة`
+                    : lang === "ar"
+                      ? "فتح وردية جديدة"
+                      : "Open New Shift"}
+                </span>
+              </button>
+            )}
+
             <Link
               to="/cashier-treasury"
               className="inline-flex items-center gap-1.5 bg-emerald-500/10 hover:bg-emerald-500/15 border border-emerald-500/30 rounded-lg px-3 h-8 transition text-xs font-bold text-emerald-700 dark:text-emerald-300 whitespace-nowrap shrink-0"
@@ -1404,189 +1499,28 @@ function Index() {
         </div>
       </div>
 
-      <aside
-        className="hidden lg:flex lg:w-[380px] bg-card border-r border-border flex-col shrink-0 sticky top-0 h-screen self-start overflow-hidden"
-        style={{ boxShadow: "var(--shadow-elegant)" }}
-      >
-        <div className="px-6 py-5 border-b border-border flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center text-primary-foreground"
-              style={{ background: "var(--gradient-primary)" }}
-            >
-              <ShoppingCart size={20} />
-            </div>
-            <div>
-              <h2 className="font-black text-base leading-none">{t.cart}</h2>
-              <p className="text-xs text-muted-foreground mt-1">
-                {itemCount} {lang === "ar" ? "صنف" : "items"}
-              </p>
-            </div>
-          </div>
-          {cart.length > 0 && (
-            <button
-              onClick={() => setCart([])}
-              className="text-xs text-destructive hover:underline"
-            >
-              {lang === "ar" ? "مسح الكل" : "Clear All"}
-            </button>
-          )}
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2">
-          {cart.length === 0 ? (
-            <div className="text-center py-16 px-4">
-              <div className="w-16 h-16 mx-auto rounded-full bg-muted flex items-center justify-center text-muted-foreground mb-3">
-                <ShoppingCart size={26} />
-              </div>
-              <p className="text-sm text-muted-foreground">
-                {t.empty_cart}
-                <br />
-                <span className="text-xs">
-                  {lang === "ar" ? "اضغط على الأصناف لإضافتها" : "Click on items to add them"}
-                </span>
-              </p>
-            </div>
-          ) : (
-            cart.map((c) => (
-              <div
-                key={c.item.id}
-                className="flex gap-3 p-3 rounded-2xl bg-muted/50 hover:bg-muted transition group"
-              >
-                {c.item.image_url && (
-                  <img
-                    src={c.item.image_url}
-                    alt=""
-                    className="w-14 h-14 rounded-xl object-cover shrink-0"
-                    referrerPolicy="no-referrer"
-                  />
-                )}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-2">
-                    <h5 className="font-bold text-sm line-clamp-1">{c.item.name_ar}</h5>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setNoteEditingItem({
-                            id: c.item.id,
-                            name: c.item.name_ar,
-                            notes: c.notes || "",
-                          })
-                        }
-                        className={`p-1 rounded-md transition ${
-                          c.notes
-                            ? "bg-amber-100 text-amber-800 hover:bg-amber-200"
-                            : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                        }`}
-                        title={lang === "ar" ? "ملاحظة للصنف" : "Item note"}
-                      >
-                        <FileText size={14} />
-                      </button>
-                      <button
-                        onClick={() => removeFromCart(c.item.id)}
-                        className="text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive transition p-1"
-                        title={lang === "ar" ? "حذف الصنف" : "Remove item"}
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </div>
-
-                  {c.notes ? (
-                    <div className="mt-1.5 flex items-center justify-between gap-1.5 bg-amber-50 border border-amber-200 text-amber-950 rounded-lg px-2 py-1 text-[11px] font-bold">
-                      <div
-                        className="flex-1 min-w-0 truncate cursor-pointer hover:underline flex items-center gap-1"
-                        onClick={() =>
-                          setNoteEditingItem({
-                            id: c.item.id,
-                            name: c.item.name_ar,
-                            notes: c.notes || "",
-                          })
-                        }
-                      >
-                        <span className="text-amber-700 font-extrabold shrink-0">ملاحظة:</span>
-                        <span className="truncate">{c.notes}</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => updateItemNotes(c.item.id, "")}
-                        className="text-amber-700 hover:text-rose-600 p-0.5 rounded transition shrink-0"
-                        title="حذف الملاحظة"
-                      >
-                        <X size={12} />
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setNoteEditingItem({
-                          id: c.item.id,
-                          name: c.item.name_ar,
-                          notes: "",
-                        })
-                      }
-                      className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold text-muted-foreground hover:text-primary transition"
-                    >
-                      <Plus size={11} />
-                      <span>{lang === "ar" ? "إضافة ملاحظة..." : "Add note..."}</span>
-                    </button>
-                  )}
-
-                  <div className="flex items-center justify-between mt-2">
-                    <span className="text-sm font-black text-primary">
-                      {formatPrice(c.item.price * c.quantity)}
-                    </span>
-                    <div
-                      className="flex items-center gap-1.5 bg-card rounded-lg border border-border p-0.5"
-                      dir="ltr"
-                    >
-                      <button
-                        onClick={() => updateQuantity(c.item.id, -1)}
-                        className="w-6 h-6 rounded-md hover:bg-muted flex items-center justify-center transition"
-                      >
-                        <Minus size={12} />
-                      </button>
-                      <span className="text-xs font-bold w-5 text-center">{c.quantity}</span>
-                      <button
-                        onClick={() => updateQuantity(c.item.id, 1)}
-                        className="w-6 h-6 rounded-md bg-primary text-primary-foreground hover:opacity-90 flex items-center justify-center transition"
-                      >
-                        <Plus size={12} />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-
-        <div className="border-t border-border p-5 space-y-3 bg-card">
-          <div className="flex justify-between items-baseline">
-            <span className="font-bold text-sm">
-              {lang === "ar" ? "مجموع الطلبات" : t.subtotal}
-            </span>
-            <span className="text-2xl font-black text-primary">{formatPrice(subTotal)}</span>
-          </div>
-          <p className="text-[11px] text-muted-foreground text-center">
-            {lang === "ar"
-              ? "يتم احتساب الضريبة والخدمات بعد الضغط على إتمام الطلب"
-              : "Tax & fees calculated at checkout"}
-          </p>
-          <button
-            disabled={cart.length === 0}
-            onClick={() => setCheckoutOpen(true)}
-            className="w-full py-4 rounded-2xl text-primary-foreground font-bold text-sm disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-95 active:scale-[0.99] transition shadow"
-            style={{ background: "var(--gradient-primary)", boxShadow: "var(--shadow-elegant)" }}
-          >
-            {lang === "ar" ? "إتمام الطلب" : "Place Order"} • {formatPrice(subTotal)}
-          </button>
-        </div>
-      </aside>
-
       <MenuExportModal isOpen={isMenuExportOpen} onClose={() => setIsMenuExportOpen(false)} />
+
+      <RestaurantShiftLauncherModal
+        isOpen={isShiftLauncherOpen}
+        onClose={() => setIsShiftLauncherOpen(false)}
+        onPreviewPOS={() => setIsShiftLauncherOpen(false)}
+        onRequestCloseShift={(shift) => {
+          setIsShiftLauncherOpen(false);
+          setClosingShift(shift);
+        }}
+      />
+
+      {closingShift && (
+        <RestaurantShiftClosingReportModal
+          isOpen={!!closingShift}
+          onClose={() => setClosingShift(null)}
+          shift={closingShift}
+          onReportCompleted={() => {
+            setClosingShift(null);
+          }}
+        />
+      )}
 
       {checkoutOpen && (
         <Modal onClose={() => setCheckoutOpen(false)}>
@@ -2082,44 +2016,36 @@ function Index() {
         </Modal>
       )}
 
-      {/* Mobile & Tablet Floating Cart Trigger Bar */}
-      <div className="lg:hidden fixed bottom-3 inset-x-3 sm:inset-x-6 z-40">
-        <button
-          onClick={() => setIsMobileCartOpen(true)}
-          className="w-full flex items-center justify-between gap-3 bg-slate-900 text-white font-black text-sm px-4 py-3.5 rounded-2xl shadow-2xl hover:bg-slate-800 active:scale-[0.99] transition-all border border-white/15 cursor-pointer"
-        >
-          <div className="flex items-center gap-3">
-            <div className="relative w-9 h-9 rounded-xl bg-primary text-primary-foreground flex items-center justify-center shrink-0">
-              <ShoppingCart size={18} />
-              {itemCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 bg-amber-400 text-slate-950 text-[11px] font-black min-w-5 h-5 px-1 rounded-full flex items-center justify-center shadow">
-                  {itemCount}
-                </span>
-              )}
-            </div>
-            <div className="flex flex-col items-start leading-tight">
-              <span className="text-xs sm:text-sm font-black">
-                {lang === "ar" ? "عرض سلة الطلب وإتمام الدفع" : "View Cart & Checkout"}
+      {/* Floating Cart Icon on the Left (matching Park POS) */}
+      {!isMobileCartOpen && (
+        <div className="fixed bottom-6 left-6 z-40">
+          <button
+            type="button"
+            onClick={() => setIsMobileCartOpen(true)}
+            className="w-14 h-14 rounded-full shadow-2xl flex items-center justify-center relative hover:scale-105 active:scale-95 transition-all cursor-pointer border-2 border-white/20"
+            style={{ background: "var(--gradient-primary)", color: "white" }}
+            title={lang === "ar" ? "فتح سلة الطلبات" : "Open Cart"}
+          >
+            <ShoppingCart size={24} />
+            {itemCount > 0 && (
+              <span className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-[10px] font-black min-w-[22px] h-[22px] rounded-full flex items-center justify-center px-1 border-2 border-background shadow-sm">
+                {itemCount}
               </span>
-              <span className="text-[11px] text-slate-300">
-                {itemCount} {lang === "ar" ? "أصناف في السلة" : "items in cart"}
-              </span>
-            </div>
-          </div>
-          <span className="text-sm sm:text-base font-black text-amber-400 tabular-nums">
-            {formatPrice(subTotal)}
-          </span>
-        </button>
-      </div>
+            )}
+          </button>
+        </div>
+      )}
 
-      {/* Mobile Cart Drawer / Slide-Over */}
+      {/* Full Cart Slide-Over Drawer on the Left */}
       {isMobileCartOpen && (
         <div
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm lg:hidden flex justify-end animate-in fade-in"
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex animate-in fade-in"
           onClick={() => setIsMobileCartOpen(false)}
         >
           <div
-            className="w-full max-w-md bg-card h-full flex flex-col shadow-2xl animate-in slide-in-from-bottom sm:slide-in-from-left duration-300"
+            dir={lang === "ar" ? "rtl" : "ltr"}
+            className="w-full max-w-md bg-card h-full flex flex-col shadow-2xl animate-in slide-in-from-left duration-300 border-r border-border"
+            style={{ marginLeft: 0, marginRight: "auto", boxShadow: "var(--shadow-elegant)" }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="px-6 py-5 border-b border-border flex items-center justify-between bg-card">
@@ -2292,20 +2218,38 @@ function Index() {
                 </span>
                 <span className="text-2xl font-black text-primary">{formatPrice(subTotal)}</span>
               </div>
-              <button
-                disabled={cart.length === 0}
-                onClick={() => {
-                  setIsMobileCartOpen(false);
-                  setCheckoutOpen(true);
-                }}
-                className="w-full py-4 rounded-2xl text-primary-foreground font-bold text-sm disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-95 active:scale-[0.99] transition shadow"
-                style={{
-                  background: "var(--gradient-primary)",
-                  boxShadow: "var(--shadow-elegant)",
-                }}
-              >
-                {lang === "ar" ? "إتمام الطلب" : "Place Order"} • {formatPrice(subTotal)}
-              </button>
+              {activeRestaurantShift ? (
+                <button
+                  disabled={cart.length === 0}
+                  onClick={() => {
+                    setIsMobileCartOpen(false);
+                    setCheckoutOpen(true);
+                  }}
+                  className="w-full py-4 rounded-2xl text-primary-foreground font-bold text-sm disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-95 active:scale-[0.99] transition shadow cursor-pointer"
+                  style={{
+                    background: "var(--gradient-primary)",
+                    boxShadow: "var(--shadow-elegant)",
+                  }}
+                >
+                  {lang === "ar" ? "إتمام الطلب" : "Place Order"} • {formatPrice(subTotal)}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMobileCartOpen(false);
+                    setIsShiftLauncherOpen(true);
+                  }}
+                  className="w-full py-4 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white font-black text-sm active:scale-[0.99] transition shadow flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Lock size={16} />
+                  <span>
+                    {lang === "ar"
+                      ? "يجب فتح وردية أولاً (اضغط لفتح وردية)"
+                      : "Open Shift Required"}
+                  </span>
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -2392,7 +2336,7 @@ function Modal({ children, onClose }: { children: React.ReactNode; onClose: () =
 }
 
 function InvoiceView({ invoice, onClose }: { invoice: CompletedOrder; onClose: () => void }) {
-  const { lang, formatPrice } = useSettings();
+  const { lang, formatPrice, currency } = useSettings();
   const { toast } = useToast();
   const t = translations[lang];
   const receiptSettings = getReceiptDesignSettings();
@@ -2465,13 +2409,13 @@ function InvoiceView({ invoice, onClose }: { invoice: CompletedOrder; onClose: (
         quantity: it.quantity,
         price: it.price,
       })),
-      subtotal: printableSubtotal,
-      discount: printableDiscount || undefined,
-      serviceFee: printableServiceFee || undefined,
-      deliveryFee: printableDeliveryFee || undefined,
-      tax: printableTax,
+      subtotal: displaySubtotal,
+      discount: displayDiscount || undefined,
+      serviceFee: displayServiceFee || undefined,
+      deliveryFee: displayDeliveryFee || undefined,
+      tax: displayTax,
       taxRate: invoice.tax_rate ?? receiptSettings.defaultTaxRate,
-      total: printableTotal,
+      total: displayTotal,
       currency,
       thankYouMessage: receiptSettings.thankYouMessage,
       footerNotes: receiptSettings.footerNotesText,

@@ -155,8 +155,28 @@ const nav = [
     ],
   },
   {
+    to: "/admin",
+    search: { tab: "shift_audit" },
+    label: "تدقيق الورديات",
+    icon: ShieldCheck,
+    permissionKeys: [
+      "page_shift_audit",
+      "shift_audit",
+      "manage_park_shifts",
+      "restaurant_open_shift",
+      "super_admin_full_access",
+    ],
+  },
+  {
+    to: "/admin",
+    search: { tab: "audit_logs" },
+    label: "سجل العمليات",
+    icon: ClipboardList,
+    permissionKeys: ["page_audit_logs", "audit_logs", "system_audit_logs"],
+  },
+  {
     to: "/admin/system-update",
-    label: "خيارات المطور والنسخ الاحتياطي",
+    label: "المطور والنسخ الاحتياطي",
     icon: Settings,
     permissionKeys: ["page_developer", "system_backup_update", "developer_options", "branch_mgmt"],
   },
@@ -451,16 +471,17 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
           navigate({ to: "/login" });
         }
       } finally {
+        await new Promise((resolve) => setTimeout(resolve, 400));
         if (mounted) setAuthChecking(false);
       }
     };
 
-    // Hard safety timeout: auth checking must never block the UI for more than 1500ms
+    // Hard safety timeout: auth checking must never block the UI for more than 1800ms
     const safetyTimer = setTimeout(() => {
       if (mounted) {
         setAuthChecking(false);
       }
-    }, 1500);
+    }, 1800);
 
     void checkAuth();
 
@@ -544,7 +565,7 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
       <div className="min-h-screen flex items-center justify-center bg-background p-6">
         <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
           <RestocashLogo size={32} />
-          <p className="mt-4 text-sm font-bold text-foreground">جاري التحقق من جلسة الدخول…</p>
+          <p className="mt-4 text-sm font-bold text-foreground">جاري التحقق من جلسة الدخول والصلاحيات…</p>
           <p className="mt-2 text-xs text-muted-foreground">يرجى الانتظار لحظات.</p>
         </div>
       </div>

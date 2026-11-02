@@ -432,6 +432,7 @@ export function ParkTicketsPOSView({ onClosePOS }: ParkTicketsPOSViewProps) {
 
   return (
     <div
+      dir="rtl"
       className="fixed inset-0 z-50 bg-background flex flex-col overflow-hidden text-right font-sans antialiased"
       style={{ fontFamily: '"Tajawal", "Cairo", system-ui, sans-serif' }}
     >
@@ -722,204 +723,17 @@ export function ParkTicketsPOSView({ onClosePOS }: ParkTicketsPOSViewProps) {
           </div>
         </main>
 
-        {/* 4. RESTAURANT-STYLE STICKY CART SIDEBAR (DESKTOP) */}
-        <aside
-          className={`${isMobileCartOpen ? "flex" : "hidden"} lg:flex lg:w-[380px] xl:w-[420px] bg-card border-r border-border flex-col shrink-0 sticky top-0 h-full self-start overflow-hidden`}
-          style={{ boxShadow: "var(--shadow-elegant)" }}
-        >
-          {/* Cart Header */}
-          <div className="px-6 py-4 border-b border-border flex items-center justify-between shrink-0">
-            <div className="flex items-center gap-3">
-              <div
-                className="w-10 h-10 rounded-2xl flex items-center justify-center text-primary-foreground shadow-xs"
-                style={{ background: "var(--gradient-primary)" }}
-              >
-                <ShoppingCart size={18} />
-              </div>
-              <div>
-                <h3 className="font-black text-base leading-none text-foreground">سلة التذاكر</h3>
-                <p className="text-xs text-muted-foreground mt-1 font-bold">
-                  {cartItems.length} أصناف • {totalCartCount}{" "}
-                  {totalCartCount === 1 ? "تذكرة" : "تذاكر"}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2 items-end">
-              {/* Close button for mobile */}
-              <button
-                className="lg:hidden text-xs font-bold text-muted-foreground hover:text-foreground"
-                onClick={() => setIsMobileCartOpen(false)}
-              >
-                إغلاق السلة <X size={14} className="inline" />
-              </button>
-
-              {cartItems.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setCartItems([])}
-                  className="text-xs text-destructive hover:underline font-bold transition cursor-pointer"
-                >
-                  مسح الكل
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Cart Items List */}
-          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2.5">
-            {cartItems.length > 0 ? (
-              cartItems.map((item, idx) => (
-                <div
-                  key={`${item.ticket_id}-${idx}`}
-                  className="flex gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted/70 border border-border/60 transition group"
-                >
-                  {/* Thumbnail */}
-                  <div className="w-13 h-13 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                    <Ticket size={20} />
-                  </div>
-
-                  {/* Details & Controls */}
-                  <div className="flex-1 min-w-0 flex flex-col justify-between">
-                    {/* Title + Action Icons */}
-                    <div className="flex items-start justify-between gap-1">
-                      <h4 className="font-bold text-xs text-card-foreground line-clamp-1">
-                        {item.name_ar}
-                      </h4>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingItemNoteIndex(idx);
-                            setItemNoteInput(item.note || "");
-                          }}
-                          className={`p-1 rounded-lg border text-xs transition cursor-pointer ${
-                            item.note
-                              ? "bg-amber-50 border-amber-300 text-amber-700 dark:bg-amber-950/30"
-                              : "bg-background border-border text-muted-foreground hover:text-primary"
-                          }`}
-                          title="إضافة ملاحظة"
-                        >
-                          <FileText size={12} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateQty(idx, 0)}
-                          className="p-1 rounded-lg bg-background border border-border text-muted-foreground hover:text-destructive transition cursor-pointer"
-                          title="حذف الصنف"
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Note Tag if Present */}
-                    {item.note && (
-                      <div className="flex items-center justify-between gap-1 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 rounded-lg px-2 py-0.5 text-[10px] font-bold mt-1">
-                        <span className="truncate">{item.note}</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setCartItems((prev) =>
-                              prev.map((it, i) => (i === idx ? { ...it, note: "" } : it)),
-                            );
-                          }}
-                          className="text-amber-700 hover:text-destructive shrink-0"
-                        >
-                          <X size={11} />
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Price + Stepper */}
-                    <div className="flex items-center justify-between mt-2 pt-1 border-t border-border/40">
-                      <span className="text-xs font-black text-primary">
-                        {formatTicketPrice(item.price_usd * item.quantity)}
-                      </span>
-
-                      {/* Stepper (LTR layout) */}
-                      <div
-                        className="flex items-center gap-1 bg-card border border-border rounded-xl p-0.5 shadow-xs"
-                        dir="ltr"
-                      >
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateQty(idx, item.quantity - 1)}
-                          className="h-6 w-6 rounded-lg flex items-center justify-center hover:bg-muted text-foreground transition cursor-pointer"
-                        >
-                          <Minus size={11} />
-                        </button>
-                        <span className="w-6 text-center font-black text-xs text-foreground">
-                          {item.quantity}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateQty(idx, item.quantity + 1)}
-                          className="h-6 w-6 rounded-lg bg-primary text-primary-foreground flex items-center justify-center hover:opacity-90 transition cursor-pointer"
-                        >
-                          <Plus size={11} />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="py-16 text-center border-2 border-dashed border-border rounded-3xl bg-muted/10 flex flex-col items-center justify-center">
-                <div className="w-14 h-14 rounded-2xl bg-muted flex items-center justify-center mb-3">
-                  <ShoppingCart size={24} className="text-muted-foreground/60" />
-                </div>
-                <h4 className="text-xs font-black text-foreground mb-1">سلة التذاكر فارغة</h4>
-                <p className="text-[11px] text-muted-foreground max-w-[200px] leading-relaxed">
-                  اضغط على أي تذكرة في القائمة لإضافتها فوراً لسلة الشراء.
-                </p>
-              </div>
-            )}
-          </div>
-
-          {/* Cart Footer */}
-          <div className="border-t border-border p-5 space-y-3.5 bg-card shrink-0">
-            {/* Total Summary */}
-            <div className="space-y-1">
-              <div className="flex justify-between items-baseline">
-                <span className="text-xs font-bold text-muted-foreground">مجموع الطلبات:</span>
-                <span className="text-2xl font-black text-primary">
-                  {formatTicketPrice(subtotalUsd)}
-                </span>
-              </div>
-              <p className="text-[10px] text-muted-foreground font-medium">
-                يتم تحديد العملة وطريقة الدفع وطباعة التذاكر عند الضغط على إتمام الطلب.
-              </p>
-            </div>
-
-            {/* Big Action Checkout Button */}
-            <button
-              type="button"
-              disabled={cartItems.length === 0 || !activeShift}
-              onClick={() => setIsCheckoutModalOpen(true)}
-              className="w-full py-4 rounded-2xl text-primary-foreground font-black text-sm disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-95 active:scale-[0.99] transition shadow flex items-center justify-center gap-2 cursor-pointer"
-              style={{
-                background: "var(--gradient-primary)",
-                boxShadow: "var(--shadow-elegant)",
-              }}
-            >
-              <ShoppingCart size={18} />
-              <span>{activeShift ? "إتمام الطلب" : "يجب فتح وردية أولاً"}</span>
-              <span className="bg-white/20 px-2 py-0.5 rounded-lg text-xs mr-auto font-black">
-                {formatTicketPrice(subtotalUsd)}
-              </span>
-            </button>
-          </div>
-        </aside>
       </div>
 
-      {/* 5. MOBILE FLOATING CART BAR (IF NOT DESKTOP) */}
+      {/* 4. FLOATING CART ICON ON THE LEFT */}
       {!isMobileCartOpen && (
-        <div className="lg:hidden fixed bottom-6 left-6 z-40">
+        <div className="fixed bottom-6 left-6 z-40">
           <button
+            type="button"
             onClick={() => setIsMobileCartOpen(true)}
             className="w-14 h-14 rounded-full shadow-2xl flex items-center justify-center relative hover:scale-105 active:scale-95 transition-all cursor-pointer border-2 border-white/20"
             style={{ background: "var(--gradient-primary)", color: "white" }}
+            title="فتح سلة التذاكر"
           >
             <ShoppingCart size={24} />
             {totalCartCount > 0 && (
@@ -928,6 +742,222 @@ export function ParkTicketsPOSView({ onClosePOS }: ParkTicketsPOSViewProps) {
               </span>
             )}
           </button>
+        </div>
+      )}
+
+      {/* 5. LEFT SLIDE-OVER CART DRAWER (MATCHING RESTAURANT POS) */}
+      {isMobileCartOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex animate-in fade-in"
+          onClick={() => setIsMobileCartOpen(false)}
+        >
+          <div
+            dir="rtl"
+            className="w-full max-w-md bg-card h-full flex flex-col shadow-2xl animate-in slide-in-from-left duration-300 border-r border-border"
+            style={{ marginLeft: 0, marginRight: "auto", boxShadow: "var(--shadow-elegant)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Cart Header */}
+            <div className="px-6 py-5 border-b border-border flex items-center justify-between bg-card shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div
+                  className="w-10 h-10 rounded-xl flex items-center justify-center text-primary-foreground shadow"
+                  style={{ background: "var(--gradient-primary)" }}
+                >
+                  <ShoppingCart size={20} />
+                </div>
+                <div>
+                  <h2 className="font-black text-base leading-none text-foreground">سلة التذاكر</h2>
+                  <p className="text-xs text-muted-foreground mt-1 font-bold">
+                    {cartItems.length} أصناف • {totalCartCount}{" "}
+                    {totalCartCount === 1 ? "تذكرة" : "تذاكر"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {cartItems.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setCartItems([])}
+                    className="text-xs text-destructive hover:underline px-2 py-1 font-bold cursor-pointer"
+                  >
+                    مسح الكل
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setIsMobileCartOpen(false)}
+                  className="w-9 h-9 rounded-full bg-muted hover:bg-muted/80 flex items-center justify-center text-foreground transition cursor-pointer"
+                  title="إغلاق السلة"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Cart Items List */}
+            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2.5">
+              {cartItems.length > 0 ? (
+                cartItems.map((item, idx) => (
+                  <div
+                    key={`${item.ticket_id}-${idx}`}
+                    className="flex gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted/70 border border-border/60 transition group"
+                  >
+                    {/* Thumbnail */}
+                    <div className="w-13 h-13 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                      <Ticket size={20} />
+                    </div>
+
+                    {/* Details & Controls */}
+                    <div className="flex-1 min-w-0 flex flex-col justify-between">
+                      {/* Title + Action Icons */}
+                      <div className="flex items-start justify-between gap-1">
+                        <h4 className="font-bold text-xs text-card-foreground line-clamp-1">
+                          {item.name_ar}
+                        </h4>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingItemNoteIndex(idx);
+                              setItemNoteInput(item.note || "");
+                            }}
+                            className={`p-1 rounded-lg border text-xs transition cursor-pointer ${
+                              item.note
+                                ? "bg-amber-50 border-amber-300 text-amber-700 dark:bg-amber-950/30"
+                                : "bg-background border-border text-muted-foreground hover:text-primary"
+                            }`}
+                            title="إضافة ملاحظة"
+                          >
+                            <FileText size={12} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateQty(idx, 0)}
+                            className="p-1 rounded-lg bg-background border border-border text-muted-foreground hover:text-destructive transition cursor-pointer"
+                            title="حذف الصنف"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Note Tag if Present */}
+                      {item.note && (
+                        <div className="flex items-center justify-between gap-1 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 rounded-lg px-2 py-0.5 text-[10px] font-bold mt-1">
+                          <span className="truncate">{item.note}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCartItems((prev) =>
+                                prev.map((it, i) => (i === idx ? { ...it, note: "" } : it)),
+                              );
+                            }}
+                            className="text-amber-700 hover:text-destructive shrink-0"
+                          >
+                            <X size={11} />
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Price + Stepper */}
+                      <div className="flex items-center justify-between mt-2 pt-1 border-t border-border/40">
+                        <span className="text-xs font-black text-primary">
+                          {formatTicketPrice(item.price_usd * item.quantity)}
+                        </span>
+
+                        {/* Stepper (LTR layout) */}
+                        <div
+                          className="flex items-center gap-1 bg-card border border-border rounded-xl p-0.5 shadow-xs"
+                          dir="ltr"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateQty(idx, item.quantity - 1)}
+                            className="h-6 w-6 rounded-lg flex items-center justify-center hover:bg-muted text-foreground transition cursor-pointer"
+                          >
+                            <Minus size={11} />
+                          </button>
+                          <span className="w-6 text-center font-black text-xs text-foreground">
+                            {item.quantity}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateQty(idx, item.quantity + 1)}
+                            className="h-6 w-6 rounded-lg bg-primary text-primary-foreground flex items-center justify-center hover:opacity-90 transition cursor-pointer"
+                          >
+                            <Plus size={11} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="py-16 text-center border-2 border-dashed border-border rounded-3xl bg-muted/10 flex flex-col items-center justify-center">
+                  <div className="w-14 h-14 rounded-2xl bg-muted flex items-center justify-center mb-3">
+                    <ShoppingCart size={24} className="text-muted-foreground/60" />
+                  </div>
+                  <h4 className="text-xs font-black text-foreground mb-1">سلة التذاكر فارغة</h4>
+                  <p className="text-[11px] text-muted-foreground max-w-[200px] leading-relaxed">
+                    اضغط على أي تذكرة في القائمة لإضافتها فوراً لسلة الشراء.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Cart Footer */}
+            <div className="border-t border-border p-5 space-y-3.5 bg-card mt-auto pb-8 shrink-0">
+              {/* Total Summary */}
+              <div className="space-y-1">
+                <div className="flex justify-between items-baseline">
+                  <span className="text-xs font-bold text-muted-foreground">مجموع الطلبات:</span>
+                  <span className="text-2xl font-black text-primary">
+                    {formatTicketPrice(subtotalUsd)}
+                  </span>
+                </div>
+                <p className="text-[10px] text-muted-foreground font-medium">
+                  يتم تحديد العملة وطريقة الدفع وطباعة التذاكر عند الضغط على إتمام الطلب.
+                </p>
+              </div>
+
+              {/* Big Action Checkout Button */}
+              {activeShift ? (
+                <button
+                  type="button"
+                  disabled={cartItems.length === 0}
+                  onClick={() => {
+                    setIsMobileCartOpen(false);
+                    setIsCheckoutModalOpen(true);
+                  }}
+                  className="w-full py-4 rounded-2xl text-primary-foreground font-black text-sm disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-95 active:scale-[0.99] transition shadow flex items-center justify-center gap-2 cursor-pointer"
+                  style={{
+                    background: "var(--gradient-primary)",
+                    boxShadow: "var(--shadow-elegant)",
+                  }}
+                >
+                  <ShoppingCart size={18} />
+                  <span>إتمام الطلب</span>
+                  <span className="bg-white/20 px-2 py-0.5 rounded-lg text-xs mr-auto font-black">
+                    {formatTicketPrice(subtotalUsd)}
+                  </span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMobileCartOpen(false);
+                    setIsShiftLauncherModalOpen(true);
+                  }}
+                  className="w-full py-4 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white font-black text-sm active:scale-[0.99] transition shadow flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Lock size={16} />
+                  <span>يجب فتح وردية أولاً (اضغط لفتح وردية)</span>
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

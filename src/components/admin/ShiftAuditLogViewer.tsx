@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -25,17 +26,25 @@ import {
   SlidersHorizontal,
   Table as TableIcon,
   ListTree,
+  Trees,
+  Utensils,
+  ShieldCheck,
+  Eye,
+  Lock,
+  Unlock,
+  AlertTriangle,
 } from "lucide-react";
 import {
   shiftAuditService,
   ShiftAuditLogEntry,
   ShiftType,
+  ShiftVisibilityAnalysis,
 } from "@/features/shifts/services/shiftAuditService";
 import { erpStore } from "@/shared/services/erpStore";
 import { toast } from "sonner";
 
 export interface ShiftAuditLogViewerProps {
-  initialShiftType?: ShiftType | "ALL";
+  initialShiftType?: ShiftType | "ALL" | string;
   initialAction?: string;
   showHeaderTitle?: boolean;
   compact?: boolean;
@@ -47,14 +56,31 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
   showHeaderTitle = true,
   compact = false,
 }) => {
+  const normalizedInitialType: ShiftType | "ALL" =
+    initialShiftType && String(initialShiftType).toLowerCase() === "park"
+      ? "park"
+      : initialShiftType && String(initialShiftType).toLowerCase() === "restaurant"
+        ? "restaurant"
+        : "ALL";
+
   const [logs, setLogs] = useState<ShiftAuditLogEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [source, setSource] = useState<"supabase" | "local" | "hybrid">("local");
   const [viewMode, setViewMode] = useState<"table" | "timeline">("table");
+  const [storeTick, setStoreTick] = useState(0);
+
+  // Live Synchronized Shifts State
+  const [liveShiftSectorFilter, setLiveShiftSectorFilter] = useState<"ALL" | "park" | "restaurant">(
+    normalizedInitialType,
+  );
+  const [liveShiftStatusFilter, setLiveShiftStatusFilter] = useState<"ALL" | "open" | "closed">(
+    "ALL",
+  );
+  const [inspectedShiftId, setInspectedShiftId] = useState<string | null>(null);
 
   // Filters State
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedType, setSelectedType] = useState<ShiftType | "ALL">(initialShiftType);
+  const [selectedType, setSelectedType] = useState<ShiftType | "ALL">(normalizedInitialType);
   const [selectedAction, setSelectedAction] = useState<string>(initialAction);
   const [selectedUser, setSelectedUser] = useState<string>("ALL");
   const [datePreset, setDatePreset] = useState<"all" | "today" | "last7" | "thisMonth" | "custom">(
@@ -64,10 +90,23 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
   const [endDate, setEndDate] = useState<string>("");
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
 
-  // Load audit data from Supabase
+  // Subscribe to erpStore for real-time Park & Restaurant shift updates
+  useEffect(() => {
+    const unsub = erpStore.subscribe(() => {
+      setStoreTick((t) => t + 1);
+    });
+    return () => unsub();
+  }, []);
+
+  // Load audit data from Supabase & synchronize with Park & Restaurant shifts
   const loadData = async () => {
     setLoading(true);
     try {
+      shiftAuditService.syncShiftsWithAuditLogs(
+        erpStore.getParkShifts(),
+        erpStore.getRestaurantShifts(),
+      );
+
       let finalStart = startDate;
       let finalEnd = endDate;
 
@@ -107,7 +146,126 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
 
   useEffect(() => {
     loadData();
-  }, [selectedType, selectedAction, selectedUser, datePreset, startDate, endDate]);
+  }, [selectedType, selectedAction, selectedUser, datePreset, startDate, endDate, storeTick]);
+
+  // Live Park & Restaurant shifts synchronized from erpStore
+  const liveShiftsData = useMemo(() => {
+    const parkShifts = erpStore.getParkShifts() || [];
+    const restaurantShifts = erpStore.getRestaurantShifts() || [];
+    const activeParkShift = erpStore.getActiveParkShift();
+    const activeRestaurantShift = erpStore.getActiveRestaurantShift();
+    const parkTxs = erpStore.getParkTicketTransactions() || [];
+    let localRestOrders: any[] = [];
+    if (typeof window !== "undefined") {
+      try {
+        localRestOrders = JSON.parse(localStorage.getItem("pos_local_orders") || "[]");
+      } catch {
+        localRestOrders = [];
+      }
+    }
+
+    const combined = [
+      ...parkShifts.map((s) => {
+        const shiftTxs = parkTxs.filter(
+          (t) => t.shift_id === s.id || t.shift_number === s.shift_number,
+        );
+        const salesUsd = shiftTxs
+          .filter((t) => t.currency === "USD" && t.status !== "refunded")
+          .reduce((sum, t) => sum + (t.total_usd || 0), 0);
+        const salesSsp = shiftTxs
+          .filter((t) => t.currency === "SSP" && t.status !== "refunded")
+          .reduce((sum, t) => sum + (t.total_paid_in_currency || 0), 0);
+        const refundsCount = shiftTxs.filter((t) => t.status === "refunded").length;
+        return {
+          ...s,
+          sector: "park" as const,
+          isActiveSession: activeParkShift?.id === s.id,
+          txCount: shiftTxs.filter((t) => t.status !== "refunded").length,
+          refundsCount,
+          salesUsd,
+          salesSsp,
+          salesEgp: 0,
+        };
+      }),
+      ...restaurantShifts.map((s) => {
+        const startMs = new Date(s.start_at || 0).getTime();
+        const endMs = s.end_at ? new Date(s.end_at).getTime() : Date.now();
+        const matchingOrders = localRestOrders.filter((o: any) => {
+          const oMs = new Date(o.created_at || 0).getTime();
+          return oMs >= startMs - 60000 && oMs <= endMs + 60000;
+        });
+        const ordersCount = Math.max(Number(s.orders_count || 0), matchingOrders.length);
+        const computedSales = matchingOrders.reduce(
+          (sum: number, o: any) => sum + Number(o.total || 0),
+          0,
+        );
+        const salesEgp =
+          Number(s.total_sales || 0) > 0 ? Number(s.total_sales || 0) : computedSales;
+        return {
+          ...s,
+          sector: "restaurant" as const,
+          isActiveSession: activeRestaurantShift?.id === s.id,
+          txCount: ordersCount,
+          refundsCount: Number(s.refunds_count || 0),
+          salesUsd: 0,
+          salesSsp: 0,
+          salesEgp,
+        };
+      }),
+    ].sort(
+      (a, b) => new Date(b.start_at || 0).getTime() - new Date(a.start_at || 0).getTime(),
+    );
+
+    const filtered = combined.filter((item) => {
+      if (liveShiftSectorFilter !== "ALL" && item.sector !== liveShiftSectorFilter) return false;
+      if (liveShiftStatusFilter !== "ALL" && item.status !== liveShiftStatusFilter) return false;
+      return true;
+    });
+
+    return {
+      parkShifts,
+      restaurantShifts,
+      activeParkShift,
+      activeRestaurantShift,
+      parkOpenCount: parkShifts.filter((s) => s.status === "open").length,
+      parkClosedCount: parkShifts.filter((s) => s.status === "closed").length,
+      restOpenCount: restaurantShifts.filter((s) => s.status === "open").length,
+      restClosedCount: restaurantShifts.filter((s) => s.status === "closed").length,
+      combined,
+      filtered,
+      parkTxs,
+      localRestOrders,
+    };
+  }, [storeTick, logs, liveShiftSectorFilter, liveShiftStatusFilter]);
+
+  const inspectedShiftAnalysis: ShiftVisibilityAnalysis | null = useMemo(() => {
+    if (!inspectedShiftId) return null;
+    const target = liveShiftsData.combined.find((s) => s.id === inspectedShiftId);
+    if (!target) return null;
+    const isPark = target.sector === "park";
+    return shiftAuditService.analyzeShiftVisibility(
+      target,
+      liveShiftsData.combined,
+      isPark ? liveShiftsData.activeParkShift : liveShiftsData.activeRestaurantShift,
+      isPark ? liveShiftsData.parkTxs : liveShiftsData.localRestOrders,
+    );
+  }, [inspectedShiftId, liveShiftsData]);
+
+  const handleRecoverShiftState = (
+    shiftId: string,
+    targetStatus: "open" | "closed",
+    makeActive?: boolean,
+  ) => {
+    try {
+      erpStore.recoverShiftState(shiftId, targetStatus, makeActive);
+      toast.success(
+        `تم تحديث حالة الوردية إلى "${targetStatus === "open" ? "مفتوحة" : "مغلقة"}" ومزامنتها فوراً!`,
+      );
+      loadData();
+    } catch (err: any) {
+      toast.error(err.message || "تعذر تحديث حالة الوردية");
+    }
+  };
 
   // Extract unique users/cashiers from logs and ERP state for the dropdown
   const uniqueUsers = useMemo(() => {
@@ -281,27 +439,27 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-card p-5 rounded-3xl border border-border shadow-xs">
           <div className="flex items-center gap-3">
             <div className="p-3 bg-teal-500/10 text-teal-600 rounded-2xl">
-              <Database size={24} />
+              <ShieldCheck size={24} />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-xl font-black text-foreground">
-                  سجل تدقيق الورديات (Supabase Audit Log)
+                  قسم تدقيق ومزامنة الورديات (الحديقة والمطعم)
                 </h2>
                 <Badge
                   variant="outline"
                   className="bg-teal-500/10 text-teal-600 border-teal-500/30 text-xs font-bold"
                 >
                   {source === "supabase"
-                    ? "Supabase Live"
+                    ? "متزامن مع Supabase"
                     : source === "hybrid"
-                      ? "Supabase + Local"
-                      : "مخزن محلي"}
+                      ? "مزامنة مزدوجة (Supabase + محلي)"
+                      : "متزامن حياً مع الحديقة والمطعم"}
                 </Badge>
               </div>
               <p className="text-xs text-muted-foreground mt-0.5">
-                تتبع تفصيلي لجميع عمليات الورديات وحالات فتح وإغلاق وتعديل الورديات مع فلترة متقدمة
-                حسب التاريخ والمستخدم ونوع الإجراء
+                مراقبة ومطابقة حية لجميع ورديات تذاكر الحديقة وكاشير المطعم، مع تشخيص الظهور وسجل
+                العمليات الكامل
               </p>
             </div>
           </div>
@@ -315,7 +473,7 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
               className="gap-1.5 text-xs h-9 font-bold rounded-xl cursor-pointer"
             >
               <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-              تحديث
+              مزامنة وتحديث
             </Button>
             <Button
               variant="outline"
@@ -361,6 +519,395 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* LIVE PARK & RESTAURANT SYNCHRONIZATION CARDS */}
+      {!compact && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Park Shifts Live Card */}
+          <div className="bg-card border-2 border-emerald-500/30 rounded-3xl p-4 shadow-xs flex flex-col justify-between gap-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-emerald-500/15 text-emerald-600 flex items-center justify-center shrink-0">
+                  <Trees size={22} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-black text-base text-foreground">
+                      مزامنة ورديات الحديقة (Park POS)
+                    </h3>
+                    {liveShiftsData.parkOpenCount > 0 ? (
+                      <Badge className="bg-emerald-600 text-white text-[11px] font-black">
+                        {liveShiftsData.parkOpenCount} وردية مفتوحة الآن
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-[11px] font-bold">
+                        لا توجد وردية مفتوحة
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    إجمالي الورديات: <b>{liveShiftsData.parkShifts.length}</b> (مفتوحة:{" "}
+                    <b className="text-emerald-600">{liveShiftsData.parkOpenCount}</b> | مغلقة:{" "}
+                    <b className="text-blue-600">{liveShiftsData.parkClosedCount}</b>)
+                  </p>
+                </div>
+              </div>
+              <Link to="/admin/park" search={{ tab: "shifts" }}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs font-bold h-8 rounded-xl border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10 gap-1.5"
+                >
+                  <span>ورديات الحديقة</span>
+                  <ArrowRight size={13} className="rotate-180" />
+                </Button>
+              </Link>
+            </div>
+            {liveShiftsData.activeParkShift ? (
+              <div className="bg-emerald-500/10 border border-emerald-500/25 rounded-2xl px-3.5 py-2.5 flex items-center justify-between gap-2 text-xs">
+                <div>
+                  <span className="font-bold text-emerald-800 dark:text-emerald-300">
+                    الوردية النشطة بالحديقة:{" "}
+                  </span>
+                  <span className="font-black text-foreground">
+                    {liveShiftsData.activeParkShift.shift_number}
+                  </span>
+                  <span className="text-muted-foreground mr-2">
+                    ({liveShiftsData.activeParkShift.cashier_name})
+                  </span>
+                </div>
+                <Badge className="bg-emerald-600 text-white text-[10px]">نشطة بالجلسة</Badge>
+              </div>
+            ) : (
+              <div className="bg-muted/50 border border-border rounded-2xl px-3.5 py-2 text-xs text-muted-foreground font-semibold">
+                لا توجد وردية تذاكر نشطة في الجلسة الحالية
+              </div>
+            )}
+          </div>
+
+          {/* Restaurant Shifts Live Card */}
+          <div className="bg-card border-2 border-orange-500/30 rounded-3xl p-4 shadow-xs flex flex-col justify-between gap-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-orange-500/15 text-orange-600 flex items-center justify-center shrink-0">
+                  <Utensils size={22} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-black text-base text-foreground">
+                      مزامنة ورديات المطعم (Restaurant POS)
+                    </h3>
+                    {liveShiftsData.restOpenCount > 0 ? (
+                      <Badge className="bg-emerald-600 text-white text-[11px] font-black">
+                        {liveShiftsData.restOpenCount} وردية مفتوحة الآن
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-[11px] font-bold">
+                        لا توجد وردية مفتوحة
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    إجمالي الورديات: <b>{liveShiftsData.restaurantShifts.length}</b> (مفتوحة:{" "}
+                    <b className="text-emerald-600">{liveShiftsData.restOpenCount}</b> | مغلقة:{" "}
+                    <b className="text-blue-600">{liveShiftsData.restClosedCount}</b>)
+                  </p>
+                </div>
+              </div>
+              <Link to="/admin/restaurant" search={{ tab: "shifts" }}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs font-bold h-8 rounded-xl border-orange-500/40 text-orange-700 dark:text-orange-300 hover:bg-orange-500/10 gap-1.5"
+                >
+                  <span>ورديات المطعم</span>
+                  <ArrowRight size={13} className="rotate-180" />
+                </Button>
+              </Link>
+            </div>
+            {liveShiftsData.activeRestaurantShift ? (
+              <div className="bg-orange-500/10 border border-orange-500/25 rounded-2xl px-3.5 py-2.5 flex items-center justify-between gap-2 text-xs">
+                <div>
+                  <span className="font-bold text-orange-800 dark:text-orange-300">
+                    الوردية النشطة بالمطعم:{" "}
+                  </span>
+                  <span className="font-black text-foreground">
+                    {liveShiftsData.activeRestaurantShift.shift_number}
+                  </span>
+                  <span className="text-muted-foreground mr-2">
+                    ({liveShiftsData.activeRestaurantShift.cashier_name})
+                  </span>
+                </div>
+                <Badge className="bg-orange-600 text-white text-[10px]">نشطة بالجلسة</Badge>
+              </div>
+            ) : (
+              <div className="bg-muted/50 border border-border rounded-2xl px-3.5 py-2 text-xs text-muted-foreground font-semibold">
+                لا توجد وردية مطعم نشطة في الجلسة الحالية
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* LIVE SYNCHRONIZED SHIFTS TABLE (PARK & RESTAURANT) */}
+      {!compact && (
+        <Card className="rounded-3xl border-border bg-card shadow-xs overflow-hidden">
+          <CardHeader className="pb-3 border-b border-border/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Layers size={18} className="text-teal-600" />
+              <div>
+                <CardTitle className="text-sm font-black">
+                  جدول الورديات المتزامنة حياً (الحديقة والمطعم)
+                </CardTitle>
+                <CardDescription className="text-[11px]">
+                  جميع الورديات المفتوحة والمغلقة المسجلة في قسم الحديقة وقسم المطعم مع إمكانية
+                  الفحص وإصلاح الحالة
+                </CardDescription>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {(
+                [
+                  { id: "ALL", label: `الكل (${liveShiftsData.combined.length})` },
+                  { id: "park", label: `الحديقة (${liveShiftsData.parkShifts.length})` },
+                  { id: "restaurant", label: `المطعم (${liveShiftsData.restaurantShifts.length})` },
+                ] as const
+              ).map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setLiveShiftSectorFilter(tab.id)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    liveShiftSectorFilter === tab.id
+                      ? "bg-teal-600 text-white"
+                      : "bg-muted hover:bg-muted/80 text-foreground"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+              <span className="h-4 w-px bg-border mx-1" />
+              {(
+                [
+                  { id: "ALL", label: "جميع الحالات" },
+                  { id: "open", label: "مفتوحة 🟢" },
+                  { id: "closed", label: "مغلقة 🔒" },
+                ] as const
+              ).map((st) => (
+                <button
+                  key={st.id}
+                  type="button"
+                  onClick={() => setLiveShiftStatusFilter(st.id)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    liveShiftStatusFilter === st.id
+                      ? "bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900"
+                      : "bg-muted hover:bg-muted/80 text-foreground"
+                  }`}
+                >
+                  {st.label}
+                </button>
+              ))}
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {liveShiftsData.filtered.length === 0 ? (
+              <div className="p-8 text-center text-xs text-muted-foreground font-bold">
+                لا توجد ورديات مسجلة مطابقة للفلتر المحدد حالياً
+              </div>
+            ) : (
+              <div className="overflow-x-auto max-h-80">
+                <table className="w-full text-right text-xs border-collapse">
+                  <thead className="bg-muted/60 sticky top-0 z-10 text-muted-foreground font-black border-b border-border">
+                    <tr>
+                      <th className="p-3">القسم</th>
+                      <th className="p-3">اسم ورقم الوردية</th>
+                      <th className="p-3">الحالة</th>
+                      <th className="p-3">الكاشير المسؤول</th>
+                      <th className="p-3">وقت الفتح / الإغلاق</th>
+                      <th className="p-3">إجمالي المبيعات والعمليات</th>
+                      <th className="p-3 text-center">إجراءات التدقيق والمزامنة</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/60">
+                    {liveShiftsData.filtered.map((s) => (
+                      <tr key={s.id} className="hover:bg-muted/30 transition">
+                        <td className="p-3">
+                          {s.sector === "park" ? (
+                            <Badge
+                              variant="outline"
+                              className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 font-bold gap-1"
+                            >
+                              <Trees size={12} />
+                              الحديقة
+                            </Badge>
+                          ) : (
+                            <Badge
+                              variant="outline"
+                              className="bg-orange-500/10 text-orange-700 dark:text-orange-300 border-orange-500/30 font-bold gap-1"
+                            >
+                              <Utensils size={12} />
+                              المطعم
+                            </Badge>
+                          )}
+                        </td>
+                        <td className="p-3">
+                          <div className="font-black text-foreground">{s.shift_number}</div>
+                          {s.auto_shift_number && (
+                            <div className="text-[10px] font-mono text-muted-foreground">
+                              {s.auto_shift_number}
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-3">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {s.status === "open" ? (
+                              <Badge className="bg-emerald-600 text-white text-[10px] font-bold">
+                                مفتوحة
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary" className="text-[10px] font-bold">
+                                مغلقة
+                              </Badge>
+                            )}
+                            {s.isActiveSession && (
+                              <Badge className="bg-teal-600 text-white text-[10px] font-bold">
+                                نشطة بالجلسة
+                              </Badge>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-3 font-bold">{s.cashier_name || "-"}</td>
+                        <td className="p-3 text-[11px] font-mono">
+                          <div>فتح: {new Date(s.start_at).toLocaleString("ar-EG")}</div>
+                          {s.end_at && (
+                            <div className="text-muted-foreground">
+                              إغلاق: {new Date(s.end_at).toLocaleString("ar-EG")}
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-3">
+                          {s.sector === "park" ? (
+                            <div className="space-y-0.5 text-[11px]">
+                              <div className="font-black text-emerald-600">
+                                {s.salesUsd.toLocaleString()} USD | {s.salesSsp.toLocaleString()}{" "}
+                                SSP
+                              </div>
+                              <div className="text-muted-foreground">
+                                {s.txCount} عملية بيع{" "}
+                                {s.refundsCount > 0 ? `| ${s.refundsCount} مرتجع` : ""}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="space-y-0.5 text-[11px]">
+                              <div className="font-black text-orange-600">
+                                {s.salesEgp.toLocaleString()} EGP
+                              </div>
+                              <div className="text-muted-foreground">
+                                {s.txCount} طلب{" "}
+                                {s.refundsCount > 0 ? `| ${s.refundsCount} مرتجع` : ""}
+                              </div>
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-3">
+                          <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                setInspectedShiftId(inspectedShiftId === s.id ? null : s.id)
+                              }
+                              className="h-7 px-2.5 text-[11px] font-bold rounded-lg gap-1 cursor-pointer"
+                            >
+                              <Eye size={12} />
+                              فحص وتشخيص
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                setSearchQuery(s.auto_shift_number || s.shift_number);
+                                setSelectedType(s.sector);
+                              }}
+                              className="h-7 px-2.5 text-[11px] font-bold rounded-lg gap-1 text-teal-600 hover:bg-teal-500/10 cursor-pointer"
+                            >
+                              <History size={12} />
+                              سجل الوردية
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Inline Diagnostic & State Recovery Drawer when a shift is inspected */}
+            {inspectedShiftAnalysis && (
+              <div className="p-4 bg-muted/40 border-t border-border space-y-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck size={18} className="text-teal-600" />
+                    <h4 className="font-black text-sm">
+                      تشخيص حالة وظهور الوردية: {inspectedShiftAnalysis.shiftNumber} (
+                      {inspectedShiftAnalysis.shiftType === "park" ? "الحديقة" : "المطعم"})
+                    </h4>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Button
+                      size="sm"
+                      onClick={() =>
+                        handleRecoverShiftState(inspectedShiftAnalysis.shiftId, "open", true)
+                      }
+                      className="h-7 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg gap-1"
+                    >
+                      <Unlock size={12} />
+                      تحويل لمفتوحة وتفعيلها بالجلسة
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        handleRecoverShiftState(inspectedShiftAnalysis.shiftId, "closed", false)
+                      }
+                      className="h-7 text-xs font-bold rounded-lg gap-1"
+                    >
+                      <Lock size={12} />
+                      تحويل لمغلقة
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setInspectedShiftId(null)}
+                      className="h-7 text-xs font-bold"
+                    >
+                      إغلاق الفحص
+                    </Button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {inspectedShiftAnalysis.diagnostics.map((d, i) => (
+                    <div
+                      key={i}
+                      className={`p-2.5 rounded-xl border text-xs font-bold flex items-start gap-2 ${
+                        d.level === "error"
+                          ? "bg-rose-500/10 border-rose-500/30 text-rose-700 dark:text-rose-300"
+                          : d.level === "warning"
+                            ? "bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-300"
+                            : "bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300"
+                      }`}
+                    >
+                      <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                      <span>{d.message}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {/* Metrics Cards */}

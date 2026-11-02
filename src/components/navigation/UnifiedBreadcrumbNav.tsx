@@ -158,15 +158,25 @@ export function resolveBreadcrumbs(pathname: string, searchStr: string): {
     if (tab === "shift_audit") {
       return {
         isRoot: false,
-        parentDept: { label: "خيارات المطور والرقابة", to: "/admin/system-update", icon: Settings },
-        subPage: { label: "تدقيق ومطابقة الورديات", icon: ShieldCheck },
+        parentDept: {
+          label: "تدقيق الورديات",
+          to: "/admin",
+          search: { tab: "shift_audit" },
+          icon: ShieldCheck,
+        },
+        subPage: { label: "لوحة تدقيق ومزامنة الورديات (الحديقة والمطعم)", icon: ShieldCheck },
       };
     }
     if (tab === "audit_logs") {
       return {
         isRoot: false,
-        parentDept: { label: "خيارات المطور والرقابة", to: "/admin/system-update", icon: Settings },
-        subPage: { label: "سجل العمليات والأنشطة", icon: History },
+        parentDept: {
+          label: "سجل العمليات",
+          to: "/admin",
+          search: { tab: "audit_logs" },
+          icon: History,
+        },
+        subPage: { label: "سجل العمليات والرقابة الشاملة", icon: History },
       };
     }
   }

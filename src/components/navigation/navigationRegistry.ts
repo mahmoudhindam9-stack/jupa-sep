@@ -816,8 +816,81 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
     ],
   },
   {
+    id: "shift_audit",
+    label: "تدقيق الورديات",
+    to: "/admin",
+    search: { tab: "shift_audit" },
+    icon: ShieldCheck,
+    permissionKeys: [
+      "page_shift_audit",
+      "shift_audit",
+      "manage_park_shifts",
+      "restaurant_open_shift",
+      "super_admin_full_access",
+    ],
+    children: [
+      {
+        id: "shift-audit-hub",
+        label: "لوحة تدقيق ومزامنة الورديات (الحديقة والمطعم)",
+        to: "/admin",
+        search: { tab: "shift_audit" },
+        tabValue: "shift_audit",
+        icon: ShieldCheck,
+        permissionKeys: [
+          "page_shift_audit",
+          "shift_audit",
+          "manage_park_shifts",
+          "restaurant_open_shift",
+        ],
+        matchPath: (p, tab) =>
+          (p === "/admin" || p === "/admin/") && tab === "shift_audit",
+      },
+      {
+        id: "shift-audit-park",
+        label: "ورديات كاشير الحديقة",
+        to: "/admin/park",
+        search: { tab: "shifts" },
+        tabValue: "shifts",
+        icon: Trees,
+        permissionKeys: ["page_park_shifts", "manage_park_shifts"],
+        matchPath: () => false,
+      },
+      {
+        id: "shift-audit-restaurant",
+        label: "ورديات كاشير المطعم",
+        to: "/admin/restaurant",
+        search: { tab: "shifts" },
+        tabValue: "shifts",
+        icon: Utensils,
+        permissionKeys: ["restaurant_open_shift", "pos", "pos_access"],
+        matchPath: () => false,
+      },
+    ],
+  },
+  {
+    id: "audit_logs",
+    label: "سجل العمليات",
+    to: "/admin",
+    search: { tab: "audit_logs" },
+    icon: History,
+    permissionKeys: ["page_audit_logs", "audit_logs", "system_audit_logs"],
+    children: [
+      {
+        id: "audit-logs-hub",
+        label: "سجل العمليات والرقابة الشاملة",
+        to: "/admin",
+        search: { tab: "audit_logs" },
+        tabValue: "audit_logs",
+        icon: History,
+        permissionKeys: ["page_audit_logs", "audit_logs", "system_audit_logs"],
+        matchPath: (p, tab) =>
+          (p === "/admin" || p === "/admin/") && tab === "audit_logs",
+      },
+    ],
+  },
+  {
     id: "system",
-    label: "خيارات المطور والرقابة",
+    label: "المطور والنسخ الاحتياطي",
     to: "/admin/system-update",
     icon: Settings,
     permissionKeys: ["page_developer", "system_backup_update", "developer_options"],
@@ -846,17 +919,15 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
       },
       {
         id: "system-audit",
-        label: "سجل تدقيق ورقابة العمليات",
+        label: "فحص سلامة قواعد البيانات",
         to: "/admin/system-update",
         search: { tab: "audit" },
         tabValue: "audit",
         icon: History,
-        permissionKeys: ["page_audit_logs", "audit_logs", "system_audit_logs"],
+        permissionKeys: ["page_developer", "system_backup_update"],
         matchPath: (p, tab) =>
-          (p.startsWith("/admin/system-update") &&
-            (tab === "audit" || tab === "audit_logs")) ||
-          ((p === "/admin" || p === "/admin/") &&
-            (tab === "audit_logs" || tab === "shift_audit")),
+          p.startsWith("/admin/system-update") &&
+          (tab === "audit" || tab === "audit_logs"),
       },
       {
         id: "system-sync",
@@ -924,9 +995,8 @@ export function resolveNavigationState(
     };
   }
 
-  // Match department & subItem (always resolving a subItem so the 3-level path is complete)
+  // Pass 1: Check all departments' children for an exact match first
   for (const dept of NAVIGATION_DEPARTMENTS) {
-    // 1. Check all children for an exact match (including index 0)
     const matchedSub = dept.children.find((sub) =>
       sub.matchPath ? sub.matchPath(normPath, activeTab) : false,
     );
@@ -938,11 +1008,19 @@ export function resolveNavigationState(
         subItem: matchedSub,
       };
     }
+  }
 
-    // 2. If on the department root path itself, always fall back to the first child (index 0)
-    // so the 3rd breadcrumb item (اسم القسم الفرعي) is ALWAYS rendered.
+  // Pass 2: If on a department root path itself, fall back to its first child
+  for (const dept of NAVIGATION_DEPARTMENTS) {
     const deptNorm = normalizePathname(dept.to);
-    if (normPath === deptNorm || normPath.startsWith(`${deptNorm}/`)) {
+    const deptTab = dept.search?.tab || "";
+    if (deptTab && deptTab !== activeTab) {
+      continue;
+    }
+    if (
+      deptNorm !== "/admin" &&
+      (normPath === deptNorm || normPath.startsWith(`${deptNorm}/`))
+    ) {
       return {
         isRootDashboard: false,
         department: dept,

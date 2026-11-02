@@ -682,3 +682,5 @@ export async function signOutCurrentUser(): Promise<void> {
   }
   await supabase.auth.signOut().catch(() => undefined);
 }
+
+

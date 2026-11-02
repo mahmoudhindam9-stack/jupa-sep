@@ -7049,7 +7049,16 @@ export class ERPStore {
 
   getActiveParkShift(): ParkShift | null {
     if (this.state.parkActiveShift && this.state.parkActiveShift.status === "open") {
-      return this.state.parkActiveShift;
+      const canonical = (this.state.parkShifts || []).find(
+        (s) => s.id === this.state.parkActiveShift?.id,
+      );
+      if (canonical && canonical.status === "open") {
+        this.state.parkActiveShift = canonical;
+        return canonical;
+      }
+      if (!canonical) {
+        return this.state.parkActiveShift;
+      }
     }
     return null;
   }
@@ -7817,7 +7826,16 @@ export class ERPStore {
 
   getActiveRestaurantShift(): RestaurantShift | null {
     if (this.state.restaurantActiveShift && this.state.restaurantActiveShift.status === "open") {
-      return this.state.restaurantActiveShift;
+      const canonical = (this.state.restaurantShifts || []).find(
+        (s) => s.id === this.state.restaurantActiveShift?.id,
+      );
+      if (canonical && canonical.status === "open") {
+        this.state.restaurantActiveShift = canonical;
+        return canonical;
+      }
+      if (!canonical) {
+        return this.state.restaurantActiveShift;
+      }
     }
     return null;
   }
@@ -7839,6 +7857,31 @@ export class ERPStore {
       cashier_id: shift.cashier_id,
       performed_by: this.state.currentUser || shift.cashier_name,
       details: `تم تعيين وردية المطعم كنشطة للجلسة: ${shift.shift_number}`,
+    });
+    this.notify();
+    return shift;
+  }
+
+  resumeRestaurantShift(shiftId: string): RestaurantShift {
+    const shifts = this.state.restaurantShifts || [];
+    const shift = shifts.find((s) => s.id === shiftId);
+    if (!shift) throw new Error("وردية المطعم غير موجودة!");
+    if (shift.status !== "open") throw new Error("لا يمكن الدخول على وردية مغلقة!");
+
+    this.state.restaurantActiveShift = shift;
+    this.saveState();
+    shiftAuditService.logShiftAction({
+      shift_id: shift.id,
+      shift_type: "restaurant",
+      shift_number: shift.shift_number,
+      auto_shift_number: shift.auto_shift_number,
+      action: "RESUME",
+      status_before: shift.status,
+      status_after: "open",
+      cashier_name: shift.cashier_name,
+      cashier_id: shift.cashier_id,
+      performed_by: this.state.currentUser || shift.cashier_name,
+      details: `تم استئناف وردية المطعم المفتوحة (${shift.shift_number}) كوردية نشطة للجلسة`,
     });
     this.notify();
     return shift;

@@ -262,7 +262,8 @@ class ShiftAuditService {
       result = result.filter((l) => l.shift_id === options.shiftId);
     }
     if (options?.shiftType) {
-      result = result.filter((l) => l.shift_type === options.shiftType);
+      const targetType = String(options.shiftType).toLowerCase();
+      result = result.filter((l) => String(l.shift_type || "").toLowerCase() === targetType);
     }
     if (options?.action && options.action !== "ALL") {
       result = result.filter((l) => l.action === options.action);
@@ -316,6 +317,106 @@ class ShiftAuditService {
   }
 
   /**
+   * Synchronize live Park & Restaurant shifts with local audit logs so no shift is missing from audit history
+   */
+  syncShiftsWithAuditLogs(parkShifts: any[] = [], restaurantShifts: any[] = []): number {
+    this.initLocalLogs();
+    const localLogs = this.localLogs;
+    let addedCount = 0;
+
+    const ensureShiftLogs = (shift: any, shiftType: ShiftType) => {
+      if (!shift || !shift.id) return;
+      const hasOpenLog = localLogs.some(
+        (l) =>
+          l.shift_id === shift.id &&
+          (l.action === "OPEN" || l.action === "AUTO_CREATE"),
+      );
+      if (!hasOpenLog) {
+        const openTime = shift.start_at || new Date().toISOString();
+        localLogs.push({
+          id: `sync-open-${shift.id}`,
+          shift_id: shift.id,
+          shift_type: shiftType,
+          shift_number: shift.shift_number || shift.auto_shift_number || shift.id,
+          auto_shift_number: shift.auto_shift_number || null,
+          action: "OPEN",
+          status_before: null,
+          status_after: "open",
+          cashier_name: shift.cashier_name || (shiftType === "park" ? "كاشير الحديقة" : "كاشير المطعم"),
+          cashier_id: shift.cashier_id || null,
+          performed_by: shift.cashier_name || "مزامنة النظام",
+          user_email: null,
+          details:
+            shiftType === "park"
+              ? `تم افتتاح وردية تذاكر الحديقة (${shift.shift_number})`
+              : `تم افتتاح وردية كاشير المطعم (${shift.shift_number})`,
+          metadata: {
+            start_at: openTime,
+            opening_balance: shift.opening_balance ?? 0,
+            notes: shift.notes || shift.opening_notes || "",
+            synced_from_store: true,
+          },
+          client_timestamp: openTime,
+          created_at: openTime,
+        });
+        addedCount++;
+      }
+
+      if (shift.status === "closed") {
+        const hasCloseLog = localLogs.some(
+          (l) => l.shift_id === shift.id && l.action === "CLOSE",
+        );
+        if (!hasCloseLog) {
+          const closeTime = shift.end_at || new Date().toISOString();
+          localLogs.push({
+            id: `sync-close-${shift.id}`,
+            shift_id: shift.id,
+            shift_type: shiftType,
+            shift_number: shift.shift_number || shift.auto_shift_number || shift.id,
+            auto_shift_number: shift.auto_shift_number || null,
+            action: "CLOSE",
+            status_before: "open",
+            status_after: "closed",
+            cashier_name: shift.cashier_name || (shiftType === "park" ? "كاشير الحديقة" : "كاشير المطعم"),
+            cashier_id: shift.cashier_id || null,
+            performed_by: shift.cashier_name || "مزامنة النظام",
+            user_email: null,
+            details:
+              shiftType === "park"
+                ? `تم إغلاق وردية تذاكر الحديقة (${shift.shift_number})`
+                : `تم إغلاق وردية كاشير المطعم (${shift.shift_number})`,
+            metadata: {
+              end_at: closeTime,
+              orders_count: shift.orders_count,
+              total_sales: shift.total_sales,
+              total_refunds: shift.total_refunds,
+              net_total: shift.net_total,
+              synced_from_store: true,
+            },
+            client_timestamp: closeTime,
+            created_at: closeTime,
+          });
+          addedCount++;
+        }
+      }
+    };
+
+    parkShifts.forEach((s) => ensureShiftLogs(s, "park"));
+    restaurantShifts.forEach((s) => ensureShiftLogs(s, "restaurant"));
+
+    if (addedCount > 0) {
+      localLogs.sort((a, b) => {
+        const timeA = new Date(a.created_at || a.client_timestamp).getTime();
+        const timeB = new Date(b.created_at || b.client_timestamp).getTime();
+        return timeB - timeA;
+      });
+      this.saveLocalLogs();
+    }
+
+    return addedCount;
+  }
+
+  /**
    * Get full state change history for a single shift
    */
   async getShiftHistory(shiftId: string): Promise<ShiftAuditLogEntry[]> {
@@ -346,9 +447,17 @@ class ShiftAuditService {
     const isVisibleInOpenView = status === "open";
     const isVisibleInClosedView = status === "closed";
 
-    const relatedTxs = transactions.filter(
-      (tx) => tx.shift_id === shiftId || tx.shift_number === shiftNumber,
-    );
+    const relatedTxs = isPark
+      ? transactions.filter(
+          (tx) => tx.shift_id === shiftId || tx.shift_number === shiftNumber,
+        )
+      : transactions.filter((tx) => {
+          if (tx.shift_id === shiftId || tx.shift_number === shiftNumber) return true;
+          const startMs = new Date(shift.start_at || 0).getTime();
+          const endMs = shift.end_at ? new Date(shift.end_at).getTime() : Date.now();
+          const txMs = new Date(tx.created_at || 0).getTime();
+          return txMs >= startMs - 60000 && txMs <= endMs + 60000;
+        });
 
     const diagnostics: ShiftVisibilityAnalysis["diagnostics"] = [];
     const possibleHiddenReasons: string[] = [];
@@ -358,13 +467,17 @@ class ShiftAuditService {
       diagnostics.push({
         code: "STATUS_OPEN",
         level: "info",
-        message: "حالة الوردية مفتوحة (Open) - تظهر في تبويب الورديات المفتوحة ومودال المبيعات.",
+        message: isPark
+          ? "حالة وردية الحديقة مفتوحة (Open) - تظهر في بطاقة الورديات المفتوحة ومودال نقطة بيع التذاكر."
+          : "حالة وردية المطعم مفتوحة (Open) - تظهر في بطاقة الورديات المفتوحة بصفحة المطعم وشاشة الكاشير.",
       });
     } else if (status === "closed") {
       diagnostics.push({
         code: "STATUS_CLOSED",
         level: "info",
-        message: "حالة الوردية مغلقة (Closed) - تظهر في تبويب الورديات المغلقة وفي تقارير الإقفال.",
+        message: isPark
+          ? "حالة وردية الحديقة مغلقة (Closed) - تظهر في سجل الورديات المغلقة وتقارير الإقفال."
+          : "حالة وردية المطعم مغلقة (Closed) - تظهر في سجل ورديات المطعم المغلقة وتقارير الإقفال.",
       });
     } else {
       diagnostics.push({
@@ -432,6 +545,9 @@ class ShiftAuditService {
     // Check 5: Financial integrity
     let grossSalesUsd = 0;
     let grossSalesSsp = 0;
+    let totalSalesRest = Number(shift.total_sales || 0);
+    let transactionsCount = relatedTxs.length;
+
     if (isPark) {
       grossSalesUsd = relatedTxs
         .filter((t) => t.currency === "USD" && t.status !== "refunded")
@@ -439,6 +555,17 @@ class ShiftAuditService {
       grossSalesSsp = relatedTxs
         .filter((t) => t.currency === "SSP" && t.status !== "refunded")
         .reduce((sum, t) => sum + (t.total_paid_in_currency || 0), 0);
+    } else {
+      const computedOrdersTotal = relatedTxs.reduce(
+        (sum, o) => sum + Number(o.total || 0),
+        0,
+      );
+      if (totalSalesRest <= 0 && computedOrdersTotal > 0) {
+        totalSalesRest = computedOrdersTotal;
+      }
+      if ((shift.orders_count || 0) > transactionsCount) {
+        transactionsCount = Number(shift.orders_count || 0);
+      }
     }
 
     return {
@@ -449,11 +576,11 @@ class ShiftAuditService {
       isActiveSession,
       isVisibleInOpenView,
       isVisibleInClosedView,
-      hasTransactions: relatedTxs.length > 0,
-      transactionsCount: relatedTxs.length,
+      hasTransactions: transactionsCount > 0,
+      transactionsCount,
       grossSalesUsd,
       grossSalesSsp,
-      totalSalesRest: shift.total_sales,
+      totalSalesRest,
       diagnostics,
       possibleHiddenReasons,
     };

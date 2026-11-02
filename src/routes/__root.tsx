@@ -42,10 +42,74 @@ function NotFoundComponent() {
   );
 }
 
+function isDynamicImportError(error: unknown): boolean {
+  const msg = String((error as any)?.message || error || "").toLowerCase();
+  return (
+    msg.includes("error loading dynamically imported module") ||
+    msg.includes("failed to fetch dynamically imported module") ||
+    msg.includes("importing a module script failed") ||
+    msg.includes("loading chunk") ||
+    msg.includes("dynamically imported module")
+  );
+}
+
 function ErrorComponent({ error, reset }: { error: any; reset: () => void }) {
-  if (typeof console !== "undefined" && console.error) {
-    console.error("Restocash route error:", error);
+  const isChunkError = isDynamicImportError(error);
+
+  useEffect(() => {
+    if (!isChunkError) {
+      if (typeof console !== "undefined" && console.error) {
+        console.error("Restocash route error:", error);
+      }
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      try {
+        const key = "restocash:error-boundary-chunk-retry";
+        const now = Date.now();
+        const raw = window.sessionStorage.getItem(key);
+        let state = { count: 0, time: 0 };
+        if (raw) {
+          try {
+            state = JSON.parse(raw);
+          } catch {
+            // ignore
+          }
+        }
+        if (!state.time || now - state.time > 10000) {
+          state = { count: 0, time: now };
+        }
+        if (state.count < 2) {
+          state.count += 1;
+          state.time = now;
+          window.sessionStorage.setItem(key, JSON.stringify(state));
+          reset();
+        } else if (state.count === 2) {
+          state.count += 1;
+          state.time = now;
+          window.sessionStorage.setItem(key, JSON.stringify(state));
+          window.location.reload();
+        }
+      } catch {
+        reset();
+      }
+    }, 350);
+
+    return () => window.clearTimeout(timer);
+  }, [error, isChunkError, reset]);
+
+  if (isChunkError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4" dir="rtl">
+        <main className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
+          <p className="text-sm font-bold text-foreground">جاري تحميل الصفحة…</p>
+          <p className="mt-2 text-xs text-muted-foreground">يرجى الانتظار لحظات.</p>
+        </main>
+      </div>
+    );
   }
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <main className="w-full max-w-lg text-center" aria-labelledby="error-title">

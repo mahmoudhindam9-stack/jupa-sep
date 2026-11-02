@@ -43,6 +43,7 @@ interface RestaurantShiftLauncherModalProps {
   onClose: () => void;
   onOpenPOS?: (shift: RestaurantShift) => void;
   onRequestCloseShift?: (shift: RestaurantShift) => void;
+  onPreviewPOS?: () => void;
 }
 
 export function RestaurantShiftLauncherModal({
@@ -50,6 +51,7 @@ export function RestaurantShiftLauncherModal({
   onClose,
   onOpenPOS,
   onRequestCloseShift,
+  onPreviewPOS,
 }: RestaurantShiftLauncherModalProps) {
   const navigate = useNavigate();
   const [state, setState] = useState(erpStore.getState());
@@ -123,6 +125,22 @@ export function RestaurantShiftLauncherModal({
   const openShifts: RestaurantShift[] = useMemo(() => {
     return (state.restaurantShifts || []).filter((s) => s.status === "open");
   }, [state.restaurantShifts]);
+
+  // Auto-open creation form when there are no open shifts (matching ParkShiftLauncherModal)
+  useEffect(() => {
+    if (isOpen && openShifts.length === 0) {
+      setIsNewShiftFormOpen(true);
+    }
+  }, [isOpen, openShifts.length]);
+
+  const handlePreviewWithoutShift = () => {
+    onClose();
+    if (onPreviewPOS) {
+      onPreviewPOS();
+    } else {
+      navigate({ to: "/pos" });
+    }
+  };
 
   // Handle Starting a New Shift
   const handleStartShift = () => {
@@ -655,18 +673,30 @@ export function RestaurantShiftLauncherModal({
             </div>
           </div>
 
-          <DialogFooter className="p-4 bg-muted/30 border-t border-border flex justify-between sm:justify-between items-center rounded-b-3xl">
+          <DialogFooter className="p-4 bg-muted/30 border-t border-border flex flex-col sm:flex-row justify-between sm:justify-between items-center gap-2 rounded-b-3xl">
             <span className="text-[11px] text-muted-foreground font-medium">
-              نظام إدارة المطعم الشامل — تكامل القيود المحاسبية والمرتجعات والورديات
+              نظام إدارة المطعم الشامل — يمكنك معاينة شاشة الكاشير بدون فتح وردية جديدة
             </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onClose}
-              className="rounded-xl text-xs font-bold"
-            >
-              إغلاق النافذة
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={handlePreviewWithoutShift}
+                className="rounded-xl text-xs font-black gap-1.5 bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30 hover:bg-amber-500/25 cursor-pointer"
+              >
+                <Utensils size={13} />
+                معاينة شاشة الكاشير (بدون فتح وردية)
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onClose}
+                className="rounded-xl text-xs font-bold cursor-pointer"
+              >
+                إلغاء وإغلاق
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

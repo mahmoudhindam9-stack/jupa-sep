@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -67,11 +67,19 @@ export function RestaurantShiftClosingReportModal({
     "summary",
   );
 
+  useEffect(() => {
+    if (isOpen) {
+      setClosedResult(viewOnlyShift || null);
+      setClosingNotes("");
+    }
+  }, [isOpen, viewOnlyShift, shiftToClose, shift]);
+
   const activeShift =
     shiftToClose ||
     shift ||
     erpStore.getActiveRestaurantShift() ||
-    erpStore.getOrCreateActiveRestaurantShift();
+    erpStore.getRestaurantShifts().find((s) => s.status === "open") ||
+    null;
   const currentShift = viewOnlyShift || closedResult || activeShift;
 
   // Retrieve shift refunds

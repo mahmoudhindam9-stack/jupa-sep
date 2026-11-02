@@ -53,11 +53,19 @@ export const ShiftAuditLogViewerModal: React.FC<ShiftAuditLogViewerModalProps> =
   const [loading, setLoading] = useState(false);
   const [source, setSource] = useState<"supabase" | "local" | "hybrid">("local");
 
+  const normalizedInitialType: ShiftType | "ALL" =
+    initialShiftType && String(initialShiftType).toLowerCase() === "park"
+      ? "park"
+      : initialShiftType && String(initialShiftType).toLowerCase() === "restaurant"
+        ? "restaurant"
+        : "ALL";
+
   // Filters
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedType, setSelectedType] = useState<ShiftType | "ALL">(initialShiftType || "ALL");
+  const [selectedType, setSelectedType] = useState<ShiftType | "ALL">(normalizedInitialType);
   const [selectedAction, setSelectedAction] = useState<string>("ALL");
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
+  const [storeTick, setStoreTick] = useState(0);
 
   // Inspector State
   const [selectedInspectorShiftId, setSelectedInspectorShiftId] = useState<string>(
@@ -70,6 +78,10 @@ export const ShiftAuditLogViewerModal: React.FC<ShiftAuditLogViewerModalProps> =
   const fetchLogs = async () => {
     setLoading(true);
     try {
+      shiftAuditService.syncShiftsWithAuditLogs(
+        erpStore.getParkShifts(),
+        erpStore.getRestaurantShifts(),
+      );
       const res = await shiftAuditService.getShiftAuditLogs({
         shiftType: selectedType !== "ALL" ? selectedType : undefined,
         action: selectedAction !== "ALL" ? selectedAction : undefined,
@@ -86,17 +98,24 @@ export const ShiftAuditLogViewerModal: React.FC<ShiftAuditLogViewerModalProps> =
   };
 
   useEffect(() => {
+    const unsub = erpStore.subscribe(() => {
+      setStoreTick((t) => t + 1);
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
     if (isOpen) {
       fetchLogs();
     }
-  }, [isOpen, selectedType, selectedAction]);
+  }, [isOpen, selectedType, selectedAction, storeTick]);
 
   // All shifts currently in erpStore
   const allShifts = useMemo(() => {
     const parkShifts = erpStore.getParkShifts();
     const restShifts = erpStore.getRestaurantShifts();
     return [...parkShifts, ...restShifts];
-  }, [isOpen, logs]);
+  }, [isOpen, logs, storeTick]);
 
   // Set default inspector shift if not selected
   useEffect(() => {
@@ -119,11 +138,20 @@ export const ShiftAuditLogViewerModal: React.FC<ShiftAuditLogViewerModalProps> =
 
     const isPark = found.id.startsWith("shift-park-") || found.auto_shift_number?.startsWith("PSH");
     const active = isPark ? erpStore.getActiveParkShift() : erpStore.getActiveRestaurantShift();
-    const txs = isPark ? erpStore.getParkTicketTransactions() : [];
+    let txs: any[] = [];
+    if (isPark) {
+      txs = erpStore.getParkTicketTransactions();
+    } else if (typeof window !== "undefined") {
+      try {
+        txs = JSON.parse(localStorage.getItem("pos_local_orders") || "[]");
+      } catch {
+        txs = [];
+      }
+    }
 
     const analysis = shiftAuditService.analyzeShiftVisibility(found, allShifts, active, txs);
     setVisibilityAnalysis(analysis);
-  }, [selectedInspectorShiftId, allShifts]);
+  }, [selectedInspectorShiftId, allShifts, storeTick]);
 
   const handleExportJson = () => {
     const dataStr =

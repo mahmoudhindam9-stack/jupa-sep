@@ -143,11 +143,15 @@ export function AppBreadcrumbBar({
     "القسم الرئيسي";
   const ParentIcon = customSection?.icon || department?.icon;
 
-  // Always resolve the 3rd level (sub-section label) when inside a department
-  const subLabel =
-    customSubsection?.label ||
-    subItem?.label ||
-    (department ? `لوحة ${department.label}` : undefined);
+  const isStandaloneMainDepartment =
+    department?.id === "shift_audit" || department?.id === "audit_logs";
+
+  // Resolve the 3rd level (sub-section label) when inside a multi-screen department
+  const subLabel = isStandaloneMainDepartment
+    ? customSubsection?.label
+    : customSubsection?.label ||
+      subItem?.label ||
+      (department ? `لوحة ${department.label}` : undefined);
   const SubIcon = customSubsection?.icon || subItem?.icon || ParentIcon;
 
   return (
