@@ -17,6 +17,7 @@ import { erpStore } from "@/shared/services/erpStore";
 import { useSettings } from "@/hooks/use-settings";
 import { convertToInventoryUnit } from "@/shared/utils/inventoryUtils";
 import { inventoryService } from "@/features/inventory/services/inventoryService";
+import { printSmartStocktakingSheet } from "@/shared/utils/printAccountingDocument";
 import {
   Pencil,
   Trash2,
@@ -321,6 +322,17 @@ function InventoryPage() {
     from_warehouse_id: "wh-main-default",
     to_warehouse_id: "wh-sub-kitchen",
   });
+
+  // Waste / Damaged Inventory State
+  const [wasteForm, setWasteForm] = useState({
+    inventory_id: "",
+    warehouse_id: "wh-main-default",
+    quantity: "",
+    unit_cost: "",
+    reason_category: "تلف أثناء التخزين",
+    notes: "",
+  });
+  const [isRecordingWaste, setIsRecordingWaste] = useState(false);
 
   const [selectedStockWarehouseId, setSelectedStockWarehouseId] = useState<string>("all");
   const [selectedReportWarehouseId, setSelectedReportWarehouseId] = useState<string>("all");
@@ -1152,6 +1164,106 @@ function InventoryPage() {
     }
   };
 
+  const handleRecordWaste = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!wasteForm.inventory_id || !wasteForm.quantity || Number(wasteForm.quantity) <= 0) {
+      toast({
+        title: "بيانات غير مكتملة",
+        description: "يرجى اختيار الصنف وإدخال كمية التالف أو الهالك بشكل صحيح.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setIsRecordingWaste(true);
+    try {
+      const result = await erpStore.recordWasteOrDamage({
+        inventory_id: wasteForm.inventory_id,
+        warehouse_id: wasteForm.warehouse_id,
+        quantity: Number(wasteForm.quantity),
+        unit_cost: wasteForm.unit_cost !== "" ? Number(wasteForm.unit_cost) : undefined,
+        reason_category: wasteForm.reason_category,
+        notes: wasteForm.notes,
+      });
+
+      setErpState(erpStore.getState());
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["admin", "inventory"] }),
+        queryClient.invalidateQueries({ queryKey: ["admin", "inventory_transactions"] }),
+        queryClient.invalidateQueries({ queryKey: ["admin", "warehouses"] }),
+        queryClient.invalidateQueries({ queryKey: ["admin", "warehouse_inventory"] }),
+      ]);
+
+      setWasteForm({
+        inventory_id: "",
+        warehouse_id: wasteForm.warehouse_id,
+        quantity: "",
+        unit_cost: "",
+        reason_category: "تلف أثناء التخزين",
+        notes: "",
+      });
+
+      toast({
+        title: "✅ تم تسجيل التالف وترحيل القيد المحاسبي",
+        description: `تم خصم الكمية من المخزن للصنف "${result.itemName}" وإصدار مستند تسوية #${result.docNumber} بقيمة ${result.totalLossValue.toLocaleString()} (حساب 506000 الهدر والمفقودات).`,
+      });
+    } catch (err: any) {
+      toast({
+        title: "خطأ في تسجيل التالف",
+        description: err?.message || "حدث خطأ أثناء تسجيل حركة التالف والهالك.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRecordingWaste(false);
+    }
+  };
+
+  const handlePrintSmartStocktaking = (
+    blindCount = false,
+    source: "stock" | "report" = "report",
+  ) => {
+    const whId = source === "stock" ? selectedStockWarehouseId : selectedReportWarehouseId;
+    const activeWh = (warehousesQuery.data ?? []).find((w) => w.id === whId);
+    const warehouseName =
+      whId === "all" ? "جميع المخازن (رصيد مجمع)" : activeWh?.name || "المخزن المحدد";
+
+    const baseList =
+      source === "stock"
+        ? filteredInventory
+        : (inventoryQuery.data ?? []).filter((item) => item.name_ar.includes(reportSearchQuery));
+
+    const rows = baseList.map((item) => {
+      const ext = erpStore.getExtendedItem(item.id);
+      let qty = Number(item.quantity || 0);
+      if (whId !== "all") {
+        const whRec = (warehouseInventoryQuery.data ?? []).find(
+          (w) => w.warehouse_id === whId && w.inventory_id === item.id,
+        );
+        qty = Number(whRec?.quantity || 0);
+      }
+      return {
+        code: ext.item_code || item.id.slice(0, 6).toUpperCase(),
+        barcode: ext.barcode || "",
+        name_ar: item.name_ar,
+        category: ext.category || "خامات ومواد أولية",
+        unit: item.unit,
+        bookQuantity: qty,
+        minLevel: Number(item.min_level || 0),
+        unitCost: Number(item.cost || 0),
+        warehouseName,
+      };
+    });
+
+    printSmartStocktakingSheet({
+      warehouseName,
+      branchName: currentBranch?.name_ar || "الفرع الرئيسي",
+      blindCount,
+      reportTitle: blindCount
+        ? "استمارة الجرد الذكي الميداني (جرد أعمى بمربعات الفحص ☐)"
+        : "استمارة ومحضر الجرد الذكي للمخزون (بمربعات الفحص ☐)",
+      items: rows,
+    });
+  };
+
   // Stats
   const stats = useMemo(() => {
     const items = inventoryQuery.data ?? [];
@@ -1624,7 +1736,7 @@ function InventoryPage() {
               </Card>
 
               <Card
-                onClick={() => setIsAddModalOpen(true)}
+                onClick={openAddInventoryModal}
                 className="group cursor-pointer rounded-2xl border border-primary/30 bg-primary/5 hover:border-primary hover:bg-primary/10 transition-all duration-200 hover:shadow-lg"
               >
                 <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
@@ -1679,11 +1791,23 @@ function InventoryPage() {
             </TabsTrigger>
             <TabsTrigger value="purchases" className="rounded-lg font-bold py-2 px-3">
               <Truck size={16} className="ml-1.5 inline" />
-              الموردين والمشتريات
+              المشتريات والتوريد
+            </TabsTrigger>
+            <TabsTrigger value="suppliers" className="rounded-lg font-bold py-2 px-3">
+              <Users2 size={16} className="ml-1.5 inline" />
+              الموردين
+            </TabsTrigger>
+            <TabsTrigger value="waste" className="rounded-lg font-bold py-2 px-3">
+              <AlertTriangle size={16} className="ml-1.5 inline text-rose-500" />
+              التوالف والهالك
+            </TabsTrigger>
+            <TabsTrigger value="transfers" className="rounded-lg font-bold py-2 px-3">
+              <ArrowUpRight size={16} className="ml-1.5 inline" />
+              التحويلات المخزنية
             </TabsTrigger>
             <TabsTrigger value="reports" className="rounded-lg font-bold py-2 px-3">
               <FileText size={16} className="ml-1.5 inline" />
-              التقارير والتحليلات
+              التقارير والجرد الذكي
             </TabsTrigger>
             <TabsTrigger value="settings" className="rounded-lg font-bold py-2 px-3">
               <Settings size={16} className="ml-1.5 inline" />
@@ -1719,6 +1843,24 @@ function InventoryPage() {
                   >
                     <Plus size={18} />
                     <span>إضافة صنف مخزني جديد</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => handlePrintSmartStocktaking(false, "stock")}
+                    className="font-bold border-primary/40 text-primary hover:bg-primary/10 flex items-center gap-2 h-10 px-4 rounded-xl cursor-pointer"
+                  >
+                    <Printer size={16} />
+                    <span>طباعة الجرد الذكي ☐</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => handlePrintSmartStocktaking(true, "stock")}
+                    className="font-bold border-amber-500/40 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 flex items-center gap-2 h-10 px-3.5 rounded-xl cursor-pointer text-xs"
+                  >
+                    <Printer size={15} />
+                    <span>جرد أعمى ☐</span>
                   </Button>
                   <button
                     onClick={() => setFilterLowStock(!filterLowStock)}
@@ -3162,6 +3304,527 @@ function InventoryPage() {
             </Tabs>
           </TabsContent>
 
+          <TabsContent value="suppliers" className="space-y-4 mt-4">
+            <SupplierManagement />
+          </TabsContent>
+
+          <TabsContent value="waste" className="space-y-6 mt-4">
+            {(() => {
+              const wasteTransactions = (transactionsQuery.data ?? []).filter(
+                (tx) =>
+                  tx.type === "out" &&
+                  (tx.note?.includes("تالف") ||
+                    tx.note?.includes("هالك") ||
+                    tx.note?.includes("هدر") ||
+                    tx.note?.includes("إعدام") ||
+                    tx.note?.includes("تسوية")),
+              );
+
+              const expiredBatches = (erpState.inventoryExpiry || []).filter((b) => {
+                const daysLeft = Math.ceil(
+                  (new Date(b.expiry_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24),
+                );
+                return daysLeft <= 0;
+              });
+
+              const selectedWasteItem = (inventoryQuery.data ?? []).find(
+                (i) => i.id === wasteForm.inventory_id,
+              );
+              const effectiveUnitCost =
+                wasteForm.unit_cost !== ""
+                  ? Number(wasteForm.unit_cost)
+                  : Number(selectedWasteItem?.cost || 0);
+              const estimatedLossValue = Number(wasteForm.quantity || 0) * effectiveUnitCost;
+
+              return (
+                <>
+                  {/* KPI Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-card border border-rose-500/30 rounded-2xl p-5 flex items-center justify-between shadow-xs">
+                      <div>
+                        <p className="text-xs font-bold text-muted-foreground">
+                          إجمالي حركات التوالف والإعدام المسجلة
+                        </p>
+                        <p className="text-2xl font-black text-rose-600 font-mono mt-1">
+                          {wasteTransactions.length} حركة
+                        </p>
+                        <p className="text-[11px] text-muted-foreground mt-1">
+                          مرتبطة بحساب الهدر والمفقودات (506000)
+                        </p>
+                      </div>
+                      <div className="h-12 w-12 rounded-2xl bg-rose-500/10 text-rose-600 flex items-center justify-center">
+                        <AlertTriangle size={24} />
+                      </div>
+                    </div>
+
+                    <div className="bg-card border border-amber-500/30 rounded-2xl p-5 flex items-center justify-between shadow-xs">
+                      <div>
+                        <p className="text-xs font-bold text-muted-foreground">
+                          إجمالي القيمة المالية للهالك والتوالف
+                        </p>
+                        <p className="text-2xl font-black text-amber-600 font-mono mt-1">
+                          {formatPrice(Number(erpState.totalDisposedExpiryValue || 0))}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground mt-1">
+                          مرحّلة تلقائياً في قيود اليومية العامة
+                        </p>
+                      </div>
+                      <div className="h-12 w-12 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center">
+                        <TrendingDown size={24} />
+                      </div>
+                    </div>
+
+                    <div className="bg-card border border-purple-500/30 rounded-2xl p-5 flex items-center justify-between shadow-xs">
+                      <div>
+                        <p className="text-xs font-bold text-muted-foreground">
+                          دفعات منتهية الصلاحية بانتظار الإعدام
+                        </p>
+                        <p className="text-2xl font-black text-purple-600 font-mono mt-1">
+                          {expiredBatches.length} دفعة
+                        </p>
+                        <p className="text-[11px] text-muted-foreground mt-1">
+                          يمكن إعدامها وخصمها بضغطة واحدة أدناه
+                        </p>
+                      </div>
+                      <div className="h-12 w-12 rounded-2xl bg-purple-500/10 text-purple-600 flex items-center justify-center">
+                        <Calendar size={24} />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Record New Waste / Damaged Stock Form */}
+                  <div className="bg-card border border-border rounded-2xl p-6 space-y-5 shadow-xs">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border pb-4">
+                      <div>
+                        <h3 className="text-lg font-black text-foreground flex items-center gap-2">
+                          <AlertTriangle size={20} className="text-rose-500" />
+                          تسجيل تالف أو هالك مخزني جديد (مع قيد محاسبي آلي)
+                        </h3>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          يتم خصم الكمية التالفة فوراً من رصيد المخزن المحدد وإنشاء قيد مزدوج (من
+                          ح/ 506000 الهدر والمفقودات إلى ح/ 103000 المخزون)
+                        </p>
+                      </div>
+                      <span className="text-xs font-mono font-bold px-3 py-1.5 rounded-lg bg-rose-500/10 text-rose-600 border border-rose-500/20">
+                        حساب الهدر: 506000 ↔ المخزون: 103000
+                      </span>
+                    </div>
+
+                    <form onSubmit={handleRecordWaste} className="space-y-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                        <div className="lg:col-span-2">
+                          <Label className="text-xs font-bold">الصنف المخزني التالف *</Label>
+                          <select
+                            required
+                            className="w-full mt-1.5 h-10 rounded-xl border border-input bg-background px-3 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-rose-500/40"
+                            value={wasteForm.inventory_id}
+                            onChange={(e) => {
+                              const inv = (inventoryQuery.data ?? []).find(
+                                (i) => i.id === e.target.value,
+                              );
+                              setWasteForm((prev) => ({
+                                ...prev,
+                                inventory_id: e.target.value,
+                                unit_cost: inv ? String(inv.cost || 0) : "",
+                              }));
+                            }}
+                          >
+                            <option value="">-- اختر الصنف من المخزون --</option>
+                            {(inventoryQuery.data ?? []).map((item) => (
+                              <option key={item.id} value={item.id}>
+                                {item.name_ar} (الرصيد: {Number(item.quantity).toFixed(2)}{" "}
+                                {item.unit})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <Label className="text-xs font-bold">المخزن المخصوم منه *</Label>
+                          <select
+                            className="w-full mt-1.5 h-10 rounded-xl border border-input bg-background px-3 text-xs font-bold focus:outline-none"
+                            value={wasteForm.warehouse_id}
+                            onChange={(e) =>
+                              setWasteForm((prev) => ({ ...prev, warehouse_id: e.target.value }))
+                            }
+                          >
+                            {(warehousesQuery.data ?? []).map((wh) => (
+                              <option key={wh.id} value={wh.id}>
+                                {wh.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <Label className="text-xs font-bold">
+                            الكمية التالفة / المهدرة{" "}
+                            {selectedWasteItem ? `(${selectedWasteItem.unit})` : "*"}
+                          </Label>
+                          <Input
+                            type="number"
+                            step="any"
+                            min="0.01"
+                            required
+                            placeholder="0.00"
+                            value={wasteForm.quantity}
+                            onChange={(e) =>
+                              setWasteForm((prev) => ({ ...prev, quantity: e.target.value }))
+                            }
+                            className="mt-1.5 h-10 font-mono font-bold text-center"
+                          />
+                        </div>
+
+                        <div>
+                          <Label className="text-xs font-bold">تكلفة الوحدة للتسوية</Label>
+                          <Input
+                            type="number"
+                            step="any"
+                            min="0"
+                            placeholder="تكلفة الوحدة"
+                            value={wasteForm.unit_cost}
+                            onChange={(e) =>
+                              setWasteForm((prev) => ({ ...prev, unit_cost: e.target.value }))
+                            }
+                            className="mt-1.5 h-10 font-mono font-bold text-center"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+                        <div>
+                          <Label className="text-xs font-bold">سبب التلف / الهدر *</Label>
+                          <select
+                            className="w-full mt-1.5 h-10 rounded-xl border border-input bg-background px-3 text-xs font-bold focus:outline-none"
+                            value={wasteForm.reason_category}
+                            onChange={(e) =>
+                              setWasteForm((prev) => ({
+                                ...prev,
+                                reason_category: e.target.value,
+                              }))
+                            }
+                          >
+                            <option value="تلف أثناء التخزين">تلف أثناء التخزين</option>
+                            <option value="انتهاء فترة الصلاحية">انتهاء فترة الصلاحية</option>
+                            <option value="هدر أثناء التحضير والتشغيل">
+                              هدر أثناء التحضير والتشغيل
+                            </option>
+                            <option value="كسر أو عيب مصنعي">كسر أو عيب مصنعي</option>
+                            <option value="عجز جردي غير مبرر">عجز جردي غير مبرر</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <Label className="text-xs font-bold">بيان وملاحظات الفحص</Label>
+                          <Input
+                            placeholder="أدخل تفاصيل إضافية أو رقم محضر الإتلاف..."
+                            value={wasteForm.notes}
+                            onChange={(e) =>
+                              setWasteForm((prev) => ({ ...prev, notes: e.target.value }))
+                            }
+                            className="mt-1.5 h-10 text-xs"
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3 bg-rose-500/5 border border-rose-500/20 rounded-xl px-4 py-2">
+                          <div>
+                            <span className="text-[10px] text-muted-foreground block font-bold">
+                              إجمالي قيمة التالف:
+                            </span>
+                            <span className="font-mono font-black text-sm text-rose-600">
+                              {formatPrice(estimatedLossValue)}
+                            </span>
+                          </div>
+                          <Button
+                            type="submit"
+                            disabled={isRecordingWaste}
+                            className="bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl px-5 h-10 cursor-pointer"
+                          >
+                            {isRecordingWaste ? (
+                              <Loader2 className="animate-spin h-4 w-4" />
+                            ) : (
+                              <>
+                                <CheckCircle size={16} className="ml-1.5" />
+                                اعتماد خصم التالف
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    </form>
+                  </div>
+
+                  {/* Expired Batches Quick Disposal */}
+                  {expiredBatches.length > 0 && (
+                    <div className="bg-rose-500/5 border border-rose-500/30 rounded-2xl p-5 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-black text-sm text-rose-700 dark:text-rose-400 flex items-center gap-2">
+                          <AlertTriangle size={18} />
+                          دفعات منتهية الصلاحية جاهزة للإعدام الفوري ({expiredBatches.length})
+                        </h4>
+                      </div>
+                      <div className="overflow-x-auto bg-card rounded-xl border border-border">
+                        <table className="w-full text-right text-xs">
+                          <thead className="bg-muted/40 text-muted-foreground font-bold border-b border-border">
+                            <tr>
+                              <th className="p-2.5">رقم الدفعة (Batch)</th>
+                              <th className="p-2.5">الصنف</th>
+                              <th className="p-2.5 text-center">الكمية</th>
+                              <th className="p-2.5 text-center">تاريخ الانتهاء</th>
+                              <th className="p-2.5 text-center">إجراء الإعدام</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {expiredBatches.map((batch) => {
+                              const inv = (inventoryQuery.data ?? []).find(
+                                (i) => i.id === batch.inventory_id,
+                              );
+                              return (
+                                <tr
+                                  key={batch.id}
+                                  className="border-b border-border/50 hover:bg-muted/10"
+                                >
+                                  <td className="p-2.5 font-mono font-bold">{batch.batch_no}</td>
+                                  <td className="p-2.5 font-bold">
+                                    {inv?.name_ar || "صنف مخزني"}
+                                  </td>
+                                  <td className="p-2.5 text-center font-mono font-bold text-rose-600">
+                                    {batch.quantity} {inv?.unit || ""}
+                                  </td>
+                                  <td className="p-2.5 text-center font-mono text-rose-600 font-bold">
+                                    {batch.expiry_date}
+                                  </td>
+                                  <td className="p-2.5 text-center">
+                                    <Button
+                                      size="sm"
+                                      variant="destructive"
+                                      className="h-7 text-xs font-bold rounded-lg cursor-pointer"
+                                      onClick={() =>
+                                        handleDisposeBatch(
+                                          batch.id,
+                                          batch.batch_no,
+                                          inv?.name_ar || "صنف",
+                                          batch.quantity,
+                                          inv?.unit || "وحدة",
+                                        )
+                                      }
+                                    >
+                                      إعدام وخصم محاسبي
+                                    </Button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Waste & Adjustments History Table */}
+                  <div className="bg-card border border-border rounded-2xl p-6 space-y-4 shadow-xs">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <h4 className="font-black text-base text-foreground">
+                          سجل حركات التوالف والهالك والتسويات المخزنية
+                        </h4>
+                        <p className="text-xs text-muted-foreground">
+                          جميع عمليات الإتلاف والخصم المسجلة مع التوقيت والسبب
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="font-bold text-xs gap-1.5 rounded-xl cursor-pointer"
+                        onClick={() => {
+                          const exportRows = wasteTransactions.map((tx) => {
+                            const inv = (inventoryQuery.data ?? []).find(
+                              (i) => i.id === tx.inventory_id,
+                            );
+                            return {
+                              التاريخ: new Date(tx.created_at || "").toLocaleString("ar-EG"),
+                              الصنف: inv?.name_ar || "",
+                              "الكمية التالفة": tx.quantity,
+                              الوحدة: inv?.unit || "",
+                              "تكلفة الوحدة": inv?.cost || 0,
+                              "إجمالي الخسارة": Number(tx.quantity || 0) * Number(inv?.cost || 0),
+                              البيان: tx.note || "",
+                            };
+                          });
+                          const ws = XLSX.utils.json_to_sheet(exportRows);
+                          const wb = XLSX.utils.book_new();
+                          XLSX.utils.book_append_sheet(wb, ws, "سجل_التوالف");
+                          XLSX.writeFile(
+                            wb,
+                            `سجل_التوالف_والهالك_${new Date().toISOString().split("T")[0]}.xlsx`,
+                          );
+                        }}
+                      >
+                        تصدير سجل التوالف Excel
+                      </Button>
+                    </div>
+
+                    <div className="overflow-x-auto border border-border rounded-xl">
+                      <table className="w-full text-right text-xs">
+                        <thead className="bg-muted/40 text-muted-foreground font-bold border-b border-border">
+                          <tr>
+                            <th className="p-3">التاريخ والتوقيت</th>
+                            <th className="p-3">الصنف المخزني</th>
+                            <th className="p-3 text-center">الكمية المخصومة</th>
+                            <th className="p-3 text-center">التكلفة التقديرية</th>
+                            <th className="p-3">السبب والبيان المحاسبي</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {wasteTransactions.length === 0 ? (
+                            <tr>
+                              <td
+                                colSpan={5}
+                                className="p-8 text-center text-muted-foreground font-bold"
+                              >
+                                لا توجد حركات توالف أو هالك مسجلة حتى الآن. يمكنك تسجيل أي تالف
+                                من النموذج أعلاه.
+                              </td>
+                            </tr>
+                          ) : (
+                            wasteTransactions.map((tx) => {
+                              const inv = (inventoryQuery.data ?? []).find(
+                                (i) => i.id === tx.inventory_id,
+                              );
+                              const totalCost =
+                                Number(tx.quantity || 0) * Number(inv?.cost || 0);
+                              return (
+                                <tr
+                                  key={tx.id}
+                                  className="border-b border-border/40 hover:bg-muted/10"
+                                >
+                                  <td className="p-3 font-mono text-muted-foreground">
+                                    {tx.created_at
+                                      ? new Date(tx.created_at).toLocaleString("ar-EG")
+                                      : "-"}
+                                  </td>
+                                  <td className="p-3 font-bold text-foreground">
+                                    {inv?.name_ar || "صنف مخزني"}
+                                  </td>
+                                  <td className="p-3 text-center font-mono font-bold text-rose-600">
+                                    -{tx.quantity} {inv?.unit || ""}
+                                  </td>
+                                  <td className="p-3 text-center font-mono font-bold text-amber-600">
+                                    {formatPrice(totalCost)}
+                                  </td>
+                                  <td className="p-3 text-muted-foreground font-medium">
+                                    {tx.note || "تسوية هالك وتوالف"}
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+          </TabsContent>
+
+          <TabsContent value="transfers" className="space-y-6 mt-4">
+            <div className="bg-card border border-border rounded-2xl p-6 space-y-5 shadow-xs">
+              <div>
+                <h3 className="text-lg font-black text-foreground flex items-center gap-2">
+                  <ArrowUpRight size={20} className="text-blue-500" />
+                  التحويلات المخزنية الداخلية بين المستودعات
+                </h3>
+                <p className="text-xs text-muted-foreground mt-1">
+                  نقل الأصناف والكميات بين المخزن الرئيسي ومخازن التشغيل الفرعية (المطبخ / البار /
+                  الفروع)
+                </p>
+              </div>
+
+              <form
+                onSubmit={handleStockTransfer}
+                className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-end"
+              >
+                <div className="lg:col-span-2">
+                  <Label className="text-xs font-bold">الصنف المراد تحويله *</Label>
+                  <select
+                    required
+                    className="w-full mt-1.5 h-10 rounded-xl border border-input bg-background px-3 text-xs font-bold"
+                    value={transferForm.inventory_id}
+                    onChange={(e) =>
+                      setTransferForm((prev) => ({ ...prev, inventory_id: e.target.value }))
+                    }
+                  >
+                    <option value="">-- اختر الصنف --</option>
+                    {(inventoryQuery.data ?? []).map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name_ar} (المتاح: {Number(item.quantity).toFixed(2)} {item.unit})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <Label className="text-xs font-bold">من مخزن (المصدر)</Label>
+                  <select
+                    className="w-full mt-1.5 h-10 rounded-xl border border-input bg-background px-3 text-xs font-bold"
+                    value={transferForm.from_warehouse_id}
+                    onChange={(e) =>
+                      setTransferForm((prev) => ({ ...prev, from_warehouse_id: e.target.value }))
+                    }
+                  >
+                    {(warehousesQuery.data ?? []).map((wh) => (
+                      <option key={wh.id} value={wh.id}>
+                        {wh.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <Label className="text-xs font-bold">إلى مخزن (الوجهة)</Label>
+                  <select
+                    className="w-full mt-1.5 h-10 rounded-xl border border-input bg-background px-3 text-xs font-bold"
+                    value={transferForm.to_warehouse_id}
+                    onChange={(e) =>
+                      setTransferForm((prev) => ({ ...prev, to_warehouse_id: e.target.value }))
+                    }
+                  >
+                    {(warehousesQuery.data ?? []).map((wh) => (
+                      <option key={wh.id} value={wh.id}>
+                        {wh.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <Label className="text-xs font-bold">الكمية المحولة *</Label>
+                    <Input
+                      type="number"
+                      step="any"
+                      min="0.01"
+                      required
+                      placeholder="0.00"
+                      value={transferForm.quantity}
+                      onChange={(e) =>
+                        setTransferForm((prev) => ({ ...prev, quantity: e.target.value }))
+                      }
+                      className="mt-1.5 h-10 font-mono font-bold text-center"
+                    />
+                  </div>
+                  <Button
+                    type="submit"
+                    className="h-10 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl px-4 cursor-pointer"
+                  >
+                    تحويل
+                  </Button>
+                </div>
+              </form>
+            </div>
+          </TabsContent>
+
           <TabsContent value="settings" className="space-y-4 mt-4">
             <div className="bg-card border border-border p-6 rounded-2xl space-y-6">
               <div>
@@ -3462,10 +4125,29 @@ function InventoryPage() {
                     XLSX.utils.book_append_sheet(wb, ws, "التقرير");
                     XLSX.writeFile(wb, fileName);
                   }}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs cursor-pointer"
                 >
                   تصدير التقرير الحالي كـ Excel
                 </Button>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Button
+                    type="button"
+                    onClick={() => handlePrintSmartStocktaking(false, "report")}
+                    className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Printer size={15} />
+                    طباعة قائمة الجرد الذكي (بمربعات الفحص ☐)
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => handlePrintSmartStocktaking(true, "report")}
+                    className="border-amber-500/50 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Printer size={15} />
+                    طباعة جرد أعمى (بدون رصيد دفتري ☐)
+                  </Button>
+                </div>
               </div>
 
               {/* Filters Dashboard Panel */}

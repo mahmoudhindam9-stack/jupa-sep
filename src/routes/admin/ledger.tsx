@@ -689,10 +689,10 @@ function LedgerPage() {
   const [newEntryDate, setNewEntryDate] = useState(new Date().toISOString().split("T")[0]);
   const [newEntryAttachments, setNewEntryAttachments] = useState<string[]>([]);
   const [newEntryLines, setNewEntryLines] = useState<
-    (JournalLine & { currency?: string; rate?: number })[]
+    (JournalLine & { currency?: string; rate?: number; side?: "debit" | "credit" })[]
   >([
-    { account_code: "", debit: 0, credit: 0, currency: "USD", rate: 1 },
-    { account_code: "", debit: 0, credit: 0, currency: "SSP", rate: 1 },
+    { account_code: "", debit: 0, credit: 0, side: "debit", currency: "USD", rate: 1 },
+    { account_code: "", debit: 0, credit: 0, side: "credit", currency: "SSP", rate: 1 },
   ]);
 
   // Journal Entry Drafts & Exit Confirmation State
@@ -707,19 +707,12 @@ function LedgerPage() {
   });
 
   const handleSaveJournalAsDraft = () => {
-    if (!newEntryDesc.trim() && newEntryLines.every((l) => !l.debit && !l.credit)) {
-      toast({
-        title: "تنبيه المسودة",
-        description: "يرجى كتابة البيان المحاسبي أو إدخال مبالغ على الأقل لحفظ القيد كمسودة.",
-        variant: "destructive",
-      });
-      return;
-    }
     const newDraft = {
       id: `draft-je-${Date.now()}`,
       newEntryDate,
-      newEntryRef,
-      newEntryDesc: newEntryDesc.trim() || "مسودة قيد يومية",
+      newEntryRef: newEntryRef || erpStore.generateJournalReference(newEntryDate),
+      newEntryDesc: newEntryDesc.trim() || `مسودة قيد يومية (${newEntryDate})`,
+      newEntryId,
       newEntryAttachments,
       newEntryLines,
       savedAt: new Date().toISOString(),
@@ -730,30 +723,52 @@ function LedgerPage() {
       setJournalDrafts(existing);
       toast({
         title: "💾 تم حفظ القيد كمسودة مؤقتة",
-        description: `تم حفظ المسودة بنجاح (مرجع: ${newEntryRef}). يمكنك استعادتها في أي وقت.`,
+        description: `تم حفظ المسودة بنجاح (مرجع: ${newDraft.newEntryRef}). يمكنك استعادتها واستكمالها في أي وقت.`,
       });
-      setIsNewEntryOpen(false);
+      setIsConfirmPostOpen(false);
       setIsExitEntryConfirmOpen(false);
+      setIsNewEntryOpen(false);
     } catch {
       toast({ title: "خطأ", description: "تعذر حفظ مسودة القيد.", variant: "destructive" });
     }
+  };
+
+  const handleDiscardNewEntry = () => {
+    const today = new Date().toISOString().split("T")[0];
+    setNewEntryDate(today);
+    setNewEntryRef(erpStore.generateJournalReference(today));
+    setNewEntryId("");
+    setNewEntryDesc("");
+    setNewEntryAttachments([]);
+    setNewEntryLines([
+      { account_code: "", debit: 0, credit: 0, side: "debit", description: "", currency: "USD", rate: 1 },
+      { account_code: "", debit: 0, credit: 0, side: "credit", description: "", currency: "SSP", rate: 1 },
+    ]);
+    setIsExitEntryConfirmOpen(false);
+    setIsConfirmPostOpen(false);
+    setIsNewEntryOpen(false);
+    toast({
+      title: "تم تجاهل القيد",
+      description: "تم إغلاق نافذة القيد وتجاهل البيانات غير المحفوظة.",
+    });
   };
 
   const handleLoadJournalDraft = (draft: any) => {
     setNewEntryDate(draft.newEntryDate || new Date().toISOString().split("T")[0]);
     setNewEntryRef(draft.newEntryRef || erpStore.generateJournalReference(draft.newEntryDate));
     setNewEntryDesc(draft.newEntryDesc || "");
+    setNewEntryId(draft.newEntryId || "");
     setNewEntryAttachments(draft.newEntryAttachments || []);
     setNewEntryLines(
       draft.newEntryLines || [
-        { account_code: "", debit: 0, credit: 0, currency: "USD", rate: 1 },
-        { account_code: "", debit: 0, credit: 0, currency: "SSP", rate: 1 },
+        { account_code: "", debit: 0, credit: 0, description: "", currency: "USD", rate: 1 },
+        { account_code: "", debit: 0, credit: 0, description: "", currency: "SSP", rate: 1 },
       ],
     );
     setIsNewEntryOpen(true);
     toast({
       title: "تم استعادة مسودة القيد",
-      description: `تم تحميل بيانات القيد المسودة بنجاح.`,
+      description: `تم تحميل بيانات القيد المسودة (${draft.newEntryRef || ""}) بنجاح.`,
     });
   };
 
@@ -766,14 +781,7 @@ function LedgerPage() {
   };
 
   const handleRequestCloseNewEntry = () => {
-    if (
-      newEntryDesc.trim() ||
-      newEntryLines.some((l) => l.debit > 0 || l.credit > 0 || l.account_code)
-    ) {
-      setIsExitEntryConfirmOpen(true);
-    } else {
-      setIsNewEntryOpen(false);
-    }
+    setIsExitEntryConfirmOpen(true);
   };
 
   // Edit Journal Entry State
@@ -783,7 +791,7 @@ function LedgerPage() {
   const [editEntryRef, setEditEntryRef] = useState("");
   const [editEntryDate, setEditEntryDate] = useState("");
   const [editEntryLines, setEditEntryLines] = useState<
-    (JournalLine & { currency?: string; rate?: number })[]
+    (JournalLine & { currency?: string; rate?: number; side?: "debit" | "credit" })[]
   >([]);
 
   // Delete Single Journal Entry State
@@ -1163,8 +1171,8 @@ function LedgerPage() {
     setNewEntryDesc("");
     setNewEntryAttachments([]);
     setNewEntryLines([
-      { account_code: "", debit: 0, credit: 0, currency: "USD", rate: 1 },
-      { account_code: "", debit: 0, credit: 0, currency: "SSP", rate: 1 },
+      { account_code: "", debit: 0, credit: 0, side: "debit", currency: "USD", rate: 1 },
+      { account_code: "", debit: 0, credit: 0, side: "credit", currency: "SSP", rate: 1 },
     ]);
     setIsNewEntryOpen(true);
   };
@@ -1180,19 +1188,94 @@ function LedgerPage() {
 
   // Add line to manual journal entry
   const addEntryLine = () => {
-    const lastCurrency = newEntryLines[newEntryLines.length - 1]?.currency || "USD";
+    const lastLine = newEntryLines[newEntryLines.length - 1];
+    const lastCurrency = lastLine?.currency || "USD";
+    const lastRate = lastLine?.rate || (lastCurrency === "USD" ? 1 : erpStore.getExchangeRate(lastCurrency) || 1);
+    const debitsBase = newEntryLines.reduce(
+      (sum, l) => sum + getLineBaseValue(l.debit, l.rate || 1, l.currency || "USD"),
+      0,
+    );
+    const creditsBase = newEntryLines.reduce(
+      (sum, l) => sum + getLineBaseValue(l.credit, l.rate || 1, l.currency || "USD"),
+      0,
+    );
+    const suggestedSide: "debit" | "credit" = debitsBase > creditsBase ? "credit" : "debit";
     setNewEntryLines([
       ...newEntryLines,
-      { account_code: "", debit: 0, credit: 0, currency: lastCurrency, rate: 1 },
+      {
+        account_code: "",
+        debit: 0,
+        credit: 0,
+        side: suggestedSide,
+        description: "",
+        currency: lastCurrency,
+        rate: lastRate,
+      },
     ]);
+  };
+
+  // Auto-balance the current manual entry by filling the empty line or appending a balancing row
+  const handleAutoBalanceNewEntry = () => {
+    const debitsBase = newEntryLines.reduce(
+      (sum, l) => sum + getLineBaseValue(l.debit, l.rate || 1, l.currency || "USD"),
+      0,
+    );
+    const creditsBase = newEntryLines.reduce(
+      (sum, l) => sum + getLineBaseValue(l.credit, l.rate || 1, l.currency || "USD"),
+      0,
+    );
+    const diffBase = Math.abs(debitsBase - creditsBase);
+    if (diffBase < 0.01) {
+      toast({ title: "القيد متزن بالفعل ✓", description: "مجموع المدين يساوي مجموع الدائن." });
+      return;
+    }
+
+    const needDebit = debitsBase < creditsBase;
+    const lines = [...newEntryLines];
+    const emptyIdx = lines.findIndex((l) => (Number(l.debit) || 0) === 0 && (Number(l.credit) || 0) === 0);
+
+    if (emptyIdx !== -1) {
+      const targetLine = { ...lines[emptyIdx] };
+      const curr = targetLine.currency || "USD";
+      const rate = Number(targetLine.rate) > 0 ? Number(targetLine.rate) : 1;
+      const convertedAmt = curr === "USD" ? Number(diffBase.toFixed(2)) : Number((diffBase * rate).toFixed(2));
+      targetLine.side = needDebit ? "debit" : "credit";
+      targetLine.debit = needDebit ? convertedAmt : 0;
+      targetLine.credit = needDebit ? 0 : convertedAmt;
+      if (!targetLine.description) {
+        targetLine.description = "موازنة القيد المحاسبي";
+      }
+      lines[emptyIdx] = targetLine;
+      setNewEntryLines(lines);
+      toast({
+        title: "⚖️ تم تعبئة فرق الاتزان في السطر #" + (emptyIdx + 1),
+        description: `تم إدراج مبلغ (${convertedAmt.toLocaleString()} ${curr}) في جانب ${needDebit ? "المدين" : "الدائن"} ليصبح القيد متزناً.`,
+      });
+    } else {
+      const defaultAcc = level4Accounts.find((a) => a.code === "509")?.code || level4Accounts[0]?.code || "";
+      const balancingRow = {
+        account_code: defaultAcc,
+        side: (needDebit ? "debit" : "credit") as "debit" | "credit",
+        debit: needDebit ? Number(diffBase.toFixed(2)) : 0,
+        credit: needDebit ? 0 : Number(diffBase.toFixed(2)),
+        currency: "USD",
+        rate: 1,
+        description: "سطر موازنة القيد المحاسبي",
+      };
+      setNewEntryLines([...lines, balancingRow]);
+      toast({
+        title: "⚖️ تم إدراج سطر الموازنة داخل القيد",
+        description: `تم إضافة السطر رقم #${lines.length + 1} بقيمة (${diffBase.toFixed(2)} USD) في جانب ${needDebit ? "المدين" : "الدائن"}.`,
+      });
+    }
   };
 
   // Remove line from manual journal entry
   const removeEntryLine = (index: number) => {
     if (newEntryLines.length <= 2) {
       toast({
-        title: "خطأ في التعديل",
-        description: "يجب أن يحتوي القيد المحاسبي على سطرين على الأقل",
+        title: "تنبيه حدود القيد المزدوج",
+        description: "يجب أن يحتوي القيد المحاسبي الواحد على سطرين (مدين ودائن) على الأقل.",
         variant: "destructive",
       });
       return;
@@ -1207,7 +1290,7 @@ function LedgerPage() {
     const lines = [...newEntryLines];
     lines[index].account_code = accountCode;
     if (account) {
-      let detectedCurrency = account.currency || "EGP";
+      let detectedCurrency = account.currency || "USD";
       if (account.name_ar.includes("دولار") || account.name_ar.includes("USD")) {
         detectedCurrency = "USD";
       } else if (account.name_ar.includes("سوداني") || account.name_ar.includes("SSP")) {
@@ -1216,8 +1299,9 @@ function LedgerPage() {
         detectedCurrency = "EGP";
       }
       lines[index].currency = detectedCurrency;
-      if (!lines[index].rate) {
-        lines[index].rate = 1.0;
+      if (!lines[index].rate || lines[index].rate === 1) {
+        lines[index].rate =
+          detectedCurrency === "USD" ? 1.0 : erpStore.getExchangeRate(detectedCurrency) || 1.0;
       }
     }
     setNewEntryLines(lines);
@@ -1226,16 +1310,48 @@ function LedgerPage() {
   // Update line field
   const updateLine = (index: number, field: string, value: any) => {
     const lines = [...newEntryLines];
-    if (field === "debit") {
+    const currentSide: "debit" | "credit" =
+      lines[index].side ||
+      (Number(lines[index].credit) > 0
+        ? "credit"
+        : Number(lines[index].debit) > 0
+          ? "debit"
+          : index === 1
+            ? "credit"
+            : "debit");
+
+    if (field === "side") {
+      const nextSide: "debit" | "credit" = value === "credit" ? "credit" : "debit";
+      const currentAmt = Number(lines[index].debit) || Number(lines[index].credit) || 0;
+      lines[index].side = nextSide;
+      lines[index].debit = nextSide === "debit" ? currentAmt : 0;
+      lines[index].credit = nextSide === "credit" ? currentAmt : 0;
+    } else if (field === "amount") {
+      const amt = Math.max(0, Number(value) || 0);
+      lines[index].side = currentSide;
+      lines[index].debit = currentSide === "debit" ? amt : 0;
+      lines[index].credit = currentSide === "credit" ? amt : 0;
+    } else if (field === "debit") {
       lines[index].debit = Number(value) || 0;
-      if (lines[index].debit > 0) lines[index].credit = 0; // standard accounting
+      if (lines[index].debit > 0) {
+        lines[index].credit = 0;
+        lines[index].side = "debit";
+      }
     } else if (field === "credit") {
       lines[index].credit = Number(value) || 0;
-      if (lines[index].credit > 0) lines[index].debit = 0; // standard accounting
+      if (lines[index].credit > 0) {
+        lines[index].debit = 0;
+        lines[index].side = "credit";
+      }
     } else if (field === "rate") {
       lines[index].rate = Number(value) || 1;
     } else if (field === "currency") {
       lines[index].currency = value;
+      if (value === "USD") {
+        lines[index].rate = 1;
+      } else if (!lines[index].rate || lines[index].rate === 1) {
+        lines[index].rate = erpStore.getExchangeRate(value) || 1;
+      }
     } else {
       (lines[index] as any)[field] = value;
     }
@@ -1257,7 +1373,7 @@ function LedgerPage() {
       debits: debitsBase,
       credits: creditsBase,
       difference,
-      isBalanced: difference < 0.05,
+      isBalanced: difference < 0.05 && (debitsBase > 0 || creditsBase > 0),
     };
   }, [newEntryLines]);
 
@@ -1276,56 +1392,61 @@ function LedgerPage() {
       debits: debitsBase,
       credits: creditsBase,
       difference,
-      isBalanced: difference < 0.05,
+      isBalanced: difference < 0.05 && (debitsBase > 0 || creditsBase > 0),
     };
   }, [editEntryLines]);
 
-  // Handle opening confirmation dialog for manual journal entry
+  // Handle opening confirmation dialog for manual journal entry (supports both balanced and unbalanced entries)
   const handlePostEntry = () => {
     if (!newEntryDesc.trim()) {
       toast({
-        title: "خطأ في الإدخال",
-        description: "يرجى كتابة شرح توضيحي للقيد اليومي",
+        title: "⚠️ بيان القيد مطلوب",
+        description: "يرجى كتابة الشرح والبيان العام للقيد المحاسبي في أعلى السند قبل الحفظ.",
         variant: "destructive",
       });
       return;
     }
 
-    if (newEntryLines.some((l) => !l.account_code)) {
+    const missingAccountIdx = newEntryLines.findIndex((l) => !l.account_code);
+    if (missingAccountIdx !== -1) {
       toast({
-        title: "خطأ في الحسابات",
-        description: "يرجى تحديد حساب محاسبي صالح لجميع الأسطر",
+        title: `⚠️ حساب غير محدد في السطر #${missingAccountIdx + 1}`,
+        description: `يرجى اختيار الحساب المحاسبي للسطر رقم (${missingAccountIdx + 1}) داخل جدول القيد.`,
         variant: "destructive",
       });
       return;
     }
 
-    const invalidLevel4Line = newEntryLines.find((l) => {
+    const invalidLevel4Idx = newEntryLines.findIndex((l) => {
       const acc = accounts.find((a) => a.code === l.account_code);
       return !acc || !isLevel4Account(acc);
     });
-    if (invalidLevel4Line) {
+    if (invalidLevel4Idx !== -1) {
+      const badCode = newEntryLines[invalidLevel4Idx].account_code;
       toast({
-        title: "حساب غير مصرح به للقيود",
-        description: `الحساب (${invalidLevel4Line.account_code}) ليس من الدرجة الرابعة. العمليات والقيود المحاسبية مسموحة حصراً على حسابات الدرجة الرابعة التشغيلية والفرعية.`,
+        title: `⚠️ حساب غير تشغيلي في السطر #${invalidLevel4Idx + 1}`,
+        description: `الحساب (${badCode}) ليس من الدرجة الرابعة. القيود المحاسبية تُسجّل على حسابات الدرجة الرابعة التشغيلية فقط.`,
         variant: "destructive",
       });
       return;
     }
 
-    if (newEntryTotals.debits <= 0) {
+    const zeroAmountIdx = newEntryLines.findIndex(
+      (l) => (Number(l.debit) || 0) <= 0 && (Number(l.credit) || 0) <= 0,
+    );
+    if (zeroAmountIdx !== -1) {
       toast({
-        title: "خطأ في المبالغ",
-        description: "يجب أن تكون قيمة القيد المحاسبي أكبر من صفر",
+        title: `⚠️ مبلغ السطر #${zeroAmountIdx + 1} فارغ`,
+        description: `يرجى إدخال قيمة في خانة (مدين) أو (دائن) للسطر رقم (${zeroAmountIdx + 1}) أو حذف السطر الزائد.`,
         variant: "destructive",
       });
       return;
     }
 
-    if (!newEntryTotals.isBalanced) {
+    if (newEntryTotals.debits <= 0 && newEntryTotals.credits <= 0) {
       toast({
-        title: "القيد غير متزن",
-        description: "مجموع الجانب المدين المعادل يجب أن يساوي تماماً مجموع الجانب الدائن المعادل",
+        title: "⚠️ خطأ في إجمالي القيد",
+        description: "يجب أن يحتوي القيد على مبالغ أكبر من صفر قبل الحفظ.",
         variant: "destructive",
       });
       return;
@@ -1346,12 +1467,20 @@ function LedgerPage() {
       return;
     }
 
-    // Everything is valid -> open confirmation dialog
+    // If unbalanced, notify the user immediately and open the confirmation dialog where they can confirm saving unbalanced
+    if (!newEntryTotals.isBalanced) {
+      toast({
+        title: "⚠️ تنبيه: القيد غير متزن محاسبياً",
+        description: `يوجد فارق قدره (${newEntryTotals.difference.toFixed(2)} USD) بين المدين والدائن. يمكنك مراجعة التنبيه وتأكيد حفظه وهو غير متزن أو موازنته.`,
+      });
+    }
+
+    // Open confirmation dialog (handles both balanced and unbalanced confirmation)
     setIsConfirmPostOpen(true);
   };
 
-  // Execute actual entry posting and update account balances
-  const handleExecutePost = () => {
+  // Execute actual entry posting and update account balances (allows unbalanced when confirmed)
+  const handleExecutePost = (allowUnbalanced = false) => {
     try {
       const preparedLines: JournalLine[] = newEntryLines.map((l) => ({
         account_code: l.account_code,
@@ -1359,10 +1488,11 @@ function LedgerPage() {
         credit: Number(l.credit) || 0,
         currency: l.currency || "USD",
         rate: Number(l.rate) || 1,
+        description: l.description || "",
       }));
 
       // Call state store to register entry & update accounts
-      erpStore.addJournalEntry(
+      const createdEntry = erpStore.addJournalEntry(
         newEntryDesc,
         preparedLines,
         newEntryRef || undefined,
@@ -1370,12 +1500,22 @@ function LedgerPage() {
         newEntryDate,
         newEntryId || undefined,
         newEntryAttachments,
+        allowUnbalanced || !newEntryTotals.isBalanced,
       );
 
-      toast({
-        title: "تم حفظ القيد وترحيله بنجاح",
-        description: "تم إدراج القيد المزدوج في دفتر القيود وتحديث أرصدة الحسابات المعنية فوراً",
-      });
+      setErpState({ ...erpStore.getState() });
+
+      if (newEntryTotals.isBalanced) {
+        toast({
+          title: "✅ تم حفظ وترحيل القيد المحاسبي بنجاح",
+          description: `تم إدراج القيد المتزن رقم (${createdEntry.reference}) بمبلغ (${newEntryTotals.debits.toFixed(2)} USD) وتحديث أرصدة الحسابات فوراً.`,
+        });
+      } else {
+        toast({
+          title: "⚠️ تم حفظ القيد (غير متزن) بناءً على تأكيدك",
+          description: `تم حفظ القيد رقم (${createdEntry.reference}) مع وجود فرق اتزان (${newEntryTotals.difference.toFixed(2)} USD). يمكنك تسويته أو تعديله في أي وقت من جدول اليومية.`,
+        });
+      }
 
       // Reset Form & Close Modal
       setNewEntryId("");
@@ -1383,8 +1523,8 @@ function LedgerPage() {
       setNewEntryDesc("");
       setNewEntryRef("");
       setNewEntryLines([
-        { account_code: "", debit: 0, credit: 0, currency: "USD", rate: 1 },
-        { account_code: "", debit: 0, credit: 0, currency: "SSP", rate: 1 },
+        { account_code: "", debit: 0, credit: 0, description: "", currency: "USD", rate: 1 },
+        { account_code: "", debit: 0, credit: 0, description: "", currency: "SSP", rate: 1 },
       ]);
       setIsConfirmPostOpen(false);
       setIsNewEntryOpen(false);
@@ -1421,10 +1561,11 @@ function LedgerPage() {
     setEditEntryRef(entry.reference || "");
     setEditEntryDate(entry.date || new Date().toISOString().split("T")[0]);
     setEditEntryLines(
-      (entry.lines || []).map((l) => ({
+      (entry.lines || []).map((l, idx) => ({
         account_code: l.account_code,
         debit: Number(l.debit) || 0,
         credit: Number(l.credit) || 0,
+        side: Number(l.credit) > 0 ? "credit" : Number(l.debit) > 0 ? "debit" : idx === 1 ? "credit" : "debit",
         currency: l.currency || entry.currency || "USD",
         rate: Number(l.rate) || 1,
         description: l.description || "",
@@ -1477,44 +1618,58 @@ function LedgerPage() {
     }
   };
 
-  // Save changes to edited entry
-  const handleSaveEditEntry = () => {
+  // Save changes to edited entry (supports balanced and unbalanced when confirmed)
+  const handleSaveEditEntry = (allowUnbalanced = false) => {
     if (!editingEntryId) return;
     if (!editEntryDesc.trim()) {
       toast({
-        title: "خطأ في الإدخال",
-        description: "يرجى كتابة شرح توضيحي للقيد اليومي",
+        title: "⚠️ بيان القيد مطلوب",
+        description: "يرجى كتابة الشرح والبيان العام للقيد اليومي قبل الحفظ.",
         variant: "destructive",
       });
       return;
     }
 
-    if (editEntryLines.some((l) => !l.account_code)) {
+    const missingAccountIdx = editEntryLines.findIndex((l) => !l.account_code);
+    if (missingAccountIdx !== -1) {
       toast({
-        title: "خطأ في الحسابات",
-        description: "يرجى تحديد حساب محاسبي صالح لجميع الأسطر",
+        title: `⚠️ حساب غير محدد في السطر #${missingAccountIdx + 1}`,
+        description: `يرجى اختيار الحساب المحاسبي للسطر رقم (${missingAccountIdx + 1}).`,
         variant: "destructive",
       });
       return;
     }
 
-    const invalidEditLevel4Line = editEntryLines.find((l) => {
+    const invalidEditLevel4Idx = editEntryLines.findIndex((l) => {
       const acc = accounts.find((a) => a.code === l.account_code);
       return !acc || !isLevel4Account(acc);
     });
-    if (invalidEditLevel4Line) {
+    if (invalidEditLevel4Idx !== -1) {
+      const badCode = editEntryLines[invalidEditLevel4Idx].account_code;
       toast({
-        title: "حساب غير مصرح به للقيود",
-        description: `الحساب (${invalidEditLevel4Line.account_code}) ليس من الدرجة الرابعة. العمليات والقيود المحاسبية مسموحة حصراً على حسابات الدرجة الرابعة التشغيلية والفرعية.`,
+        title: `⚠️ حساب غير تشغيلي في السطر #${invalidEditLevel4Idx + 1}`,
+        description: `الحساب (${badCode}) ليس من الدرجة الرابعة. العمليات والقيود المحاسبية مسموحة حصراً على حسابات الدرجة الرابعة التشغيلية والفرعية.`,
         variant: "destructive",
       });
       return;
     }
 
-    if (!editEntryTotals.isBalanced) {
+    const zeroAmountIdx = editEntryLines.findIndex(
+      (l) => (Number(l.debit) || 0) <= 0 && (Number(l.credit) || 0) <= 0,
+    );
+    if (zeroAmountIdx !== -1) {
       toast({
-        title: "القيد غير متزن",
-        description: "مجموع الجانب المدين المعادل يجب أن يساوي تماماً مجموع الجانب الدائن المعادل",
+        title: `⚠️ مبلغ السطر #${zeroAmountIdx + 1} فارغ`,
+        description: `يرجى إدخال مبلغ أكبر من صفر في المدين أو الدائن للسطر رقم (${zeroAmountIdx + 1}).`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!editEntryTotals.isBalanced && !allowUnbalanced) {
+      toast({
+        title: "⚠️ القيد غير متزن",
+        description: `يوجد فارق (${editEntryTotals.difference.toFixed(2)} USD). يرجى تأكيد حفظ القيد وهو غير متزن من نافذة التأكيد.`,
         variant: "destructive",
       });
       return;
@@ -1541,10 +1696,17 @@ function LedgerPage() {
       setErpState({ ...erpStore.getState() });
       setIsEditEntryOpen(false);
       setEditingEntryId(null);
-      toast({
-        title: "تم تعديل القيد بنجاح ✓",
-        description: `تم تحديث القيد وتعديل موازين الحسابات المعنية فوراً.`,
-      });
+      if (editEntryTotals.isBalanced) {
+        toast({
+          title: "✅ تم حفظ وتثبيت تعديلات القيد المتزن بنجاح",
+          description: `تم تحديث القيد رقم (${editEntryRef}) وتحديث موازين الحسابات المعنية فوراً.`,
+        });
+      } else {
+        toast({
+          title: "⚠️ تم حفظ تعديلات القيد (غير متزن)",
+          description: `تم حفظ القيد رقم (${editEntryRef}) مع وجود فرق اتزان (${editEntryTotals.difference.toFixed(2)} USD).`,
+        });
+      }
     } else {
       setClosedYearAlertMessage(res.error || "لا يمكن تعديل القيد.");
       setIsClosedYearAlertOpen(true);
@@ -1669,14 +1831,14 @@ function LedgerPage() {
             </Badge>
           </Button>
 
-          {/* Add Manual Entry Dialog */}
+          {/* Add Manual Entry Dialog — Unified Accounting Voucher */}
           <Dialog
             open={isNewEntryOpen}
             onOpenChange={(open) => {
               if (open) {
                 handleOpenNewEntry();
               } else {
-                setIsNewEntryOpen(false);
+                handleRequestCloseNewEntry();
               }
             }}
           >
@@ -1684,436 +1846,926 @@ function LedgerPage() {
               <Plus className="h-4 w-4" />
               إضافة قيد يومي مزدوج
             </Button>
-            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader className="text-right">
-                <DialogTitle className="text-lg font-bold flex items-center gap-2">
-                  <Scale className="h-5 w-5 text-primary" />
-                  تسجيل قيد يومي يدوي مزدوج
-                </DialogTitle>
-                <DialogDescription>
-                  أدخل أسطر الجانبين المدين والدائن مع الحسابات الصحيحة لإنشاء قيد مزدوج متزن ومرحّل
-                  تلقائياً مع ترقيم (الفترة/رقم القيد مثل 01/02).
-                </DialogDescription>
-              </DialogHeader>
+            <DialogContent
+              className="w-[calc(100vw-1rem)] sm:w-[calc(100vw-2rem)] lg:w-[calc(100vw-4rem)] max-w-6xl max-h-[92vh] overflow-y-auto overflow-x-hidden p-0 gap-0 border-2 border-primary/20 shadow-2xl rounded-2xl"
+              dir="rtl"
+            >
+              {/* Unified Accounting Voucher Sheet Container */}
+              <div className="bg-card text-card-foreground flex flex-col min-w-0 w-full">
+                {/* 1. Voucher Top Banner Header */}
+                <DialogHeader className="text-right px-4 sm:px-6 py-3.5 sm:py-4 bg-gradient-to-l from-primary/10 via-primary/5 to-transparent border-b border-border">
+                  <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2.5 pl-8">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <div className="p-1.5 sm:p-2 rounded-xl bg-primary/15 text-primary shrink-0">
+                          <Scale className="h-4 w-4 sm:h-5 sm:w-5" />
+                        </div>
+                        <DialogTitle className="text-base sm:text-xl font-black tracking-tight text-foreground">
+                          سند قيد يومية مزدوج موحد
+                        </DialogTitle>
+                        <Badge
+                          variant="outline"
+                          className="font-mono font-bold text-[11px] sm:text-xs bg-background border-primary/30 text-primary px-2 py-0.5"
+                        >
+                          مرجع السند: {newEntryRef || "تلقائي"}
+                        </Badge>
+                        <Badge
+                          className={`text-[11px] sm:text-xs font-bold px-2 py-0.5 ${
+                            newEntryTotals.isBalanced
+                              ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30"
+                              : "bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30"
+                          }`}
+                        >
+                          {newEntryTotals.isBalanced
+                            ? `متزن ✓ (${newEntryLines.length} أسطر)`
+                            : newEntryTotals.debits === 0 && newEntryTotals.credits === 0
+                              ? `قيد الإدخال (${newEntryLines.length} أسطر)`
+                              : `غير متزن — فرق ${newEntryTotals.difference.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`}
+                        </Badge>
+                      </div>
+                      <DialogDescription className="text-[11px] sm:text-xs text-muted-foreground mt-1 text-right">
+                        جميع الأسطر أدناه تنتمي لنفس سند القيد الموحد داخل جدول واحد مترابط.
+                      </DialogDescription>
+                    </div>
 
-              <div className="space-y-4 my-4">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  {/* Journal Number / Sequence (Period/JournalNum) */}
-                  <div className="space-y-1.5">
-                    <Label className="font-bold text-sm flex items-center gap-1">
-                      رقم القيد (الفترة/القيد: 01/02)
-                      <span className="text-rose-500">*</span>
-                    </Label>
-                    <Input
-                      placeholder="مثال: 01/02"
-                      value={newEntryRef}
-                      onChange={(e) => setNewEntryRef(e.target.value)}
-                      className="font-mono font-bold text-primary"
-                    />
-                    <p className="text-[11px] text-muted-foreground leading-tight">
-                      رقم الفترة / رقم القيد (مثال: 01/02). يتم التحديث تلقائياً مع حرية التعديل.
-                    </p>
-                  </div>
-
-                  {/* Date Picker */}
-                  <div className="space-y-1.5">
-                    <Label className="font-bold text-sm flex items-center gap-1">
-                      تاريخ القيد
-                      <span className="text-rose-500">*</span>
-                    </Label>
-                    <Input
-                      type="date"
-                      value={newEntryDate}
-                      onChange={(e) => handleEntryDateChange(e.target.value)}
-                    />
-                    <p className="text-[11px] text-muted-foreground leading-tight">
-                      تغيير التاريخ يحدّث الشهر تلقائياً مع حرية تعديله.
-                    </p>
-                  </div>
-
-                  {/* Description */}
-                  <div className="space-y-1.5 col-span-1 md:col-span-2">
-                    <Label className="font-bold text-sm flex items-center gap-1">
-                      شرح وتوضيح القيد المحاسبي
-                      <span className="text-rose-500">*</span>
-                    </Label>
-                    <Input
-                      placeholder="مثال: إثبات إيراد مبيعات أو سداد مصروف الضيافة..."
-                      value={newEntryDesc}
-                      onChange={(e) => setNewEntryDesc(e.target.value)}
-                    />
-                    <p className="text-[11px] text-muted-foreground leading-tight">
-                      البيان العام للقيد الذي يظهر في اليومية وسندات الصرف.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
-                  {/* Internal ID (Optional) */}
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">
-                      معرف داخلي للنظام (اختياري)
-                    </Label>
-                    <Input
-                      placeholder="تلقائي (مثال: JV-1001)"
-                      value={newEntryId}
-                      onChange={(e) => setNewEntryId(e.target.value)}
-                      className="font-mono text-xs"
-                    />
-                  </div>
-
-                  {/* Attachments */}
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">
-                      مرفقات القيد (مستند / فاتورة)
-                    </Label>
-                    <Input
-                      type="file"
-                      accept="image/*,.pdf"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          const reader = new FileReader();
-                          reader.onload = (event) => {
-                            const result = event.target?.result as string;
-                            if (result) {
-                              setNewEntryAttachments([...newEntryAttachments, result]);
-                            }
-                          };
-                          reader.readAsDataURL(file);
-                        }
-                      }}
-                    />
-                    {newEntryAttachments.length > 0 && (
-                      <div className="text-xs text-primary font-bold mt-0.5">
-                        تم إرفاق {newEntryAttachments.length} مستند
+                    {/* Saved Drafts Quick Bar */}
+                    {journalDrafts.length > 0 && (
+                      <div className="flex items-center gap-1.5 flex-wrap bg-amber-500/10 border border-amber-500/30 rounded-xl px-2.5 py-1.5 self-start lg:self-auto max-w-full">
+                        <span className="text-[11px] font-bold text-amber-700 dark:text-amber-300 shrink-0">
+                          مسودات ({journalDrafts.length}):
+                        </span>
+                        <div className="flex items-center gap-1 overflow-x-auto max-w-full">
+                          {journalDrafts.slice(0, 3).map((draft) => (
+                            <div
+                              key={draft.id}
+                              className="inline-flex items-center gap-1 bg-background border border-amber-500/30 rounded-lg px-2 py-0.5 text-[11px] shrink-0"
+                            >
+                              <button
+                                type="button"
+                                onClick={() => handleLoadJournalDraft(draft)}
+                                className="font-mono font-bold text-primary hover:underline truncate max-w-[90px]"
+                                title={draft.newEntryDesc}
+                              >
+                                {draft.newEntryRef || "مسودة"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => handleDeleteJournalDraft(draft.id, e)}
+                                className="text-rose-500 hover:text-rose-700 font-bold px-0.5"
+                                title="حذف المسودة"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
+                </DialogHeader>
+
+                {/* 2. Unified Voucher Body (Metadata + Single Accounting Table + Integrated Totals) */}
+                <div className="p-3 sm:p-5 space-y-4 min-w-0">
+                  {/* Unified Voucher Document Frame */}
+                  <div className="rounded-2xl border-2 border-border bg-background shadow-sm overflow-hidden min-w-0">
+                    {/* Voucher Metadata Strip (Part of the same document) */}
+                    <div className="p-3 sm:p-4 bg-muted/30 border-b border-border">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-start">
+                        {/* Journal Reference */}
+                        <div className="sm:col-span-1 lg:col-span-2 space-y-1 min-w-0">
+                          <Label className="font-bold text-xs flex items-center gap-1 text-foreground">
+                            رقم القيد (الفترة/القيد)
+                            <span className="text-rose-500">*</span>
+                          </Label>
+                          <Input
+                            placeholder="01/02"
+                            value={newEntryRef}
+                            onChange={(e) => setNewEntryRef(e.target.value)}
+                            className="h-9 font-mono font-bold text-primary bg-card text-xs w-full"
+                          />
+                        </div>
+
+                        {/* Entry Date */}
+                        <div className="sm:col-span-1 lg:col-span-2 space-y-1 min-w-0">
+                          <Label className="font-bold text-xs flex items-center gap-1 text-foreground">
+                            تاريخ القيد
+                            <span className="text-rose-500">*</span>
+                          </Label>
+                          <Input
+                            type="date"
+                            value={newEntryDate}
+                            onChange={(e) => handleEntryDateChange(e.target.value)}
+                            className="h-9 font-mono bg-card text-xs w-full"
+                          />
+                        </div>
+
+                        {/* General Voucher Description */}
+                        <div className="sm:col-span-2 lg:col-span-5 space-y-1 min-w-0">
+                          <Label className="font-bold text-xs flex items-center gap-1 text-foreground">
+                            البيان والشرح العام للسند المحاسبي
+                            <span className="text-rose-500">*</span>
+                          </Label>
+                          <Input
+                            placeholder="مثال: إثبات إيراد مبيعات نقدية أو سداد مصروفات تشغيلية..."
+                            value={newEntryDesc}
+                            onChange={(e) => setNewEntryDesc(e.target.value)}
+                            className="h-9 bg-card text-xs font-medium w-full"
+                          />
+                        </div>
+
+                        {/* Optional Custom ID + Compact Attachment Button */}
+                        <div className="sm:col-span-2 lg:col-span-3 space-y-1 min-w-0">
+                          <Label className="text-xs font-semibold text-muted-foreground block truncate">
+                            معرف السند / مرفق مستندي
+                          </Label>
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <Input
+                              placeholder="معرف (تلقائي)"
+                              value={newEntryId}
+                              onChange={(e) => setNewEntryId(e.target.value)}
+                              className="h-9 font-mono text-xs bg-card flex-1 min-w-0"
+                            />
+                            <label className="inline-flex items-center justify-center gap-1 h-9 px-2.5 rounded-lg border border-border bg-card hover:bg-muted text-xs font-bold cursor-pointer shrink-0 transition-colors">
+                              <Paperclip className="h-3.5 w-3.5 text-primary" />
+                              <span>مرفق</span>
+                              {newEntryAttachments.length > 0 && (
+                                <span className="bg-primary text-primary-foreground rounded-full px-1.5 text-[10px] font-mono">
+                                  {newEntryAttachments.length}
+                                </span>
+                              )}
+                              <input
+                                type="file"
+                                accept="image/*,.pdf"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) {
+                                    const reader = new FileReader();
+                                    reader.onload = (event) => {
+                                      const result = event.target?.result as string;
+                                      if (result) {
+                                        setNewEntryAttachments([...newEntryAttachments, result]);
+                                      }
+                                    };
+                                    reader.readAsDataURL(file);
+                                  }
+                                }}
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* A. Mobile & Small Tablet Unified Lines List (< md) */}
+                    <div className="block md:hidden divide-y divide-border">
+                      {newEntryLines.map((line, index) => {
+                        const lineSide: "debit" | "credit" =
+                          line.side ||
+                          (Number(line.credit) > 0
+                            ? "credit"
+                            : Number(line.debit) > 0
+                              ? "debit"
+                              : index === 1
+                                ? "credit"
+                                : "debit");
+                        const isDebitRow = lineSide === "debit";
+                        const lineAmount =
+                          lineSide === "credit"
+                            ? Number(line.credit) || 0
+                            : Number(line.debit) || 0;
+                        const lineBaseUsd = getLineBaseValue(
+                          lineAmount,
+                          Number(line.rate) || 1,
+                          line.currency || "USD",
+                        );
+
+                        return (
+                          <div
+                            key={index}
+                            className={`p-3 space-y-2.5 ${
+                              isDebitRow ? "bg-emerald-500/[0.03]" : "bg-rose-500/[0.03]"
+                            }`}
+                          >
+                            {/* Row 1: Line # + Side Select + Delete */}
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className="inline-flex items-center justify-center h-7 w-7 rounded-lg bg-muted font-mono font-bold text-xs text-muted-foreground">
+                                  #{index + 1}
+                                </span>
+                                <Select
+                                  value={lineSide}
+                                  onValueChange={(val) => updateLine(index, "side", val)}
+                                >
+                                  <SelectTrigger
+                                    className={`h-8 w-32 text-xs font-black px-2.5 rounded-lg border ${
+                                      isDebitRow
+                                        ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
+                                        : "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/30"
+                                    }`}
+                                  >
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem
+                                      value="debit"
+                                      className="font-bold text-emerald-700 dark:text-emerald-300"
+                                    >
+                                      مدين (منه)
+                                    </SelectItem>
+                                    <SelectItem
+                                      value="credit"
+                                      className="font-bold text-rose-700 dark:text-rose-300"
+                                    >
+                                      دائن (له)
+                                    </SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <span className="text-[11px] font-mono text-muted-foreground">
+                                  المعادل:{" "}
+                                  <strong className="text-foreground">
+                                    {lineBaseUsd.toLocaleString(undefined, {
+                                      minimumFractionDigits: 2,
+                                      maximumFractionDigits: 2,
+                                    })}{" "}
+                                    USD
+                                  </strong>
+                                </span>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => removeEntryLine(index)}
+                                  disabled={newEntryLines.length <= 2}
+                                  className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            </div>
+
+                            {/* Row 2: Account Selector */}
+                            <div>
+                              <AccountSearchSelect
+                                value={line.account_code}
+                                onChange={(code, acc) =>
+                                  handleAccountSelectForLine(index, code, acc)
+                                }
+                                accounts={level4Accounts}
+                                level4Only={true}
+                                placeholder={`اختر حساب السطر #${index + 1}...`}
+                              />
+                            </div>
+
+                            {/* Row 3: Amount + Currency + Rate */}
+                            <div className="grid grid-cols-12 gap-2 items-start">
+                              <div className="col-span-6 space-y-0.5">
+                                <Label className="text-[10px] text-muted-foreground">المبلغ</Label>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="any"
+                                  placeholder="0.00"
+                                  dir="ltr"
+                                  className={`bg-card h-9 text-sm font-mono font-black text-left px-2.5 w-full ${
+                                    isDebitRow
+                                      ? "text-emerald-700 dark:text-emerald-400 border-emerald-500/40"
+                                      : "text-rose-700 dark:text-rose-400 border-rose-500/40"
+                                  }`}
+                                  value={lineAmount || ""}
+                                  onChange={(e) => updateLine(index, "amount", e.target.value)}
+                                />
+                              </div>
+
+                              <div className="col-span-3 space-y-0.5">
+                                <Label className="text-[10px] text-muted-foreground">العملة</Label>
+                                <Select
+                                  value={line.currency || "USD"}
+                                  onValueChange={(val) => updateLine(index, "currency", val)}
+                                >
+                                  <SelectTrigger className="bg-card h-9 w-full text-xs font-mono font-bold px-1.5 justify-center">
+                                    <SelectValue placeholder="USD" />
+                                  </SelectTrigger>
+                                  <SelectContent className="min-w-[70px]">
+                                    <SelectItem value="USD" className="font-mono font-bold text-xs">
+                                      USD
+                                    </SelectItem>
+                                    <SelectItem value="EGP" className="font-mono font-bold text-xs">
+                                      EGP
+                                    </SelectItem>
+                                    <SelectItem value="SSP" className="font-mono font-bold text-xs">
+                                      SSP
+                                    </SelectItem>
+                                    <SelectItem value="SAR" className="font-mono font-bold text-xs">
+                                      SAR
+                                    </SelectItem>
+                                    <SelectItem value="EUR" className="font-mono font-bold text-xs">
+                                      EUR
+                                    </SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+
+                              <div className="col-span-3 space-y-0.5">
+                                <Label className="text-[10px] text-muted-foreground">المعامل</Label>
+                                <Input
+                                  type="number"
+                                  min="0.0001"
+                                  step="any"
+                                  placeholder="1"
+                                  disabled={(line.currency || "USD") === "USD"}
+                                  className="bg-card h-9 text-xs font-mono text-center px-1 w-full"
+                                  value={line.rate !== undefined ? line.rate : 1}
+                                  onChange={(e) => updateLine(index, "rate", e.target.value)}
+                                />
+                              </div>
+                            </div>
+
+                            {/* Row 4: Line Note */}
+                            <div>
+                              <Input
+                                placeholder={
+                                  newEntryDesc
+                                    ? `ملاحظة السطر (افتراضي: ${newEntryDesc.slice(0, 22)}...)`
+                                    : `بيان / ملاحظة السطر #${index + 1} (اختياري)...`
+                                }
+                                value={line.description || ""}
+                                onChange={(e) => updateLine(index, "description", e.target.value)}
+                                className="bg-card h-8 text-xs px-2.5 w-full"
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* B. Tablet & Desktop Unified Lines Table (md+) */}
+                    <div className="hidden md:block overflow-x-auto w-full">
+                      <table className="w-full text-right border-collapse">
+                        <thead>
+                          <tr className="bg-muted/70 border-b border-border text-[11px] font-black text-muted-foreground select-none">
+                            <th className="py-2.5 px-2 text-center w-9 border-l border-border/60">
+                              #
+                            </th>
+                            <th className="py-2.5 px-2 w-28 border-l border-border/60 text-center">
+                              الطرف (مدين/دائن)
+                            </th>
+                            <th className="py-2.5 px-2.5 min-w-[190px] border-l border-border/60">
+                              الحساب المحاسبي (الدرجة الرابعة) <span className="text-rose-500">*</span>
+                            </th>
+                            <th className="py-2.5 px-2.5 min-w-[175px] w-48 border-l border-border/60 text-primary bg-primary/[0.03]">
+                              المبلغ <span className="text-rose-500">*</span>
+                            </th>
+                            <th className="py-2.5 px-1.5 w-[72px] border-l border-border/60 text-center">
+                              العملة
+                            </th>
+                            <th className="py-2.5 px-1.5 w-20 border-l border-border/60 text-center">
+                              المعامل
+                            </th>
+                            <th className="py-2.5 px-2 w-28 border-l border-border/60 text-center">
+                              المعادل (USD)
+                            </th>
+                            <th className="py-2.5 px-2 min-w-[130px] border-l border-border/60">
+                              بيان السطر (اختياري)
+                            </th>
+                            <th className="py-2.5 px-1.5 w-10 text-center">حذف</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border/70 text-xs">
+                          {newEntryLines.map((line, index) => {
+                            const lineSide: "debit" | "credit" =
+                              line.side ||
+                              (Number(line.credit) > 0
+                                ? "credit"
+                                : Number(line.debit) > 0
+                                  ? "debit"
+                                  : index === 1
+                                    ? "credit"
+                                    : "debit");
+                            const isDebitRow = lineSide === "debit";
+                            const lineAmount =
+                              lineSide === "credit"
+                                ? Number(line.credit) || 0
+                                : Number(line.debit) || 0;
+                            const lineBaseUsd = getLineBaseValue(
+                              lineAmount,
+                              Number(line.rate) || 1,
+                              line.currency || "USD",
+                            );
+
+                            return (
+                              <tr
+                                key={index}
+                                className={`transition-colors ${
+                                  isDebitRow
+                                    ? "bg-emerald-500/[0.03] hover:bg-emerald-500/[0.07]"
+                                    : "bg-rose-500/[0.03] hover:bg-rose-500/[0.07]"
+                                }`}
+                              >
+                                {/* Row Number */}
+                                <td className="py-2 px-1.5 text-center font-mono font-bold text-muted-foreground border-l border-border/50 bg-muted/20">
+                                  {index + 1}
+                                </td>
+
+                                {/* Side Dropdown (مدين / دائن) */}
+                                <td className="py-2 px-1.5 border-l border-border/50 align-middle">
+                                  <Select
+                                    value={lineSide}
+                                    onValueChange={(val) => updateLine(index, "side", val)}
+                                  >
+                                    <SelectTrigger
+                                      className={`h-9 text-xs font-black px-2 rounded-lg border ${
+                                        isDebitRow
+                                          ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
+                                          : "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/30"
+                                      }`}
+                                    >
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem
+                                        value="debit"
+                                        className="font-bold text-emerald-700 dark:text-emerald-300"
+                                      >
+                                        مدين (منه)
+                                      </SelectItem>
+                                      <SelectItem
+                                        value="credit"
+                                        className="font-bold text-rose-700 dark:text-rose-300"
+                                      >
+                                        دائن (له)
+                                      </SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </td>
+
+                                {/* Account Selector */}
+                                <td className="py-2 px-2 border-l border-border/50 align-middle">
+                                  <AccountSearchSelect
+                                    value={line.account_code}
+                                    onChange={(code, acc) =>
+                                      handleAccountSelectForLine(index, code, acc)
+                                    }
+                                    accounts={level4Accounts}
+                                    level4Only={true}
+                                    placeholder={`اختر حساب السطر #${index + 1}...`}
+                                  />
+                                </td>
+
+                                {/* Wide Single Amount Input (Supports Millions) */}
+                                <td className="py-2 px-2 border-l border-border/50 align-middle">
+                                  <div className="space-y-0.5">
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      step="any"
+                                      placeholder="0.00"
+                                      dir="ltr"
+                                      className={`bg-card h-9 text-sm font-mono font-black tracking-wide text-left px-2.5 w-full min-w-[160px] ${
+                                        isDebitRow
+                                          ? "text-emerald-700 dark:text-emerald-400 border-emerald-500/40 focus-visible:ring-emerald-500"
+                                          : "text-rose-700 dark:text-rose-400 border-rose-500/40 focus-visible:ring-rose-500"
+                                      }`}
+                                      value={lineAmount || ""}
+                                      onChange={(e) => updateLine(index, "amount", e.target.value)}
+                                    />
+                                    {lineAmount >= 1000 && (
+                                      <div
+                                        dir="ltr"
+                                        className="text-[10px] font-mono text-muted-foreground text-left px-1 truncate"
+                                      >
+                                        {lineAmount.toLocaleString("en-US", {
+                                          minimumFractionDigits: 2,
+                                          maximumFractionDigits: 2,
+                                        })}{" "}
+                                        {line.currency || "USD"}
+                                      </div>
+                                    )}
+                                  </div>
+                                </td>
+
+                                {/* Compact Currency Symbol/Code Only */}
+                                <td className="py-2 px-1.5 border-l border-border/50 align-middle">
+                                  <Select
+                                    value={line.currency || "USD"}
+                                    onValueChange={(val) => updateLine(index, "currency", val)}
+                                  >
+                                    <SelectTrigger className="bg-card h-9 w-[66px] text-xs font-mono font-bold px-1.5 justify-center">
+                                      <SelectValue placeholder="USD" />
+                                    </SelectTrigger>
+                                    <SelectContent className="min-w-[70px]">
+                                      <SelectItem value="USD" className="font-mono font-bold text-xs">
+                                        USD
+                                      </SelectItem>
+                                      <SelectItem value="EGP" className="font-mono font-bold text-xs">
+                                        EGP
+                                      </SelectItem>
+                                      <SelectItem value="SSP" className="font-mono font-bold text-xs">
+                                        SSP
+                                      </SelectItem>
+                                      <SelectItem value="SAR" className="font-mono font-bold text-xs">
+                                        SAR
+                                      </SelectItem>
+                                      <SelectItem value="EUR" className="font-mono font-bold text-xs">
+                                        EUR
+                                      </SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </td>
+
+                                {/* Rate */}
+                                <td className="py-2 px-1.5 border-l border-border/50 align-middle">
+                                  <Input
+                                    type="number"
+                                    min="0.0001"
+                                    step="any"
+                                    placeholder="1"
+                                    disabled={(line.currency || "USD") === "USD"}
+                                    className="bg-card h-9 text-xs font-mono text-center px-1"
+                                    value={line.rate !== undefined ? line.rate : 1}
+                                    onChange={(e) => updateLine(index, "rate", e.target.value)}
+                                  />
+                                </td>
+
+                                {/* Equivalent in Base USD */}
+                                <td className="py-2 px-2 border-l border-border/50 align-middle text-center font-mono">
+                                  {lineBaseUsd > 0 ? (
+                                    <span
+                                      className={`font-bold text-[11px] px-1.5 py-0.5 rounded inline-block ${
+                                        isDebitRow
+                                          ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                                          : "bg-rose-500/10 text-rose-700 dark:text-rose-300"
+                                      }`}
+                                    >
+                                      {lineBaseUsd.toLocaleString(undefined, {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                      })}
+                                    </span>
+                                  ) : (
+                                    <span className="text-muted-foreground/50">0.00</span>
+                                  )}
+                                </td>
+
+                                {/* Line Note / Description */}
+                                <td className="py-2 px-2 border-l border-border/50 align-middle">
+                                  <Input
+                                    placeholder={
+                                      newEntryDesc
+                                        ? `افتراضي: ${newEntryDesc.slice(0, 18)}...`
+                                        : `ملاحظة السطر #${index + 1}...`
+                                    }
+                                    value={line.description || ""}
+                                    onChange={(e) =>
+                                      updateLine(index, "description", e.target.value)
+                                    }
+                                    className="bg-card h-9 text-xs px-2"
+                                  />
+                                </td>
+
+                                {/* Delete Row */}
+                                <td className="py-2 px-1 text-center align-middle">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => removeEntryLine(index)}
+                                    disabled={newEntryLines.length <= 2}
+                                    title={
+                                      newEntryLines.length <= 2
+                                        ? "يجب أن يحتوي القيد على سطرين على الأقل"
+                                        : "حذف هذا السطر من القيد"
+                                    }
+                                    className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Attached Voucher Action Strip (Always fits 100% container width on Mobile/Tablet/Desktop) */}
+                    <div className="bg-muted/25 border-t border-border px-3 sm:px-4 py-2.5 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={addEntryLine}
+                          className="gap-1.5 rounded-xl border-primary/40 text-primary hover:bg-primary/10 font-bold text-xs h-8"
+                        >
+                          <PlusCircle className="h-3.5 w-3.5" />
+                          إضافة سطر جديد في نفس القيد
+                        </Button>
+
+                        {!newEntryTotals.isBalanced && newEntryTotals.difference > 0 && (
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            onClick={handleAutoBalanceNewEntry}
+                            className="gap-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-800 dark:text-amber-300 border border-amber-500/30 font-bold text-xs h-8"
+                          >
+                            <Scale className="h-3.5 w-3.5" />
+                            موازنة الفرق تلقائياً (
+                            {newEntryTotals.difference.toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}{" "}
+                            USD)
+                          </Button>
+                        )}
+                      </div>
+
+                      <span className="text-[11px] text-muted-foreground">
+                        إجمالي عدد أسطر هذا السند:{" "}
+                        <strong className="text-foreground font-mono">
+                          {newEntryLines.length}
+                        </strong>{" "}
+                        أسطر مترابطة
+                      </span>
+                    </div>
+
+                    {/* Integrated Totals & Balance Status Strip (Responsive Grid across Mobile, Tablet, Desktop) */}
+                    <div
+                      className={`border-t-2 border-border px-3 sm:px-4 py-3 text-xs ${
+                        newEntryTotals.isBalanced
+                          ? "bg-emerald-500/[0.06]"
+                          : "bg-amber-500/[0.08]"
+                      }`}
+                    >
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-center">
+                        <div className="sm:col-span-2 lg:col-span-4 flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-foreground">
+                            إجمالي سند القيد (USD):
+                          </span>
+                          <Badge
+                            className={`text-[11px] font-bold ${
+                              newEntryTotals.isBalanced
+                                ? "bg-emerald-600 text-white"
+                                : "bg-rose-600 text-white"
+                            }`}
+                          >
+                            {newEntryTotals.isBalanced ? "القيد متزن ✓" : "القيد غير متزن ⚠️"}
+                          </Badge>
+                        </div>
+
+                        <div className="sm:col-span-2 lg:col-span-4 flex items-center justify-around gap-3 bg-background/60 rounded-xl px-3 py-2 border border-border/60 font-mono">
+                          <div>
+                            <span className="font-sans text-[11px] text-muted-foreground block">
+                              إجمالي المدين (USD):
+                            </span>
+                            <span className="font-black text-sm text-emerald-700 dark:text-emerald-400">
+                              {newEntryTotals.debits.toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}{" "}
+                              <span className="text-[10px] font-sans">USD</span>
+                            </span>
+                          </div>
+                          <div className="h-7 w-px bg-border" />
+                          <div>
+                            <span className="font-sans text-[11px] text-muted-foreground block">
+                              إجمالي الدائن (USD):
+                            </span>
+                            <span className="font-black text-sm text-rose-700 dark:text-rose-400">
+                              {newEntryTotals.credits.toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}{" "}
+                              <span className="text-[10px] font-sans">USD</span>
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="sm:col-span-2 lg:col-span-4">
+                          {newEntryTotals.isBalanced ? (
+                            <div className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400 font-bold text-xs">
+                              <CheckCircle2 className="h-4 w-4 shrink-0" />
+                              <span>الجانبان المدين والدائن متساويان تماماً (0.00 USD)</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5 text-amber-800 dark:text-amber-300 font-bold text-xs flex-wrap">
+                              <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+                              <span>
+                                فرق التوازن:{" "}
+                                <strong className="font-mono text-rose-600 dark:text-rose-400">
+                                  {newEntryTotals.difference.toLocaleString(undefined, {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  })}{" "}
+                                  USD
+                                </strong>{" "}
+                                ({newEntryTotals.debits > newEntryTotals.credits ? "المدين أكبر" : "الدائن أكبر"})
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
-                <Separator />
-
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-foreground">
-                      أسطر الحركة المالية (Double-Entry lines)
-                    </h3>
+                {/* 3. Unified Voucher Footer Actions */}
+                <DialogFooter className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 px-4 sm:px-6 py-3.5 sm:py-4 bg-muted/30 border-t border-border">
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
                     <Button
                       type="button"
                       variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        setNewEntryLines([
-                          ...newEntryLines,
-                          {
-                            account_code: "",
-                            debit: 0,
-                            credit: 0,
-                            description: "",
-                            currency: "USD",
-                            rate: 1,
-                          },
-                        ])
-                      }
-                      className="gap-1.5 rounded-xl border-dashed"
+                      onClick={handleRequestCloseNewEntry}
+                      className="flex-1 sm:flex-initial rounded-xl text-xs font-bold text-rose-600 border-rose-200 hover:bg-rose-50 dark:border-rose-900 dark:hover:bg-rose-950/40"
                     >
-                      <PlusCircle className="h-4 w-4" />
-                      إضافة سطر
+                      إلغاء / خروج
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleSaveJournalAsDraft}
+                      className="flex-1 sm:flex-initial gap-1.5 border-amber-500/40 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-xl font-bold text-xs"
+                    >
+                      <Save size={15} />
+                      <span>حفظ كمسودة</span>
                     </Button>
                   </div>
 
-                  <div className="space-y-3">
-                    {newEntryLines.map((line, index) => (
-                      <div
-                        key={index}
-                        className="space-y-2 bg-muted/40 p-3.5 rounded-xl border border-border shadow-2xs transition hover:border-primary/40"
-                      >
-                        <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-end">
-                          {/* Account Search Selector */}
-                          <div className="md:col-span-4 space-y-1">
-                            <Label className="text-xs font-semibold">
-                              اختر الحساب (بحث بالاسم أو الرقم) *
-                            </Label>
-                            <AccountSearchSelect
-                              value={line.account_code}
-                              onChange={(code, acc) => handleAccountSelectForLine(index, code, acc)}
-                              accounts={level4Accounts}
-                              level4Only={true}
-                              placeholder="اختر حساب تشغيلي من الدرجة الرابعة..."
-                            />
-                          </div>
-
-                          {/* Line Currency */}
-                          <div className="md:col-span-2 space-y-1">
-                            <Label className="text-xs font-semibold">العملة</Label>
-                            <Select
-                              value={line.currency || "USD"}
-                              onValueChange={(val) => updateLine(index, "currency", val)}
-                            >
-                              <SelectTrigger className="bg-card h-9 text-xs">
-                                <SelectValue placeholder="العملة" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="USD">USD ($)</SelectItem>
-                                <SelectItem value="EGP">EGP (ج.م)</SelectItem>
-                                <SelectItem value="SSP">SSP (ج.س)</SelectItem>
-                                <SelectItem value="SAR">SAR (ر.س)</SelectItem>
-                                <SelectItem value="EUR">EUR (€)</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          {/* Exchange Rate / Factor */}
-                          <div className="md:col-span-2 space-y-1">
-                            <Label className="text-xs font-semibold">Rate (المعامل)</Label>
-                            <Input
-                              type="number"
-                              min="0.0001"
-                              step="any"
-                              placeholder="1.00"
-                              className="bg-card h-9 text-xs font-mono"
-                              value={line.rate !== undefined ? line.rate : 1}
-                              onChange={(e) => updateLine(index, "rate", e.target.value)}
-                            />
-                          </div>
-
-                          {/* Debit */}
-                          <div className="md:col-span-2 space-y-1">
-                            <Label className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                              مدين (Debit)
-                            </Label>
-                            <Input
-                              type="number"
-                              min="0"
-                              step="any"
-                              placeholder="0.00"
-                              className="bg-card h-9 text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400"
-                              value={line.debit || ""}
-                              onChange={(e) => updateLine(index, "debit", e.target.value)}
-                              disabled={line.credit > 0}
-                            />
-                          </div>
-
-                          {/* Credit */}
-                          <div className="md:col-span-2 space-y-1">
-                            <Label className="text-xs font-semibold text-rose-700 dark:text-rose-400">
-                              دائن (Credit)
-                            </Label>
-                            <Input
-                              type="number"
-                              min="0"
-                              step="any"
-                              placeholder="0.00"
-                              className="bg-card h-9 text-xs font-mono font-bold text-rose-600 dark:text-rose-400"
-                              value={line.credit || ""}
-                              onChange={(e) => updateLine(index, "credit", e.target.value)}
-                              disabled={line.debit > 0}
-                            />
-                          </div>
-                        </div>
-
-                        {/* Equivalents and line summary row */}
-                        <div className="flex items-center justify-between text-[11px] pt-1.5 text-muted-foreground border-t border-border/50">
-                          <div className="flex items-center gap-2">
-                            {(line.debit > 0 || line.credit > 0) && (
-                              <Badge
-                                variant="secondary"
-                                className="font-mono text-[10px] bg-primary/10 text-primary border-primary/20"
-                              >
-                                المعادل بالعملة الأساسية (USD):{" "}
-                                {getLineBaseValue(
-                                  line.debit || line.credit || 0,
-                                  line.rate || 1,
-                                  line.currency || "USD",
-                                ).toLocaleString(undefined, {
-                                  minimumFractionDigits: 2,
-                                  maximumFractionDigits: 2,
-                                })}
-                              </Badge>
-                            )}
-                            <span className="text-[11px]">
-                              عملة السطر:{" "}
-                              <strong className="font-mono text-foreground font-semibold">
-                                {line.currency || "USD"}
-                              </strong>
-                            </span>
-                          </div>
-
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => removeEntryLine(index)}
-                            className="text-destructive hover:bg-destructive/10 hover:text-destructive h-7 px-2 text-[11px] gap-1 rounded-md"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                            حذف السطر
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
+                  <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                    <Button
+                      type="button"
+                      onClick={handlePostEntry}
+                      className={`w-full sm:w-auto rounded-xl font-black text-xs sm:text-sm px-5 py-2.5 text-white shadow-md gap-2 ${
+                        newEntryTotals.isBalanced
+                          ? "bg-primary hover:bg-primary/90"
+                          : "bg-amber-600 hover:bg-amber-700"
+                      }`}
+                    >
+                      {newEntryTotals.isBalanced ? (
+                        <>
+                          <CheckCircle2 size={16} />
+                          <span>مراجعة وتأكيد حفظ القيد المتزن</span>
+                        </>
+                      ) : (
+                        <>
+                          <AlertTriangle size={16} />
+                          <span>مراجعة وحفظ القيد (غير متزن)</span>
+                        </>
+                      )}
+                    </Button>
                   </div>
-                </div>
+                </DialogFooter>
+              </div>
+            </DialogContent>
+          </Dialog>
 
-                {/* Balancer indicator */}
-                <div className="p-4 rounded-xl border flex flex-col md:flex-row items-center justify-between gap-4 bg-muted/60 dark:bg-muted/30">
-                  <div className="flex flex-wrap items-center gap-6">
-                    <div>
-                      <span className="text-xs text-muted-foreground block">
-                        إجمالي المدين (المعادل):
+          {/* Exit Confirmation Dialog for Journal Entry (Clean, Concise, Responsive — No Button Explanations) */}
+          <AlertDialog open={isExitEntryConfirmOpen} onOpenChange={setIsExitEntryConfirmOpen}>
+            <AlertDialogContent
+              className="w-[calc(100vw-1.5rem)] sm:w-full max-w-md text-right rounded-2xl border-2 border-amber-500/30 p-5 sm:p-6"
+              dir="rtl"
+            >
+              <AlertDialogHeader className="text-right space-y-2">
+                <AlertDialogTitle className="text-base sm:text-lg font-black flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                  <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0" />
+                  <span>تنبيه قبل الخروج من نافذة القيد</span>
+                </AlertDialogTitle>
+                <AlertDialogDescription className="text-xs sm:text-sm text-muted-foreground leading-relaxed text-right">
+                  أنت على وشك إغلاق سند القيد اليومي ({newEntryRef || "جديد"}). ماذا تريد أن تفعل؟
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 w-full pt-3">
+                <Button
+                  type="button"
+                  onClick={handleSaveJournalAsDraft}
+                  className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs h-10 gap-1.5"
+                >
+                  <Save className="h-3.5 w-3.5 shrink-0" />
+                  <span>حفظ كمسودة</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleDiscardNewEntry}
+                  className="w-full text-rose-600 border-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl font-bold text-xs h-10 gap-1.5"
+                >
+                  <Trash2 className="h-3.5 w-3.5 shrink-0" />
+                  <span>تجاهل القيد</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsExitEntryConfirmOpen(false)}
+                  className="w-full rounded-xl font-bold text-xs h-10"
+                >
+                  إلغاء الأمر
+                </Button>
+              </div>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          {/* Save & Post Confirmation Alert Dialog (Supports Balanced & Unbalanced with Explicit Warning) */}
+          <AlertDialog open={isConfirmPostOpen} onOpenChange={setIsConfirmPostOpen}>
+            <AlertDialogContent
+              className={`w-[calc(100vw-1.5rem)] sm:w-full max-w-2xl max-h-[90vh] overflow-y-auto text-right rounded-2xl border-2 p-5 sm:p-6 ${
+                newEntryTotals.isBalanced ? "border-emerald-500/30" : "border-amber-500/50"
+              }`}
+              dir="rtl"
+            >
+              <AlertDialogHeader className="text-right space-y-2">
+                <AlertDialogTitle
+                  className={`text-base sm:text-lg font-black flex items-center gap-2 ${
+                    newEntryTotals.isBalanced
+                      ? "text-emerald-700 dark:text-emerald-400"
+                      : "text-amber-600 dark:text-amber-400"
+                  }`}
+                >
+                  {newEntryTotals.isBalanced ? (
+                    <>
+                      <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+                      <span>تأكيد حفظ وترحيل سند القيد اليومي المتزن</span>
+                    </>
+                  ) : (
+                    <>
+                      <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0" />
+                      <span>تنبيه: القيد المحاسبي غير متزن — هل ترغب في حفظه؟</span>
+                    </>
+                  )}
+                </AlertDialogTitle>
+                <AlertDialogDescription className="text-xs sm:text-sm text-muted-foreground leading-relaxed text-right">
+                  {newEntryTotals.isBalanced
+                    ? "تم التحقق من توازن طرفي القيد (المدين والدائن). عند التأكيد سيتم إدراج القيد في دفتر اليومية وتحديث أرصدة الحسابات."
+                    : "إجمالي الجانب المدين لا يساوي إجمالي الجانب الدائن في هذا القيد. يمكنك حفظ القيد على وضعه الحالي (غير متزن) أو موازنته تلقائياً."}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+
+              <div className="space-y-3.5 my-2 text-sm min-w-0">
+                {/* Unbalanced Warning Banner inside Confirmation */}
+                {!newEntryTotals.isBalanced && (
+                  <div className="p-3 sm:p-3.5 rounded-xl bg-amber-500/10 border-2 border-amber-500/40 text-amber-900 dark:text-amber-200 space-y-2">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <span className="font-black text-xs flex items-center gap-1.5">
+                        <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+                        تفاصيل عدم اتزان القيد الحالي:
                       </span>
-                      <p className="text-sm font-semibold font-mono text-emerald-600 dark:text-emerald-400">
-                        {newEntryTotals.debits.toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}{" "}
-                        <span className="text-xs text-muted-foreground font-sans">USD</span>
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-xs text-muted-foreground block">
-                        إجمالي الدائن (المعادل):
-                      </span>
-                      <p className="text-sm font-semibold font-mono text-emerald-600 dark:text-emerald-400">
-                        {newEntryTotals.credits.toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}{" "}
-                        <span className="text-xs text-muted-foreground font-sans">USD</span>
-                      </p>
-                    </div>
-                    <div className="border-r pr-6 border-border">
-                      <span className="text-xs text-muted-foreground block">الصافي / الفرق:</span>
-                      <p
-                        className={`text-sm font-bold font-mono ${
-                          newEntryTotals.isBalanced
-                            ? "text-emerald-600 dark:text-emerald-400"
-                            : "text-rose-600 dark:text-rose-400"
-                        }`}
-                      >
+                      <Badge className="bg-rose-600 text-white font-mono text-xs">
+                        الفرق:{" "}
                         {newEntryTotals.difference.toLocaleString(undefined, {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
                         })}{" "}
-                        <span className="text-xs font-sans">USD</span>
-                      </p>
-                    </div>
-                    <div className="border-r pr-6 border-border">
-                      <span className="text-xs text-muted-foreground block">حالة القيد:</span>
-                      <Badge
-                        className={`mt-0.5 text-xs font-semibold ${
-                          newEntryTotals.isBalanced
-                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-300"
-                            : "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border-rose-300"
-                        }`}
-                      >
-                        {newEntryTotals.isBalanced ? "متزن ✓" : "غير متزن ✗"}
+                        USD
                       </Badge>
                     </div>
-                  </div>
-
-                  {!newEntryTotals.isBalanced && (
-                    <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400 font-medium bg-amber-50 dark:bg-amber-950/40 p-2 rounded-lg border border-amber-200 dark:border-amber-800">
-                      <AlertCircle className="h-4 w-4 shrink-0" />
-                      <span>تنبيه: يجب توازن أطراف الحركة بالعملة الأساسية لترحيل القيد.</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs font-mono bg-background/80 p-2.5 rounded-lg border border-amber-500/20">
+                      <div>
+                        <span className="text-muted-foreground font-sans block text-[11px]">
+                          إجمالي المدين:
+                        </span>
+                        <strong className="text-emerald-600 dark:text-emerald-400">
+                          {newEntryTotals.debits.toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}{" "}
+                          USD
+                        </strong>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground font-sans block text-[11px]">
+                          إجمالي الدائن:
+                        </span>
+                        <strong className="text-rose-600 dark:text-rose-400">
+                          {newEntryTotals.credits.toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}{" "}
+                          USD
+                        </strong>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground font-sans block text-[11px]">
+                          الطرف الأعلى:
+                        </span>
+                        <strong className="font-sans text-amber-700 dark:text-amber-300">
+                          {newEntryTotals.debits > newEntryTotals.credits
+                            ? "الجانب المدين"
+                            : "الجانب الدائن"}
+                        </strong>
+                      </div>
                     </div>
-                  )}
-                </div>
-              </div>
+                  </div>
+                )}
 
-              <DialogFooter className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-4 border-t border-border/70">
-                <div className="flex items-center gap-2 w-full sm:w-auto">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleSaveJournalAsDraft}
-                    className="gap-1.5 border-amber-500/40 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-xl font-bold text-xs"
-                  >
-                    <Save size={15} />
-                    <span>حفظ كمسودة مؤقتة</span>
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={handleRequestCloseNewEntry}
-                    className="rounded-xl text-xs font-semibold text-muted-foreground hover:bg-muted"
-                  >
-                    إلغاء وخروج
-                  </Button>
-                </div>
-
-                <Button
-                  type="button"
-                  onClick={() => setIsConfirmPostOpen(true)}
-                  disabled={
-                    !newEntryTotals.isBalanced || newEntryTotals.debits <= 0 || !newEntryDesc.trim()
-                  }
-                  className="w-full sm:w-auto rounded-xl font-black text-xs sm:text-sm px-6 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground shadow-md gap-2"
-                >
-                  <CheckCircle2 size={16} />
-                  <span>مراجعة وتأكيد ترحيل القيد 🚀</span>
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-
-          {/* Exit Confirmation Dialog for Journal Entry */}
-          <AlertDialog open={isExitEntryConfirmOpen} onOpenChange={setIsExitEntryConfirmOpen}>
-            <AlertDialogContent className="max-w-md text-right rounded-3xl" dir="rtl">
-              <AlertDialogHeader className="text-right space-y-2">
-                <AlertDialogTitle className="text-base font-black flex items-center gap-2 text-amber-600">
-                  <AlertTriangle className="h-5 w-5 text-amber-500" />
-                  خروج بدون حفظ القيد المحاسبي؟
-                </AlertDialogTitle>
-                <AlertDialogDescription className="text-xs text-muted-foreground leading-relaxed">
-                  لديك بيانات تم إدخالها في هذا القيد المحاسبي. هل تريد حفظ القيد كمسودة مؤقتة لاستعادتها لاحقاً أم التجاهل والخروج؟
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter className="gap-2 mt-4 flex-wrap">
-                <AlertDialogCancel onClick={() => setIsExitEntryConfirmOpen(false)}>
-                  متابعة التعديل
-                </AlertDialogCancel>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setIsExitEntryConfirmOpen(false);
-                    setIsNewEntryOpen(false);
-                  }}
-                  className="text-rose-600 border-rose-200 hover:bg-rose-50"
-                >
-                  تجاهل والخروج
-                </Button>
-                <Button
-                  onClick={handleSaveJournalAsDraft}
-                  className="bg-amber-600 hover:bg-amber-700 text-white font-bold"
-                >
-                  💾 حفظ كمسودة مؤقتة
-                </Button>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-
-          {/* Confirmation Alert Dialog */}
-          <AlertDialog open={isConfirmPostOpen} onOpenChange={setIsConfirmPostOpen}>
-            <AlertDialogContent className="max-w-2xl text-right">
-              <AlertDialogHeader className="text-right space-y-2">
-                <AlertDialogTitle className="text-lg font-bold flex items-center gap-2 text-primary">
-                  <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-                  تأكيد حفظ وترحيل القيد المحاسبي
-                </AlertDialogTitle>
-                <AlertDialogDescription className="text-sm text-muted-foreground">
-                  هل أنت تأكد من ترحيل القيد المزدوج وحفظه نهائياً؟ سيتم إدراج الحركة في دفتر
-                  اليومية وتعديل أرصدة الحسابات المعنية تلقائياً.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-
-              <div className="space-y-4 my-2 text-sm">
                 {/* Entry Metadata Box */}
-                <div className="p-3.5 rounded-xl bg-muted/60 border space-y-2">
+                <div className="p-3 sm:p-3.5 rounded-xl bg-muted/60 border space-y-2">
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-2">
                     <div>
-                      <span className="text-xs text-muted-foreground">رقم القيد: </span>
+                      <span className="text-xs text-muted-foreground">رقم السند: </span>
                       <strong className="font-mono font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/70 border border-indigo-300 dark:border-indigo-700 px-2 py-0.5 rounded-md inline-block">
                         {newEntryId || "تلقائي"} {newEntryRef ? `(${newEntryRef})` : ""}
                       </strong>
@@ -2123,88 +2775,133 @@ function LedgerPage() {
                       <strong className="font-mono text-foreground">{newEntryDate}</strong>
                     </div>
                     <div>
-                      <span className="text-xs text-muted-foreground">إجمالي القيد المعادل: </span>
-                      <strong className="font-mono text-emerald-600 dark:text-emerald-400">
-                        {newEntryTotals.debits.toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}{" "}
-                        USD
+                      <span className="text-xs text-muted-foreground">عدد الأسطر: </span>
+                      <strong className="font-mono text-foreground">
+                        {newEntryLines.filter((l) => l.account_code).length} أسطر
                       </strong>
                     </div>
                   </div>
                   <div>
-                    <span className="text-xs text-muted-foreground">الشرح التوضيحي: </span>
-                    <span className="font-medium text-foreground">{newEntryDesc}</span>
+                    <span className="text-xs text-muted-foreground">البيان العام: </span>
+                    <span className="font-bold text-foreground">{newEntryDesc}</span>
                   </div>
                 </div>
 
                 {/* Affected Accounts Breakdown */}
-                <div className="space-y-2">
-                  <Label className="text-xs font-semibold text-muted-foreground">
-                    الحسابات والأرصدة المتأثرة بالقيد:
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-muted-foreground">
+                    ملخص أسطر سند القيد ({newEntryLines.filter((l) => l.account_code).length}):
                   </Label>
-                  <div className="border rounded-xl divide-y max-h-56 overflow-y-auto bg-card">
-                    {newEntryLines.map((line, idx) => {
-                      const acc = (accounts || []).find((a) => a.code === line.account_code);
-                      const isDebit = (line.debit || 0) > 0;
-                      const origAmt = isDebit ? line.debit : line.credit;
-                      const baseVal = getLineBaseValue(
-                        origAmt || 0,
-                        line.rate || 1,
-                        line.currency || "USD",
-                      );
-                      return (
-                        <div key={idx} className="p-2.5 flex items-center justify-between text-xs">
-                          <div className="flex items-center gap-2">
-                            <Badge
-                              variant="outline"
-                              className={`font-mono text-[11px] ${isDebit ? "bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300" : "bg-blue-50 text-blue-700 border-blue-300 dark:bg-blue-950 dark:text-blue-300"}`}
-                            >
-                              {isDebit ? "مدين" : "دائن"}
-                            </Badge>
-                            <div>
-                              <span className="font-semibold text-foreground">
-                                {acc ? acc.name : line.account_code}
+                  <div className="border rounded-xl divide-y max-h-48 overflow-y-auto bg-card">
+                    {newEntryLines
+                      .filter((l) => l.account_code)
+                      .map((line, idx) => {
+                        const acc = (accounts || []).find((a) => a.code === line.account_code);
+                        const isDebit = (line.debit || 0) > 0;
+                        const origAmt = isDebit ? line.debit : line.credit;
+                        const baseVal = getLineBaseValue(
+                          origAmt || 0,
+                          line.rate || 1,
+                          line.currency || "USD",
+                        );
+                        return (
+                          <div
+                            key={idx}
+                            className="p-2.5 flex items-center justify-between gap-2 text-xs flex-wrap"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="font-mono text-muted-foreground font-bold">
+                                #{idx + 1}
                               </span>
-                              <span className="text-muted-foreground font-mono mr-1">
-                                ({line.account_code})
+                              <Badge
+                                variant="outline"
+                                className={`font-mono text-[11px] shrink-0 ${
+                                  isDebit
+                                    ? "bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300"
+                                    : "bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950 dark:text-rose-300"
+                                }`}
+                              >
+                                {isDebit ? "مدين" : "دائن"}
+                              </Badge>
+                              <div className="truncate">
+                                <span className="font-semibold text-foreground">
+                                  {acc ? acc.name_ar || acc.name : line.account_code}
+                                </span>
+                                <span className="text-muted-foreground font-mono mr-1">
+                                  ({line.account_code})
+                                </span>
+                              </div>
+                            </div>
+                            <div className="text-left font-mono shrink-0">
+                              <span className="font-bold text-foreground">
+                                {Number(origAmt).toLocaleString(undefined, {
+                                  minimumFractionDigits: 2,
+                                })}{" "}
+                                {line.currency || "USD"}
                               </span>
+                              {line.currency && line.currency !== "USD" && (
+                                <div className="text-[10px] text-muted-foreground">
+                                  المعادل:{" "}
+                                  {baseVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}{" "}
+                                  USD (معامل {line.rate})
+                                </div>
+                              )}
                             </div>
                           </div>
-                          <div className="text-left font-mono">
-                            <span className="font-bold text-foreground">
-                              {Number(origAmt).toLocaleString(undefined, {
-                                minimumFractionDigits: 2,
-                              })}{" "}
-                              {line.currency || "USD"}
-                            </span>
-                            {line.currency && line.currency !== "USD" && (
-                              <div className="text-[10px] text-muted-foreground">
-                                المعادل:{" "}
-                                {baseVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}{" "}
-                                USD (معامل {line.rate})
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
                   </div>
                 </div>
               </div>
 
-              <AlertDialogFooter className="gap-2 sm:gap-0 mt-4">
-                <AlertDialogCancel onClick={() => setIsConfirmPostOpen(false)}>
-                  رجوع للتعديل
-                </AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={handleExecutePost}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2 pt-3">
+                <Button
+                  type="button"
+                  onClick={() => handleExecutePost(!newEntryTotals.isBalanced)}
+                  className={`rounded-xl font-black text-xs text-white h-10 px-4 ${
+                    newEntryTotals.isBalanced
+                      ? "bg-emerald-600 hover:bg-emerald-700"
+                      : "bg-amber-600 hover:bg-amber-700"
+                  }`}
                 >
-                  تأكيد وحفظ القيد
-                </AlertDialogAction>
-              </AlertDialogFooter>
+                  {newEntryTotals.isBalanced
+                    ? "✓ تأكيد وحفظ القيد النهائي"
+                    : "⚠️ تأكيد حفظ القيد (غير متزن)"}
+                </Button>
+
+                {!newEntryTotals.isBalanced && (
+                  <>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setIsConfirmPostOpen(false);
+                        handleAutoBalanceNewEntry();
+                      }}
+                      className="rounded-xl font-bold text-xs border-primary/40 text-primary hover:bg-primary/10 h-10"
+                    >
+                      ⚖️ موازنة الفرق تلقائياً
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleSaveJournalAsDraft}
+                      className="rounded-xl font-bold text-xs border-amber-500/40 text-amber-700 dark:text-amber-300 h-10"
+                    >
+                      💾 حفظ كمسودة
+                    </Button>
+                  </>
+                )}
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsConfirmPostOpen(false)}
+                  className="rounded-xl font-bold text-xs h-10"
+                >
+                  رجوع للتعديل
+                </Button>
+              </div>
             </AlertDialogContent>
           </AlertDialog>
         </div>

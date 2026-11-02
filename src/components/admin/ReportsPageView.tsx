@@ -11,7 +11,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { erpStore } from "@/shared/services/erpStore";
 import { inventoryService } from "@/features/inventory/services/inventoryService";
 import { useSettings } from "@/hooks/use-settings";
-import { printRawHtml } from "@/shared/utils/printAccountingDocument";
+import {
+  printRawHtml,
+  printSmartStocktakingSheet,
+} from "@/shared/utils/printAccountingDocument";
 import * as XLSX from "xlsx";
 import {
   ResponsiveContainer,
@@ -806,18 +809,51 @@ export function ReportsPage() {
             التلقائية
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            onClick={() => {
+              const invItems = inventoryQuery.data ?? [];
+              const rows = invItems.map((item: any) => {
+                const ext = erpStore.getExtendedItem(item.id);
+                return {
+                  code: ext.item_code || String(item.id || "").slice(0, 6).toUpperCase(),
+                  barcode: ext.barcode || "",
+                  name_ar: item.name_ar,
+                  category: ext.category || "خامات ومواد أولية",
+                  unit: item.unit || "وحدة",
+                  bookQuantity: Number(item.quantity || 0),
+                  minLevel: Number(item.min_level || 0),
+                  unitCost: Number(item.cost || 0),
+                };
+              });
+              printSmartStocktakingSheet({
+                warehouseName: "جميع المخازن (جرد شامل)",
+                branchName:
+                  branchFilter === "all"
+                    ? "كافة الفروع التشغيلية"
+                    : erpState.branches.find((b) => b.id === branchFilter)?.name_ar ||
+                      "الفرع الرئيسي",
+                blindCount: false,
+                reportTitle: "استمارة ومحضر الجرد الذكي للمخزون (بمربعات الفحص ☐)",
+                items: rows,
+              });
+            }}
+            variant="outline"
+            className="gap-2 rounded-xl text-xs font-bold py-5 border-emerald-600/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 cursor-pointer"
+          >
+            <Printer size={16} /> طباعة قائمة الجرد الذكي للمخزون ☐
+          </Button>
           <Button
             onClick={handlePrint}
             variant="outline"
-            className="gap-2 rounded-xl text-xs font-bold py-5"
+            className="gap-2 rounded-xl text-xs font-bold py-5 cursor-pointer"
           >
             <Printer size={16} /> طباعة القائمة الحالية
           </Button>
           <Button
             onClick={exportReport}
             disabled={(ordersQuery.data ?? []).length === 0}
-            className="gap-2 rounded-xl text-xs font-bold py-5 bg-primary hover:bg-primary/90"
+            className="gap-2 rounded-xl text-xs font-bold py-5 bg-primary hover:bg-primary/90 cursor-pointer"
           >
             تصدير التقرير الحالي إلى Excel
           </Button>

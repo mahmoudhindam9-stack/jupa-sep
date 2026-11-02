@@ -1,386 +1,735 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { ORACLE_MIGRATION_ACCOUNTS } from "@/shared/data/oracleAccounts";
+import { erpStore } from "@/shared/services/erpStore";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Search,
   ChevronLeft,
-  Folder,
-  FileText,
-  BarChart3,
-  Database,
-  CreditCard,
-  Building2,
   Layers,
+  FolderTree,
+  FileSpreadsheet,
+  DollarSign,
+  FolderOpen,
+  FileText,
+  TrendingUp,
+  TrendingDown,
+  Scale,
+  Plus,
+  Edit3,
+  Trash2,
 } from "lucide-react";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
 
-type Account = (typeof ORACLE_MIGRATION_ACCOUNTS)[0];
+interface OracleAccountsViewerProps {
+  onAddAccount?: (preset: { level: number; parent_code: string; type: string }) => void;
+  onEditAccount?: (acc: any) => void;
+  onDeleteAccount?: (acc: any) => void;
+}
 
-export function OracleAccountsViewer() {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedLevel1, setSelectedLevel1] = useState<string | null>("1"); // Default to Assets
-  const [selectedLevel2, setSelectedLevel2] = useState<string | null>(null);
-  const [selectedLevel3, setSelectedLevel3] = useState<string | null>(null);
-  const [selectedLevel4, setSelectedLevel4] = useState<string | null>(null);
+export function OracleAccountsViewer({
+  onAddAccount,
+  onEditAccount,
+  onDeleteAccount,
+}: OracleAccountsViewerProps = {}) {
+  const [erpState, setErpState] = useState(() => erpStore.getState());
+  const [selectedL1, setSelectedL1] = useState<string | null>("1");
+  const [selectedL2, setSelectedL2] = useState<string | null>("130");
+  const [selectedL3, setSelectedL3] = useState<string | null>("13010");
+  const [selectedL4, setSelectedL4] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
-  // Group accounts by level and parent
-  const accountsByLevel = useMemo(() => {
-    const l1: Account[] = [];
-    const l2: Record<string, Account[]> = {};
-    const l3: Record<string, Account[]> = {};
-    const l4: Record<string, Account[]> = {};
+  useEffect(() => {
+    const unsubscribe = erpStore.subscribe(() => {
+      setErpState({ ...erpStore.getState() });
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
-    ORACLE_MIGRATION_ACCOUNTS.forEach((acc) => {
-      if (acc.level === 1) l1.push(acc);
-      else if (acc.level === 2 && acc.parent_code) {
-        if (!l2[acc.parent_code]) l2[acc.parent_code] = [];
-        l2[acc.parent_code].push(acc);
-      } else if (acc.level === 3 && acc.parent_code) {
-        if (!l3[acc.parent_code]) l3[acc.parent_code] = [];
-        l3[acc.parent_code].push(acc);
-      } else if (acc.level === 4 && acc.parent_code) {
-        if (!l4[acc.parent_code]) l4[acc.parent_code] = [];
-        l4[acc.parent_code].push(acc);
+  // Merge live ERP accounts with Oracle baseline accounts so new/edited/deleted accounts and auto-created supplier accounts appear immediately
+  const allAccounts = useMemo(() => {
+    const liveAccounts = erpState.accounts || [];
+    const liveMap = new Map<string, any>();
+    liveAccounts.forEach((acc) => {
+      if (acc && acc.code) {
+        liveMap.set(String(acc.code).trim(), acc);
       }
     });
 
-    // Sort everything by code
-    l1.sort((a, b) => a.code.localeCompare(b.code));
-    Object.values(l2).forEach((arr) => arr.sort((a, b) => a.code.localeCompare(b.code)));
-    Object.values(l3).forEach((arr) => arr.sort((a, b) => a.code.localeCompare(b.code)));
-    Object.values(l4).forEach((arr) => arr.sort((a, b) => a.code.localeCompare(b.code)));
+    const merged: any[] = [];
+    const seenCodes = new Set<string>();
 
-    return { l1, l2, l3, l4 };
-  }, []);
+    // First include all live accounts from erpStore
+    liveAccounts.forEach((acc) => {
+      const code = String(acc.code || "").trim();
+      if (!code || seenCodes.has(code)) return;
+      seenCodes.add(code);
+      const oracleFallback = ORACLE_MIGRATION_ACCOUNTS.find((o) => o.code === code);
+      merged.push({
+        ...oracleFallback,
+        ...acc,
+        code,
+        name_ar: acc.name_ar || oracleFallback?.name_ar || code,
+        name_en: acc.name_en || (oracleFallback as any)?.name_en || "",
+        level:
+          Number(acc.level) ||
+          oracleFallback?.level ||
+          (code.length <= 1 ? 1 : code.length <= 3 ? 2 : code.length <= 5 ? 3 : 4),
+        parent_code:
+          acc.parent_code ??
+          oracleFallback?.parent_code ??
+          (code.length > 5
+            ? code.slice(0, 5)
+            : code.length > 3
+              ? code.slice(0, 3)
+              : code.length > 1
+                ? code.slice(0, 1)
+                : undefined),
+        initial_balance: Number(acc.balance ?? acc.initial_balance ?? oracleFallback?.initial_balance ?? 0),
+        balance: Number(acc.balance ?? acc.initial_balance ?? oracleFallback?.initial_balance ?? 0),
+      });
+    });
 
-  // Filter accounts if there's a search term
-  const searchResults = useMemo(() => {
-    if (!searchTerm) return [];
-    const lower = searchTerm.toLowerCase();
-    return ORACLE_MIGRATION_ACCOUNTS.filter(
+    // Include any Oracle accounts that aren't in liveMap yet (unless deleted by user when liveAccounts has been initialized)
+    ORACLE_MIGRATION_ACCOUNTS.forEach((oracleAcc) => {
+      const code = String(oracleAcc.code || "").trim();
+      if (!code || seenCodes.has(code)) return;
+      // Only include static fallback if liveAccounts doesn't already have the full tree
+      if (liveAccounts.length < 20) {
+        seenCodes.add(code);
+        merged.push({
+          ...oracleAcc,
+          balance: Number(oracleAcc.initial_balance || 0),
+        });
+      }
+    });
+
+    return merged.sort((a, b) => String(a.code).localeCompare(String(b.code)));
+  }, [erpState.accounts]);
+
+  // Filter accounts by level
+  const level1Accounts = useMemo(() => allAccounts.filter((a) => Number(a.level) === 1), [allAccounts]);
+
+  const level2Accounts = useMemo(() => {
+    if (!selectedL1) return [];
+    return allAccounts.filter(
       (a) =>
-        a.name_ar.toLowerCase().includes(lower) ||
-        a.code.toLowerCase().includes(lower) ||
-        (a.name_en && a.name_en.toLowerCase().includes(lower)),
-    ).sort((a, b) => a.code.localeCompare(b.code));
-  }, [searchTerm]);
+        Number(a.level) === 2 &&
+        (a.parent_code === selectedL1 || (!a.parent_code && a.code.startsWith(selectedL1))),
+    );
+  }, [allAccounts, selectedL1]);
 
-  const activeL2 = selectedLevel1 ? accountsByLevel.l2[selectedLevel1] || [] : [];
-  const activeL3 = selectedLevel2 ? accountsByLevel.l3[selectedLevel2] || [] : [];
-  const activeL4 = selectedLevel3 ? accountsByLevel.l4[selectedLevel3] || [] : [];
+  const level3Accounts = useMemo(() => {
+    if (!selectedL2) return [];
+    return allAccounts.filter(
+      (a) =>
+        Number(a.level) === 3 &&
+        (a.parent_code === selectedL2 || (!a.parent_code && a.code.startsWith(selectedL2))),
+    );
+  }, [allAccounts, selectedL2]);
 
-  const handleSelect = (level: number, code: string) => {
-    if (level === 1) {
-      setSelectedLevel1(code);
-      setSelectedLevel2(null);
-      setSelectedLevel3(null);
-      setSelectedLevel4(null);
-    } else if (level === 2) {
-      setSelectedLevel2(code);
-      setSelectedLevel3(null);
-      setSelectedLevel4(null);
-    } else if (level === 3) {
-      setSelectedLevel3(code);
-      setSelectedLevel4(null);
-    } else if (level === 4) {
-      setSelectedLevel4(code);
-    }
-  };
+  const level4Accounts = useMemo(() => {
+    if (!selectedL3) return [];
+    return allAccounts.filter(
+      (a) =>
+        Number(a.level) === 4 &&
+        (a.parent_code === selectedL3 || (!a.parent_code && a.code.startsWith(selectedL3))),
+    );
+  }, [allAccounts, selectedL3]);
 
-  const getSelectedAccountDetails = () => {
-    const code = selectedLevel4 || selectedLevel3 || selectedLevel2 || selectedLevel1;
+  // Global search across all levels
+  const searchResults = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    const q = searchQuery.toLowerCase();
+    return allAccounts.filter(
+      (a) =>
+        a.code.toLowerCase().includes(q) ||
+        a.name_ar.toLowerCase().includes(q) ||
+        (a.name_en && a.name_en.toLowerCase().includes(q)),
+    );
+  }, [allAccounts, searchQuery]);
+
+  // Selected Account Details
+  const activeAccountDetails = useMemo(() => {
+    const code = selectedL4 || selectedL3 || selectedL2 || selectedL1;
     if (!code) return null;
-    return ORACLE_MIGRATION_ACCOUNTS.find((a) => a.code === code);
+    return allAccounts.find((a) => a.code === code) || null;
+  }, [allAccounts, selectedL1, selectedL2, selectedL3, selectedL4]);
+
+  const getChildrenCount = (parentCode: string) => {
+    return allAccounts.filter((a) => a.parent_code === parentCode).length;
   };
 
-  const selectedAccount = getSelectedAccountDetails();
+  const getSubtreeBalance = (rootCode: string) => {
+    const directAcc = allAccounts.find((a) => a.code === rootCode);
+    const leafAccounts = allAccounts.filter(
+      (a) => Number(a.level) === 4 && (a.code === rootCode || a.code.startsWith(rootCode) || a.parent_code === rootCode),
+    );
+    if (leafAccounts.length > 0) {
+      return leafAccounts.reduce(
+        (sum, a) => sum + Number(a.balance ?? a.initial_balance ?? 0),
+        0,
+      );
+    }
+    return Number(directAcc?.balance ?? directAcc?.initial_balance ?? 0);
+  };
 
-  const getTypeColor = (type: string) => {
-    switch (type) {
-      case "asset":
-        return "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200 dark:border-blue-800";
-      case "liability":
-        return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300 border-red-200 dark:border-red-800";
-      case "equity":
-        return "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 border-purple-200 dark:border-purple-800";
-      case "revenue":
-        return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800";
-      case "expense":
-        return "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300 border-orange-200 dark:border-orange-800";
-      default:
-        return "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300 border-gray-200 dark:border-gray-700";
+  const handleSelectSearchResult = (acc: any) => {
+    setSearchQuery("");
+    if (acc.level === 1) {
+      setSelectedL1(acc.code);
+      setSelectedL2(null);
+      setSelectedL3(null);
+      setSelectedL4(null);
+    } else if (acc.level === 2) {
+      setSelectedL1(acc.parent_code || acc.code.slice(0, 1));
+      setSelectedL2(acc.code);
+      setSelectedL3(null);
+      setSelectedL4(null);
+    } else if (acc.level === 3) {
+      const l2 = allAccounts.find((a) => a.code === acc.parent_code);
+      setSelectedL1(l2?.parent_code || acc.code.slice(0, 1));
+      setSelectedL2(acc.parent_code || acc.code.slice(0, 3));
+      setSelectedL3(acc.code);
+      setSelectedL4(null);
+    } else if (acc.level === 4) {
+      const l3 = allAccounts.find((a) => a.code === acc.parent_code);
+      const l2 = allAccounts.find((a) => a.code === l3?.parent_code);
+      setSelectedL1(l2?.parent_code || acc.code.slice(0, 1));
+      setSelectedL2(l3?.parent_code || acc.code.slice(0, 3));
+      setSelectedL3(acc.parent_code || acc.code.slice(0, 5));
+      setSelectedL4(acc.code);
     }
   };
 
-  const getTypeName = (type: string) => {
-    switch (type) {
-      case "asset":
-        return "أصول";
-      case "liability":
-        return "التزامات / خصوم";
-      case "equity":
-        return "حقوق ملكية";
-      case "revenue":
-        return "إيرادات";
-      case "expense":
-        return "مصروفات";
-      default:
-        return type;
-    }
+  const getTypeBadge = (type: string) => {
+    const map: Record<string, { label: string; color: string }> = {
+      asset: { label: "أصول (Assets)", color: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" },
+      liability: { label: "خصوم / مطاليب", color: "bg-amber-500/10 text-amber-500 border-amber-500/20" },
+      equity: { label: "حقوق ملكية", color: "bg-purple-500/10 text-purple-500 border-purple-500/20" },
+      revenue: { label: "إيرادات", color: "bg-blue-500/10 text-blue-500 border-blue-500/20" },
+      expense: { label: "مصروفات", color: "bg-rose-500/10 text-rose-500 border-rose-500/20" },
+    };
+    const item = map[type] || { label: type, color: "bg-gray-500/10 text-gray-400" };
+    return <Badge variant="outline" className={`${item.color} text-[10px]`}>{item.label}</Badge>;
   };
 
-  const getIconForLevel = (level: number) => {
-    switch (level) {
-      case 1:
-        return <Database size={16} className="text-primary" />;
-      case 2:
-        return <Layers size={16} className="text-primary/80" />;
-      case 3:
-        return <Folder size={16} className="text-primary/60" />;
-      case 4:
-        return <FileText size={16} className="text-primary/40" />;
-      default:
-        return <Folder size={16} />;
-    }
-  };
-
-  const renderColumn = (
-    title: string,
-    items: Account[],
-    selectedCode: string | null,
-    level: number,
-  ) => (
-    <div className="flex flex-col h-full border rounded-xl overflow-hidden bg-card/50 shadow-sm">
-      <div className="bg-muted/50 p-3 border-b flex items-center justify-between">
-        <h4 className="font-bold text-sm">{title}</h4>
-        <Badge variant="outline" className="text-xs bg-background/50 font-mono">
-          {items.length}
-        </Badge>
-      </div>
-      <ScrollArea className="flex-1 h-full min-h-[300px]">
-        {items.length === 0 ? (
-          <div className="p-4 text-center text-sm text-muted-foreground italic mt-10">
-            لا توجد حسابات فرعية
+  return (
+    <div className="space-y-6" dir="rtl">
+      {/* Header Banner */}
+      <div className="bg-gradient-to-l from-indigo-950/80 via-slate-900 to-slate-950 border border-indigo-500/30 rounded-2xl p-6 shadow-xl">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-indigo-400 font-bold text-sm">
+              <FolderTree className="w-5 h-5" />
+              <span>شجرة الحسابات التفاعلية (4 مستويات قياسية متصلة مباشرة بالنظام)</span>
+            </div>
+            <h2 className="text-2xl font-black text-white">
+              مستعرض وإدارة المستويات الشجرية الأربعة (4-Level Hierarchy)
+            </h2>
+            <p className="text-xs text-slate-400">
+              اضغط على أي حساب في أي مستوى لاستعراض تفرعاته أو إضافة حساب فرعي تحته أو تعديله وحذفه مباشرة
+            </p>
           </div>
-        ) : (
-          <div className="p-2 space-y-1">
-            {items.map((acc) => {
-              const isSelected = selectedCode === acc.code;
+
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="bg-slate-900/90 border border-slate-800 px-3.5 py-2 rounded-xl text-center">
+              <div className="text-[10px] text-slate-400">المستوى 1 (الرئيسي)</div>
+              <div className="text-lg font-black text-indigo-400">{level1Accounts.length}</div>
+            </div>
+            <div className="bg-slate-900/90 border border-slate-800 px-3.5 py-2 rounded-xl text-center">
+              <div className="text-[10px] text-slate-400">المستوى 2 (العام)</div>
+              <div className="text-lg font-black text-blue-400">
+                {allAccounts.filter((a) => Number(a.level) === 2).length}
+              </div>
+            </div>
+            <div className="bg-slate-900/90 border border-slate-800 px-3.5 py-2 rounded-xl text-center">
+              <div className="text-[10px] text-slate-400">المستوى 3 (الفرعي)</div>
+              <div className="text-lg font-black text-emerald-400">
+                {allAccounts.filter((a) => Number(a.level) === 3).length}
+              </div>
+            </div>
+            <div className="bg-slate-900/90 border border-slate-800 px-3.5 py-2 rounded-xl text-center">
+              <div className="text-[10px] text-slate-400">المستوى 4 (التحليلي)</div>
+              <div className="text-lg font-black text-amber-400">
+                {allAccounts.filter((a) => Number(a.level) === 4).length}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Search Input */}
+        <div className="mt-5 relative">
+          <Search className="w-4 h-4 absolute right-3.5 top-3 text-slate-400" />
+          <Input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="ابحث برقم الحساب أو الاسم (مثال: 24010، الموردون، خزينة، مبيعات...)"
+            className="pr-10 bg-slate-900/90 border-slate-700 text-white placeholder:text-slate-500 h-10 rounded-xl"
+          />
+          {searchResults.length > 0 && (
+            <div className="absolute z-50 w-full mt-2 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl max-h-72 overflow-y-auto divide-y divide-slate-800">
+              {searchResults.map((acc) => (
+                <div
+                  key={acc.code}
+                  onClick={() => handleSelectSearchResult(acc)}
+                  className="w-full text-right px-4 py-2.5 hover:bg-indigo-600/20 flex items-center justify-between transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center gap-3">
+                    <Badge variant="secondary" className="font-mono text-xs bg-slate-800 text-indigo-300">
+                      {acc.code}
+                    </Badge>
+                    <div>
+                      <div className="font-bold text-sm text-white">{acc.name_ar}</div>
+                      {acc.name_en && <div className="text-[11px] text-slate-400">{acc.name_en}</div>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge className="bg-indigo-500/20 text-indigo-300 border-indigo-500/30 text-[10px]">
+                      مستوى {acc.level}
+                    </Badge>
+                    {onEditAccount && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-2 text-xs text-blue-400 hover:text-blue-300"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSearchQuery("");
+                          onEditAccount(acc);
+                        }}
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 4 Columns Miller View */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* LEVEL 1 COLUMN */}
+        <Card className="bg-slate-950/70 border-slate-800 flex flex-col h-[520px] overflow-hidden rounded-2xl">
+          <div className="p-3.5 bg-indigo-950/50 border-b border-slate-800 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-black text-xs">
+                1
+              </span>
+              <div>
+                <h3 className="font-bold text-sm text-white">المستوى الأول (الرئيسي)</h3>
+                <p className="text-[10px] text-slate-400">الأبواب المحاسبية الكبرى</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Badge variant="outline" className="text-indigo-400 border-indigo-500/30">
+                {level1Accounts.length}
+              </Badge>
+              {onAddAccount && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2 text-[11px] bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 rounded-lg gap-1"
+                  onClick={() => onAddAccount({ level: 1, parent_code: "", type: "asset" })}
+                  title="إضافة حساب مستوى 1 رئيسي"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  إضافة
+                </Button>
+              )}
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+            {level1Accounts.map((acc) => {
+              const isSelected = selectedL1 === acc.code;
+              const childrenCount = getChildrenCount(acc.code);
+              const totalBal = getSubtreeBalance(acc.code);
               return (
                 <button
                   key={acc.code}
-                  onClick={() => handleSelect(level, acc.code)}
-                  className={`w-full text-right p-2.5 rounded-lg flex items-center justify-between group transition-all duration-200 border border-transparent ${
+                  onClick={() => {
+                    setSelectedL1(acc.code);
+                    const firstL2 = allAccounts.find(
+                      (a) => Number(a.level) === 2 && a.parent_code === acc.code,
+                    );
+                    setSelectedL2(firstL2 ? firstL2.code : null);
+                    setSelectedL3(null);
+                    setSelectedL4(null);
+                  }}
+                  className={`w-full text-right p-3 rounded-xl border transition-all flex flex-col gap-1.5 ${
                     isSelected
-                      ? "bg-primary text-primary-foreground shadow-md font-bold border-primary/20"
-                      : "hover:bg-primary/5 hover:border-primary/20 text-foreground"
+                      ? "bg-indigo-600/20 border-indigo-500 text-white shadow-lg"
+                      : "bg-slate-900/50 border-slate-800/80 text-slate-300 hover:bg-slate-900 hover:border-slate-700"
                   }`}
                 >
-                  <div className="flex items-center gap-2 overflow-hidden flex-1">
-                    <span
-                      className={`shrink-0 ${isSelected ? "text-primary-foreground/90" : "text-muted-foreground group-hover:text-primary/70"}`}
-                    >
-                      {getIconForLevel(level)}
-                    </span>
-                    <span className="truncate text-xs leading-tight sm:text-sm">{acc.name_ar}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0 pl-2">
-                    <span
-                      className={`text-[10px] sm:text-xs font-mono ${isSelected ? "text-primary-foreground/80" : "text-muted-foreground"}`}
-                    >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="font-mono text-xs font-black px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300">
                       {acc.code}
                     </span>
-                    {level < 4 && (
-                      <ChevronLeft
-                        size={14}
-                        className={
-                          isSelected
-                            ? "text-primary-foreground"
-                            : "text-muted-foreground/30 group-hover:text-primary/50"
-                        }
-                      />
-                    )}
+                    <div className="flex items-center gap-1 text-[11px] text-slate-400">
+                      <span>{childrenCount} فرع</span>
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                    </div>
+                  </div>
+                  <div className="font-bold text-sm">{acc.name_ar}</div>
+                  <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-800/60 mt-1">
+                    <span className="text-slate-400">{acc.name_en || ""}</span>
+                    <span className="font-mono text-emerald-400 font-bold" dir="ltr">
+                      {totalBal.toLocaleString()}
+                    </span>
                   </div>
                 </button>
               );
             })}
           </div>
-        )}
-      </ScrollArea>
-    </div>
-  );
+        </Card>
 
-  return (
-    <div className="space-y-6 animate-in fade-in zoom-in-95 duration-300">
-      {/* Search Header */}
-      <Card className="border-border shadow-sm overflow-hidden relative">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -translate-y-1/2 translate-x-1/2 blur-2xl pointer-events-none"></div>
-        <CardContent className="p-6">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative z-10">
-            <div>
-              <h2 className="text-2xl font-black text-foreground flex items-center gap-2">
-                <BarChart3 className="h-6 w-6 text-primary" />
-                الدليل المحاسبي الشامل
-              </h2>
-              <p className="text-sm text-muted-foreground mt-1 font-medium">
-                تصفح وإدارة شجرة الحسابات، الأصول، الخصوم والمصروفات بأسلوب عصري.
-              </p>
+        {/* LEVEL 2 COLUMN */}
+        <Card className="bg-slate-950/70 border-slate-800 flex flex-col h-[520px] overflow-hidden rounded-2xl">
+          <div className="p-3.5 bg-blue-950/50 border-b border-slate-800 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="w-6 h-6 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center font-black text-xs">
+                2
+              </span>
+              <div>
+                <h3 className="font-bold text-sm text-white">المستوى الثاني (العام)</h3>
+                <p className="text-[10px] text-slate-400">
+                  {selectedL1 ? `يتبع الكود الرئيسي (${selectedL1})` : "اختر من المستوى 1"}
+                </p>
+              </div>
             </div>
-            <div className="w-full md:w-80 relative">
-              <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                type="text"
-                placeholder="بحث برقم أو اسم الحساب..."
-                className="pl-3 pr-9 h-10 w-full rounded-xl border-border focus:border-primary transition-all bg-background/50 focus:bg-background"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
+            <div className="flex items-center gap-1.5">
+              <Badge variant="outline" className="text-blue-400 border-blue-500/30">
+                {level2Accounts.length}
+              </Badge>
+              {onAddAccount && selectedL1 && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2 text-[11px] bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-lg gap-1"
+                  onClick={() => {
+                    const parentAcc = allAccounts.find((a) => a.code === selectedL1);
+                    onAddAccount({
+                      level: 2,
+                      parent_code: selectedL1,
+                      type: parentAcc?.type || "asset",
+                    });
+                  }}
+                  title="إضافة حساب مستوى 2 تحت الحساب الرئيسي المختار"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  إضافة
+                </Button>
+              )}
             </div>
           </div>
-        </CardContent>
-      </Card>
-
-      {searchTerm ? (
-        /* Search Results View */
-        <Card className="border-border shadow-sm">
-          <CardHeader className="bg-muted/30 border-b pb-4">
-            <CardTitle className="text-base font-bold flex justify-between items-center">
-              <span>نتائج البحث ({searchResults.length})</span>
-              <Badge variant="secondary" className="font-mono bg-background shadow-sm">
-                {searchTerm}
-              </Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <ScrollArea className="h-[500px]">
-              {searchResults.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-40 text-muted-foreground">
-                  <Search className="h-8 w-8 mb-3 opacity-20" />
-                  <p className="font-semibold">لم يتم العثور على حسابات مطابقة</p>
-                </div>
-              ) : (
-                <div className="divide-y divide-border">
-                  {searchResults.map((acc) => (
-                    <div
-                      key={acc.code}
-                      className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/30 transition-colors"
-                    >
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          {getIconForLevel(acc.level)}
-                          <span className="font-bold text-foreground text-sm">{acc.name_ar}</span>
-                          {acc.name_en && (
-                            <span className="text-xs text-muted-foreground font-medium">
-                              ({acc.name_en})
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
-                          <span className="font-mono bg-muted px-1.5 py-0.5 rounded text-[11px] shadow-sm border border-border/50 text-foreground">
-                            كود: {acc.code}
-                          </span>
-                          <span>•</span>
-                          <span>مستوى {acc.level}</span>
-                          {acc.parent_code && (
-                            <>
-                              <span>•</span>
-                              <span>
-                                يتبع لـ: <span className="font-mono">{acc.parent_code}</span>
-                              </span>
-                            </>
-                          )}
-                        </div>
+          <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+            {level2Accounts.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-slate-500 text-xs text-center p-4 gap-2">
+                <FolderOpen className="w-8 h-8 opacity-30" />
+                <span>لا توجد حسابات مستوى 2 تحت هذا البند</span>
+              </div>
+            ) : (
+              level2Accounts.map((acc) => {
+                const isSelected = selectedL2 === acc.code;
+                const childrenCount = getChildrenCount(acc.code);
+                const totalBal = getSubtreeBalance(acc.code);
+                return (
+                  <button
+                    key={acc.code}
+                    onClick={() => {
+                      setSelectedL2(acc.code);
+                      const firstL3 = allAccounts.find(
+                        (a) => Number(a.level) === 3 && a.parent_code === acc.code,
+                      );
+                      setSelectedL3(firstL3 ? firstL3.code : null);
+                      setSelectedL4(null);
+                    }}
+                    className={`w-full text-right p-3 rounded-xl border transition-all flex flex-col gap-1.5 ${
+                      isSelected
+                        ? "bg-blue-600/20 border-blue-500 text-white shadow-lg"
+                        : "bg-slate-900/50 border-slate-800/80 text-slate-300 hover:bg-slate-900 hover:border-slate-700"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <span className="font-mono text-xs font-black px-2 py-0.5 rounded bg-blue-500/20 text-blue-300">
+                        {acc.code}
+                      </span>
+                      <div className="flex items-center gap-1 text-[11px] text-slate-400">
+                        <span>{childrenCount} فرعي</span>
+                        <ChevronLeft className="w-3.5 h-3.5" />
                       </div>
-                      <Badge className={getTypeColor(acc.type)} variant="outline">
-                        {getTypeName(acc.type)}
+                    </div>
+                    <div className="font-bold text-sm">{acc.name_ar}</div>
+                    <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-800/60 mt-1">
+                      <span className="text-slate-400 truncate max-w-[110px]">{acc.name_en || ""}</span>
+                      <span className="font-mono text-emerald-400 font-bold" dir="ltr">
+                        {totalBal.toLocaleString()}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </Card>
+
+        {/* LEVEL 3 COLUMN */}
+        <Card className="bg-slate-950/70 border-slate-800 flex flex-col h-[520px] overflow-hidden rounded-2xl">
+          <div className="p-3.5 bg-emerald-950/50 border-b border-slate-800 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-black text-xs">
+                3
+              </span>
+              <div>
+                <h3 className="font-bold text-sm text-white">المستوى الثالث (الفرعي)</h3>
+                <p className="text-[10px] text-slate-400">
+                  {selectedL2 ? `يتبع الكود العام (${selectedL2})` : "اختر من المستوى 2"}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Badge variant="outline" className="text-emerald-400 border-emerald-500/30">
+                {level3Accounts.length}
+              </Badge>
+              {onAddAccount && selectedL2 && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2 text-[11px] bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 rounded-lg gap-1"
+                  onClick={() => {
+                    const parentAcc = allAccounts.find((a) => a.code === selectedL2);
+                    onAddAccount({
+                      level: 3,
+                      parent_code: selectedL2,
+                      type: parentAcc?.type || "asset",
+                    });
+                  }}
+                  title="إضافة حساب مستوى 3 تحت الحساب العام المختار"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  إضافة
+                </Button>
+              )}
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+            {level3Accounts.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-slate-500 text-xs text-center p-4 gap-2">
+                <Layers className="w-8 h-8 opacity-30" />
+                <span>اختر حساباً من المستوى 2 لعرض الحسابات الفرعية</span>
+              </div>
+            ) : (
+              level3Accounts.map((acc) => {
+                const isSelected = selectedL3 === acc.code;
+                const childrenCount = getChildrenCount(acc.code);
+                const totalBal = getSubtreeBalance(acc.code);
+                return (
+                  <button
+                    key={acc.code}
+                    onClick={() => {
+                      setSelectedL3(acc.code);
+                      setSelectedL4(null);
+                    }}
+                    className={`w-full text-right p-3 rounded-xl border transition-all flex flex-col gap-1.5 ${
+                      isSelected
+                        ? "bg-emerald-600/20 border-emerald-500 text-white shadow-lg"
+                        : "bg-slate-900/50 border-slate-800/80 text-slate-300 hover:bg-slate-900 hover:border-slate-700"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <span className="font-mono text-xs font-black px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300">
+                        {acc.code}
+                      </span>
+                      <div className="flex items-center gap-1 text-[11px] text-slate-400">
+                        <span>{childrenCount} تحليلي</span>
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                      </div>
+                    </div>
+                    <div className="font-bold text-sm">{acc.name_ar}</div>
+                    <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-800/60 mt-1">
+                      <span className="text-slate-400 truncate max-w-[110px]">{acc.name_en || ""}</span>
+                      <span className="font-mono text-emerald-400 font-bold" dir="ltr">
+                        {totalBal.toLocaleString()}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </Card>
+
+        {/* LEVEL 4 COLUMN (ANALYTICAL LEAF ACCOUNTS) */}
+        <Card className="bg-slate-950/70 border-slate-800 flex flex-col h-[520px] overflow-hidden rounded-2xl">
+          <div className="p-3.5 bg-amber-950/50 border-b border-slate-800 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center font-black text-xs">
+                4
+              </span>
+              <div>
+                <h3 className="font-bold text-sm text-white">المستوى الرابع (التحليلي)</h3>
+                <p className="text-[10px] text-slate-400">
+                  {selectedL3 ? `الحسابات النهائية لـ (${selectedL3})` : "اختر من المستوى 3"}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Badge variant="outline" className="text-amber-400 border-amber-500/30">
+                {level4Accounts.length}
+              </Badge>
+              {onAddAccount && selectedL3 && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2 text-[11px] bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded-lg gap-1"
+                  onClick={() => {
+                    const parentAcc = allAccounts.find((a) => a.code === selectedL3);
+                    onAddAccount({
+                      level: 4,
+                      parent_code: selectedL3,
+                      type: parentAcc?.type || "asset",
+                    });
+                  }}
+                  title="إضافة حساب تحليلي مستوى 4 تحت الحساب الفرعي المختار"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  إضافة
+                </Button>
+              )}
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+            {level4Accounts.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-slate-500 text-xs text-center p-4 gap-2">
+                <FileText className="w-8 h-8 opacity-30" />
+                <span>اختر حساباً من المستوى 3 لعرض الحسابات التحليلية (8 أرقام)</span>
+              </div>
+            ) : (
+              level4Accounts.map((acc) => {
+                const isSelected = selectedL4 === acc.code;
+                const bal = Number(acc.balance ?? acc.initial_balance ?? 0);
+                return (
+                  <button
+                    key={acc.code}
+                    onClick={() => setSelectedL4(acc.code)}
+                    className={`w-full text-right p-3 rounded-xl border transition-all flex flex-col gap-1.5 ${
+                      isSelected
+                        ? "bg-amber-600/20 border-amber-500 text-white shadow-lg"
+                        : "bg-slate-900/50 border-slate-800/80 text-slate-300 hover:bg-slate-900 hover:border-slate-700"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <span className="font-mono text-xs font-black px-2 py-0.5 rounded bg-amber-500/20 text-amber-300">
+                        {acc.code}
+                      </span>
+                      <Badge variant="outline" className="text-[10px] border-slate-700 text-slate-300">
+                        {acc.currency || "USD"}
                       </Badge>
                     </div>
-                  ))}
-                </div>
-              )}
-            </ScrollArea>
-          </CardContent>
-        </Card>
-      ) : (
-        /* Miller Columns View */
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 h-[450px]">
-            {renderColumn("المستوى الأول", accountsByLevel.l1, selectedLevel1, 1)}
-            {renderColumn("المستوى الثاني", activeL2, selectedLevel2, 2)}
-            {renderColumn("المستوى الثالث", activeL3, selectedLevel3, 3)}
-            {renderColumn("المستوى الرابع", activeL4, selectedLevel4, 4)}
+                    <div className="font-bold text-sm">{acc.name_ar}</div>
+                    <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-800/60 mt-1">
+                      <span className="text-slate-400">الرصيد الحالي:</span>
+                      <span
+                        className={`font-mono font-bold ${
+                          bal > 0 ? "text-emerald-400" : bal < 0 ? "text-rose-400" : "text-slate-400"
+                        }`}
+                        dir="ltr"
+                      >
+                        {bal.toLocaleString()}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })
+            )}
           </div>
+        </Card>
+      </div>
 
-          {/* Details Pane */}
-          {selectedAccount && (
-            <Card className="border-border shadow-sm overflow-hidden">
-              <div className="h-1 w-full bg-primary/20">
-                <div className="h-full bg-primary transition-all w-1/4"></div>
+      {/* Selected Account Details Card */}
+      {activeAccountDetails && (
+        <Card className="bg-slate-900/90 border-indigo-500/30 p-5 rounded-2xl shadow-xl">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge className="bg-indigo-600 text-white font-mono text-sm px-3 py-0.5">
+                  {activeAccountDetails.code}
+                </Badge>
+                <Badge variant="outline" className="border-indigo-400/40 text-indigo-300">
+                  المستوى الشجري {activeAccountDetails.level}
+                </Badge>
+                {getTypeBadge(activeAccountDetails.type)}
+                {activeAccountDetails.parent_code && (
+                  <Badge variant="secondary" className="bg-slate-800 text-slate-300 font-mono text-xs">
+                    الحساب الأب: {activeAccountDetails.parent_code}
+                  </Badge>
+                )}
               </div>
-              <CardContent className="p-6">
-                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                  <div className="flex items-start gap-4">
-                    <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 border border-primary/20 shadow-inner">
-                      {getIconForLevel(selectedAccount.level)}
-                    </div>
-                    <div>
-                      <h3 className="font-black text-xl text-foreground flex items-center gap-2">
-                        {selectedAccount.name_ar}
-                      </h3>
-                      {selectedAccount.name_en && (
-                        <p className="text-sm text-muted-foreground mt-0.5 font-medium">
-                          {selectedAccount.name_en}
-                        </p>
-                      )}
-                      <div className="flex flex-wrap gap-2 mt-3">
-                        <Badge
-                          variant="secondary"
-                          className="font-mono text-xs bg-muted shadow-sm border"
-                        >
-                          كود: {selectedAccount.code}
-                        </Badge>
-                        <Badge
-                          variant="outline"
-                          className="bg-background border-primary/30 text-primary text-xs"
-                        >
-                          المستوى {selectedAccount.level}
-                        </Badge>
-                        {selectedAccount.parent_code && (
-                          <Badge
-                            variant="outline"
-                            className="bg-background text-muted-foreground text-xs"
-                          >
-                            تفرع من:{" "}
-                            <span className="font-mono ml-1">{selectedAccount.parent_code}</span>
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+              <h3 className="text-xl font-black text-white">{activeAccountDetails.name_ar}</h3>
+              {activeAccountDetails.name_en && (
+                <p className="text-xs text-slate-400 font-mono">{activeAccountDetails.name_en}</p>
+              )}
+            </div>
 
-                  <div className="flex flex-col items-end gap-2 shrink-0 bg-muted/30 p-3 rounded-xl border border-border/50">
-                    <Badge
-                      className={`px-3 py-1 text-xs font-bold border ${getTypeColor(selectedAccount.type)}`}
-                    >
-                      {getTypeName(selectedAccount.type)}
-                    </Badge>
-                    <span className="text-[11px] text-muted-foreground font-semibold flex items-center gap-1.5">
-                      <div
-                        className={`h-2 w-2 rounded-full ${["asset", "expense"].includes(selectedAccount.type) ? "bg-blue-500" : "bg-green-500"}`}
-                      ></div>
-                      طبيعة الحساب:{" "}
-                      {["asset", "expense"].includes(selectedAccount.type)
-                        ? "مدين (Debit)"
-                        : "دائن (Credit)"}
-                    </span>
-                  </div>
+            <div className="flex flex-wrap items-center gap-3">
+              {Number(activeAccountDetails.level) < 4 && onAddAccount && (
+                <Button
+                  size="sm"
+                  onClick={() =>
+                    onAddAccount({
+                      level: Number(activeAccountDetails.level) + 1,
+                      parent_code: activeAccountDetails.code,
+                      type: activeAccountDetails.type || "asset",
+                    })
+                  }
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl gap-1.5"
+                >
+                  <Plus className="w-4 h-4" />
+                  إضافة حساب فرعي (مستوى {Number(activeAccountDetails.level) + 1}) تحت هذا الحساب
+                </Button>
+              )}
+              {onEditAccount && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onEditAccount(activeAccountDetails)}
+                  className="border-blue-500/40 bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 font-bold rounded-xl gap-1.5"
+                >
+                  <Edit3 className="w-4 h-4" />
+                  تعديل الحساب
+                </Button>
+              )}
+              {onDeleteAccount && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onDeleteAccount(activeAccountDetails)}
+                  className="border-rose-500/40 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 font-bold rounded-xl gap-1.5"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  حذف الحساب
+                </Button>
+              )}
+
+              <div className="bg-slate-950 border border-slate-800 px-4 py-2.5 rounded-xl text-left">
+                <div className="text-[11px] text-slate-400">إجمالي رصيد الحساب / البند</div>
+                <div className="text-xl font-black font-mono text-emerald-400" dir="ltr">
+                  {getSubtreeBalance(activeAccountDetails.code).toLocaleString()}{" "}
+                  <span className="text-xs text-slate-400">
+                    {activeAccountDetails.currency || "USD"}
+                  </span>
                 </div>
-              </CardContent>
-            </Card>
-          )}
-        </div>
+              </div>
+            </div>
+          </div>
+        </Card>
       )}
     </div>
   );

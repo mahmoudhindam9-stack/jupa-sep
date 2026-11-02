@@ -1328,6 +1328,81 @@ export class ERPStore {
       "DELETE",
     );
   }
+  ensureSupplierParentHierarchy(currency: string = "USD") {
+    if (!Array.isArray(this.state.accounts)) {
+      this.state.accounts = [];
+    }
+    if (!this.state.accounts.some((a) => a.code === "2")) {
+      this.state.accounts.push({
+        code: "2",
+        name_ar: "المطاليب وحقوق الملكية والالتزامات",
+        name_en: "Liabilities & Equity",
+        type: "liability",
+        level: 1,
+        balance: 0,
+        initial_balance: 0,
+        status: "active",
+        currency,
+        system_binding: "none",
+      });
+    }
+    if (!this.state.accounts.some((a) => a.code === "240")) {
+      this.state.accounts.push({
+        code: "240",
+        name_ar: "أرصدة دائنة أخرى والتزامات متداولة",
+        name_en: "Current Liabilities & Payables",
+        type: "liability",
+        level: 2,
+        parent_code: "2",
+        balance: 0,
+        initial_balance: 0,
+        status: "active",
+        currency,
+        system_binding: "none",
+      });
+    }
+    if (!this.state.accounts.some((a) => a.code === "24010")) {
+      this.state.accounts.push({
+        code: "24010",
+        name_ar: "الموردون وأرصدة دائنة تجارية",
+        name_en: "Trade Suppliers & Payables",
+        type: "liability",
+        level: 3,
+        parent_code: "240",
+        balance: 0,
+        initial_balance: 0,
+        status: "active",
+        currency,
+        system_binding: "suppliers_payable",
+      });
+    }
+  }
+
+  getNextSupplierAccountCode(): string {
+    const allCodes = new Set<string>([
+      ...(this.state.accounts || []).map((a) => String(a.code || "").trim()),
+      ...(ORACLE_MIGRATION_ACCOUNTS || []).map((a: any) => String(a.code || "").trim()),
+    ]);
+
+    let maxSuffix = 390;
+    allCodes.forEach((code) => {
+      if (code.startsWith("24010") && code.length === 8) {
+        const suffix = parseInt(code.substring(5), 10);
+        if (!isNaN(suffix) && suffix > maxSuffix) {
+          maxSuffix = suffix;
+        }
+      }
+    });
+
+    let nextSuffix = maxSuffix + 1;
+    let candidate = `24010${String(nextSuffix).padStart(3, "0")}`;
+    while (allCodes.has(candidate)) {
+      nextSuffix++;
+      candidate = `24010${String(nextSuffix).padStart(3, "0")}`;
+    }
+    return candidate;
+  }
+
   addSupplier(
     name_ar: string,
     phone?: string,
@@ -1335,31 +1410,21 @@ export class ERPStore {
     account_code?: string,
     currency: string = "USD",
   ) {
+    this.ensureSupplierParentHierarchy(currency || "USD");
+
     let targetAccountCode = account_code ? String(account_code).trim() : "";
     let isNewAccount = false;
 
     // If no account code is provided, auto-create a dedicated supplier account in Chart of Accounts under 24010
     if (!targetAccountCode) {
-      const existingSupplierCodes = this.state.accounts
-        .map((a) => a.code)
-        .filter((c) => c.startsWith("24010") && c.length === 8);
-
-      let maxSuffix = 390;
-      existingSupplierCodes.forEach((code) => {
-        const suffix = parseInt(code.substring(5), 10);
-        if (!isNaN(suffix) && suffix > maxSuffix) {
-          maxSuffix = suffix;
-        }
-      });
-
-      const nextSuffix = maxSuffix + 1;
-      targetAccountCode = `24010${String(nextSuffix).padStart(3, "0")}`;
+      targetAccountCode = this.getNextSupplierAccountCode();
       isNewAccount = true;
 
       if (!this.state.accounts.some((a) => a.code === targetAccountCode)) {
         const newAcc: Account = {
           code: targetAccountCode,
           name_ar: `مورد - ${name_ar}`,
+          name_en: `Supplier - ${name_ar}`,
           type: "liability",
           level: 4,
           parent_code: "24010",
@@ -1367,24 +1432,31 @@ export class ERPStore {
           initial_balance: openingBalance,
           status: "active",
           currency: currency || "USD",
-          system_binding: "none",
+          system_binding: "suppliers_payable",
         };
         this.state.accounts.push(newAcc);
       }
     } else {
       const existing = this.state.accounts.find((a) => a.code === targetAccountCode);
       if (!existing) {
+        const inferredParent =
+          targetAccountCode.startsWith("24010") && targetAccountCode !== "24010"
+            ? "24010"
+            : targetAccountCode.length >= 5
+              ? targetAccountCode.slice(0, 5)
+              : "24010";
         this.state.accounts.push({
           code: targetAccountCode,
           name_ar: `مورد - ${name_ar}`,
+          name_en: `Supplier - ${name_ar}`,
           type: "liability",
           level: 4,
-          parent_code: "24010",
+          parent_code: inferredParent,
           balance: openingBalance,
           initial_balance: openingBalance,
           status: "active",
           currency: currency || "USD",
-          system_binding: "none",
+          system_binding: "suppliers_payable",
         });
         isNewAccount = true;
       }
@@ -1406,7 +1478,7 @@ export class ERPStore {
     this.logAction(
       "ADMIN",
       "إضافة مورد جديد",
-      `تم تسجيل المورد: ${name_ar} وربطه بالحساب المحاسبي رقم (${targetAccountCode})`,
+      `تم تسجيل المورد: ${name_ar} وإنشاء/ربط حسابه الشجري رقم (${targetAccountCode}) تحت بند الموردين (24010)`,
       "CREATE",
     );
     this.notify();
@@ -1870,27 +1942,119 @@ export class ERPStore {
       }
     }
   }
+  getSuggestedNextAccountCode(
+    parentCode?: string,
+    level: number = 4,
+    type: Account["type"] = "asset",
+  ): string {
+    const allCodes = new Set<string>([
+      ...(this.state.accounts || []).map((a) => String(a.code || "").trim()),
+      ...(ORACLE_MIGRATION_ACCOUNTS || []).map((a: any) => String(a.code || "").trim()),
+    ]);
+
+    const cleanParent = String(parentCode || "").trim();
+
+    if (level === 1 || !cleanParent) {
+      const typePrefixMap: Record<string, number> = {
+        asset: 1,
+        liability: 2,
+        equity: 3,
+        revenue: 4,
+        expense: 5,
+      };
+      let candidate = typePrefixMap[type] || 1;
+      while (allCodes.has(String(candidate))) {
+        candidate++;
+      }
+      return String(candidate);
+    }
+
+    if (cleanParent === "24010") {
+      return this.getNextSupplierAccountCode();
+    }
+
+    // Find existing direct children of cleanParent
+    const childCodes = Array.from(allCodes).filter(
+      (c) => c.startsWith(cleanParent) && c !== cleanParent,
+    );
+
+    if (level === 2) {
+      // Usually 3 digits e.g. 110, 120, 130 under "1"
+      let maxNum = parseInt(`${cleanParent}00`, 10);
+      childCodes
+        .filter((c) => c.length === 3)
+        .forEach((c) => {
+          const n = parseInt(c, 10);
+          if (!isNaN(n) && n > maxNum) maxNum = n;
+        });
+      let next = maxNum + 10;
+      while (allCodes.has(String(next))) next += 1;
+      return String(next);
+    }
+
+    if (level === 3) {
+      // Usually 5 digits e.g. 13010, 13020 under "130"
+      const targetLen = cleanParent.length + 2;
+      let maxSuffix = 0;
+      childCodes
+        .filter((c) => c.length === targetLen)
+        .forEach((c) => {
+          const suffix = parseInt(c.slice(cleanParent.length), 10);
+          if (!isNaN(suffix) && suffix > maxSuffix) maxSuffix = suffix;
+        });
+      let nextSuffix = maxSuffix > 0 ? maxSuffix + 10 : 10;
+      if (nextSuffix > 99) nextSuffix = maxSuffix + 1;
+      let candidate = `${cleanParent}${String(nextSuffix).padStart(2, "0")}`;
+      while (allCodes.has(candidate)) {
+        nextSuffix++;
+        candidate = `${cleanParent}${String(nextSuffix).padStart(2, "0")}`;
+      }
+      return candidate;
+    }
+
+    // Level 4 (Analytical Leaf) - usually 8 digits e.g. 13010100 or 24010391 under 5-digit parent
+    const suffixLen = cleanParent.length <= 5 ? 3 : 2;
+    let maxSuffix = 100;
+    childCodes
+      .filter((c) => c.length === cleanParent.length + suffixLen)
+      .forEach((c) => {
+        const suffix = parseInt(c.slice(cleanParent.length), 10);
+        if (!isNaN(suffix) && suffix > maxSuffix) maxSuffix = suffix;
+      });
+    let nextSuffix = maxSuffix + 1;
+    let candidate = `${cleanParent}${String(nextSuffix).padStart(suffixLen, "0")}`;
+    while (allCodes.has(candidate)) {
+      nextSuffix++;
+      candidate = `${cleanParent}${String(nextSuffix).padStart(suffixLen, "0")}`;
+    }
+    return candidate;
+  }
+
   addAccount(
-    code,
-    name_ar,
-    type,
-    parentCode,
+    code: string,
+    name_ar: string,
+    type: Account["type"],
+    parentCode?: string,
     level = 2,
     initial_balance = 0,
     system_binding = "none",
     currency = "EGP",
+    name_en?: string,
   ) {
-    if (this.state.accounts.some((a) => a.code === code))
-      throw new Error("كود الحساب موجود بالفعل");
-    const account = {
-      code,
-      name_ar,
+    const cleanCode = String(code || "").trim();
+    if (!cleanCode) throw new Error("يرجى إدخال كود الحساب");
+    if (this.state.accounts.some((a) => a.code === cleanCode))
+      throw new Error("كود الحساب موجود بالفعل في الدليل المحاسبي");
+    const account: Account = {
+      code: cleanCode,
+      name_ar: String(name_ar || "").trim(),
+      ...(name_en ? { name_en: String(name_en).trim() } : {}),
       type,
-      balance: initial_balance,
-      parent_code: parentCode,
-      level,
+      balance: Number(initial_balance) || 0,
+      parent_code: parentCode ? String(parentCode).trim() : undefined,
+      level: Number(level) || 2,
       status: "active",
-      initial_balance,
+      initial_balance: Number(initial_balance) || 0,
       system_binding,
       currency,
       sync_status: system_binding && system_binding !== "none" ? "pending" : "synced",
@@ -1901,13 +2065,25 @@ export class ERPStore {
     this.logAction(
       "ADMIN",
       "إضافة حساب محاسبي",
-      `تم تسجيل الحساب الجديد في الدليل: ${name_ar} (${code})`,
+      `تم تسجيل الحساب الجديد في الدليل: ${name_ar} (${cleanCode}) - المستوى ${account.level}`,
       "CREATE",
     );
+    this.notify();
     return account;
   }
-  updateAccountStatus(code, status) {
-    const acc = this.state.accounts.find((a) => a.code === code);
+  updateAccountStatus(code: string, status: "active" | "inactive") {
+    let acc = this.state.accounts.find((a) => a.code === code);
+    if (!acc) {
+      const oracleMatch = (ORACLE_MIGRATION_ACCOUNTS || []).find((a: any) => a.code === code);
+      if (oracleMatch) {
+        acc = {
+          ...oracleMatch,
+          balance: oracleMatch.initial_balance || 0,
+          status,
+        } as Account;
+        this.state.accounts.push(acc);
+      }
+    }
     if (acc) {
       acc.status = status;
       this.saveState();
@@ -1917,11 +2093,33 @@ export class ERPStore {
         `تم تغيير حالة حساب ${acc.name_ar} إلى ${status}`,
         "UPDATE",
       );
+      this.notify();
     }
   }
-  updateAccount(code, payload) {
-    const acc = this.state.accounts.find((a) => a.code === code);
-    if (!acc) throw new Error("الحساب غير موجود");
+  updateAccount(code: string, payload: Partial<Account>) {
+    let acc = this.state.accounts.find((a) => a.code === code);
+    if (!acc) {
+      // If editing an account that only existed in static ORACLE_MIGRATION_ACCOUNTS, materialize it into state.accounts
+      const oracleMatch = (ORACLE_MIGRATION_ACCOUNTS || []).find((a: any) => a.code === code);
+      if (oracleMatch) {
+        acc = {
+          code: oracleMatch.code,
+          name_ar: oracleMatch.name_ar,
+          name_en: (oracleMatch as any).name_en,
+          type: oracleMatch.type as Account["type"],
+          level: oracleMatch.level,
+          parent_code: oracleMatch.parent_code,
+          balance: Number(oracleMatch.initial_balance || 0),
+          initial_balance: Number(oracleMatch.initial_balance || 0),
+          status: (oracleMatch.status as "active" | "inactive") || "active",
+          currency: oracleMatch.currency || "USD",
+          system_binding: "none",
+        };
+        this.state.accounts.push(acc);
+      } else {
+        throw new Error("الحساب غير موجود");
+      }
+    }
     if (payload.code && payload.code !== code) {
       if (this.state.accounts.some((a) => a.code === payload.code))
         throw new Error("كود الحساب الجديد مستخدم بالفعل لحساب آخر");
@@ -1930,8 +2128,11 @@ export class ERPStore {
       });
       this.state.journalEntries.forEach((je) => {
         je.lines?.forEach((l) => {
-          if (l.account_code === code) l.account_code = payload.code;
+          if (l.account_code === code) l.account_code = payload.code!;
         });
+      });
+      this.state.suppliers.forEach((s) => {
+        if (s.account_code === code) s.account_code = payload.code!;
       });
     }
     const oldBinding = acc.system_binding;
@@ -1943,12 +2144,13 @@ export class ERPStore {
     this.logAction(
       "ADMIN",
       "تعديل حساب محاسبي",
-      `تم تعديل بيانات الحساب المحاسبي: ${acc.name_ar} (${acc.code})`,
+      `تم تعديل بيانات الحساب المحاسبي: ${acc.name_ar} (${acc.code}) - المستوى ${acc.level}`,
       "UPDATE",
     );
+    this.notify();
     return acc;
   }
-  activateAccountSync(code) {
+  activateAccountSync(code: string) {
     const acc = this.state.accounts.find((a) => a.code === code);
     if (acc) {
       acc.sync_status = "synced";
@@ -1960,17 +2162,23 @@ export class ERPStore {
         `تم تنشيط مزامنة الرصيد وتحديثه للحساب: ${acc.name_ar} (${acc.code})`,
         "UPDATE",
       );
+      this.notify();
     }
   }
-  deleteAccount(code) {
+  deleteAccount(code: string, forceDelete: boolean = false) {
     const index = this.state.accounts.findIndex((a) => a.code === code);
-    if (index === -1) throw new Error("الحساب غير موجود");
+    if (index === -1) throw new Error("الحساب غير موجود في الدليل القابل للحذف");
     const acc = this.state.accounts[index];
-    if (this.state.accounts.some((a) => a.parent_code === code))
+    const hasChildren = this.state.accounts.some((a) => a.parent_code === code);
+    if (hasChildren && !forceDelete) {
       throw new Error(
-        "لا يمكن حذف حساب رئيسي يمتلك حسابات فرعية. قم بحذف أو نقل الحسابات الفرعية أولاً.",
+        "لا يمكن حذف حساب رئيسي يمتلك حسابات فرعية تحته. قم بحذف أو نقل الحسابات الفرعية أولاً، أو استخدم خيار الحذف القسري.",
       );
-    if (this.state.journalEntries.some((je) => je.lines?.some((l) => l.account_code === code))) {
+    }
+    const hasJournals = this.state.journalEntries.some((je) =>
+      je.lines?.some((l) => l.account_code === code),
+    );
+    if (hasJournals && !forceDelete) {
       acc.status = "inactive";
       this.saveState();
       this.logAction(
@@ -1979,12 +2187,14 @@ export class ERPStore {
         `الحساب ${acc.name_ar} (${acc.code}) مرتبط بقيود محاسبية، تم تحويل حالته إلى معطل بدلاً من الحذف الفيزيائي لحفظ الشجرة والنزاهة المالية.`,
         "UPDATE",
       );
+      this.notify();
       return {
         softDeleted: true,
         message: "الحساب مرتبط بقيود محاسبية، تم تعطيله بدلاً من الحذف لحفظ النزاهة المالية.",
       };
     }
     this.state.accounts.splice(index, 1);
+    this.recalculateAccountBalances();
     this.saveState();
     this.logAction(
       "ADMIN",
@@ -1992,9 +2202,10 @@ export class ERPStore {
       `تم حذف الحساب المحاسبي من الدليل: ${acc.name_ar} (${code})`,
       "DELETE",
     );
+    this.notify();
     return {
       softDeleted: false,
-      message: "تم حذف الحساب بنجاح!",
+      message: "تم حذف الحساب نهائياً من شجرة الحسابات بنجاح!",
     };
   }
   recalculateAccountBalances() {
@@ -3264,7 +3475,16 @@ export class ERPStore {
     });
   }
 
-  addJournalEntry(description, lines, reference, currency = "USD", date, customId) {
+  addJournalEntry(
+    description,
+    lines,
+    reference,
+    currency = "USD",
+    date,
+    customId,
+    attachments,
+    allowUnbalanced = false,
+  ) {
     const targetDate = date || /* @__PURE__ */ new Date().toISOString().split("T")[0];
     const check = this.checkCanModifyJournalEntry(targetDate);
     if (!check.allowed && !customId?.startsWith("ORACLE")) {
@@ -3315,7 +3535,7 @@ export class ERPStore {
       (sum, l) => sum + this.getLineBaseValue(l.credit, l.rate || 1, l.currency || "USD"),
       0,
     );
-    if (Math.abs(totalDebit - totalCredit) > 0.000001) {
+    if (!allowUnbalanced && Math.abs(totalDebit - totalCredit) > 0.05) {
       console.error(
         `Double-entry balance mismatch error: Debit (Base): ${totalDebit}, Credit (Base): ${totalCredit}`,
       );
@@ -3330,6 +3550,7 @@ export class ERPStore {
       date: targetDate,
       description,
       lines,
+      ...(Array.isArray(attachments) && attachments.length > 0 ? { attachments } : {}),
       created_at: /* @__PURE__ */ new Date().toISOString(),
       reference: this.generateJournalReference(targetDate, reference),
       currency: defaultEntryCurrency,
@@ -4564,6 +4785,88 @@ export class ERPStore {
         "DELETE",
       );
     }
+  }
+  async recordWasteOrDamage(params: {
+    inventory_id: string;
+    warehouse_id?: string;
+    quantity: number;
+    unit_cost?: number;
+    reason_category: string;
+    notes?: string;
+  }) {
+    const qty = Number(params.quantity || 0);
+    if (!params.inventory_id || qty <= 0) {
+      throw new Error("يرجى اختيار الصنف وإدخال كمية تالف صحيحة أكبر من صفر.");
+    }
+    const invItems = localWarehouseStore.getInventory();
+    const item = invItems.find((i) => i.id === params.inventory_id);
+    const unitCost =
+      params.unit_cost !== undefined ? Number(params.unit_cost) : Number(item?.cost || 0);
+    const totalLossValue = Number((qty * unitCost).toFixed(2));
+    const warehouseId = params.warehouse_id || "wh-main-default";
+    const docRef = `WST-${Date.now().toString().slice(-6)}`;
+    const fullNote = `تالف وهالك مخزني (${docRef}) - [${params.reason_category}]${params.notes ? ` - ${params.notes}` : ""}`;
+
+    try {
+      await inventoryService.addTransaction({
+        inventory_id: params.inventory_id,
+        warehouse_id: warehouseId,
+        type: "out",
+        quantity: qty,
+        note: fullNote,
+      });
+    } catch (err) {
+      console.error("Fallback to localWarehouseStore for waste transaction:", err);
+      localWarehouseStore.addTransaction({
+        inventory_id: params.inventory_id,
+        warehouse_id: warehouseId,
+        type: "out",
+        quantity: qty,
+        note: fullNote,
+      });
+    }
+
+    this.state.totalDisposedExpiryValue =
+      (this.state.totalDisposedExpiryValue || 0) + totalLossValue;
+
+    const formalDoc = this.recordInventoryDocTransaction({
+      type: "stock_adjustment",
+      date: new Date().toISOString().split("T")[0],
+      branch_id: this.state.currentBranchId,
+      items: [
+        {
+          inventory_id: params.inventory_id,
+          quantity: qty,
+          unit_cost: unitCost,
+          difference: -qty,
+        },
+      ],
+      notes: fullNote,
+      status: "approved",
+    });
+
+    if (totalLossValue > 0) {
+      this.postInventoryAdjustmentJournal(
+        formalDoc?.doc_number || docRef,
+        totalLossValue,
+        this.state.currentBranchId,
+      );
+    }
+
+    this.saveState();
+    this.logAction(
+      "ADMIN",
+      "تسجيل تالف وهالك مخزني",
+      `تم تسجيل تالف للصنف (${item?.name_ar || params.inventory_id}) بكمية ${qty} ${item?.unit || ""} بقيمة ${totalLossValue} (${params.reason_category}) وترحيل القيد المحاسبي #${formalDoc?.doc_number || docRef}`,
+      "TRANSACTION",
+    );
+    this.notify();
+    return {
+      docNumber: formalDoc?.doc_number || docRef,
+      totalLossValue,
+      itemName: item?.name_ar || "",
+      unit: item?.unit || "",
+    };
   }
   getMenuItemQualitySpecs(menuItemId) {
     if (!this.state.menuQualitySpecs) this.state.menuQualitySpecs = {};

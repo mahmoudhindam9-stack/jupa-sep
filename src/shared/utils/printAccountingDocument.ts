@@ -574,3 +574,349 @@ export function printTreasuryMovementDocument(data: TreasuryMovementReportData) 
 
   return printRawHtml(htmlContent);
 }
+
+export interface SmartStocktakingItemRow {
+  code?: string;
+  barcode?: string;
+  name_ar: string;
+  category?: string;
+  unit: string;
+  bookQuantity: number;
+  minLevel?: number;
+  unitCost?: number;
+  warehouseName?: string;
+}
+
+export interface SmartStocktakingSheetOptions {
+  warehouseName?: string;
+  branchName?: string;
+  blindCount?: boolean;
+  reportTitle?: string;
+  responsiblePerson?: string;
+  items: SmartStocktakingItemRow[];
+}
+
+export function printSmartStocktakingSheet(options: SmartStocktakingSheetOptions): boolean {
+  const printTime = new Date().toLocaleString("ar-EG", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const docNo = `STK-CNT-${Date.now().toString().slice(-6)}`;
+  const blind = Boolean(options.blindCount);
+  const items = options.items || [];
+  const lowStockCount = items.filter((i) => i.bookQuantity <= (i.minLevel ?? 0)).length;
+  const totalBookValue = items.reduce(
+    (sum, i) => sum + Number(i.bookQuantity || 0) * Number(i.unitCost || 0),
+    0,
+  );
+
+  const rowsHtml = items
+    .map((item, idx) => {
+      const isLow = item.bookQuantity <= (item.minLevel ?? 0);
+      return `
+      <tr>
+        <td style="text-align:center;width:44px">
+          <div class="check-box-main" title="مربع علامة الفحص"></div>
+        </td>
+        <td style="text-align:center;font-family:monospace;font-weight:bold;width:30px">${idx + 1}</td>
+        <td style="font-family:monospace;font-size:10.5px;width:85px;font-weight:bold;color:#334155">
+          ${escapeHtml(item.code || item.barcode || `ITM-${idx + 1}`)}
+        </td>
+        <td style="font-weight:bold;font-size:12px;color:#0f172a">
+          ${escapeHtml(item.name_ar)}
+          ${isLow && !blind ? '<span class="low-badge">نقص حد أدنى</span>' : ""}
+        </td>
+        <td style="font-size:10.5px;color:#475569;width:105px">
+          ${escapeHtml(item.category || "خامات ومواد أولية")}
+        </td>
+        <td style="text-align:center;font-weight:bold;width:55px;background:#f8fafc">
+          ${escapeHtml(item.unit || "وحدة")}
+        </td>
+        ${
+          blind
+            ? ""
+            : `<td style="text-align:center;font-family:monospace;font-weight:bold;font-size:12px;width:78px;background:#f1f5f9;color:${isLow ? "#dc2626" : "#0f172a"}">
+                ${Number(item.bookQuantity || 0).toFixed(2)}
+              </td>`
+        }
+        <td style="width:110px;padding:4px 6px">
+          <div class="write-field"></div>
+        </td>
+        <td style="width:95px;padding:4px 6px">
+          <div class="write-field"></div>
+        </td>
+        <td style="width:165px;font-size:10px;color:#334155">
+          <div class="cond-row">
+            <span class="cond-item"><span class="mini-box"></span> سليم</span>
+            <span class="cond-item"><span class="mini-box"></span> تالف</span>
+            <span class="cond-item"><span class="mini-box"></span> منتهي</span>
+          </div>
+        </td>
+      </tr>`;
+    })
+    .join("");
+
+  const htmlContent = `<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+  <meta charset="utf-8" />
+  <title>قائمة الجرد الذكي للمخزون - ${escapeHtml(docNo)}</title>
+  <style>
+    @page { size: A4 portrait; margin: 10mm; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: Tahoma, 'Segoe UI', Arial, sans-serif;
+      color: #0f172a;
+      margin: 0;
+      padding: 8px;
+      background: #ffffff;
+      direction: rtl;
+      text-align: right;
+    }
+    .header-box {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 3px solid #0f172a;
+      padding-bottom: 10px;
+      margin-bottom: 12px;
+    }
+    .brand { font-size: 19px; font-weight: 900; color: #0f172a; }
+    .brand-sub { font-size: 10px; color: #475569; margin-top: 2px; }
+    .doc-title { font-size: 17px; font-weight: 900; color: #0f172a; text-align: center; }
+    .doc-subtitle {
+      font-size: 11px;
+      font-weight: bold;
+      color: #0284c7;
+      text-align: center;
+      margin-top: 3px;
+      background: #e0f2fe;
+      padding: 2px 10px;
+      border-radius: 999px;
+      display: inline-block;
+    }
+    .meta-box { font-size: 10.5px; color: #334155; text-align: left; line-height: 1.5; }
+    .info-bar {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      background: #f8fafc;
+      border: 1.5px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 8px 10px;
+      margin-bottom: 10px;
+      font-size: 11px;
+    }
+    .info-cell .lbl { font-size: 9.5px; color: #64748b; display: block; }
+    .info-cell .val { font-weight: bold; color: #0f172a; font-size: 11.5px; }
+    .instructions-banner {
+      background: #fffbeb;
+      border: 1px dashed #f59e0b;
+      border-radius: 6px;
+      padding: 6px 10px;
+      margin-bottom: 10px;
+      font-size: 10.5px;
+      color: #92400e;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    th {
+      background: #0f172a;
+      color: #ffffff;
+      font-weight: bold;
+      padding: 7px 5px;
+      border: 1px solid #0f172a;
+      font-size: 10.5px;
+      text-align: right;
+    }
+    td {
+      border: 1px solid #94a3b8;
+      padding: 6px 5px;
+      vertical-align: middle;
+    }
+    tr:nth-child(even) { background: #f8fafc; }
+    tr { page-break-inside: avoid; }
+    .check-box-main {
+      width: 20px;
+      height: 20px;
+      border: 2.2px solid #0f172a;
+      border-radius: 4px;
+      margin: 0 auto;
+      background: #ffffff;
+    }
+    .write-field {
+      height: 24px;
+      border: 1.5px dashed #64748b;
+      border-radius: 4px;
+      background: #ffffff;
+    }
+    .cond-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 4px;
+    }
+    .cond-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      font-weight: bold;
+      font-size: 9.5px;
+    }
+    .mini-box {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 1.5px solid #334155;
+      border-radius: 2px;
+      background: #ffffff;
+    }
+    .low-badge {
+      display: inline-block;
+      margin-right: 6px;
+      padding: 1px 5px;
+      font-size: 9px;
+      background: #fee2e2;
+      color: #b91c1c;
+      border: 1px solid #fca5a5;
+      border-radius: 4px;
+    }
+    .summary-notes {
+      margin-top: 12px;
+      border: 1.5px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 8px 12px;
+      min-height: 58px;
+      font-size: 10.5px;
+      color: #475569;
+    }
+    .signatures {
+      margin-top: 22px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+      text-align: center;
+      font-size: 11px;
+      page-break-inside: avoid;
+    }
+    .sig-line {
+      border-top: 1.5px dashed #475569;
+      margin-top: 34px;
+      padding-top: 5px;
+      font-weight: bold;
+      color: #0f172a;
+    }
+    .footer {
+      margin-top: 16px;
+      font-size: 9.5px;
+      color: #64748b;
+      display: flex;
+      justify-content: space-between;
+      border-top: 1px solid #cbd5e1;
+      padding-top: 6px;
+    }
+    @media print {
+      body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+      th { background: #0f172a !important; color: #ffffff !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header-box">
+    <div>
+      <div class="brand">Restocash ERP</div>
+      <div class="brand-sub">نظام إدارة المستودعات والرقابة المخزنية الذكية</div>
+    </div>
+    <div style="text-align:center">
+      <div class="doc-title">${escapeHtml(options.reportTitle || "استمارة ومحضر الجرد الذكي للمخزون")}</div>
+      <div class="doc-subtitle">${blind ? "نموذج جرد أعمى للمطابقة الميدانية (بدون إظهار الرصيد الدفتري)" : "نموذج جرد تفصيلي بالمقارنة مع الرصيد الدفتري"}</div>
+    </div>
+    <div class="meta-box">
+      <div><strong>رقم محضر الجرد:</strong> ${escapeHtml(docNo)}</div>
+      <div><strong>تاريخ وتوقيت الإصدار:</strong> ${escapeHtml(printTime)}</div>
+      <div><strong>الفرع:</strong> ${escapeHtml(options.branchName || "الفرع الرئيسي")}</div>
+    </div>
+  </div>
+
+  <div class="info-bar">
+    <div class="info-cell">
+      <span class="lbl">المستودع / المخزن المستهدف:</span>
+      <span class="val">${escapeHtml(options.warehouseName || "جميع المخازن (جرد شامل)")}</span>
+    </div>
+    <div class="info-cell">
+      <span class="lbl">إجمالي عدد الأصناف بالقائمة:</span>
+      <span class="val">${items.length} صنف مخزني</span>
+    </div>
+    <div class="info-cell">
+      <span class="lbl">أصناف دون الحد الأدنى:</span>
+      <span class="val" style="color:${lowStockCount > 0 ? "#dc2626" : "#15803d"}">${lowStockCount} صنف</span>
+    </div>
+    <div class="info-cell">
+      <span class="lbl">${blind ? "مسؤول الجرد الميداني:" : "إجمالي القيمة الدفترية:"}</span>
+      <span class="val">${blind ? escapeHtml(options.responsiblePerson || "لجنة الجرد") : `${totalBookValue.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}</span>
+    </div>
+  </div>
+
+  <div class="instructions-banner">
+    <span><strong>تعليمات الجرد الذكي:</strong> ضع علامة (✓) في مربع الفحص <strong>[ ☐ ]</strong> بجانب كل صنف فور عده، واكتب الكمية الفعلية وحالة الصلاحية بدقة.</span>
+    <span><strong>تاريخ الجرد الفعلي:</strong> ____ / ____ / 2026</span>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="text-align:center;width:44px">☐ فحص</th>
+        <th style="text-align:center;width:30px">م</th>
+        <th style="width:85px">كود الصنف</th>
+        <th>اسم الصنف المخزني</th>
+        <th style="width:105px">التصنيف</th>
+        <th style="text-align:center;width:55px">الوحدة</th>
+        ${blind ? "" : '<th style="text-align:center;width:78px">الرصيد الدفتري</th>'}
+        <th style="text-align:center;width:110px">الكمية الفعلية المعدودة</th>
+        <th style="text-align:center;width:95px">الفرق (عجز / +زيادة)</th>
+        <th style="text-align:center;width:165px">حالة الصنف والصلاحية</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${
+        rowsHtml ||
+        `<tr><td colspan="${blind ? 9 : 10}" style="text-align:center;padding:24px;font-weight:bold;color:#64748b">لا توجد أصناف مخزنية مسجلة في هذا النطاق</td></tr>`
+      }
+    </tbody>
+  </table>
+
+  <div class="summary-notes">
+    <strong>ملاحظات لجنة الجرد والتسويات المقترحة (تلف / عجز / زيادة):</strong>
+  </div>
+
+  <div class="signatures">
+    <div>
+      <div class="sig-line">أمين المستودع المسؤول</div>
+      <div style="font-size:9.5px;color:#64748b;margin-top:3px">الاسم والتوقيع</div>
+    </div>
+    <div>
+      <div class="sig-line">عضو / رئيس لجنة الجرد الميداني</div>
+      <div style="font-size:9.5px;color:#64748b;margin-top:3px">الاسم والتوقيع</div>
+    </div>
+    <div>
+      <div class="sig-line">مراجعة واعتماد المدير المالي</div>
+      <div style="font-size:9.5px;color:#64748b;margin-top:3px">الاسم والتوقيع والختم</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <span>استمارة جرد ذكية معتمدة صادرة من نظام Restocash ERP</span>
+    <span>رقم المرجع: ${escapeHtml(docNo)}</span>
+    <span>يرجى حفظ الأصل الموقّع في أرشيف الرقابة المخزنية</span>
+  </div>
+</body>
+</html>`;
+
+  return printRawHtml(htmlContent);
+}
+

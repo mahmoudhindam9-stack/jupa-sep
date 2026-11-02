@@ -128,6 +128,7 @@ export function AccountsPage() {
   // Dialogs state
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
+  const [editingOriginalCode, setEditingOriginalCode] = useState<string>("");
   const [accountToDelete, setAccountToDelete] = useState<Account | null>(null);
   const [selectedAccountForLedger, setSelectedAccountForLedger] = useState<Account | null>(null);
 
@@ -135,12 +136,14 @@ export function AccountsPage() {
   const [accountForm, setAccountForm] = useState({
     code: "",
     name_ar: "",
+    name_en: "",
     type: "asset" as Account["type"],
+    level: 4,
     parent_code: "",
     initial_balance: 0,
     status: "active" as "active" | "inactive",
     system_binding: "none" as Account["system_binding"],
-    currency: "EGP",
+    currency: "USD",
   });
 
   // Oracle Import State & Handler
@@ -457,6 +460,37 @@ export function AccountsPage() {
     });
   };
 
+  // Open Add Account with optional preset (from tree or header)
+  const openAddAccountModal = (preset?: {
+    level?: number;
+    parent_code?: string;
+    type?: Account["type"];
+  }) => {
+    const targetLevel = preset?.level || 4;
+    const targetParent = preset?.parent_code ?? (targetLevel === 1 ? "" : "13010");
+    const parentAcc = erpState.accounts.find((a) => a.code === targetParent);
+    const targetType = (preset?.type || parentAcc?.type || "asset") as Account["type"];
+    const suggestedCode = erpStore.getSuggestedNextAccountCode(
+      targetLevel === 1 ? "" : targetParent,
+      targetLevel,
+      targetType,
+    );
+
+    setAccountForm({
+      code: suggestedCode,
+      name_ar: "",
+      name_en: "",
+      type: targetType,
+      level: targetLevel,
+      parent_code: targetLevel === 1 ? "" : targetParent,
+      initial_balance: 0,
+      status: "active",
+      system_binding: "none",
+      currency: parentAcc?.currency || "USD",
+    });
+    setIsAddOpen(true);
+  };
+
   // Handle Create Account
   const handleAddSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -470,34 +504,37 @@ export function AccountsPage() {
     }
 
     try {
-      const parentAcc = erpState.accounts.find((a) => a.code === accountForm.parent_code);
-      const level = parentAcc ? parentAcc.level + 1 : 1;
+      const resolvedLevel = Number(accountForm.level) || 4;
+      const resolvedParent = resolvedLevel === 1 ? undefined : accountForm.parent_code || undefined;
       erpStore.addAccount(
         accountForm.code,
         accountForm.name_ar,
         accountForm.type,
-        accountForm.parent_code || undefined,
-        level,
+        resolvedParent,
+        resolvedLevel,
         Number(accountForm.initial_balance || 0),
         accountForm.system_binding,
         accountForm.currency,
+        accountForm.name_en,
       );
 
       toast({
         title: "✅ تم إضافة الحساب بنجاح",
-        description: `تم ربط الحساب ${accountForm.name_ar} (${accountForm.code}) بدليل الحسابات المالي.`,
+        description: `تم إدراج الحساب ${accountForm.name_ar} (${accountForm.code}) بالمستوى (${resolvedLevel}) في شجرة الحسابات.`,
       });
 
       setIsAddOpen(false);
       setAccountForm({
         code: "",
         name_ar: "",
+        name_en: "",
         type: "asset",
+        level: 4,
         parent_code: "",
         initial_balance: 0,
         status: "active",
         system_binding: "none",
-        currency: "EGP",
+        currency: "USD",
       });
     } catch (err: any) {
       toast({
@@ -514,13 +551,15 @@ export function AccountsPage() {
     if (!editingAccount) return;
 
     try {
-      const parentAcc = erpState.accounts.find((a) => a.code === editingAccount.parent_code);
-      const level = parentAcc ? parentAcc.level + 1 : 1;
-      erpStore.updateAccount(editingAccount.code, {
+      const targetOriginalCode = editingOriginalCode || editingAccount.code;
+      const resolvedLevel = Number(editingAccount.level) || 4;
+      erpStore.updateAccount(targetOriginalCode, {
+        code: editingAccount.code,
         name_ar: editingAccount.name_ar,
+        name_en: editingAccount.name_en,
         type: editingAccount.type,
-        parent_code: editingAccount.parent_code || undefined,
-        level,
+        parent_code: resolvedLevel === 1 ? undefined : editingAccount.parent_code || undefined,
+        level: resolvedLevel,
         initial_balance: Number(editingAccount.initial_balance || 0),
         status: editingAccount.status,
         system_binding: editingAccount.system_binding,
@@ -529,10 +568,11 @@ export function AccountsPage() {
 
       toast({
         title: "✅ تم تحديث بيانات الحساب",
-        description: `تم حفظ التعديلات على حساب ${editingAccount.name_ar} بنجاح.`,
+        description: `تم حفظ التعديلات على حساب ${editingAccount.name_ar} (${editingAccount.code}) بنجاح.`,
       });
 
       setEditingAccount(null);
+      setEditingOriginalCode("");
     } catch (err: any) {
       toast({
         title: "خطأ في التعديل",
@@ -543,12 +583,12 @@ export function AccountsPage() {
   };
 
   // Handle Delete Account
-  const ConfirmDelete = () => {
+  const ConfirmDelete = (forceDelete: boolean = false) => {
     if (!accountToDelete) return;
     try {
-      const res = erpStore.deleteAccount(accountToDelete.code);
+      const res = erpStore.deleteAccount(accountToDelete.code, forceDelete);
       toast({
-        title: res.softDeleted ? "⚠️ تم تعطيل الحساب" : "🗑️ تم حذف الحساب",
+        title: res.softDeleted ? "⚠️ تم تعطيل الحساب" : "🗑️ تم حذف الحساب نهائياً",
         description: res.message,
       });
       setAccountToDelete(null);
@@ -663,7 +703,7 @@ export function AccountsPage() {
               استيراد أوراكل (4 مستويات والحركات)
             </Button>
             <Button
-              onClick={() => setIsAddOpen(true)}
+              onClick={() => openAddAccountModal({ level: 4, parent_code: "13010", type: "asset" })}
               className="bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs h-10 rounded-2xl px-5 shadow-lg shadow-primary/30 transition active:scale-95"
             >
               <Plus size={18} className="ml-1.5" />
@@ -686,7 +726,20 @@ export function AccountsPage() {
         </TabsList>
 
         <TabsContent value="oracle_tree" className="mt-4">
-          <OracleAccountsViewer />
+          <OracleAccountsViewer
+            onAddAccount={(preset) =>
+              openAddAccountModal({
+                level: preset.level,
+                parent_code: preset.parent_code,
+                type: preset.type as Account["type"],
+              })
+            }
+            onEditAccount={(acc) => {
+              setEditingOriginalCode(acc.code);
+              setEditingAccount({ ...acc });
+            }}
+            onDeleteAccount={(acc) => setAccountToDelete(acc)}
+          />
         </TabsContent>
 
         <TabsContent value="system_accounts" className="space-y-6 mt-4">
@@ -827,10 +880,11 @@ export function AccountsPage() {
                     onChange={(e) => setSelectedLevel(e.target.value)}
                     className="h-10 px-3 py-1.5 rounded-xl text-xs font-bold bg-background border border-border text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
                   >
-                    <option value="all">جميع المستويات</option>
+                    <option value="all">جميع المستويات (1 - 4)</option>
                     <option value="1">المستوى 1 (رئيسي Root)</option>
-                    <option value="2">المستوى 2 (فرعي Sub)</option>
-                    <option value="3">المستوى 3 (تحليلي Detail)</option>
+                    <option value="2">المستوى 2 (عام General)</option>
+                    <option value="3">المستوى 3 (فرعي Sub)</option>
+                    <option value="4">المستوى 4 (تحليلي Leaf)</option>
                   </select>
 
                   <select
@@ -1128,7 +1182,10 @@ export function AccountsPage() {
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  onClick={() => setEditingAccount({ ...acc })}
+                                  onClick={() => {
+                                    setEditingOriginalCode(acc.code);
+                                    setEditingAccount({ ...acc });
+                                  }}
                                   className="h-8 px-2 text-xs font-bold rounded-lg text-slate-700 dark:text-slate-200 hover:bg-muted"
                                   title="تعديل الحساب"
                                 >
@@ -1156,662 +1213,815 @@ export function AccountsPage() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+      </Tabs>
 
-          {/* DIALOG 1: ADD ACCOUNT */}
-          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-            <DialogContent className="max-w-md text-right rounded-2xl">
-              <DialogHeader className="text-right">
-                <DialogTitle className="text-lg font-black text-foreground flex items-center gap-2">
-                  <Plus className="text-primary" size={20} />
-                  إضافة حساب جديد بالدليل المالي
-                </DialogTitle>
-                <DialogDescription className="text-xs text-muted-foreground">
-                  قم بإدخال بيانات الحساب المحاسبي الجديد وربطه بالحساب الأب المناسب في الشجرة
-                  المحاسبية.
-                </DialogDescription>
-              </DialogHeader>
+      {/* DIALOG 1: ADD ACCOUNT (Supports all 4 tree levels + auto-code generation) */}
+      <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+        <DialogContent className="max-w-lg text-right rounded-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="text-right">
+            <DialogTitle className="text-lg font-black text-foreground flex items-center gap-2">
+              <Plus className="text-primary" size={20} />
+              إضافة حساب جديد في شجرة الحسابات
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              اختر المستوى الشجري (1 إلى 4) والحساب الأب وسيقوم النظام باقتراح الكود التسلسلي
+              التلقائي مع إمكانية تعديله.
+            </DialogDescription>
+          </DialogHeader>
 
-              <form onSubmit={handleAddSubmit} className="space-y-4 py-2">
+          <form onSubmit={handleAddSubmit} className="space-y-4 py-2">
+            {/* Level & Parent Account Selection */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-xl bg-muted/40 border border-border">
+              <div>
+                <Label className="text-xs font-black text-primary">المستوى الشجري للحساب *</Label>
+                <select
+                  value={accountForm.level}
+                  onChange={(e) => {
+                    const newLevel = Number(e.target.value);
+                    const candidateParents = erpState.accounts.filter(
+                      (a) => Number(a.level) === newLevel - 1,
+                    );
+                    const nextParent =
+                      newLevel === 1 ? "" : candidateParents[0]?.code || accountForm.parent_code;
+                    const parentAcc = erpState.accounts.find((a) => a.code === nextParent);
+                    const nextType = (parentAcc?.type || accountForm.type) as Account["type"];
+                    const suggested = erpStore.getSuggestedNextAccountCode(
+                      nextParent,
+                      newLevel,
+                      nextType,
+                    );
+                    setAccountForm({
+                      ...accountForm,
+                      level: newLevel,
+                      parent_code: nextParent,
+                      type: nextType,
+                      code: suggested,
+                    });
+                  }}
+                  className="w-full mt-1 h-9 px-2.5 rounded-xl text-xs font-bold bg-background border border-border text-foreground"
+                >
+                  <option value={1}>المستوى 1 - حساب رئيسي (Root)</option>
+                  <option value={2}>المستوى 2 - حساب عام (General)</option>
+                  <option value={3}>المستوى 3 - حساب فرعي تجميعي (Sub)</option>
+                  <option value={4}>المستوى 4 - حساب تحليلي للقيود (Leaf)</option>
+                </select>
+              </div>
+
+              <div>
+                <Label className="text-xs font-black">
+                  الحساب الأب (المستوى {accountForm.level > 1 ? accountForm.level - 1 : "رئيسي"})
+                </Label>
+                <select
+                  value={accountForm.level === 1 ? "" : accountForm.parent_code}
+                  disabled={accountForm.level === 1}
+                  onChange={(e) => {
+                    const newParent = e.target.value;
+                    const parentAcc = erpState.accounts.find((a) => a.code === newParent);
+                    const nextType = (parentAcc?.type || accountForm.type) as Account["type"];
+                    const suggested = erpStore.getSuggestedNextAccountCode(
+                      newParent,
+                      accountForm.level,
+                      nextType,
+                    );
+                    setAccountForm({
+                      ...accountForm,
+                      parent_code: newParent,
+                      type: nextType,
+                      code: suggested,
+                    });
+                  }}
+                  className="w-full mt-1 h-9 px-2.5 rounded-xl text-xs font-bold bg-background border border-border text-foreground disabled:opacity-50"
+                >
+                  {accountForm.level === 1 ? (
+                    <option value="">-- حساب باب رئيسي (بدون أب) --</option>
+                  ) : (
+                    <>
+                      <option value="">-- اختر الحساب الأب --</option>
+                      {erpState.accounts
+                        .filter((a) => {
+                          const exactMatch = Number(a.level) === accountForm.level - 1;
+                          const hasExactCandidates = erpState.accounts.some(
+                            (x) => Number(x.level) === accountForm.level - 1,
+                          );
+                          return hasExactCandidates
+                            ? exactMatch
+                            : Number(a.level) < accountForm.level;
+                        })
+                        .sort((a, b) => a.code.localeCompare(b.code))
+                        .map((a) => (
+                          <option key={a.code} value={a.code}>
+                            {a.code} - {a.name_ar} (مستوى {a.level})
+                          </option>
+                        ))}
+                    </>
+                  )}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-bold">كود الحساب الفريد *</Label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const suggested = erpStore.getSuggestedNextAccountCode(
+                      accountForm.parent_code,
+                      accountForm.level,
+                      accountForm.type,
+                    );
+                    setAccountForm({ ...accountForm, code: suggested });
+                  }}
+                  className="text-[11px] font-bold text-primary hover:underline"
+                >
+                  ⚡ توليد كود تسلسلي تلقائي
+                </button>
+              </div>
+              <Input
+                value={accountForm.code}
+                onChange={(e) => setAccountForm({ ...accountForm, code: e.target.value })}
+                placeholder="مثال: 13010150 أو 24010391"
+                className="mt-1 font-mono font-bold text-xs"
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs font-bold">اسم الحساب المحاسبي (بالعربي) *</Label>
+                <Input
+                  value={accountForm.name_ar}
+                  onChange={(e) => setAccountForm({ ...accountForm, name_ar: e.target.value })}
+                  placeholder="مثال: خزينة الفرع الجديد / مورد..."
+                  className="mt-1 text-xs font-bold"
+                  required
+                />
+              </div>
+
+              <div>
+                <Label className="text-xs font-bold">الاسم بالإنجليزية (اختياري)</Label>
+                <Input
+                  value={accountForm.name_en}
+                  onChange={(e) => setAccountForm({ ...accountForm, name_en: e.target.value })}
+                  placeholder="e.g. Branch Cash / Supplier"
+                  className="mt-1 text-xs font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs font-bold">نوع الحساب *</Label>
+                <select
+                  value={accountForm.type}
+                  onChange={(e) =>
+                    setAccountForm({ ...accountForm, type: e.target.value as Account["type"] })
+                  }
+                  className="w-full mt-1 h-9 px-2 rounded-xl text-xs font-bold bg-background border border-border text-foreground"
+                >
+                  <option value="asset">أصول (Asset)</option>
+                  <option value="liability">التزامات / خصوم (Liability)</option>
+                  <option value="equity">حقوق ملكية (Equity)</option>
+                  <option value="revenue">إيرادات (Revenue)</option>
+                  <option value="expense">مصروفات (Expense)</option>
+                </select>
+              </div>
+
+              <div>
+                <Label className="text-xs font-bold">عملة الحساب *</Label>
+                <select
+                  value={accountForm.currency || "USD"}
+                  onChange={(e) => setAccountForm({ ...accountForm, currency: e.target.value })}
+                  className="w-full mt-1 h-9 px-2 rounded-xl text-xs font-bold bg-background border border-border text-foreground"
+                >
+                  <option value="USD">دولار أمريكي (USD)</option>
+                  <option value="EGP">جنيه مصري (EGP)</option>
+                  <option value="SSP">جنيه جنوب السودان (SSP)</option>
+                  <option value="MULTI">متعدد (MULTI)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs font-bold">الرصيد الافتتاحي</Label>
+                <Input
+                  type="number"
+                  value={accountForm.initial_balance}
+                  onChange={(e) =>
+                    setAccountForm({ ...accountForm, initial_balance: Number(e.target.value) })
+                  }
+                  className="mt-1 font-mono text-xs font-bold"
+                />
+              </div>
+
+              <div>
+                <Label className="text-xs font-bold">حالة الحساب</Label>
+                <select
+                  value={accountForm.status}
+                  onChange={(e) =>
+                    setAccountForm({
+                      ...accountForm,
+                      status: e.target.value as "active" | "inactive",
+                    })
+                  }
+                  className="w-full mt-1 h-9 px-3 rounded-xl text-xs font-bold bg-background border border-border text-foreground"
+                >
+                  <option value="active">نشط (مفعل للاستخدام)</option>
+                  <option value="inactive">معطل</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-xs font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
+                <RefreshCw
+                  size={14}
+                  className="animate-spin"
+                  style={{ animationDuration: "3s" }}
+                />
+                ربط الرصيد بالنظام تلقائياً (اختياري)
+              </Label>
+              <select
+                value={accountForm.system_binding || "none"}
+                onChange={(e) =>
+                  setAccountForm({
+                    ...accountForm,
+                    system_binding: e.target.value as Account["system_binding"],
+                  })
+                }
+                className="w-full mt-1 h-9 px-3 rounded-xl text-xs font-bold bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-200 dark:border-indigo-900 text-foreground"
+              >
+                <option value="none">بدون ربط خاص (رصيد محاسبي من القيود)</option>
+                {erpState.treasuries.map((t) => (
+                  <option key={t.id} value={`treasury_${t.id}`}>
+                    🔗 {t.account_code ? `[رقم الحساب: ${t.account_code}] ` : ""}ربط لحظي برصيد
+                    خزينة: {t.name_ar} ({t.currency})
+                  </option>
+                ))}
+                <option value="suppliers_payable">ربط لحظي بإجمالي مديونيات الموردين</option>
+                <option value="sales_revenue">
+                  ربط تلقائي بإجمالي المقبوضات/الإيرادات (Receipts)
+                </option>
+                <option value="operating_expenses">
+                  ربط تلقائي بإجمالي المدفوعات/المصروفات (Payments)
+                </option>
+                <option value="warehouse_main_value">
+                  📦 ربط لحظي بقيمة بضاعة المخزن الرئيسي
+                </option>
+                <option value="warehouse_kitchen_value">
+                  🍳 ربط لحظي بقيمة بضاعة مخزن الفرن والمطبخ
+                </option>
+                <option value="expired_inventory_value">
+                  ⚠️ ربط لحظي بقيمة بضاعة الصلاحية المنتهية (التالف الحالي)
+                </option>
+                <option value="disposed_waste_value">
+                  🚨 ربط لحظي بإجمالي الهدر والإعدامات المتراكمة
+                </option>
+              </select>
+            </div>
+
+            <DialogFooter className="gap-2 pt-2 border-t border-border">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsAddOpen(false)}
+                className="font-bold text-xs"
+              >
+                إلغاء
+              </Button>
+              <Button
+                type="submit"
+                className="font-black text-xs bg-primary text-primary-foreground px-5"
+              >
+                حفظ وإنشاء الحساب في الشجرة
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* DIALOG 2: EDIT ACCOUNT (Full editing of level, parent, code, name, type, currency, balance) */}
+      <Dialog
+        open={!!editingAccount}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditingAccount(null);
+            setEditingOriginalCode("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg text-right rounded-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="text-right">
+            <DialogTitle className="text-lg font-black text-foreground flex items-center gap-2">
+              <Pencil className="text-primary" size={20} />
+              تعديل بيانات ومستوى الحساب المحاسبي
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              تحديث الكود أو المسمى أو المستوى الشجري (1-4) أو الحساب الأب أو العملة والرصيد.
+            </DialogDescription>
+          </DialogHeader>
+
+          {editingAccount && (
+            <form onSubmit={handleEditSubmit} className="space-y-4 py-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-xl bg-muted/40 border border-border">
                 <div>
-                  <Label className="text-xs font-bold">كود الحساب الفريد *</Label>
-                  <Input
-                    value={accountForm.code}
-                    onChange={(e) => setAccountForm({ ...accountForm, code: e.target.value })}
-                    placeholder="مثال: 101005 أو 502010"
-                    className="mt-1 font-mono font-bold text-xs"
-                    required
-                  />
+                  <Label className="text-xs font-black text-primary">المستوى الشجري للحساب *</Label>
+                  <select
+                    value={editingAccount.level || 4}
+                    onChange={(e) => {
+                      const newLevel = Number(e.target.value);
+                      setEditingAccount({
+                        ...editingAccount,
+                        level: newLevel,
+                        parent_code: newLevel === 1 ? "" : editingAccount.parent_code,
+                      });
+                    }}
+                    className="w-full mt-1 h-9 px-2.5 rounded-xl text-xs font-bold bg-background border border-border text-foreground"
+                  >
+                    <option value={1}>المستوى 1 - حساب رئيسي (Root)</option>
+                    <option value={2}>المستوى 2 - حساب عام (General)</option>
+                    <option value={3}>المستوى 3 - حساب فرعي تجميعي (Sub)</option>
+                    <option value={4}>المستوى 4 - حساب تحليلي للقيود (Leaf)</option>
+                  </select>
                 </div>
 
                 <div>
-                  <Label className="text-xs font-bold">اسم الحساب المحاسبي (بالعربي) *</Label>
+                  <Label className="text-xs font-black">الحساب الأب</Label>
+                  <select
+                    value={editingAccount.level === 1 ? "" : editingAccount.parent_code || ""}
+                    disabled={editingAccount.level === 1}
+                    onChange={(e) =>
+                      setEditingAccount({ ...editingAccount, parent_code: e.target.value })
+                    }
+                    className="w-full mt-1 h-9 px-2.5 rounded-xl text-xs font-bold bg-background border border-border text-foreground disabled:opacity-50"
+                  >
+                    <option value="">-- رئيسي (بدون أب) --</option>
+                    {erpState.accounts
+                      .filter(
+                        (a) =>
+                          a.code !== editingOriginalCode &&
+                          a.code !== editingAccount.code &&
+                          Number(a.level) < (Number(editingAccount.level) || 4),
+                      )
+                      .sort((a, b) => a.code.localeCompare(b.code))
+                      .map((a) => (
+                        <option key={a.code} value={a.code}>
+                          {a.code} - {a.name_ar} (مستوى {a.level})
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <Label className="text-xs font-bold">كود الحساب *</Label>
+                <Input
+                  value={editingAccount.code}
+                  onChange={(e) =>
+                    setEditingAccount({ ...editingAccount, code: e.target.value })
+                  }
+                  className="mt-1 font-mono font-bold text-xs"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs font-bold">اسم الحساب (عربي) *</Label>
                   <Input
-                    value={accountForm.name_ar}
-                    onChange={(e) => setAccountForm({ ...accountForm, name_ar: e.target.value })}
-                    placeholder="مثال: خزينة المشروبات والفرع الفرعي"
+                    value={editingAccount.name_ar}
+                    onChange={(e) =>
+                      setEditingAccount({ ...editingAccount, name_ar: e.target.value })
+                    }
                     className="mt-1 text-xs font-bold"
                     required
                   />
                 </div>
 
-                <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <Label className="text-xs font-bold">نوع الحساب *</Label>
-                    <select
-                      value={accountForm.type}
-                      onChange={(e) =>
-                        setAccountForm({ ...accountForm, type: e.target.value as Account["type"] })
-                      }
-                      className="w-full mt-1 h-9 px-2 rounded-xl text-xs font-bold bg-background border border-border text-foreground"
-                    >
-                      <option value="asset">أصول (Asset)</option>
-                      <option value="liability">التزامات (Liability)</option>
-                      <option value="equity">حقوق ملكية (Equity)</option>
-                      <option value="revenue">إيرادات (Revenue)</option>
-                      <option value="expense">مصروفات (Expense)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <Label className="text-xs font-bold">عملة الحساب *</Label>
-                    <select
-                      value={accountForm.currency || "EGP"}
-                      onChange={(e) => setAccountForm({ ...accountForm, currency: e.target.value })}
-                      className="w-full mt-1 h-9 px-2 rounded-xl text-xs font-bold bg-background border border-border text-foreground"
-                    >
-                      <option value="EGP">جنيه مصري (EGP)</option>
-                      <option value="USD">دولار أمريكي (USD)</option>
-                      <option value="SSP">جنيه سوداني (SSP)</option>
-                      <option value="MULTI">متعدد (MULTI)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <Label className="text-xs font-bold">الحساب الأب</Label>
-                    <select
-                      value={accountForm.parent_code}
-                      onChange={(e) =>
-                        setAccountForm({ ...accountForm, parent_code: e.target.value })
-                      }
-                      className="w-full mt-1 h-9 px-2 rounded-xl text-xs font-bold bg-background border border-border text-foreground"
-                    >
-                      <option value="">-- رئيسي --</option>
-                      {erpState.accounts
-                        .filter((a) => a.level < 3)
-                        .map((a) => (
-                          <option key={a.code} value={a.code}>
-                            {a.code} - {a.name_ar}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
+                <div>
+                  <Label className="text-xs font-bold">الاسم بالإنجليزية (اختياري)</Label>
+                  <Input
+                    value={editingAccount.name_en || ""}
+                    onChange={(e) =>
+                      setEditingAccount({ ...editingAccount, name_en: e.target.value })
+                    }
+                    className="mt-1 text-xs font-mono"
+                  />
                 </div>
+              </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label className="text-xs font-bold">الرصيد الافتتاحي</Label>
-                    <Input
-                      type="number"
-                      value={accountForm.initial_balance}
-                      onChange={(e) =>
-                        setAccountForm({ ...accountForm, initial_balance: Number(e.target.value) })
-                      }
-                      className="mt-1 font-mono text-xs font-bold"
-                    />
-                  </div>
-
-                  <div>
-                    <Label className="text-xs font-bold">حالة الحساب</Label>
-                    <select
-                      value={accountForm.status}
-                      onChange={(e) =>
-                        setAccountForm({
-                          ...accountForm,
-                          status: e.target.value as "active" | "inactive",
-                        })
-                      }
-                      className="w-full mt-1 h-9 px-3 rounded-xl text-xs font-bold bg-background border border-border text-foreground"
-                    >
-                      <option value="active">نشط (مفعل للاستخدام)</option>
-                      <option value="inactive">معطل</option>
-                    </select>
-                  </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs font-bold">نوع الحساب *</Label>
+                  <select
+                    value={editingAccount.type}
+                    onChange={(e) =>
+                      setEditingAccount({
+                        ...editingAccount,
+                        type: e.target.value as Account["type"],
+                      })
+                    }
+                    className="w-full mt-1 h-9 px-2 rounded-xl text-xs font-bold bg-background border border-border text-foreground"
+                  >
+                    <option value="asset">أصول (Asset)</option>
+                    <option value="liability">التزامات (Liability)</option>
+                    <option value="equity">حقوق ملكية (Equity)</option>
+                    <option value="revenue">إيرادات (Revenue)</option>
+                    <option value="expense">مصروفات (Expense)</option>
+                  </select>
                 </div>
 
                 <div>
-                  <Label className="text-xs font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
-                    <RefreshCw
-                      size={14}
-                      className="animate-spin"
-                      style={{ animationDuration: "3s" }}
-                    />
-                    ربط الرصيد بالنظام تلقائياً (اختياري)
-                  </Label>
+                  <Label className="text-xs font-bold">عملة الحساب *</Label>
                   <select
-                    value={accountForm.system_binding || "none"}
+                    value={editingAccount.currency || "USD"}
                     onChange={(e) =>
-                      setAccountForm({
-                        ...accountForm,
-                        system_binding: e.target.value as Account["system_binding"],
+                      setEditingAccount({ ...editingAccount, currency: e.target.value })
+                    }
+                    className="w-full mt-1 h-9 px-2 rounded-xl text-xs font-bold bg-background border border-border text-foreground"
+                  >
+                    <option value="USD">دولار أمريكي (USD)</option>
+                    <option value="EGP">جنيه مصري (EGP)</option>
+                    <option value="SSP">جنيه جنوب السودان (SSP)</option>
+                    <option value="MULTI">متعدد (MULTI)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs font-bold">الرصيد الافتتاحي</Label>
+                  <Input
+                    type="number"
+                    value={editingAccount.initial_balance || 0}
+                    onChange={(e) =>
+                      setEditingAccount({
+                        ...editingAccount,
+                        initial_balance: Number(e.target.value),
                       })
                     }
-                    className="w-full mt-1 h-9 px-3 rounded-xl text-xs font-bold bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-200 dark:border-indigo-900 text-foreground"
-                  >
-                    <option value="none">بدون ربط (رصيد محاسبي يدوي من القيود)</option>
-                    {/* Dynamic Treasuries from erpStore state */}
-                    {erpState.treasuries.map((t) => (
-                      <option key={t.id} value={`treasury_${t.id}`}>
-                        🔗 {t.account_code ? `[رقم الحساب: ${t.account_code}] ` : ""}ربط لحظي برصيد
-                        خزينة: {t.name_ar} ({t.currency})
-                      </option>
-                    ))}
-                    <option value="suppliers_payable">ربط لحظي بإجمالي مديونيات الموردين</option>
-                    <option value="sales_revenue">
-                      ربط تلقائي بإجمالي المقبوضات/الإيرادات (Receipts)
-                    </option>
-                    <option value="operating_expenses">
-                      ربط تلقائي بإجمالي المدفوعات/المصروفات (Payments)
-                    </option>
-                    <option value="warehouse_main_value">
-                      📦 ربط لحظي بقيمة بضاعة المخزن الرئيسي
-                    </option>
-                    <option value="warehouse_kitchen_value">
-                      🍳 ربط لحظي بقيمة بضاعة مخزن الفرن والمطبخ
-                    </option>
-                    <option value="expired_inventory_value">
-                      ⚠️ ربط لحظي بقيمة بضاعة الصلاحية المنتهية (التالف الحالي)
-                    </option>
-                    <option value="disposed_waste_value">
-                      🚨 ربط لحظي بإجمالي الهدر والإعدامات المتراكمة
-                    </option>
-                  </select>
-                  <p className="text-[10px] text-muted-foreground mt-1 leading-relaxed">
-                    عند التفعيل، سيتم تحديث وتثبيت رصيد هذا الحساب تلقائياً ومزامنته لحظياً مع الجزء
-                    المرتبط به في النظام دون الحاجة لقيود يدوية.
-                  </p>
-                </div>
-
-                <DialogFooter className="gap-2 pt-2 border-t border-border">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setIsAddOpen(false)}
-                    className="font-bold text-xs"
-                  >
-                    إلغاء
-                  </Button>
-                  <Button
-                    type="submit"
-                    className="font-black text-xs bg-primary text-primary-foreground px-5"
-                  >
-                    حفظ وإنشاء الحساب
-                  </Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
-
-          {/* DIALOG 2: EDIT ACCOUNT */}
-          <Dialog open={!!editingAccount} onOpenChange={(open) => !open && setEditingAccount(null)}>
-            <DialogContent className="max-w-md text-right rounded-2xl">
-              <DialogHeader className="text-right">
-                <DialogTitle className="text-lg font-black text-foreground flex items-center gap-2">
-                  <Pencil className="text-primary" size={20} />
-                  تعديل بيانات الحساب المحاسبي
-                </DialogTitle>
-                <DialogDescription className="text-xs text-muted-foreground">
-                  تحديث الكود أو المسمى العربي أو التصنيف المالي لهذا الحساب في الشجرة.
-                </DialogDescription>
-              </DialogHeader>
-
-              {editingAccount && (
-                <form onSubmit={handleEditSubmit} className="space-y-4 py-2">
-                  <div>
-                    <Label className="text-xs font-bold">كود الحساب *</Label>
-                    <Input
-                      value={editingAccount.code}
-                      onChange={(e) =>
-                        setEditingAccount({ ...editingAccount, code: e.target.value })
-                      }
-                      className="mt-1 font-mono font-bold text-xs"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <Label className="text-xs font-bold">اسم الحساب (عربي) *</Label>
-                    <Input
-                      value={editingAccount.name_ar}
-                      onChange={(e) =>
-                        setEditingAccount({ ...editingAccount, name_ar: e.target.value })
-                      }
-                      className="mt-1 text-xs font-bold"
-                      required
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-3">
-                    <div>
-                      <Label className="text-xs font-bold">نوع الحساب *</Label>
-                      <select
-                        value={editingAccount.type}
-                        onChange={(e) =>
-                          setEditingAccount({
-                            ...editingAccount,
-                            type: e.target.value as Account["type"],
-                          })
-                        }
-                        className="w-full mt-1 h-9 px-2 rounded-xl text-xs font-bold bg-background border border-border text-foreground"
-                      >
-                        <option value="asset">أصول (Asset)</option>
-                        <option value="liability">التزامات (Liability)</option>
-                        <option value="equity">حقوق ملكية (Equity)</option>
-                        <option value="revenue">إيرادات (Revenue)</option>
-                        <option value="expense">مصروفات (Expense)</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <Label className="text-xs font-bold">عملة الحساب *</Label>
-                      <select
-                        value={editingAccount.currency || "EGP"}
-                        onChange={(e) =>
-                          setEditingAccount({ ...editingAccount, currency: e.target.value })
-                        }
-                        className="w-full mt-1 h-9 px-2 rounded-xl text-xs font-bold bg-background border border-border text-foreground"
-                      >
-                        <option value="EGP">جنيه مصري (EGP)</option>
-                        <option value="USD">دولار أمريكي (USD)</option>
-                        <option value="SSP">جنيه سوداني (SSP)</option>
-                        <option value="MULTI">متعدد (MULTI)</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <Label className="text-xs font-bold">الحساب الأب</Label>
-                      <select
-                        value={editingAccount.parent_code || ""}
-                        onChange={(e) =>
-                          setEditingAccount({ ...editingAccount, parent_code: e.target.value })
-                        }
-                        className="w-full mt-1 h-9 px-2 rounded-xl text-xs font-bold bg-background border border-border text-foreground"
-                      >
-                        <option value="">-- رئيسي --</option>
-                        {erpState.accounts
-                          .filter((a) => a.code !== editingAccount.code && a.level < 3)
-                          .map((a) => (
-                            <option key={a.code} value={a.code}>
-                              {a.code} - {a.name_ar}
-                            </option>
-                          ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <Label className="text-xs font-bold">الرصيد الافتتاحي</Label>
-                      <Input
-                        type="number"
-                        value={editingAccount.initial_balance || 0}
-                        onChange={(e) =>
-                          setEditingAccount({
-                            ...editingAccount,
-                            initial_balance: Number(e.target.value),
-                          })
-                        }
-                        className="mt-1 font-mono text-xs font-bold"
-                      />
-                    </div>
-
-                    <div>
-                      <Label className="text-xs font-bold">الحالة</Label>
-                      <select
-                        value={editingAccount.status}
-                        onChange={(e) =>
-                          setEditingAccount({
-                            ...editingAccount,
-                            status: e.target.value as "active" | "inactive",
-                          })
-                        }
-                        className="w-full mt-1 h-9 px-3 rounded-xl text-xs font-bold bg-background border border-border text-foreground"
-                      >
-                        <option value="active">نشط</option>
-                        <option value="inactive">معطل</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <Label className="text-xs font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
-                      <RefreshCw
-                        size={14}
-                        className="animate-spin"
-                        style={{ animationDuration: "3s" }}
-                      />
-                      ربط الرصيد بالنظام تلقائياً (اختياري)
-                    </Label>
-                    <select
-                      value={editingAccount.system_binding || "none"}
-                      onChange={(e) =>
-                        setEditingAccount({
-                          ...editingAccount,
-                          system_binding: e.target.value as Account["system_binding"],
-                        })
-                      }
-                      className="w-full mt-1 h-9 px-3 rounded-xl text-xs font-bold bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-200 dark:border-indigo-900 text-foreground"
-                    >
-                      <option value="none">بدون ربط (رصيد محاسبي يدوي من القيود)</option>
-                      {/* Dynamic Treasuries from erpStore state */}
-                      {erpState.treasuries.map((t) => (
-                        <option key={t.id} value={`treasury_${t.id}`}>
-                          🔗 {t.account_code ? `[رقم الحساب: ${t.account_code}] ` : ""}ربط لحظي
-                          برصيد خزينة: {t.name_ar} ({t.currency})
-                        </option>
-                      ))}
-                      <option value="suppliers_payable">ربط لحظي بإجمالي مديونيات الموردين</option>
-                      <option value="sales_revenue">
-                        ربط تلقائي بإجمالي المقبوضات/الإيرادات (Receipts)
-                      </option>
-                      <option value="operating_expenses">
-                        ربط تلقائي بإجمالي المدفوعات/المصروفات (Payments)
-                      </option>
-                      <option value="warehouse_main_value">
-                        📦 ربط لحظي بقيمة بضاعة المخزن الرئيسي
-                      </option>
-                      <option value="warehouse_kitchen_value">
-                        🍳 ربط لحظي بقيمة بضاعة مخزن الفرن والمطبخ
-                      </option>
-                      <option value="expired_inventory_value">
-                        ⚠️ ربط لحظي بقيمة بضاعة الصلاحية المنتهية (التالف الحالي)
-                      </option>
-                      <option value="disposed_waste_value">
-                        🚨 ربط لحظي بإجمالي الهدر والإعدامات المتراكمة
-                      </option>
-                    </select>
-                    <p className="text-[10px] text-muted-foreground mt-1 leading-relaxed">
-                      عند التفعيل، سيتم تحديث وتثبيت رصيد هذا الحساب تلقائياً ومزامنته لحظياً مع
-                      الجزء المرتبط به في النظام دون الحاجة لقيود يدوية.
-                    </p>
-                  </div>
-
-                  <DialogFooter className="gap-2 pt-2 border-t border-border">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setEditingAccount(null)}
-                      className="font-bold text-xs"
-                    >
-                      إلغاء
-                    </Button>
-                    <Button
-                      type="submit"
-                      className="font-black text-xs bg-primary text-primary-foreground px-5"
-                    >
-                      حفظ التغييرات
-                    </Button>
-                  </DialogFooter>
-                </form>
-              )}
-            </DialogContent>
-          </Dialog>
-
-          {/* DIALOG 3: DELETE ACCOUNT CONFIRMATION */}
-          <Dialog
-            open={!!accountToDelete}
-            onOpenChange={(open) => !open && setAccountToDelete(null)}
-          >
-            <DialogContent className="max-w-md text-right rounded-2xl">
-              <DialogHeader className="text-right">
-                <DialogTitle className="text-lg font-black text-rose-600 flex items-center gap-2">
-                  <Trash2 size={20} />
-                  تأكيد حذف الحساب المحاسبي
-                </DialogTitle>
-                <DialogDescription className="text-xs text-muted-foreground mt-1">
-                  هل أنت تأكد من رغبتك في حذف الحساب:{" "}
-                  <strong className="text-foreground font-black">
-                    {accountToDelete?.name_ar} ({accountToDelete?.code})
-                  </strong>
-                  ؟
-                </DialogDescription>
-              </DialogHeader>
-
-              <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-xs text-amber-800 dark:text-amber-300 font-medium">
-                💡 ملاحظة أمان محاسبي: إذا كان هذا الحساب مرتبطاً بقيود سابقة في الدفتر العام، فسيتم
-                تحويل حالته تلقائياً إلى (معطل) لحماية شجرة الحسابات والاتزان المالي للميزانية.
-              </div>
-
-              <DialogFooter className="gap-2 pt-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setAccountToDelete(null)}
-                  className="font-bold text-xs"
-                >
-                  إلغاء
-                </Button>
-                <Button
-                  onClick={ConfirmDelete}
-                  className="bg-rose-600 hover:bg-rose-700 text-white font-black text-xs px-5"
-                >
-                  تأكيد الحذف
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-
-          {/* DIALOG 4: VIEW ACCOUNT LEDGER STATEMENT */}
-          <Dialog
-            open={!!selectedAccountForLedger}
-            onOpenChange={(open) => !open && setSelectedAccountForLedger(null)}
-          >
-            <DialogContent className="max-w-3xl text-right rounded-2xl max-h-[85vh] overflow-y-auto">
-              <DialogHeader className="text-right border-b border-border pb-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <DialogTitle className="text-lg font-black text-foreground flex items-center gap-2">
-                      <FileText className="text-primary" size={20} />
-                      كشف حساب الدفتر العام (General Ledger Statement)
-                    </DialogTitle>
-                    <DialogDescription className="text-xs text-muted-foreground mt-0.5">
-                      حساب:{" "}
-                      <strong className="text-primary font-mono">{ledgerData.account?.code}</strong>{" "}
-                      - <strong className="text-foreground">{ledgerData.account?.name_ar}</strong>
-                    </DialogDescription>
-                  </div>
-                  <Badge variant="outline" className="text-xs font-bold font-mono px-3 py-1">
-                    الرصيد الحالي: {formatPrice(ledgerData.account?.balance || 0)}
-                  </Badge>
-                </div>
-              </DialogHeader>
-
-              <div className="space-y-4 py-2">
-                {ledgerData.entries.length === 0 ? (
-                  <div className="p-8 text-center space-y-2">
-                    <FileText size={32} className="mx-auto text-muted-foreground/60" />
-                    <h4 className="font-bold text-sm text-foreground">
-                      لا توجد قيود أو حركات سابقة لهذا الحساب
-                    </h4>
-                    <p className="text-xs text-muted-foreground">
-                      لم يتم تسجيل أي سندات أو فواتير مبيعات مرتبطة بهذا الحساب بعد.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto rounded-xl border border-border">
-                    <table className="w-full text-xs text-right">
-                      <thead className="bg-muted text-muted-foreground font-bold border-b border-border">
-                        <tr>
-                          <th className="p-2.5">التاريخ</th>
-                          <th className="p-2.5">البيان / البيان المحاسبي</th>
-                          <th className="p-2.5">رقم المرجع</th>
-                          <th className="p-2.5 text-emerald-600">مدين (Debit)</th>
-                          <th className="p-2.5 text-rose-600">دائن (Credit)</th>
-                          <th className="p-2.5">الرصيد التراكمي</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border font-medium">
-                        {ledgerData.entries.map((entry, idx) => (
-                          <tr key={idx} className="hover:bg-muted/30 font-mono">
-                            <td className="p-2.5 text-muted-foreground">{entry.date}</td>
-                            <td className="p-2.5 font-sans font-bold text-foreground">
-                              {entry.description}
-                            </td>
-                            <td className="p-2.5 text-primary font-bold">
-                              {entry.reference || entry.id}
-                            </td>
-                            <td className="p-2.5 text-emerald-600 font-bold">
-                              {entry.debit > 0 ? entry.debit.toLocaleString() : "-"}
-                            </td>
-                            <td className="p-2.5 text-rose-600 font-bold">
-                              {entry.credit > 0 ? entry.credit.toLocaleString() : "-"}
-                            </td>
-                            <td className="p-2.5 font-black text-foreground">
-                              {entry.runningBalance.toLocaleString()}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-
-              <DialogFooter className="gap-2 border-t border-border pt-3">
-                <Button
-                  variant="outline"
-                  onClick={() => window.print()}
-                  className="font-bold text-xs gap-1.5"
-                >
-                  <Printer size={14} />
-                  طباعة كشف الحساب
-                </Button>
-                <Button
-                  onClick={() => setSelectedAccountForLedger(null)}
-                  className="font-bold text-xs px-5"
-                >
-                  إغلاق
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-
-          {/* ORACLE MIGRATION IMPORT DIALOG */}
-          <Dialog open={isOracleImportOpen} onOpenChange={setIsOracleImportOpen}>
-            <DialogContent className="max-w-2xl text-right rounded-2xl">
-              <DialogHeader className="text-right border-b border-border pb-3">
-                <DialogTitle className="text-xl font-black text-foreground flex items-center gap-2">
-                  <FileSpreadsheet className="text-amber-600" size={24} />
-                  استيراد شجرة حسابات أوراكل (4 مستويات وحركات الخزينة)
-                </DialogTitle>
-                <DialogDescription className="text-xs text-muted-foreground mt-1">
-                  قم برفع ملفات الـ Excel الخاصة بمستويات الشجرة الأربعة وحركات القيود المالية
-                  وسندات الخزينة لنقلها بذكاء وربطها بالكامل للبدء في عام 2026.
-                </DialogDescription>
-              </DialogHeader>
-
-              <div className="space-y-4 py-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-bold text-foreground">
-                      ملف المستوى الأول (Level 1)
-                    </Label>
-                    <Input
-                      type="file"
-                      accept=".xlsx, .xls, .csv"
-                      onChange={(e) =>
-                        setOracleFiles({ ...oracleFiles, level1: e.target.files?.[0] })
-                      }
-                      className="text-xs h-10"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-bold text-foreground">
-                      ملف المستوى الثاني (Level 2)
-                    </Label>
-                    <Input
-                      type="file"
-                      accept=".xlsx, .xls, .csv"
-                      onChange={(e) =>
-                        setOracleFiles({ ...oracleFiles, level2: e.target.files?.[0] })
-                      }
-                      className="text-xs h-10"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-bold text-foreground">
-                      ملف المستوى الثالث (Level 3)
-                    </Label>
-                    <Input
-                      type="file"
-                      accept=".xlsx, .xls, .csv"
-                      onChange={(e) =>
-                        setOracleFiles({ ...oracleFiles, level3: e.target.files?.[0] })
-                      }
-                      className="text-xs h-10"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-bold text-foreground">
-                      ملف المستوى الرابع التحليلي (Level 4)
-                    </Label>
-                    <Input
-                      type="file"
-                      accept=".xlsx, .xls, .csv"
-                      onChange={(e) =>
-                        setOracleFiles({ ...oracleFiles, level4: e.target.files?.[0] })
-                      }
-                      className="text-xs h-10"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1.5 pt-2 border-t border-border">
-                  <Label className="text-xs font-bold text-foreground">
-                    ملف حركات الخزينة والقيود المحاسبية (2026)
-                  </Label>
-                  <Input
-                    type="file"
-                    accept=".xlsx, .xls, .csv"
-                    onChange={(e) =>
-                      setOracleFiles({ ...oracleFiles, transactions: e.target.files?.[0] })
-                    }
-                    className="text-xs h-10"
+                    className="mt-1 font-mono text-xs font-bold"
                   />
-                  <p className="text-[11px] text-muted-foreground">
-                    يحتوي على تفاصيل القيود، أرقام السندات، الحسابات المدينة والدائنة، والمبالغ.
-                  </p>
                 </div>
 
-                {importingOracle && (
-                  <div className="p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl text-center space-y-2">
-                    <RefreshCw className="animate-spin mx-auto text-amber-600" size={24} />
-                    <p className="text-xs font-bold text-amber-800 dark:text-amber-300">
-                      {importLog}
-                    </p>
-                  </div>
-                )}
+                <div>
+                  <Label className="text-xs font-bold">الحالة</Label>
+                  <select
+                    value={editingAccount.status}
+                    onChange={(e) =>
+                      setEditingAccount({
+                        ...editingAccount,
+                        status: e.target.value as "active" | "inactive",
+                      })
+                    }
+                    className="w-full mt-1 h-9 px-3 rounded-xl text-xs font-bold bg-background border border-border text-foreground"
+                  >
+                    <option value="active">نشط</option>
+                    <option value="inactive">معطل</option>
+                  </select>
+                </div>
               </div>
 
-              <DialogFooter className="gap-2 border-t border-border pt-3">
+              <div>
+                <Label className="text-xs font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
+                  <RefreshCw
+                    size={14}
+                    className="animate-spin"
+                    style={{ animationDuration: "3s" }}
+                  />
+                  ربط الرصيد بالنظام تلقائياً (اختياري)
+                </Label>
+                <select
+                  value={editingAccount.system_binding || "none"}
+                  onChange={(e) =>
+                    setEditingAccount({
+                      ...editingAccount,
+                      system_binding: e.target.value as Account["system_binding"],
+                    })
+                  }
+                  className="w-full mt-1 h-9 px-3 rounded-xl text-xs font-bold bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-200 dark:border-indigo-900 text-foreground"
+                >
+                  <option value="none">بدون ربط (رصيد محاسبي يدوي من القيود)</option>
+                  {erpState.treasuries.map((t) => (
+                    <option key={t.id} value={`treasury_${t.id}`}>
+                      🔗 {t.account_code ? `[رقم الحساب: ${t.account_code}] ` : ""}ربط لحظي
+                      برصيد خزينة: {t.name_ar} ({t.currency})
+                    </option>
+                  ))}
+                  <option value="suppliers_payable">ربط لحظي بإجمالي مديونيات الموردين</option>
+                  <option value="sales_revenue">
+                    ربط تلقائي بإجمالي المقبوضات/الإيرادات (Receipts)
+                  </option>
+                  <option value="operating_expenses">
+                    ربط تلقائي بإجمالي المدفوعات/المصروفات (Payments)
+                  </option>
+                  <option value="warehouse_main_value">
+                    📦 ربط لحظي بقيمة بضاعة المخزن الرئيسي
+                  </option>
+                  <option value="warehouse_kitchen_value">
+                    🍳 ربط لحظي بقيمة بضاعة مخزن الفرن والمطبخ
+                  </option>
+                  <option value="expired_inventory_value">
+                    ⚠️ ربط لحظي بقيمة بضاعة الصلاحية المنتهية (التالف الحالي)
+                  </option>
+                  <option value="disposed_waste_value">
+                    🚨 ربط لحظي بإجمالي الهدر والإعدامات المتراكمة
+                  </option>
+                </select>
+              </div>
+
+              <DialogFooter className="gap-2 pt-2 border-t border-border">
                 <Button
+                  type="button"
                   variant="outline"
-                  onClick={() => setIsOracleImportOpen(false)}
-                  disabled={importingOracle}
+                  onClick={() => {
+                    setEditingAccount(null);
+                    setEditingOriginalCode("");
+                  }}
                   className="font-bold text-xs"
                 >
                   إلغاء
                 </Button>
                 <Button
-                  onClick={handleOracleImportSubmit}
-                  disabled={importingOracle}
-                  className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs px-6 gap-1.5"
+                  type="submit"
+                  className="font-black text-xs bg-primary text-primary-foreground px-5"
                 >
-                  {importingOracle ? "جاري الاستيراد..." : "بدء الاستيراد والربط الذكي"}
+                  حفظ التغييرات
                 </Button>
               </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </TabsContent>
-      </Tabs>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* DIALOG 3: DELETE ACCOUNT CONFIRMATION */}
+      <Dialog
+        open={!!accountToDelete}
+        onOpenChange={(open) => !open && setAccountToDelete(null)}
+      >
+        <DialogContent className="max-w-md text-right rounded-2xl">
+          <DialogHeader className="text-right">
+            <DialogTitle className="text-lg font-black text-rose-600 flex items-center gap-2">
+              <Trash2 size={20} />
+              تأكيد حذف أو تعطيل الحساب المحاسبي
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground mt-1">
+              هل أنت متأكد من رغبتك في حذف الحساب:{" "}
+              <strong className="text-foreground font-black">
+                {accountToDelete?.name_ar} ({accountToDelete?.code}) - المستوى{" "}
+                {accountToDelete?.level}
+              </strong>
+              ؟
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-xs text-amber-800 dark:text-amber-300 font-medium space-y-1.5">
+            <p>
+              💡 <strong>الحذف الآمن:</strong> إذا كان الحساب مرتبطاً بقيود سابقة، يقوم بتعطيله
+              لحماية توازن الدفتر العام.
+            </p>
+            <p>
+              🗑️ <strong>الحذف النهائي القسري:</strong> يمسح الحساب نهائياً من شجرة الحسابات.
+            </p>
+          </div>
+
+          <DialogFooter className="gap-2 pt-2 flex-wrap">
+            <Button
+              variant="outline"
+              onClick={() => setAccountToDelete(null)}
+              className="font-bold text-xs"
+            >
+              إلغاء
+            </Button>
+            <Button
+              onClick={() => ConfirmDelete(false)}
+              className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs px-4"
+            >
+              حذف آمن / تعطيل
+            </Button>
+            <Button
+              onClick={() => ConfirmDelete(true)}
+              className="bg-rose-600 hover:bg-rose-700 text-white font-black text-xs px-4"
+            >
+              حذف نهائي من الشجرة
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* DIALOG 4: VIEW ACCOUNT LEDGER STATEMENT */}
+      <Dialog
+        open={!!selectedAccountForLedger}
+        onOpenChange={(open) => !open && setSelectedAccountForLedger(null)}
+      >
+        <DialogContent className="max-w-3xl text-right rounded-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader className="text-right border-b border-border pb-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <DialogTitle className="text-lg font-black text-foreground flex items-center gap-2">
+                  <FileText className="text-primary" size={20} />
+                  كشف حساب الدفتر العام (General Ledger Statement)
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+                  حساب:{" "}
+                  <strong className="text-primary font-mono">{ledgerData.account?.code}</strong>{" "}
+                  - <strong className="text-foreground">{ledgerData.account?.name_ar}</strong>
+                </DialogDescription>
+              </div>
+              <Badge variant="outline" className="text-xs font-bold font-mono px-3 py-1">
+                الرصيد الحالي: {formatPrice(ledgerData.account?.balance || 0)}
+              </Badge>
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {ledgerData.entries.length === 0 ? (
+              <div className="p-8 text-center space-y-2">
+                <FileText size={32} className="mx-auto text-muted-foreground/60" />
+                <h4 className="font-bold text-sm text-foreground">
+                  لا توجد قيود أو حركات سابقة لهذا الحساب
+                </h4>
+                <p className="text-xs text-muted-foreground">
+                  لم يتم تسجيل أي سندات أو فواتير مبيعات مرتبطة بهذا الحساب بعد.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-border">
+                <table className="w-full text-xs text-right">
+                  <thead className="bg-muted text-muted-foreground font-bold border-b border-border">
+                    <tr>
+                      <th className="p-2.5">التاريخ</th>
+                      <th className="p-2.5">البيان / البيان المحاسبي</th>
+                      <th className="p-2.5">رقم المرجع</th>
+                      <th className="p-2.5 text-emerald-600">مدين (Debit)</th>
+                      <th className="p-2.5 text-rose-600">دائن (Credit)</th>
+                      <th className="p-2.5">الرصيد التراكمي</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border font-medium">
+                    {ledgerData.entries.map((entry, idx) => (
+                      <tr key={idx} className="hover:bg-muted/30 font-mono">
+                        <td className="p-2.5 text-muted-foreground">{entry.date}</td>
+                        <td className="p-2.5 font-sans font-bold text-foreground">
+                          {entry.description}
+                        </td>
+                        <td className="p-2.5 text-primary font-bold">
+                          {entry.reference || entry.id}
+                        </td>
+                        <td className="p-2.5 text-emerald-600 font-bold">
+                          {entry.debit > 0 ? entry.debit.toLocaleString() : "-"}
+                        </td>
+                        <td className="p-2.5 text-rose-600 font-bold">
+                          {entry.credit > 0 ? entry.credit.toLocaleString() : "-"}
+                        </td>
+                        <td className="p-2.5 font-black text-foreground">
+                          {entry.runningBalance.toLocaleString()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2 border-t border-border pt-3">
+            <Button
+              variant="outline"
+              onClick={() => window.print()}
+              className="font-bold text-xs gap-1.5"
+            >
+              <Printer size={14} />
+              طباعة كشف الحساب
+            </Button>
+            <Button
+              onClick={() => setSelectedAccountForLedger(null)}
+              className="font-bold text-xs px-5"
+            >
+              إغلاق
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ORACLE MIGRATION IMPORT DIALOG */}
+      <Dialog open={isOracleImportOpen} onOpenChange={setIsOracleImportOpen}>
+        <DialogContent className="max-w-2xl text-right rounded-2xl">
+          <DialogHeader className="text-right border-b border-border pb-3">
+            <DialogTitle className="text-xl font-black text-foreground flex items-center gap-2">
+              <FileSpreadsheet className="text-amber-600" size={24} />
+              استيراد شجرة حسابات أوراكل (4 مستويات وحركات الخزينة)
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground mt-1">
+              قم برفع ملفات الـ Excel الخاصة بمستويات الشجرة الأربعة وحركات القيود المالية
+              وسندات الخزينة لنقلها بذكاء وربطها بالكامل للبدء في عام 2026.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-foreground">
+                  ملف المستوى الأول (Level 1)
+                </Label>
+                <Input
+                  type="file"
+                  accept=".xlsx, .xls, .csv"
+                  onChange={(e) =>
+                    setOracleFiles({ ...oracleFiles, level1: e.target.files?.[0] })
+                  }
+                  className="text-xs h-10"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-foreground">
+                  ملف المستوى الثاني (Level 2)
+                </Label>
+                <Input
+                  type="file"
+                  accept=".xlsx, .xls, .csv"
+                  onChange={(e) =>
+                    setOracleFiles({ ...oracleFiles, level2: e.target.files?.[0] })
+                  }
+                  className="text-xs h-10"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-foreground">
+                  ملف المستوى الثالث (Level 3)
+                </Label>
+                <Input
+                  type="file"
+                  accept=".xlsx, .xls, .csv"
+                  onChange={(e) =>
+                    setOracleFiles({ ...oracleFiles, level3: e.target.files?.[0] })
+                  }
+                  className="text-xs h-10"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-foreground">
+                  ملف المستوى الرابع التحليلي (Level 4)
+                </Label>
+                <Input
+                  type="file"
+                  accept=".xlsx, .xls, .csv"
+                  onChange={(e) =>
+                    setOracleFiles({ ...oracleFiles, level4: e.target.files?.[0] })
+                  }
+                  className="text-xs h-10"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5 pt-2 border-t border-border">
+              <Label className="text-xs font-bold text-foreground">
+                ملف حركات الخزينة والقيود المحاسبية (2026)
+              </Label>
+              <Input
+                type="file"
+                accept=".xlsx, .xls, .csv"
+                onChange={(e) =>
+                  setOracleFiles({ ...oracleFiles, transactions: e.target.files?.[0] })
+                }
+                className="text-xs h-10"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                يحتوي على تفاصيل القيود، أرقام السندات، الحسابات المدينة والدائنة، والمبالغ.
+              </p>
+            </div>
+
+            {importingOracle && (
+              <div className="p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl text-center space-y-2">
+                <RefreshCw className="animate-spin mx-auto text-amber-600" size={24} />
+                <p className="text-xs font-bold text-amber-800 dark:text-amber-300">
+                  {importLog}
+                </p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2 border-t border-border pt-3">
+            <Button
+              variant="outline"
+              onClick={() => setIsOracleImportOpen(false)}
+              disabled={importingOracle}
+              className="font-bold text-xs"
+            >
+              إلغاء
+            </Button>
+            <Button
+              onClick={handleOracleImportSubmit}
+              disabled={importingOracle}
+              className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs px-6 gap-1.5"
+            >
+              {importingOracle ? "جاري الاستيراد..." : "بدء الاستيراد والربط الذكي"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -377,13 +377,22 @@ export function SupplierManagement() {
                   onClick={() => setForm((s) => ({ ...s, accountMode: "auto" }))}
                 >
                   <RadioGroupItem value="auto" id="mode-auto" className="mt-1" />
-                  <label htmlFor="mode-auto" className="cursor-pointer text-xs space-y-1">
-                    <span className="font-black block text-foreground">
-                      إنشاء حساب محاسبي تلقائي جديد
-                    </span>
+                  <label htmlFor="mode-auto" className="cursor-pointer text-xs space-y-1.5 flex-1">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="font-black block text-foreground">
+                        إنشاء حساب محاسبي تلقائي جديد بالشجرة
+                      </span>
+                      <span className="font-mono font-black text-[11px] px-2 py-0.5 rounded-md bg-primary/15 text-primary border border-primary/30">
+                        رقم الحساب القادم: {erpStore.getNextSupplierAccountCode()}
+                      </span>
+                    </div>
                     <span className="text-muted-foreground block text-[11px]">
-                      يقوم النظام بإنشاء كود حساب جديد فوراً تحت (24010 - الموردون) ويعرض لك رقم
-                      الحساب المولد.
+                      يتم إدراجه تلقائياً في شجرة الحسابات: <strong>2 الالتزامات</strong> ←{" "}
+                      <strong>240 أرصدة دائنة</strong> ← <strong>24010 الموردون</strong> ←{" "}
+                      <strong className="font-mono text-primary">
+                        {erpStore.getNextSupplierAccountCode()} (مورد -{" "}
+                        {form.name_ar.trim() || "اسم المورد"})
+                      </strong>
                     </span>
                   </label>
                 </div>

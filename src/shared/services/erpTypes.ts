@@ -178,6 +178,7 @@ export interface Voucher {
 export interface Account {
   code: string;
   name_ar: string;
+  name_en?: string;
   type: "asset" | "liability" | "equity" | "revenue" | "expense";
   balance: number;
   parent_code?: string;
@@ -402,6 +403,13 @@ export interface UserPermission {
   page_system_github?: boolean;
   page_system_access_db?: boolean;
   page_system_status?: boolean;
+  // Granular action permissions for Chart of Accounts & Inventory
+  acc_create_account?: boolean;
+  acc_edit_account?: boolean;
+  acc_delete_account?: boolean;
+  inv_manage_suppliers?: boolean;
+  inv_manage_waste?: boolean;
+  inv_print_smart_count?: boolean;
 }
 
 export interface Employee {
