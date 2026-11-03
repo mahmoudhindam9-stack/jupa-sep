@@ -1460,15 +1460,462 @@ export const AR_TO_EN_DICTIONARY: Record<string, string> = {
   رجوع: "Back",
   التالي: "Next",
   السابق: "Previous",
+
+  // Redirect, Auth & Shell
+  "جاري تحويلك إلى شاشة تسجيل الدخول...": "Redirecting to Sign In...",
+  "جاري تحويلك إلى النظام…": "Redirecting to workspace…",
+  "صفحة تسجيل الدخول": "Sign In Page",
+  "الانتقال لتسجيل الدخول": "Go to Sign In",
+  "يرجى تسجيل الدخول للمتابعة": "Please sign in to continue",
+  "جاري التحقق من جلسة الدخول والصلاحيات…": "Verifying session & permissions…",
+  "يرجى الانتظار لحظات.": "Please wait a moment.",
+  "جاري تحميل الصفحة…": "Loading page…",
+  "إعادة المحاولة": "Try Again",
+  "تسجيل الدخول للإدارة": "Executive Portal Sign In",
+  "أدخل بيانات الحساب المعتمدة للوصول إلى منظومة الإدارة ونقاط البيع":
+    "Enter your authorized credentials to access the ERP & POS suite",
+  "اسم المستخدم أو البريد الإلكتروني": "Username or Email Address",
+  "تذكرني على هذا الجهاز": "Keep me signed in",
+  "تذكرني": "Remember me",
+  "جاري الدخول…": "Signing in…",
+  "دخول": "Sign In",
+  "اسم المستخدم أو كلمة المرور غير صحيحة. تأكد من إدخال البيانات المسجلة في صفحة المستخدمين.":
+    "Invalid username or password. Please check the credentials registered in the Users page.",
+  "تعذر تسجيل الدخول. تحقق من الاتصال والإعدادات ثم حاول مرة أخرى.":
+    "Unable to sign in. Check your connection and try again.",
+  "تهيئة حساب المدير الأول": "Initialize First Admin Account",
+  "اسم المستخدم داخل النظام": "System Username",
+  "تأكيد كلمة المرور": "Confirm Password",
+
+  // Top Navbar, Breadcrumbs & Main Hub
+  "لوحة الأقسام الرئيسية": "Main Departments Hub",
+  "الأقسام الرئيسية": "System Modules",
+  "الأقسام": "Modules",
+  "لوحة الأقسام": "Modules Hub",
+  "العودة إلى لوحة الأقسام الرئيسية": "Return to Main Departments Hub",
+  "العودة إلى شبكة الأقسام الرئيسية": "Back to Main Departments Grid",
+  "العودة للوحة الأقسام": "Back to Modules Hub",
+  "الانتقال السريع بين أقسام النظام": "Quick Switch Between System Modules",
+  "الانتقال السريع لقسم رئيسي آخر": "Quick Switch to Another Main Module",
+  "القسم الفرعي الحالي — انقر للتبديل السريع إلى قسم فرعي آخر":
+    "Current Sub-module — Click to switch quickly",
+  "عرض الأقسام والوظائف الداخلية": "View Internal Sub-modules & Functions",
+  "فتح القسم": "Open Module",
+  "أقسام وتفاصيل": "Sub-modules & Views",
+  "لم يتم تفعيل أقسام لهذا الحساب بعد": "No modules enabled for this account yet",
+  "يرجى مراجعة مدير النظام لتفعيل الصلاحيات والأقسام المسموح بها لهذا الحساب، أو إعادة تسجيل الدخول بحساب مدير النظام.":
+    "Please contact the System Administrator to enable permissions for this account, or sign in with an administrator account.",
+  "تبديل الحساب / تسجيل الدخول": "Switch Account / Sign In",
+  "مدير النظام": "System Admin",
+  "المدير العام (System Admin)": "System Admin",
+  "مشرف النظام": "System Supervisor",
+  "محاسب / مشرف": "Accountant / Supervisor",
+  "شيف المطبخ": "Kitchen Chef",
+  "استدعاء طاولة / طلبات QR": "Table Call / QR Orders",
+  "طلبات عملاء QR": "Customer QR Orders",
+  "تحديثات النظام": "System Updates",
+
+  // DepartmentsGridHub Cards & Sub-sections
+  "المنظومة التشغيلية الشاملة": "Complete Operational Suite",
+  "نقطة البيع السريعة POS، الكابتن أوردر للطاولات، شاشة المطبخ والفرن، وتتبع الطلبات وإغلاق وردية الكاشير.":
+    "Fast POS checkout, table captain ordering, smart kitchen/oven KDS, live order tracking, and cashier shift closing.",
+  "8 وظائف تشغيلية": "8 Operational Modules",
+  "مطعم وصالة": "Restaurant & Dine-in",
+  "نقطة البيع (POS) الكاشير": "Cashier Point of Sale (POS)",
+  "تسجيل المبيعات والفواتير السريعة": "Fast sales checkout & instant invoicing",
+  "شاشة الكابتن أوردر للطاولات": "Captain Table Ordering Screen",
+  "أوردرات الصالة وخدمة الطاولات": "Dine-in hall orders & table service",
+  "شاشة المطبخ والفرن الذكية": "Smart Kitchen & Oven Display (KDS)",
+  "متابعة تجهيز الأطباق والطلبات": "Live dish preparation & order tickets",
+  "متابعة الطلبات والديليفري": "Orders & Delivery Tracking",
+  "الطلبات الجارية والتوصيل": "Active orders & delivery dispatch",
+  "إدارة الطاولات والباركود QR": "Tables & QR Code Management",
+  "تخطيط الصالة والباركود الذكي": "Floor layout & smart QR self-ordering",
+  "قائمة الطعام والوجبات (المنيو)": "Food Menu & Categories",
+  "تعديل الأصناف والأسعار": "Manage menu items, categories & pricing",
+  "مستودع وخامات المطعم": "Restaurant Pantry & Ingredients",
+  "المخزون الداخلي السريع": "Internal kitchen stock & recipes",
+  "إغلاق وردية كاشير المطعم": "Restaurant Cashier Shift Closing",
+  "تقارير وتصفية وردية الكاشير": "Cashier shift reports & reconciliation",
+
+  "المحلات والوحدات الاستثمارية": "Commercial Units & Leasing",
+  "دليل المحلات والمستأجرين، عقود الإيجار السنوية والشهرية، متابعة التحصيل والدفعات، ومصروفات وتشغيل المول.":
+    "Shops & tenants directory, annual/monthly lease contracts, rent collection tracking, and mall operating expenses.",
+  "4 أقسام فرعية": "4 Sub-modules",
+  "عقود وإيجارات": "Leases & Rents",
+  "دليل المحلات والمستأجرين والعقود": "Shops, Tenants & Contracts Directory",
+  "قائمة الوحدات والمستأجرين والعقود": "Commercial units, tenants & active leases",
+  "متابعة الإيجارات والدفعات الشهرية": "Monthly Rent & Installments Tracking",
+  "سجل التحصيل الشهري والمستحقات": "Monthly collection log & due balances",
+  "مصروفات وتشغيل وصيانة المول": "Mall Operations & Maintenance Expenses",
+  "تكاليف التشغيل والصيانة والأمن": "Utilities, maintenance & security costs",
+  "التقارير المالية ونسب الإشغال": "Financial Reports & Occupancy Rates",
+  "الملخص الإحصائي والمالي للمول": "Statistical & financial mall summary",
+
+  "المرافق الترفيهية والتذاكر": "Entertainment Facilities & Ticketing",
+  "نقطة بيع تذاكر الدخول والألعاب (POS)، فتح وإغلاق ورديات الكاشير، الخزائن التشغيلية الثمانية، وتقارير الإيرادات.":
+    "Entry & rides ticket POS, cashier shift management, the 8 operational safes, and park revenue analytics.",
+  "قسم الحديقة المستقل": "Standalone Park Suite",
+  "تذاكر وألعاب": "Tickets & Rides",
+  "نقطة بيع تذاكر الدخول والألعاب (POS)": "Park Entry & Rides Ticket POS",
+  "إصدار تذاكر الدخول والباركود": "Issue entry tickets & barcode passes",
+  "فتح وردية كاشير جديدة": "Open New Cashier Shift",
+  "إطلاق وردية كاشير مع العهدة النقدية": "Start cashier shift with opening custody",
+  "إغلاق وتسوية وردية الكاشير": "Close & Reconcile Cashier Shift",
+  "تقارير الوردية والتسوية المالية": "Shift reports & cash handover settlement",
+  "الخزائن التشغيلية الثمانية (8)": "The 8 Operational Treasuries",
+  "متابعة أرصدة صناديق الحديقة": "Monitor balances across 8 park safes",
+  "إدارة العملاء واشتراكات الزوار": "Visitor Directory & Subscriptions",
+  "سجل الزوار والعملاء الدائمين": "Visitors log & regular memberships",
+  "أسعار التذاكر وفئات الألعاب": "Ticket Pricing & Ride Categories",
+  "تحديد تعرفة الدخول والألعاب": "Configure gate & ride ticket tariffs",
+  "تقارير إيرادات الحديقة والورديات": "Park Revenue & Shifts Reports",
+  "إحصائيات المبيعات والتحصيل": "Sales statistics & collection analytics",
+
+  "المنظومة المحاسبية الموحدة": "Unified Financial & Accounting Suite",
+  "كشف حساب الأستاذ العام، دفتر اليومية العامة، دليل وشجرة الحسابات، إدارة الخزائن، والتقارير المالية والميزانية.":
+    "General Ledger statements, double-entry General Journal, Chart of Accounts, Treasury & Bank management, and Balance Sheet.",
+  "ضم الحسابات والخزائن والتقارير": "Ledger, Treasuries & Statements",
+  "حسابات موحدة": "Unified Accounting",
+  "المركز المالي الشامل والميزانية": "Comprehensive Financial Position & Balance Sheet",
+  "عرض الأصول والخصوم وقائمة الدخل الموحدة": "Unified Assets, Liabilities & Income Statement",
+  "كشف حساب الأستاذ العام": "General Ledger Statement",
+  "كشف حساب مفصل وأرصدة الحسابات": "Detailed account statements & running balances",
+  "دفتر اليومية العامة والقيود المزدوجة": "General Journal & Double-Entry Posting",
+  "تسجيل وترحيل قيود اليومية": "Record and post daily journal entries",
+  "إدارة الخزائن والحسابات البنكية": "Treasuries & Bank Accounts Management",
+  "الصناديق النقدية وحركات الخزينة": "Cash safes & inter-treasury movements",
+  "دليل وشجرة الحسابات (Oracle)": "Chart of Accounts Tree (Oracle)",
+  "شجرة الحسابات بالأصول والخصوم": "Hierarchical chart of assets & liabilities",
+  "سندات الصرف والقبض المرحّلة": "Posted Payment & Receipt Vouchers",
+  "سندات الإيرادات والمصروفات": "Official revenue & expense vouchers",
+  "ميزان المراجعة المحاسبي": "Accounting Trial Balance",
+  "توازن الأرصدة والمجاميع": "Debit/Credit balances & totals verification",
+  "التقارير والميزانية العمومية": "Financial Reports & Balance Sheet",
+  "قائمة الدخل والمركز المالي": "Income statement & financial position",
+  "نماذج الطباعة الرسمية": "Official print & receipt templates",
+
+  "شؤون الموظفين والصلاحيات": "Personnel, Payroll & Access Control",
+  "دليل الموظفين، الحضور والانصراف، مسيرات الرواتب والسلف، وإدارة حسابات المستخدمين وتحديد أدوار الصلاحيات.":
+    "Employee directory, attendance tracking, monthly payroll & loans, and user accounts with granular role permissions.",
+  "ضم إدارة المستخدمين": "HR & User Access Control",
+  "موارد ومستخدمين": "HR & Users",
+  "سجل وبيانات الموظفين": "Employee Records & Profiles",
+  "الملفات الشخصية والوظائف": "Staff profiles, roles & base salaries",
+  "تسجيل الحضور والانصراف": "Daily Attendance & Time Tracking",
+  "متابعة أوقات العمل والورديات": "Track daily check-ins, shifts & leaves",
+  "مسيرات الرواتب الشهرية والبدلات": "Monthly Payroll & Allowances",
+  "احتساب المستحقات الشهرية": "Calculate monthly salaries & deductions",
+  "السلف والخصومات والمكافآت": "Employee Loans, Deductions & Bonuses",
+  "حركات السلف والاستقطاعات": "Manage staff advances & installments",
+  "إدارة مستخدمي النظام والصلاحيات": "System Users & Role Permissions (ACL)",
+  "تحديد أدوار الوصول وحسابات الدخول": "Configure login accounts & access rights",
+
+  "إدارة المخزون والمستودعات": "Inventory & Warehouses Management",
+  "سلاسل الإمداد والمشتريات": "Supply Chain, Purchasing & Stock Control",
+  "إدارة المستودعات، أصناف المخزون، التحويلات الداخلية، فواتير المشتريات والموردين، وتسويات الهالك والتوالف.":
+    "Multi-warehouse stock, barcode items, internal transfers, purchase invoices, supplier ledgers, and waste write-offs.",
+  "5 أقسام فرعية": "5 Sub-modules",
+  "مستودعات وتوريد": "Warehouses & Supply",
+  "أصناف المخزون وجرد المستودع": "Inventory Items & Stock Count",
+  "متابعة أرصدة المواد وتنبيهات النواقص": "Monitor stock balances & low-stock alerts",
+  "التحويلات الداخلية بين المستودعات": "Inter-Warehouse Stock Transfers",
+  "نقل الخامات بين الفروع والمخازن": "Transfer materials between branches & stores",
+  "فواتير المشتريات وسندات الاستلام": "Purchase Invoices & Receiving Notes",
+  "تسجيل فواتير الشراء الواردة": "Record incoming supplier purchase bills",
+  "إدارة الموردين والشركات": "Suppliers & Vendors Directory",
+  "بيانات وحسابات الموردين": "Supplier profiles & payable balances",
+  "تسويات الهالك والتوالف": "Waste, Spoilage & Stock Write-offs",
+  "إثبات الفاقد وتكلفة الهدر": "Record damaged stock & waste cost",
+
+  "تدقيق الورديات": "Shift Audit & Reconciliation",
+  "مطابقة ورديات الكاشير والتحصيل": "Cashier Shift Matching & Cash Verification",
+  "فحص ومطابقة جميع ورديات المطعم والحديقة والكاشير، تدقيق العجز والزيادة النقدية، ومراجعة سجلات الإغلاق في قاعدة البيانات.":
+    "Inspect and reconcile all restaurant and park cashier shifts, audit cash shortage/surplus, and verify closing logs.",
+  "رقابة الورديات": "Shift Control",
+  "مطابقة سحابية ومحلية": "Cloud & Local Sync",
+  "عرض ومطابقة الورديات المسجلة": "View & Reconcile Recorded Shifts",
+  "فحص تقارير الإغلاق وحالات الترحيل": "Inspect closing reports & posting status",
+  "فحص العجز والزيادة النقدية": "Cash Shortage & Surplus Variance Check",
+  "مقارنة المبيعات المسجلة مع النقد الفعلي": "Compare book sales against actual cash",
+
+  "الرقابة وتتبع الأنشطة الشاملة": "Comprehensive Activity & Security Audit",
+  "السجل الرقابي الموثق لكافة العمليات المالية، فواتير المبيعات، حركات الخزائن، وتعديلات المستخدمين والصلاحيات لحظياً.":
+    "Immutable audit trail for all financial transactions, sales invoices, treasury movements, and user permission updates.",
+  "سجل رقابي وأمني": "Security Audit Log",
+  "تتبع لحظي موثق": "Real-time Verified Log",
+  "استعراض سجل الأحداث والأنشطة": "Browse Events & Activity Trail",
+  "سجل زمني لجميع الحركات والتعديلات": "Chronological log of all system actions",
+  "تصفية الحركات والرقابة الأمنية": "Filter Transactions & Security Control",
+  "تتبع دقيق لكشف التلاعب ومطابقة التغييرات": "Detailed inspection of before/after changes",
+
+  "خيارات المطور والنسخ الاحتياطي": "Developer Studio & System Backup",
+  "المطور والنسخ الاحتياطي": "Developer & Backup",
+  "تحديثات النظام وإدارة الإصدارات": "System Updates, Backups & Visual Studio",
+  "فحص المزامنة مع GitHub، سجل التحديثات التلقائية للنظام، والتحكم في إعدادات التطوير والنسخ الاحتياطي.":
+    "GitHub synchronization check, automated version updates, database backups, and Developer Studio Pro.",
+  "تحديثات ونسخ": "Updates & Backups",
+  "تحديث وتطوير": "System & DevTools",
+  "استوديو المطور Pro (المحرر البصري)": "Developer Studio Pro (Visual Editor)",
+  "تصميم الواجهات والمسودات والنشر الآمن": "Visual UI customization, drafts & safe publishing",
+  "تحديثات النظام ومزامنة GitHub": "System Updates & GitHub Sync",
+  "الإصدار والتحديثات التلقائية": "Version control & live updates",
+  "فحص الاتصال والنسخ الاحتياطي": "Connection Diagnostics & Database Backup",
+  "فحص حالة قاعدة البيانات والتخزين": "Database health check & backup export",
+
+  // Navigation Registry Sub-items
+  "لوحة إدارة المطعم": "Restaurant Management Hub",
+  "نقطة بيع الكاشير (POS)": "Cashier Point of Sale (POS)",
+  "شاشة الكابتن والصالة": "Captain & Dine-in Screen",
+  "شاشة المطبخ والفرن (KDS)": "Kitchen & Oven Display (KDS)",
+  "سجل الطلبات والفواتير": "Orders & Invoices Log",
+  "إدارة المنيو وقائمة الطعام": "Menu & Food Categories",
+  "ورديات كاشير المطعم": "Restaurant Cashier Shifts",
+  "مصروفات وتسويات المطعم": "Restaurant Expenses & Adjustments",
+  "لوحة إدارة المول": "Mall Management Hub",
+  "دليل المحلات والمستأجرين": "Shops & Tenants Directory",
+  "متابعة عقود الإيجار والدفعات": "Lease Contracts & Rent Payments",
+  "مصروفات وتشغيل المول": "Mall Operations & Expenses",
+  "سندات الصرف والقبض للمول": "Mall Payment & Receipt Vouchers",
+  "التقارير المالية وإشغال المول": "Mall Financial & Occupancy Reports",
+  "الحديقة والمرافق الترفيهية": "Park & Entertainment Facilities",
+  "لوحة إدارة الحديقة": "Park Management Hub",
+  "نقطة بيع تذاكر الحديقة (POS)": "Park Tickets POS",
+  "ورديات كاشير الحديقة": "Park Cashier Shifts",
+  "سندات الصرف والقبض للحديقة": "Park Payment & Receipt Vouchers",
+  "أسعار وتصنيفات التذاكر": "Ticket Prices & Categories",
+  "دليل عملاء الحديقة": "Park Customers Directory",
+  "تقارير مبيعات وإيرادات الحديقة": "Park Sales & Revenue Reports",
+  "المركز المالي ولوحة المحاسبة": "Financial Position & Accounting Hub",
+  "قائمة المركز المالي الشامل": "Comprehensive Financial Position",
+  "دفتر اليومية العامة": "General Journal",
+  "إدارة الخزائن والصناديق": "Treasuries & Safes Management",
+  "دليل وشجرة الحسابات": "Chart of Accounts Tree",
+  "ميزان المراجعة بالأرصدة والمجاميع": "Trial Balance (Balances & Totals)",
+  "القوائم المالية الختامية": "Final Financial Statements",
+  "التقارير والتحليلات المالية": "Financial Reports & Analytics",
+  "لوحة الموارد البشرية": "Human Resources Hub",
+  "دليل الكادر والموظفين": "Staff & Employees Directory",
+  "مسيرات الأجور والرواتب": "Payroll & Wage Sheets",
+  "القروض والسلف المالية": "Financial Loans & Advances",
+  "المستخدمين والصلاحيات (ACL)": "Users & Permissions (ACL)",
+  "لوحة المخزون والمستودعات": "Inventory & Warehouses Hub",
+  "إدارة المخازن والفروع": "Warehouses & Branches Management",
+  "الأصناف المخزنية والباركود": "Stock Items & Barcodes",
+  "التحويلات بين المخازن": "Inter-Warehouse Transfers",
+  "سجل حركات المخزن والتسويات": "Stock Movements & Adjustments Log",
+  "صلاحية وتتبع الدفعات": "Batch Expiry & Shelf-Life Tracking",
+  "فواتير وأوامر الشراء": "Purchase Invoices & Orders",
+  "إدارة الشركات والموردين": "Suppliers & Vendors Management",
+  "الهالك والفاقد والتسويات الجردية": "Waste, Spoilage & Stock Audits",
+  "تقارير وتحليلات المخزون": "Inventory Reports & Analytics",
+  "لوحة تدقيق ومزامنة الورديات (الحديقة والمطعم)":
+    "Shift Audit & Sync Hub (Park & Restaurant)",
+  "سجل العمليات والرقابة الشاملة": "Comprehensive Operations & Audit Log",
+  "تحديث السيستم والنظام المباشر": "Live System Update & Maintenance",
+  "حزمة قاعدة بيانات أكسس (MS Access)": "MS Access Database Package",
+  "فحص سلامة قواعد البيانات": "Database Integrity Diagnostics",
+  "مزامنة GitHub وتحديثات النظام": "GitHub Sync & System Updates",
+  "معلومات وحالة الخادم": "Server Status & Diagnostics",
+
+  // ComprehensiveFinancialPositionCard & Executive Dashboard
+  "المركز المالي الموحد المستقل ERP": "Unified ERP Financial Position",
+  "مزامنة حية": "Live Sync",
+  "الميزانية متزنة (الأصول = الخصوم + الملكية)":
+    "Balance Sheet Balanced (Assets = Liabilities + Equity)",
+  "فارق اتزان": "Balance Variance",
+  "المركز المالي الشامل (الميزانية وقائمة الدخل الموحدة)":
+    "Comprehensive Financial Position (Unified Balance Sheet & P&L)",
+  "تجميع وتزامن لحظي لكافة المستجدات المالية في المول التجاري، حديقة الألعاب، المطعم ونقاط البيع، سندات المقبوضات والمدفوعات، ودفتر اليومية العامة ودليل الحسابات.":
+    "Real-time financial aggregation across the Commercial Mall, Amusement Park, Restaurant & POS, Receipt/Payment Vouchers, General Journal, and Chart of Accounts.",
+  "تحديث المزامنة": "Sync Now",
+  "صافي الأرباح / النتيجة": "Net Profit / Result",
+  "الإيرادات − المصروفات": "Revenues − Expenses",
+  "إجمالي إيرادات القطاعات:": "Total Sector Revenues:",
+  "إجمالي الأصول والموجودات": "Total Assets & Holdings",
+  "الخزائن + البنوك + العهد + الأصول الثابتة": "Safes + Banks + Custody + Fixed Assets",
+  "الالتزامات والخصوم": "Liabilities & Payables",
+  "مديونيات الموردين والالتزامات القصيرة والاحتياطيات":
+    "Supplier payables, short-term liabilities & provisions",
+  "حقوق الملكية ورأس المال": "Owner's Equity & Capital",
+  "رأس المال + الأرباح المبقاة ونتائج الفترة": "Capital + Retained Earnings & Period Result",
+  "المستجدات اللحظية المباشرة للقطاعات التشغيلية المربوطة":
+    "Live Financial Breakdown by Connected Operational Sector",
+  "تزامن تلقائي مع كل عملية بيع أو تحصيل أو صرف سند":
+    "Automatically synchronized with every sale, collection, or voucher",
+  "قطاع المول التجاري": "Commercial Mall Sector",
+  "إيجارات ومحلات والمرافق": "Shop leases, rents & utilities",
+  "محل نشط": "Active Shops",
+  "تحصيل الإيجارات:": "Rent Collections:",
+  "إيرادات أخرى ومرافق:": "Other & Utility Revenues:",
+  "مصروفات وصيانة:": "Expenses & Maintenance:",
+  "صافي أرباح المول:": "Net Mall Profit:",
+  "الحديقة والألعاب": "Amusement Park & Rides",
+  "تذاكر وورديات ترفيهية": "Entry tickets & entertainment shifts",
+  "مبيعات التذاكر والألعاب:": "Tickets & Rides Sales:",
+  "مقبوضات ورديات الحديقة:": "Park Shift Collections:",
+  "عدد الورديات المنفذة:": "Completed Shifts:",
+  "إجمالي إيراد الحديقة:": "Total Park Revenue:",
+  "المطعم ونقطة البيع": "Restaurant & Point of Sale",
+  "طلبات الصالة والفرن والدليفري": "Dine-in, oven & delivery orders",
+  "مبيعات الكاش النقدية:": "Cash Sales:",
+  "مبيعات البطاقات (Visa/Card):": "Card / Visa Sales:",
+  "إجمالي الطلبات المسجلة:": "Total Recorded Orders:",
+  "مبيعات المطعم الموحدة:": "Unified Restaurant Sales:",
+  "المقبوضات والمدفوعات المباشرة": "Direct receipts & disbursements",
+  "سندات القبض (+):": "Receipt Vouchers (+):",
+  "سندات الصرف (-):": "Payment Vouchers (-):",
+  "إجمالي السندات النشطة:": "Total Active Vouchers:",
+  "صافي تدفق السندات:": "Net Vouchers Cashflow:",
+  "✓ الميزانية متزنة 100%": "✓ 100% Balanced",
+  "معادلة الميزانية الموحدة: الأصول": "Unified Balance Equation: Assets",
+  "الخصوم والملكية": "Liabilities & Equity",
+  "المركز المالي الموحد": "Unified Financial Position",
+  "نفس مصدر البيانات المستخدم في دليل الحسابات وحساب الأستاذ والخزائن.":
+    "Driven by the same single source of truth as Chart of Accounts, General Ledger, and Treasuries.",
+  "نتيجة موجبة": "Positive Net",
+  "نتيجة سالبة": "Negative Net",
+  "مصدر محاسبي": "Accounting Source",
+  "إجمالي القيود المسجلة": "Total Recorded Entries",
+  "مرتبط مباشرة بدليل الحسابات": "Directly linked to Chart of Accounts",
+  "مبيعات اليوم التشغيلية": "Today's Operating Sales",
+  "من دليل الحسابات المحاسبي": "From Accounting Ledger",
+  "متزامن مع حساب الأستاذ": "Synced with General Ledger",
+  "إجمالي أرصدة الخزائن (كاش)": "Total Cash Safes Balance",
+  "الرصيد المحاسبي للخزائن النقدية": "Book balance of cash treasuries",
+  "آمن ومتوازن": "Secure & Balanced",
+  "الحسابات البنكية والودائع": "Bank Accounts & Deposits",
+  "حسابات البنوك الظاهرة في دليل الحسابات": "Bank accounts in Chart of Accounts",
+  "تقييم المخزون الحالي": "Current Inventory Valuation",
+  "إجمالي أصول المواد بالمستودع": "Total warehouse stock assets",
+  "تفاصيل أرصدة الخزائن والصناديق النقدية بالفرع":
+    "Branch Cash Safes & Treasury Balances Breakdown",
+  "خزائن ودفاتر": "Treasuries & Ledgers",
+  "تطور الإيرادات والمبيعات التشغيلية لآخر 7 أيام":
+    "Operating Revenue & Sales Trend (Last 7 Days)",
+
+  // Internal Messenger (Chatbot.tsx)
+  "الدردشة الداخلية": "Internal Team Messenger",
+  "جميع موظفي المؤسسة": "All Organization Staff",
+  "الزملاء": "Colleagues",
+  "مجموعات الأقسام": "Department Groups",
+  "ابحث بالاسم أو الرقم الوظيفي أو الوظيفة...": "Search by name, employee ID, or role...",
+  "أونلاين": "Online",
+  "أوفلاين": "Offline",
+  "ابدأ المحادثة مع": "Start conversation with",
+  "مدير التشغيل العام": "General Operations Manager",
+  "مشرف الفروع": "Branches Supervisor",
+  "فتح محادثات فريق العمل الداخلية": "Open Internal Team Messenger",
+  "اكتب رسالتك هنا...": "Type your message here...",
+
+  // Users & Permissions (UsersPageView.tsx)
+  "المدير العام (Super Admin) - كامل الصلاحيات": "Super Admin — Full System Access",
+  "مدير النظام / مدير فرع": "System Admin / Branch Manager",
+  "1. مربع قسم: إدارة المطعم": "1. Module: Restaurant Management",
+  "2. مربع قسم: إدارة المول": "2. Module: Mall Management",
+  "3. مربع قسم: إدارة الحديقة": "3. Module: Park Management",
+  "4. مربع قسم: الإدارة المالية": "4. Module: Financial Management",
+  "5. مربع قسم: الموارد البشرية والمستخدمين": "5. Module: HR & Users Management",
+  "6. مربع قسم: إدارة المخزون والمستودعات": "6. Module: Inventory & Warehouses",
+  "7. مربع قسم: تدقيق الورديات": "7. Module: Shift Audit & Reconciliation",
+  "8. مربع قسم: سجل العمليات": "8. Module: Operations & Security Log",
+  "9. مربع قسم: خيارات المطور والنسخ الاحتياطي": "9. Module: Developer & System Backup",
+  "الدخول إلى صفحة إدارة المطعم": "Access Restaurant Management Module",
+  "الدخول إلى صفحة نقطة البيع (POS) الكاشير": "Access Cashier POS Screen",
+  "الدخول إلى صفحة الكابتن أوردر للطاولات": "Access Captain Table Ordering Screen",
+  "الدخول إلى صفحة المطبخ والفرن الذكية (KDS)": "Access Smart Kitchen & Oven Screen (KDS)",
+  "الدخول إلى صفحة متابعة الطلبات والفواتير": "Access Orders & Invoices Tracking",
+  "الدخول إلى صفحة طلبات التوصيل الخارجي (الديليفري)": "Access External Delivery Orders",
+  "الدخول إلى صفحة إدارة الطاولات والباركود QR": "Access Tables & QR Code Management",
+  "الدخول إلى صفحة قائمة الطعام والوجبات (المنيو)": "Access Food Menu & Items Management",
+  "الدخول إلى صفحة مستودع وخامات المطعم": "Access Restaurant Pantry & Ingredients",
+  "الدخول إلى صفحة سندات الصرف والقبض للمطعم": "Access Restaurant Vouchers",
+  "الدخول إلى صفحة الكاشير والخزينة": "Access Cashier & Treasury Screen",
+  "الدخول إلى صفحة ورديات كاشير المطعم وإغلاقها": "Access Restaurant Cashier Shifts",
+  "الدخول إلى صفحة إدارة المول": "Access Mall Management Module",
+  "الدخول إلى صفحة دليل المحلات والمستأجرين والعقود": "Access Mall Shops, Tenants & Contracts",
+  "الدخول إلى صفحة متابعة الإيجارات والدفعات الشهرية": "Access Monthly Rent Payments",
+  "الدخول إلى صفحة مصروفات وتشغيل وصيانة المول": "Access Mall Operations & Expenses",
+  "الدخول إلى صفحة سندات الصرف والقبض للمول": "Access Mall Vouchers",
+  "الدخول إلى صفحة التقارير المالية ونسب الإشغال للمول": "Access Mall Financial & Occupancy Reports",
+  "الدخول إلى صفحة إدارة الحديقة": "Access Park Management Module",
+  "الدخول إلى صفحة نقطة بيع تذاكر الدخول والألعاب (POS)": "Access Park Tickets POS",
+  "الدخول إلى صفحة ورديات كاشير الحديقة والتشغيل": "Access Park Cashier Shifts",
+  "الدخول إلى صفحة الخزائن التشغيلية الثمانية (8)": "Access The 8 Operational Treasuries",
+  "الدخول إلى صفحة سجل التذاكر واسترجاعها": "Access Tickets Log & Refunds",
+  "الدخول إلى صفحة إدارة العملاء واشتراكات الزوار": "Access Park Visitors & Subscriptions",
+  "الدخول إلى صفحة أسعار التذاكر وفئات الألعاب": "Access Ticket Prices & Ride Categories",
+  "الدخول إلى صفحة سندات الصرف والقبض للحديقة": "Access Park Vouchers",
+  "الدخول إلى صفحة تقارير إيرادات الحديقة والورديات": "Access Park Revenue & Shift Reports",
+  "الدخول إلى صفحة الإدارة المالية": "Access Financial Management Module",
+  "الدخول إلى صفحة المركز المالي الشامل والميزانية": "Access Comprehensive Financial Position",
+  "الدخول إلى صفحة كشف حساب الأستاذ العام": "Access General Ledger Statement",
+  "الدخول إلى صفحة دفتر اليومية العامة والقيود المزدوجة": "Access General Journal & Double-Entry",
+  "الدخول إلى صفحة سندات الصرف والقبض المرحّلة": "Access Posted Payment & Receipt Vouchers",
+  "الدخول إلى صفحة دليل وشجرة الحسابات": "Access Chart of Accounts Tree",
+  "الدخول إلى صفحة إدارة الخزائن والحسابات البنكية": "Access Treasuries & Bank Accounts",
+  "الدخول إلى صفحة التقارير المالية والميزانية العمومية": "Access Financial Reports & Balance Sheet",
+  "الدخول إلى صفحة ميزان المراجعة المحاسبي": "Access Accounting Trial Balance",
+  "الدخول إلى صفحة القوائم المالية الختامية": "Access Final Financial Statements",
+  "الدخول إلى صفحة تصميم وإدارة الإيصالات والسندات": "Access Receipts & Vouchers Designer",
+  "الدخول إلى صفحة الموارد البشرية والمستخدمين": "Access HR & Users Module",
+  "الدخول إلى صفحة سجل وبيانات الموظفين": "Access Employee Records & Profiles",
+  "الدخول إلى صفحة تسجيل الحضور والانصراف": "Access Attendance & Time Tracking",
+  "الدخول إلى صفحة مسيرات الرواتب الشهرية والبدلات": "Access Monthly Payroll Sheets",
+  "الدخول إلى صفحة السلف والخصومات والقروض المالية": "Access Employee Loans & Deductions",
+  "الدخول إلى صفحة إدارة مستخدمي النظام والصلاحيات": "Access System Users & Permissions",
+  "الدخول إلى صفحة إدارة المخزون والمستودعات": "Access Inventory & Warehouses Module",
+  "الدخول إلى صفحة إدارة المخازن والفروع": "Access Warehouses & Branches",
+  "الدخول إلى صفحة أصناف المخزون وجرد المستودع والباركود": "Access Inventory Items & Barcodes",
+  "الدخول إلى صفحة التحويلات الداخلية بين المستودعات": "Access Inter-Warehouse Transfers",
+  "الدخول إلى صفحة فواتير المشتريات وسندات الاستلام": "Access Purchase Invoices & Receiving",
+  "الدخول إلى صفحة إدارة الموردين والشركات": "Access Suppliers & Vendors",
+  "الدخول إلى صفحة سجل حركات المخزن والتسويات": "Access Stock Movements & Adjustments",
+  "الدخول إلى صفحة صلاحية وتتبع الدفعات": "Access Batch Expiry Tracking",
+  "الدخول إلى صفحة تسويات الهالك والتوالف": "Access Waste & Spoilage Write-offs",
+  "الدخول إلى صفحة تقارير وتحليلات المخزون": "Access Inventory Reports & Analytics",
+  "الدخول إلى صفحة إعدادات المخزن": "Access Warehouse Settings",
+  "الدخول إلى صفحة تدقيق الورديات": "Access Shift Audit Module",
+  "الدخول إلى صفحة عرض ومطابقة الورديات المسجلة": "Access Recorded Shifts Reconciliation",
+  "الدخول إلى صفحة فحص العجز والزيادة النقدية": "Access Cash Variance Inspection",
+  "الدخول إلى صفحة سجل العمليات": "Access Operations Audit Log Module",
+  "الدخول إلى صفحة تصفية وتصدير سجلات الرقابة الأمنية": "Access Security Audit Log Export",
+  "الدخول إلى صفحة خيارات المطور والنسخ الاحتياطي": "Access Developer & Backup Module",
+  "الدخول إلى صفحة استوديو المطور Pro (المحرر البصري)": "Access Developer Studio Pro",
+  "الدخول إلى صفحة النسخ الاحتياطي واستعادة البيانات": "Access System Backup & Restore",
 };
 
-// Sorted list of Arabic phrases (longest first) for substring replacement
-const SORTED_AR_ENTRIES: [string, string][] = Object.entries(AR_TO_EN_DICTIONARY).sort(
-  (a, b) => b[0].length - a[0].length,
-);
+const ARABIC_CHAR_REGEX = /[\u0600-\u06FF]/;
+
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Separate multi-word / long phrases from short single-word entries so short words
+// never replace substrings inside longer Arabic words (e.g. "تم" inside "اعتماد").
+const PHRASE_ENTRIES: [string, string][] = [];
+const WORD_REGEX_ENTRIES: [RegExp, string, string][] = [];
+
+Object.entries(AR_TO_EN_DICTIONARY)
+  .sort((a, b) => b[0].length - a[0].length)
+  .forEach(([ar, en]) => {
+    const trimmed = ar.trim();
+    if (!trimmed) return;
+    const isSingleShortWord = !trimmed.includes(" ") && trimmed.length <= 7;
+    if (isSingleShortWord) {
+      const regex = new RegExp(
+        `(?<![\\u0600-\\u06FF])${escapeRegExp(trimmed)}(?![\\u0600-\\u06FF])`,
+        "g",
+      );
+      WORD_REGEX_ENTRIES.push([regex, en, trimmed]);
+    } else {
+      PHRASE_ENTRIES.push([ar, en]);
+    }
+  });
 
 // Map to remember original text on DOM nodes
 const nodeOriginalTextMap = new WeakMap<Node, string>();
+const nodeLastTranslatedMap = new WeakMap<Node, string>();
 const elementOriginalAttributesMap = new WeakMap<
   HTMLElement,
   { placeholder?: string; title?: string; ariaLabel?: string }
@@ -1513,43 +1960,70 @@ export class TranslationService {
     if (!text || typeof text !== "string") return text;
     const targetLang = forceLang || this.currentLang;
     if (targetLang === "ar") return text;
-
-    let result = text;
-    for (const [arPhrase, enPhrase] of SORTED_AR_ENTRIES) {
-      if (result.includes(arPhrase)) {
-        result = result.split(arPhrase).join(enPhrase);
-      }
-    }
-    return result;
+    return this.translateTextString(text);
   }
 
   translateTextString(arabicText: string): string {
     if (!arabicText || !arabicText.trim()) return arabicText;
+    if (!ARABIC_CHAR_REGEX.test(arabicText)) return arabicText;
+
+    const trimmed = arabicText.trim();
+    if (AR_TO_EN_DICTIONARY[trimmed]) {
+      const leading = arabicText.slice(0, arabicText.indexOf(trimmed));
+      const trailing = arabicText.slice(arabicText.indexOf(trimmed) + trimmed.length);
+      return `${leading}${AR_TO_EN_DICTIONARY[trimmed]}${trailing}`;
+    }
+
     let translated = arabicText;
-    for (const [arPhrase, enPhrase] of SORTED_AR_ENTRIES) {
+    for (const [arPhrase, enPhrase] of PHRASE_ENTRIES) {
       if (translated.includes(arPhrase)) {
         translated = translated.split(arPhrase).join(enPhrase);
       }
     }
+
+    if (ARABIC_CHAR_REGEX.test(translated)) {
+      for (const [wordRegex, enWord, rawWord] of WORD_REGEX_ENTRIES) {
+        if (translated.includes(rawWord)) {
+          translated = translated.replace(wordRegex, enWord);
+        }
+      }
+    }
+
     return translated;
+  }
+
+  private translateSingleTextNode(textNode: Text): void {
+    const parentEl = textNode.parentElement;
+    if (
+      parentEl &&
+      (parentEl.tagName === "SCRIPT" ||
+        parentEl.tagName === "STYLE" ||
+        parentEl.tagName === "NOSCRIPT" ||
+        parentEl.closest(".no-translate"))
+    ) {
+      return;
+    }
+
+    const currentVal = textNode.nodeValue || "";
+    if (!currentVal.trim()) return;
+
+    const lastTranslated = nodeLastTranslatedMap.get(textNode);
+    // If React dynamically updated this text node with new Arabic content, refresh original text
+    if (!nodeOriginalTextMap.has(textNode) || (currentVal !== lastTranslated && ARABIC_CHAR_REGEX.test(currentVal))) {
+      nodeOriginalTextMap.set(textNode, currentVal);
+    }
+
+    const origText = nodeOriginalTextMap.get(textNode) || currentVal;
+    const translated = this.translateTextString(origText);
+    if (translated !== currentVal) {
+      nodeLastTranslatedMap.set(textNode, translated);
+      textNode.nodeValue = translated;
+    }
   }
 
   translateNode(node: Node): void {
     if (node.nodeType === Node.TEXT_NODE) {
-      const textNode = node as Text;
-      const text = textNode.nodeValue || "";
-      if (!text.trim()) return;
-
-      // Remember original Arabic text if not saved yet
-      if (!nodeOriginalTextMap.has(textNode)) {
-        nodeOriginalTextMap.set(textNode, text);
-      }
-
-      const origText = nodeOriginalTextMap.get(textNode) || text;
-      const translated = this.translateTextString(origText);
-      if (translated !== textNode.nodeValue) {
-        textNode.nodeValue = translated;
-      }
+      this.translateSingleTextNode(node as Text);
       return;
     }
 
@@ -1559,7 +2033,8 @@ export class TranslationService {
         el.tagName === "SCRIPT" ||
         el.tagName === "STYLE" ||
         el.tagName === "NOSCRIPT" ||
-        el.classList?.contains("no-translate")
+        el.classList?.contains("no-translate") ||
+        el.closest?.(".no-translate")
       ) {
         return;
       }
@@ -1570,51 +2045,56 @@ export class TranslationService {
 
       inputs.forEach((inputEl) => {
         const input = inputEl as HTMLInputElement | HTMLTextAreaElement;
-        if (!elementOriginalAttributesMap.has(input)) {
-          elementOriginalAttributesMap.set(input, {
-            placeholder: input.placeholder,
-            title: input.title,
-          });
+        if (input.closest?.(".no-translate")) return;
+        const existing = elementOriginalAttributesMap.get(input) || {};
+        if (existing.placeholder === undefined || ARABIC_CHAR_REGEX.test(input.placeholder || "")) {
+          existing.placeholder = input.placeholder;
+          elementOriginalAttributesMap.set(input, existing);
         }
-        const orig = elementOriginalAttributesMap.get(input);
-        if (orig?.placeholder) {
-          input.placeholder = this.translateTextString(orig.placeholder);
-        }
-      });
-
-      // Handle title on el and its descendants
-      const titledElements = el.querySelectorAll ? Array.from(el.querySelectorAll("[title]")) : [];
-      if (el.title) titledElements.push(el);
-
-      titledElements.forEach((titledEl) => {
-        const tEl = titledEl as HTMLElement;
-        if (!elementOriginalAttributesMap.has(tEl)) {
-          const existing = elementOriginalAttributesMap.get(tEl) || {};
-          elementOriginalAttributesMap.set(tEl, { ...existing, title: tEl.title });
-        }
-        const orig = elementOriginalAttributesMap.get(tEl);
-        if (orig?.title) {
-          tEl.title = this.translateTextString(orig.title);
+        if (existing.placeholder) {
+          const nextPlaceholder = this.translateTextString(existing.placeholder);
+          if (input.placeholder !== nextPlaceholder) {
+            input.placeholder = nextPlaceholder;
+          }
         }
       });
 
-      // Traverse children
+      // Handle title & aria-label on el and its descendants
+      const attrElements = el.querySelectorAll
+        ? Array.from(el.querySelectorAll("[title], [aria-label]"))
+        : [];
+      if (el.title || el.getAttribute?.("aria-label")) attrElements.push(el);
+
+      attrElements.forEach((attrEl) => {
+        const tEl = attrEl as HTMLElement;
+        if (tEl.closest?.(".no-translate")) return;
+        const existing = elementOriginalAttributesMap.get(tEl) || {};
+        if (tEl.title && (existing.title === undefined || ARABIC_CHAR_REGEX.test(tEl.title))) {
+          existing.title = tEl.title;
+        }
+        const aria = tEl.getAttribute("aria-label");
+        if (aria && (existing.ariaLabel === undefined || ARABIC_CHAR_REGEX.test(aria))) {
+          existing.ariaLabel = aria;
+        }
+        elementOriginalAttributesMap.set(tEl, existing);
+
+        if (existing.title) {
+          const nextTitle = this.translateTextString(existing.title);
+          if (tEl.title !== nextTitle) tEl.title = nextTitle;
+        }
+        if (existing.ariaLabel) {
+          const nextAria = this.translateTextString(existing.ariaLabel);
+          if (tEl.getAttribute("aria-label") !== nextAria) {
+            tEl.setAttribute("aria-label", nextAria);
+          }
+        }
+      });
+
+      // Traverse text nodes
       const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
       let currTextNode: Node | null;
       while ((currTextNode = walker.nextNode())) {
-        const textNode = currTextNode as Text;
-        const text = textNode.nodeValue || "";
-        if (!text.trim()) continue;
-
-        if (!nodeOriginalTextMap.has(textNode)) {
-          nodeOriginalTextMap.set(textNode, text);
-        }
-
-        const origText = nodeOriginalTextMap.get(textNode) || text;
-        const translated = this.translateTextString(origText);
-        if (translated !== textNode.nodeValue) {
-          textNode.nodeValue = translated;
-        }
+        this.translateSingleTextNode(currTextNode as Text);
       }
     }
   }
@@ -1646,15 +2126,20 @@ export class TranslationService {
         }
       });
 
-      const titledElements = el.querySelectorAll ? Array.from(el.querySelectorAll("[title]")) : [];
-      if (el.title) titledElements.push(el);
+      const attrElements = el.querySelectorAll
+        ? Array.from(el.querySelectorAll("[title], [aria-label]"))
+        : [];
+      if (el.title || el.getAttribute?.("aria-label")) attrElements.push(el);
 
-      titledElements.forEach((titledEl) => {
-        const tEl = titledEl as HTMLElement;
+      attrElements.forEach((attrEl) => {
+        const tEl = attrEl as HTMLElement;
         if (elementOriginalAttributesMap.has(tEl)) {
           const orig = elementOriginalAttributesMap.get(tEl);
           if (orig?.title) {
             tEl.title = orig.title;
+          }
+          if (orig?.ariaLabel) {
+            tEl.setAttribute("aria-label", orig.ariaLabel);
           }
         }
       });
@@ -1733,3 +2218,4 @@ export class TranslationService {
 }
 
 export const translator = new TranslationService();
+

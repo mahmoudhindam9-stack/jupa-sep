@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { erpStore, SystemUser, ROOT_DEFAULT_ADMIN, type UserPermission } from "@/shared/services/erpStore";
 import { authService } from "@/features/auth/services/authService";
 import {
@@ -737,73 +738,110 @@ function LoginPage() {
     );
   }
 
+  const isEn = lang === "en";
+
   return (
     <div
-      className="min-h-screen flex items-center justify-center bg-background p-4 relative"
-      dir={lang === "ar" ? "rtl" : "ltr"}
+      className="min-h-screen flex items-center justify-center bg-background p-4 sm:p-6 relative overflow-hidden"
+      dir={isEn ? "ltr" : "rtl"}
     >
-      <div className="absolute top-4 left-4">
-        <LanguageSwitcher />
-      </div>
-      <div className="w-full max-w-sm space-y-6 bg-card border border-border p-6 rounded-2xl shadow-sm">
-        <div className="flex justify-center mb-2">
-          <RestocashLogo size={32} />
+      {/* Subtle architectural ambient glow */}
+      <div className="pointer-events-none absolute -top-32 -right-32 h-96 w-96 rounded-full bg-primary/10 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-32 -left-32 h-96 w-96 rounded-full bg-emerald-500/10 blur-3xl" />
+
+      <div className="absolute top-4 left-4 right-4 flex items-center justify-between max-w-5xl mx-auto z-10">
+        <RestocashLogo size={26} showDeveloper={false} />
+        <div className="flex items-center gap-2">
+          <ThemeToggle />
+          <LanguageSwitcher />
         </div>
-        <p className="text-sm text-muted-foreground text-center">تسجيل الدخول للإدارة</p>
+      </div>
+
+      <div className="w-full max-w-md relative z-10 bg-card border border-border p-7 sm:p-8 rounded-2xl shadow-xl space-y-6">
+        <div className="space-y-2 text-center">
+          <div className="flex justify-center mb-3">
+            <RestocashLogo size={36} showDeveloper={true} />
+          </div>
+          <h1 className="text-2xl font-extrabold text-foreground">
+            {isEn ? "Executive Portal Sign In" : "تسجيل الدخول للإدارة"}
+          </h1>
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            {isEn
+              ? "Enter your authorized credentials to access the ERP & POS suite"
+              : "أدخل بيانات الحساب المعتمدة للوصول إلى منظومة الإدارة ونقاط البيع"}
+          </p>
+        </div>
+
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <Label>اسم المستخدم أو البريد الإلكتروني</Label>
+          <div className="space-y-1.5">
+            <Label className="text-sm font-bold">
+              {isEn ? "Username or Email Address" : "اسم المستخدم أو البريد الإلكتروني"}
+            </Label>
             <Input
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
-              placeholder="admin أو admin@restocash.com"
+              placeholder="admin / admin@restocash.com"
               autoComplete="username"
               dir="ltr"
-              className="mt-1"
+              className="h-11 rounded-xl bg-muted/40 focus:bg-background font-mono text-sm"
               autoFocus
             />
           </div>
-          <div>
-            <Label>كلمة المرور</Label>
+          <div className="space-y-1.5">
+            <Label className="text-sm font-bold">
+              {isEn ? "Password" : "كلمة المرور"}
+            </Label>
             <Input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              placeholder="••••••"
+              placeholder="••••••••"
               dir="ltr"
-              className="text-right mt-1"
+              className="h-11 rounded-xl bg-muted/40 focus:bg-background font-mono text-sm"
             />
           </div>
 
-          <div className="flex items-center space-x-2 space-x-reverse">
-            <Checkbox
-              id="remember"
-              checked={rememberMe}
-              onCheckedChange={(checked) => setRememberMe(checked as boolean)}
-            />
-            <Label htmlFor="remember" className="text-sm font-normal cursor-pointer">
-              تذكرني
-            </Label>
+          <div className="flex items-center justify-between pt-1">
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="remember"
+                checked={rememberMe}
+                onCheckedChange={(checked) => setRememberMe(checked as boolean)}
+              />
+              <Label htmlFor="remember" className="text-xs font-semibold cursor-pointer">
+                {isEn ? "Keep me signed in" : "تذكرني على هذا الجهاز"}
+              </Label>
+            </div>
           </div>
 
           {notice && (
             <p
               role="status"
-              className="text-sm text-emerald-700 bg-emerald-500/10 p-3 rounded-lg border border-emerald-500/20 text-center"
+              className="text-xs text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 p-3 rounded-xl border border-emerald-500/20 text-center font-semibold"
             >
               {notice}
             </p>
           )}
           {error && (
-            <p className="text-xs text-destructive bg-destructive/10 p-2.5 rounded-lg border border-destructive/20 text-center font-bold">
+            <p className="text-xs text-destructive bg-destructive/10 p-3 rounded-xl border border-destructive/20 text-center font-bold">
               {error}
             </p>
           )}
-          <Button type="submit" className="w-full h-10 font-bold text-sm" disabled={loading}>
-            {loading ? "جاري الدخول…" : "دخول"}
+          <Button
+            type="submit"
+            className="w-full h-11 rounded-xl font-extrabold text-sm shadow-sm cursor-pointer"
+            disabled={loading}
+          >
+            {loading
+              ? isEn
+                ? "Signing in…"
+                : "جاري الدخول…"
+              : isEn
+                ? "Sign In to Workspace"
+                : "تسجيل الدخول"}
           </Button>
         </form>
       </div>

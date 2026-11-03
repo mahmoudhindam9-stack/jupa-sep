@@ -1083,11 +1083,24 @@ export class ERPStore {
 
     const cloudUsernames = new Set(cloudUsers.map((u) => u.username));
     const cloudEmails = new Set(cloudUsers.map((u) => String(u.email || "").toLowerCase()));
+    const cloudHasAdmin = cloudUsers.some(
+      (u) => u.role === "admin" || u.role === "super_admin",
+    );
 
-    // Keep any local-only users that have not yet been synced to Supabase
+    // Keep any local-only users that have not yet been synced to Supabase,
+    // excluding duplicate/default admin accounts when a cloud admin already exists.
     const unsyncedLocalUsers = existingLocalUsers.filter((local) => {
+      const uid = String(local.id || "").trim().toLowerCase();
       const uname = String(local.username || "").trim().toLowerCase();
       const uemail = String(local.email || "").trim().toLowerCase();
+      const isLocalAdmin =
+        local.role === "admin" ||
+        local.role === "super_admin" ||
+        uid === "u-admin" ||
+        uid === "u-owner-mahmoud" ||
+        uname === "admin" ||
+        uemail === "admin@restocash.com";
+      if (cloudHasAdmin && isLocalAdmin) return false;
       return !cloudUsernames.has(uname) && (!uemail || !cloudEmails.has(uemail));
     });
 

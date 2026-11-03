@@ -2,8 +2,10 @@ import React, { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   ChevronLeft,
+  ChevronRight,
   ChevronDown,
   ArrowRight,
+  ArrowLeft,
   Grid3X3,
   Check,
   type LucideIcon,
@@ -25,11 +27,11 @@ import {
 } from "./navigationRegistry";
 import {
   getActiveUserPermissionsSync,
-  hasAnyRequestedPermission,
   isDepartmentPermitted,
   PERMISSIONS_UPDATED_EVENT,
 } from "@/shared/services/userAuthorization";
 import { erpStore } from "@/shared/services/erpStore";
+import { useSettings } from "@/hooks/use-settings";
 import { cn } from "@/lib/utils";
 
 export interface BreadcrumbNode {
@@ -60,6 +62,8 @@ export function AppBreadcrumbBar({
   customSubsection,
   className,
 }: AppBreadcrumbBarProps) {
+  const { lang } = useSettings();
+  const isEn = lang === "en";
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -140,7 +144,7 @@ export function AppBreadcrumbBar({
     customSection?.label ||
     department?.label ||
     resolved.fallbackLabel ||
-    "القسم الرئيسي";
+    (isEn ? "Main Section" : "القسم الرئيسي");
   const ParentIcon = customSection?.icon || department?.icon;
 
   const isStandaloneMainDepartment =
@@ -151,15 +155,18 @@ export function AppBreadcrumbBar({
     ? customSubsection?.label
     : customSubsection?.label ||
       subItem?.label ||
-      (department ? `لوحة ${department.label}` : undefined);
+      (department ? (isEn ? `${department.label} Hub` : `لوحة ${department.label}`) : undefined);
   const SubIcon = customSubsection?.icon || subItem?.icon || ParentIcon;
+
+  const SeparatorChevron = isEn ? ChevronRight : ChevronLeft;
+  const BackArrow = isEn ? ArrowLeft : ArrowRight;
 
   return (
     <nav
-      aria-label="مسار التنقل الهرمي"
-      dir="rtl"
+      aria-label={isEn ? "Breadcrumb Navigation" : "مسار التنقل الهرمي"}
+      dir={isEn ? "ltr" : "rtl"}
       className={cn(
-        "sticky top-14 z-30 shrink-0 bg-muted/50 backdrop-blur-md border-b border-border/80 px-3 sm:px-6 py-1.5 shadow-2xs transition-colors",
+        "sticky top-14 z-30 shrink-0 bg-muted/45 backdrop-blur-md border-b border-border/80 px-3 sm:px-6 py-1.5 shadow-2xs transition-colors",
         className,
       )}
     >
@@ -175,11 +182,11 @@ export function AppBreadcrumbBar({
               type="button"
               onClick={handleGoToRootHub}
               className="inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg font-bold text-muted-foreground hover:text-foreground hover:bg-card/80 border border-transparent hover:border-border/60 transition-colors cursor-pointer whitespace-nowrap shrink-0"
-              title="الانتقال إلى لوحة الأقسام الرئيسية"
+              title={isEn ? "Go to Main Departments Hub" : "الانتقال إلى لوحة الأقسام الرئيسية"}
             >
               <Grid3X3 size={14} className="text-primary shrink-0" />
-              <span className="hidden xs:inline">لوحة الأقسام</span>
-              <span className="xs:hidden">الرئيسية</span>
+              <span className="hidden xs:inline">{isEn ? "Modules Hub" : "لوحة الأقسام"}</span>
+              <span className="xs:hidden">{isEn ? "Home" : "الرئيسية"}</span>
             </button>
           </li>
 
@@ -188,12 +195,12 @@ export function AppBreadcrumbBar({
             aria-hidden="true"
             className="flex items-center shrink-0 text-muted-foreground/60"
           >
-            <ChevronLeft size={15} className="rtl:rotate-0 ltr:rotate-180" />
+            <SeparatorChevron size={14} />
           </li>
 
           {/* 2. Main Department Node (Clickable link to Department Hub + Quick Department Switcher) */}
           <li className="flex items-center gap-0.5 shrink-0">
-            <div className="inline-flex items-center rounded-lg border border-border/70 bg-card/80 hover:bg-card transition-colors shadow-2xs">
+            <div className="inline-flex items-center rounded-lg border border-border/70 bg-card/85 hover:bg-card transition-colors shadow-2xs">
               <button
                 type="button"
                 onClick={() =>
@@ -203,7 +210,7 @@ export function AppBreadcrumbBar({
                   )
                 }
                 className="inline-flex items-center gap-1.5 px-2.5 py-1 font-bold text-foreground/85 hover:text-primary transition-colors cursor-pointer whitespace-nowrap shrink-0"
-                title={`الانتقال إلى ${parentLabel}`}
+                title={isEn ? `Go to ${parentLabel}` : `الانتقال إلى ${parentLabel}`}
               >
                 {ParentIcon && (
                   <ParentIcon size={14} className="text-primary shrink-0" />
@@ -216,19 +223,22 @@ export function AppBreadcrumbBar({
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    className="px-1.5 py-1 text-muted-foreground hover:text-foreground border-r border-border/60 cursor-pointer rounded-l-lg"
-                    title="تبديل القسم الرئيسي"
-                    aria-label="تبديل القسم الرئيسي"
+                    className={cn(
+                      "px-1.5 py-1 text-muted-foreground hover:text-foreground border-border/60 cursor-pointer",
+                      isEn ? "border-l rounded-r-lg" : "border-r rounded-l-lg",
+                    )}
+                    title={isEn ? "Switch Main Module" : "تبديل القسم الرئيسي"}
+                    aria-label={isEn ? "Switch Main Module" : "تبديل القسم الرئيسي"}
                   >
                     <ChevronDown size={13} />
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent
                   align="start"
-                  className="w-60 p-1.5 font-cairo text-right"
+                  className={cn("w-60 p-1.5", isEn ? "text-left" : "text-right")}
                 >
                   <DropdownMenuLabel className="text-[11px] text-muted-foreground px-2 py-1">
-                    الانتقال السريع لقسم رئيسي آخر
+                    {isEn ? "Switch to another module" : "الانتقال السريع لقسم رئيسي آخر"}
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator className="my-1" />
                   {visibleDepartments.map((dept) => {
@@ -277,7 +287,7 @@ export function AppBreadcrumbBar({
                 aria-hidden="true"
                 className="flex items-center shrink-0 text-muted-foreground/60"
               >
-                <ChevronLeft size={15} className="rtl:rotate-0 ltr:rotate-180" />
+                <SeparatorChevron size={14} />
               </li>
 
               <li className="flex items-center shrink-0 min-w-0">
@@ -288,7 +298,11 @@ export function AppBreadcrumbBar({
                         type="button"
                         aria-current="page"
                         className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-black text-primary bg-primary/10 hover:bg-primary/15 border border-primary/25 shadow-2xs transition-colors cursor-pointer max-w-[240px] sm:max-w-none truncate"
-                        title="القسم الفرعي الحالي — انقر للتبديل السريع إلى قسم فرعي آخر"
+                        title={
+                          isEn
+                            ? "Current Sub-module — Click to switch"
+                            : "القسم الفرعي الحالي — انقر للتبديل السريع إلى قسم فرعي آخر"
+                        }
                       >
                         {SubIcon && (
                           <SubIcon size={14} className="shrink-0 text-primary" />
@@ -302,10 +316,12 @@ export function AppBreadcrumbBar({
                     </DropdownMenuTrigger>
                     <DropdownMenuContent
                       align="start"
-                      className="w-64 p-1.5 font-cairo text-right"
+                      className={cn("w-64 p-1.5", isEn ? "text-left" : "text-right")}
                     >
                       <DropdownMenuLabel className="text-[11px] text-muted-foreground px-2 py-1">
-                        الأقسام الفرعية داخل {department.label}
+                        {isEn
+                          ? `Sub-modules in ${department.label}`
+                          : `الأقسام الفرعية داخل ${department.label}`}
                       </DropdownMenuLabel>
                       <DropdownMenuSeparator className="my-1" />
                       {department.children
@@ -369,20 +385,28 @@ export function AppBreadcrumbBar({
           <button
             type="button"
             onClick={handleQuickBack}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold text-muted-foreground hover:text-foreground bg-card/80 hover:bg-card rounded-lg border border-border/70 transition-colors cursor-pointer shadow-2xs whitespace-nowrap shrink-0"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold text-muted-foreground hover:text-foreground bg-card/85 hover:bg-card rounded-lg border border-border/70 transition-colors cursor-pointer shadow-2xs whitespace-nowrap shrink-0"
             title={
               isInsideDeepSubItem
-                ? `العودة إلى ${parentLabel}`
-                : "العودة إلى لوحة الأقسام الرئيسية"
+                ? isEn
+                  ? `Back to ${parentLabel}`
+                  : `العودة إلى ${parentLabel}`
+                : isEn
+                  ? "Back to Modules Hub"
+                  : "العودة إلى لوحة الأقسام الرئيسية"
             }
           >
-            <ArrowRight size={14} className="shrink-0" />
+            <BackArrow size={14} className="shrink-0" />
             <span className="hidden sm:inline">
               {isInsideDeepSubItem
-                ? `العودة لـ ${parentLabel}`
-                : "العودة للوحة الأقسام"}
+                ? isEn
+                  ? `Back to ${parentLabel}`
+                  : `العودة لـ ${parentLabel}`
+                : isEn
+                  ? "Back to Hub"
+                  : "العودة للوحة الأقسام"}
             </span>
-            <span className="sm:hidden">رجوع</span>
+            <span className="sm:hidden">{isEn ? "Back" : "رجوع"}</span>
           </button>
         </div>
       </div>

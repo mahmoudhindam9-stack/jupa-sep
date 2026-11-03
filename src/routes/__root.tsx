@@ -155,7 +155,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         content: "نظام Restocash المتكامل لإدارة المطاعم، نقاط البيع، المخزون، الحسابات والخزائن.",
       },
       { name: "author", content: "Restocash ERP" },
-      { name: "theme-color", content: "#07182a" },
+      { name: "theme-color", content: "#091526" },
       { property: "og:title", content: "Restocash — نظام إدارة المطاعم والمحاسبة ERP" },
       {
         property: "og:description",
@@ -170,6 +170,12 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       },
     ],
     links: [
+      { rel: "preconnect", href: "https://fonts.googleapis.com" },
+      { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Readex+Pro:wght@400;500;600;700&display=swap",
+      },
       { rel: "stylesheet", href: appCss },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
     ],
@@ -182,7 +188,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         children: `try{const p=window.location.pathname.replace(/\\/+$/,"");if(p==="/menu"){const q=window.location.search?window.location.search.slice(1):"";const next="/?page=menu"+(q?"&"+q:"")+window.location.hash;window.history.replaceState(null,"",next);}}catch(e){}`,
       },
       {
-        children: `try{const s=localStorage.getItem("restocash-theme");if(s==="dark"||(!s&&window.matchMedia("(prefers-color-scheme: dark)").matches)){document.documentElement.classList.add("dark");}}catch(e){}`,
+        children: `try{const s=localStorage.getItem("restocash-theme");const darkThemes=["dark","obsidian-4k","midnight-pro","luxury-gold"];const t=s==="dark"?"obsidian-4k":s==="light"?"pearl-4k":(s||"pearl-4k");document.documentElement.setAttribute("data-theme",t);if(darkThemes.includes(t)||(!s&&window.matchMedia("(prefers-color-scheme: dark)").matches)){document.documentElement.classList.add("dark");}else{document.documentElement.classList.remove("dark");}}catch(e){}`,
       },
       {
         children: `try{const l=localStorage.getItem("app_lang");if(l==="en"){document.documentElement.lang="en";document.documentElement.dir="ltr";}else if(l==="ar"){document.documentElement.lang="ar";document.documentElement.dir="rtl";}}catch(e){}`,
@@ -212,11 +218,21 @@ function RootComponent() {
     }
     try {
       const stored = localStorage.getItem("restocash-theme");
+      const darkThemes = ["dark", "obsidian-4k", "midnight-pro", "luxury-gold"];
+      const resolvedTheme =
+        stored === "dark"
+          ? "obsidian-4k"
+          : stored === "light"
+            ? "pearl-4k"
+            : stored || "pearl-4k";
+      document.documentElement.setAttribute("data-theme", resolvedTheme);
       if (
-        stored === "dark" ||
+        darkThemes.includes(resolvedTheme) ||
         (!stored && window.matchMedia("(prefers-color-scheme: dark)").matches)
       ) {
         document.documentElement.classList.add("dark");
+      } else {
+        document.documentElement.classList.remove("dark");
       }
     } catch {
       // Ignored: storage unavailable in restricted environment

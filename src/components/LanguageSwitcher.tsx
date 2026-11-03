@@ -24,16 +24,19 @@ export function LanguageSwitcher({ className = "", compact = false }: LanguageSw
 
   if (compact) {
     return (
-      <div className={`inline-flex items-center whitespace-nowrap shrink-0 ${className}`}>
-        <div className="inline-flex items-center gap-0.5 bg-muted/70 border border-border/80 p-0.5 rounded-lg">
+      <div
+        className={`inline-flex items-center whitespace-nowrap shrink-0 no-translate ${className}`}
+        dir="ltr"
+      >
+        <div className="inline-flex items-center gap-0.5 bg-muted/80 border border-border p-0.5 rounded-lg">
           <button
             type="button"
             onClick={() => handleSwitch("ar")}
             title="اللغة العربية (Arabic)"
-            className={`py-1 px-2 rounded-md text-[11px] font-bold transition-colors flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap shrink-0 ${
+            className={`py-1 px-2 rounded-md text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap shrink-0 ${
               currentLang === "ar"
                 ? "bg-primary text-primary-foreground shadow-2xs"
-                : "text-muted-foreground hover:bg-background/70 hover:text-foreground"
+                : "text-muted-foreground hover:bg-background/80 hover:text-foreground"
             }`}
           >
             <span>عربي</span>
@@ -41,11 +44,11 @@ export function LanguageSwitcher({ className = "", compact = false }: LanguageSw
           <button
             type="button"
             onClick={() => handleSwitch("en")}
-            title="English Language"
-            className={`py-1 px-2 rounded-md text-[11px] font-bold transition-colors flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap shrink-0 ${
+            title="Switch to English"
+            className={`py-1 px-2 rounded-md text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap shrink-0 ${
               currentLang === "en"
                 ? "bg-primary text-primary-foreground shadow-2xs"
-                : "text-muted-foreground hover:bg-background/70 hover:text-foreground"
+                : "text-muted-foreground hover:bg-background/80 hover:text-foreground"
             }`}
           >
             <span>EN</span>
@@ -57,37 +60,36 @@ export function LanguageSwitcher({ className = "", compact = false }: LanguageSw
 
   return (
     <div
-      className={`flex items-center gap-1.5 bg-card border border-border px-2.5 py-1 rounded-2xl shadow-xs ${className}`}
+      className={`inline-flex items-center gap-1.5 bg-card border border-border px-2.5 py-1 rounded-xl shadow-xs no-translate ${className}`}
+      dir="ltr"
     >
       <Globe size={14} className="text-primary shrink-0" />
       <div className="flex items-center gap-1">
         <button
           type="button"
           onClick={() => handleSwitch("ar")}
-          className={`px-2 py-0.5 rounded-xl text-xs font-black transition-all flex items-center gap-1 cursor-pointer ${
+          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
             currentLang === "ar"
-              ? "bg-primary text-primary-foreground shadow-xs scale-105"
+              ? "bg-primary text-primary-foreground shadow-xs"
               : "text-muted-foreground hover:bg-muted hover:text-foreground"
           }`}
           title="التحويل إلى اللغة العربية"
         >
-          <span>🇸🇦</span>
           <span>العربية</span>
-          {currentLang === "ar" && <Check size={11} className="mr-0.5" />}
+          {currentLang === "ar" && <Check size={11} />}
         </button>
         <button
           type="button"
           onClick={() => handleSwitch("en")}
-          className={`px-2 py-0.5 rounded-xl text-xs font-black transition-all flex items-center gap-1 cursor-pointer ${
+          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
             currentLang === "en"
-              ? "bg-primary text-primary-foreground shadow-xs scale-105"
+              ? "bg-primary text-primary-foreground shadow-xs"
               : "text-muted-foreground hover:bg-muted hover:text-foreground"
           }`}
           title="Switch to English"
         >
-          <span>🇬🇧</span>
           <span>English</span>
-          {currentLang === "en" && <Check size={11} className="mr-0.5" />}
+          {currentLang === "en" && <Check size={11} />}
         </button>
       </div>
     </div>

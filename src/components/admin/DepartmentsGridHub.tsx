@@ -1,5 +1,5 @@
 // @ts-nocheck
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   UtensilsCrossed,
@@ -38,9 +38,13 @@ import {
   RefreshCw,
   Database,
   ArrowLeft,
+  ArrowRight,
   Sparkles,
+  Search,
+  Layers,
+  X,
 } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -55,15 +59,16 @@ import { cn } from "@/lib/utils";
 import { useStudioPublishedPage } from "@/features/developer-studio/hooks/useStudio";
 import { StudioElementRenderer } from "@/features/developer-studio/components/StudioElementRenderer";
 import { erpStore } from "@/shared/services/erpStore";
+import { useSettings } from "@/hooks/use-settings";
 import {
   getActiveUserPermissionsSync,
-  hasAnyRequestedPermission,
   isDepartmentPermitted,
   PERMISSIONS_UPDATED_EVENT,
 } from "@/shared/services/userAuthorization";
 
 interface DepartmentCardItem {
   id: string;
+  code: string;
   title: string;
   subtitle: string;
   description: string;
@@ -80,6 +85,7 @@ interface DepartmentCardItem {
     badgeBg: string;
     badgeText: string;
     accentGlow: string;
+    dotColor: string;
   };
   badgeText: string;
   subSections: {
@@ -95,6 +101,7 @@ interface DepartmentCardItem {
 const DEPARTMENTS: DepartmentCardItem[] = [
   {
     id: "restaurant",
+    code: "MOD-01",
     title: "إدارة المطعم",
     subtitle: "المنظومة التشغيلية الشاملة",
     description:
@@ -121,13 +128,14 @@ const DEPARTMENTS: DepartmentCardItem[] = [
     ],
     colorScheme: {
       bgLight: "bg-amber-500/5",
-      border: "border-amber-500/20",
-      iconBg: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+      border: "border-border/80",
+      iconBg: "bg-amber-500/12 text-amber-600 dark:text-amber-400 border-amber-500/25",
       iconText: "text-amber-600 dark:text-amber-400",
-      hoverBorder: "hover:border-amber-500/50 hover:shadow-amber-500/5",
-      badgeBg: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
+      hoverBorder: "hover:border-amber-500/45",
+      badgeBg: "bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20",
       badgeText: "مطعم وصالة",
-      accentGlow: "from-amber-500/10 to-transparent",
+      accentGlow: "from-amber-500 via-amber-400/50 to-transparent",
+      dotColor: "bg-amber-500",
     },
     badgeText: "8 وظائف تشغيلية",
     subSections: [
@@ -166,7 +174,13 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "tables" },
         icon: Grid3X3,
         desc: "تخطيط الصالة والباركود الذكي",
-        permissionKeys: ["page_restaurant_tables", "orders", "orders_generate_qr", "captain", "captain_transfer_tables"],
+        permissionKeys: [
+          "page_restaurant_tables",
+          "orders",
+          "orders_generate_qr",
+          "captain",
+          "captain_transfer_tables",
+        ],
       },
       {
         title: "قائمة الطعام والوجبات (المنيو)",
@@ -181,7 +195,13 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "inventory" },
         icon: Package,
         desc: "المخزون الداخلي السريع",
-        permissionKeys: ["page_restaurant_inventory", "inventory", "inventory_view", "production", "production_view"],
+        permissionKeys: [
+          "page_restaurant_inventory",
+          "inventory",
+          "inventory_view",
+          "production",
+          "production_view",
+        ],
       },
       {
         title: "إغلاق وردية كاشير المطعم",
@@ -189,12 +209,19 @@ const DEPARTMENTS: DepartmentCardItem[] = [
         search: { tab: "shifts" },
         icon: History,
         desc: "تقارير وتصفية وردية الكاشير",
-        permissionKeys: ["page_restaurant_cashier_treasury", "restaurant_open_shift", "pos", "pos_access", "treasury_open_close"],
+        permissionKeys: [
+          "page_restaurant_cashier_treasury",
+          "restaurant_open_shift",
+          "pos",
+          "pos_access",
+          "treasury_open_close",
+        ],
       },
     ],
   },
   {
     id: "mall",
+    code: "MOD-02",
     title: "إدارة المول",
     subtitle: "المحلات والوحدات الاستثمارية",
     description:
@@ -204,13 +231,14 @@ const DEPARTMENTS: DepartmentCardItem[] = [
     permissionKeys: ["page_mall", "mall_manage_shops", "mall_garden_finance", "accounting"],
     colorScheme: {
       bgLight: "bg-blue-500/5",
-      border: "border-blue-500/20",
-      iconBg: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+      border: "border-border/80",
+      iconBg: "bg-blue-500/12 text-blue-600 dark:text-blue-400 border-blue-500/25",
       iconText: "text-blue-600 dark:text-blue-400",
-      hoverBorder: "hover:border-blue-500/50 hover:shadow-blue-500/5",
-      badgeBg: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
+      hoverBorder: "hover:border-blue-500/45",
+      badgeBg: "bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/20",
       badgeText: "عقود وإيجارات",
-      accentGlow: "from-blue-500/10 to-transparent",
+      accentGlow: "from-blue-500 via-blue-400/50 to-transparent",
+      dotColor: "bg-blue-500",
     },
     badgeText: "4 أقسام فرعية",
     subSections: [
@@ -250,6 +278,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
   },
   {
     id: "park",
+    code: "MOD-03",
     title: "إدارة الحديقة",
     subtitle: "المرافق الترفيهية والتذاكر",
     description:
@@ -266,14 +295,15 @@ const DEPARTMENTS: DepartmentCardItem[] = [
       "mall_garden_finance",
     ],
     colorScheme: {
-      bgLight: "bg-teal-500/5",
-      border: "border-teal-500/20",
-      iconBg: "bg-teal-500/10 text-teal-600 dark:text-teal-400",
-      iconText: "text-teal-600 dark:text-teal-400",
-      hoverBorder: "hover:border-teal-500/50 hover:shadow-teal-500/5",
-      badgeBg: "bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300",
+      bgLight: "bg-emerald-500/5",
+      border: "border-border/80",
+      iconBg: "bg-emerald-500/12 text-emerald-600 dark:text-emerald-400 border-emerald-500/25",
+      iconText: "text-emerald-600 dark:text-emerald-400",
+      hoverBorder: "hover:border-emerald-500/45",
+      badgeBg: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20",
       badgeText: "تذاكر وألعاب",
-      accentGlow: "from-teal-500/10 to-transparent",
+      accentGlow: "from-emerald-500 via-teal-400/50 to-transparent",
+      dotColor: "bg-emerald-500",
     },
     badgeText: "قسم الحديقة المستقل",
     subSections: [
@@ -337,6 +367,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
   },
   {
     id: "finance",
+    code: "MOD-04",
     title: "الإدارة المالية",
     subtitle: "المنظومة المحاسبية الموحدة",
     description:
@@ -355,13 +386,14 @@ const DEPARTMENTS: DepartmentCardItem[] = [
     ],
     colorScheme: {
       bgLight: "bg-indigo-500/5",
-      border: "border-indigo-500/20",
-      iconBg: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400",
+      border: "border-border/80",
+      iconBg: "bg-indigo-500/12 text-indigo-600 dark:text-indigo-400 border-indigo-500/25",
       iconText: "text-indigo-600 dark:text-indigo-400",
-      hoverBorder: "hover:border-indigo-500/50 hover:shadow-indigo-500/5",
-      badgeBg: "bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300",
+      hoverBorder: "hover:border-indigo-500/45",
+      badgeBg: "bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border border-indigo-500/20",
       badgeText: "حسابات موحدة",
-      accentGlow: "from-indigo-500/10 to-transparent",
+      accentGlow: "from-indigo-500 via-indigo-400/50 to-transparent",
+      dotColor: "bg-indigo-500",
     },
     badgeText: "ضم الحسابات والخزائن والتقارير",
     subSections: [
@@ -440,6 +472,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
   },
   {
     id: "hr",
+    code: "MOD-05",
     title: "الموارد البشرية والمستخدمين",
     subtitle: "شؤون الموظفين والصلاحيات",
     description:
@@ -456,13 +489,14 @@ const DEPARTMENTS: DepartmentCardItem[] = [
     ],
     colorScheme: {
       bgLight: "bg-rose-500/5",
-      border: "border-rose-500/20",
-      iconBg: "bg-rose-500/10 text-rose-600 dark:text-rose-400",
+      border: "border-border/80",
+      iconBg: "bg-rose-500/12 text-rose-600 dark:text-rose-400 border-rose-500/25",
       iconText: "text-rose-600 dark:text-rose-400",
-      hoverBorder: "hover:border-rose-500/50 hover:shadow-rose-500/5",
-      badgeBg: "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300",
+      hoverBorder: "hover:border-rose-500/45",
+      badgeBg: "bg-rose-500/10 text-rose-700 dark:text-rose-300 border border-rose-500/20",
       badgeText: "موارد ومستخدمين",
-      accentGlow: "from-rose-500/10 to-transparent",
+      accentGlow: "from-rose-500 via-rose-400/50 to-transparent",
+      dotColor: "bg-rose-500",
     },
     badgeText: "ضم إدارة المستخدمين",
     subSections: [
@@ -510,6 +544,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
   },
   {
     id: "inventory",
+    code: "MOD-06",
     title: "إدارة المخزون والمستودعات",
     subtitle: "سلاسل الإمداد والمشتريات",
     description:
@@ -529,13 +564,14 @@ const DEPARTMENTS: DepartmentCardItem[] = [
     ],
     colorScheme: {
       bgLight: "bg-sky-500/5",
-      border: "border-sky-500/20",
-      iconBg: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
+      border: "border-border/80",
+      iconBg: "bg-sky-500/12 text-sky-600 dark:text-sky-400 border-sky-500/25",
       iconText: "text-sky-600 dark:text-sky-400",
-      hoverBorder: "hover:border-sky-500/50 hover:shadow-sky-500/5",
-      badgeBg: "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300",
+      hoverBorder: "hover:border-sky-500/45",
+      badgeBg: "bg-sky-500/10 text-sky-700 dark:text-sky-300 border border-sky-500/20",
       badgeText: "مستودعات وتوريد",
-      accentGlow: "from-sky-500/10 to-transparent",
+      accentGlow: "from-sky-500 via-sky-400/50 to-transparent",
+      dotColor: "bg-sky-500",
     },
     badgeText: "5 أقسام فرعية",
     subSections: [
@@ -583,6 +619,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
   },
   {
     id: "shift_audit",
+    code: "MOD-07",
     title: "تدقيق الورديات",
     subtitle: "مطابقة ورديات الكاشير والتحصيل",
     description:
@@ -603,13 +640,14 @@ const DEPARTMENTS: DepartmentCardItem[] = [
     ],
     colorScheme: {
       bgLight: "bg-teal-500/5",
-      border: "border-teal-500/20",
-      iconBg: "bg-teal-500/10 text-teal-600 dark:text-teal-400",
+      border: "border-border/80",
+      iconBg: "bg-teal-500/12 text-teal-600 dark:text-teal-400 border-teal-500/25",
       iconText: "text-teal-600 dark:text-teal-400",
-      hoverBorder: "hover:border-teal-500/50 hover:shadow-teal-500/5",
-      badgeBg: "bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300",
+      hoverBorder: "hover:border-teal-500/45",
+      badgeBg: "bg-teal-500/10 text-teal-700 dark:text-teal-300 border border-teal-500/20",
       badgeText: "رقابة الورديات",
-      accentGlow: "from-teal-500/10 to-transparent",
+      accentGlow: "from-teal-500 via-teal-400/50 to-transparent",
+      dotColor: "bg-teal-500",
     },
     badgeText: "مطابقة سحابية ومحلية",
     subSections: [
@@ -633,6 +671,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
   },
   {
     id: "audit_logs",
+    code: "MOD-08",
     title: "سجل العمليات",
     subtitle: "الرقابة وتتبع الأنشطة الشاملة",
     description:
@@ -642,14 +681,15 @@ const DEPARTMENTS: DepartmentCardItem[] = [
     icon: History,
     permissionKeys: ["page_audit_logs", "audit_logs", "system_audit_logs", "super_admin_full_access"],
     colorScheme: {
-      bgLight: "bg-indigo-500/5",
-      border: "border-indigo-500/20",
-      iconBg: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400",
-      iconText: "text-indigo-600 dark:text-indigo-400",
-      hoverBorder: "hover:border-indigo-500/50 hover:shadow-indigo-500/5",
-      badgeBg: "bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300",
+      bgLight: "bg-violet-500/5",
+      border: "border-border/80",
+      iconBg: "bg-violet-500/12 text-violet-600 dark:text-violet-400 border-violet-500/25",
+      iconText: "text-violet-600 dark:text-violet-400",
+      hoverBorder: "hover:border-violet-500/45",
+      badgeBg: "bg-violet-500/10 text-violet-700 dark:text-violet-300 border border-violet-500/20",
       badgeText: "سجل رقابي وأمني",
-      accentGlow: "from-indigo-500/10 to-transparent",
+      accentGlow: "from-violet-500 via-violet-400/50 to-transparent",
+      dotColor: "bg-violet-500",
     },
     badgeText: "تتبع لحظي موثق",
     subSections: [
@@ -673,6 +713,7 @@ const DEPARTMENTS: DepartmentCardItem[] = [
   },
   {
     id: "system",
+    code: "MOD-09",
     title: "خيارات المطور والنسخ الاحتياطي",
     subtitle: "تحديثات النظام وإدارة الإصدارات",
     description:
@@ -682,13 +723,14 @@ const DEPARTMENTS: DepartmentCardItem[] = [
     permissionKeys: ["page_developer", "system_backup_update", "developer_options", "super_admin_full_access"],
     colorScheme: {
       bgLight: "bg-slate-500/5",
-      border: "border-slate-500/20",
-      iconBg: "bg-slate-500/10 text-slate-700 dark:text-slate-300",
+      border: "border-border/80",
+      iconBg: "bg-slate-500/12 text-slate-700 dark:text-slate-300 border-slate-500/25",
       iconText: "text-slate-700 dark:text-slate-300",
-      hoverBorder: "hover:border-slate-500/50 hover:shadow-slate-500/5",
-      badgeBg: "bg-slate-100 text-slate-800 dark:bg-slate-900 dark:text-slate-300",
+      hoverBorder: "hover:border-slate-500/45",
+      badgeBg: "bg-slate-500/10 text-slate-700 dark:text-slate-300 border border-slate-500/20",
       badgeText: "تحديثات ونسخ",
-      accentGlow: "from-slate-500/10 to-transparent",
+      accentGlow: "from-slate-500 via-slate-400/50 to-transparent",
+      dotColor: "bg-slate-500",
     },
     badgeText: "تحديث وتطوير",
     subSections: [
@@ -723,7 +765,10 @@ export function DepartmentsGridHub({
   userPermissions?: Record<string, boolean>;
 } = {}) {
   const navigate = useNavigate();
+  const { lang } = useSettings();
+  const isEn = lang === "en";
   const { elements, allElements } = useStudioPublishedPage("/admin");
+  const [searchQuery, setSearchQuery] = useState("");
   const [activePermissions, setActivePermissions] = useState<Record<string, boolean>>(() =>
     propPermissions && Object.keys(propPermissions).length > 0
       ? propPermissions
@@ -747,25 +792,46 @@ export function DepartmentsGridHub({
     };
   }, [propPermissions]);
 
-  const visibleDepartments = DEPARTMENTS.map((dept) => {
-    // If the department is not permitted (e.g. explicitly false), hide it entirely!
-    if (!isDepartmentPermitted(activePermissions, dept)) {
-      return null;
-    }
+  const visibleDepartments = useMemo(() => {
+    const permitted = DEPARTMENTS.map((dept) => {
+      if (!isDepartmentPermitted(activePermissions, dept)) {
+        return null;
+      }
 
-    const allowedSubSections = dept.subSections.filter((sub) =>
-      isDepartmentPermitted(activePermissions, sub),
+      const allowedSubSections = dept.subSections.filter((sub) =>
+        isDepartmentPermitted(activePermissions, sub),
+      );
+      const hasDeptAccess =
+        allowedSubSections.length > 0 || isDepartmentPermitted(activePermissions, dept);
+      return {
+        ...dept,
+        subSections: allowedSubSections,
+        hasDeptAccess,
+      };
+    }).filter(
+      (dept): dept is NonNullable<typeof dept> =>
+        !!dept && dept.hasDeptAccess && dept.subSections.length > 0,
     );
-    const hasDeptAccess = allowedSubSections.length > 0 || isDepartmentPermitted(activePermissions, dept);
-    return {
-      ...dept,
-      subSections: allowedSubSections,
-      hasDeptAccess,
-    };
-  }).filter((dept): dept is NonNullable<typeof dept> => !!dept && dept.hasDeptAccess && dept.subSections.length > 0);
+
+    if (!searchQuery.trim()) return permitted;
+    const q = searchQuery.trim().toLowerCase();
+    return permitted.filter(
+      (dept) =>
+        dept.title.toLowerCase().includes(q) ||
+        dept.subtitle.toLowerCase().includes(q) ||
+        dept.description.toLowerCase().includes(q) ||
+        dept.subSections.some(
+          (s) =>
+            s.title.toLowerCase().includes(q) ||
+            (s.desc && s.desc.toLowerCase().includes(q)),
+        ),
+    );
+  }, [activePermissions, searchQuery]);
+
+  const ActionArrow = isEn ? ArrowRight : ArrowLeft;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pt-4" dir={isEn ? "ltr" : "rtl"}>
       {/* Live Published Elements from Developer Studio Pro */}
       {elements && elements.length > 0 && (
         <div className="space-y-4">
@@ -780,126 +846,208 @@ export function DepartmentsGridHub({
         </div>
       )}
 
-      {/* Grid of Department Squares */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-5 sm:gap-6">
+      {/* 4K Executive Workspace Command Header */}
+      <div className="relative overflow-hidden rounded-2xl border border-border bg-card p-6 sm:p-7 shadow-xs">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+          <div className="space-y-1.5">
+            <div className="inline-flex items-center gap-2 text-xs font-bold text-primary bg-primary/10 border border-primary/20 px-3 py-1 rounded-lg">
+              <Layers size={14} />
+              <span>نظام الإدارة المتكامل</span>
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground">
+              لوحة الأقسام الرئيسية
+            </h1>
+            <p className="text-sm text-muted-foreground max-w-2xl leading-relaxed">
+              إشراف مركزي متكامل على فروع المؤسسة، الخزائن النقدية، الحسابات البنكية، السندات والرقابة العامة
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
+            <div className="relative min-w-[250px] sm:min-w-[290px]">
+              <Search
+                size={16}
+                className={cn(
+                  "absolute top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none",
+                  isEn ? "left-3.5" : "right-3.5",
+                )}
+              />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="بحث سريع..."
+                className={cn(
+                  "w-full h-11 rounded-xl border border-border bg-muted/50 focus:bg-background text-sm font-medium text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary",
+                  isEn ? "pl-10 pr-9" : "pr-10 pl-9",
+                )}
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className={cn(
+                    "absolute top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer",
+                    isEn ? "right-3" : "left-3",
+                  )}
+                >
+                  <X size={15} />
+                </button>
+              )}
+            </div>
+
+            <div className="hidden sm:flex items-center gap-2 px-4 h-11 rounded-xl border border-border bg-muted/50 text-sm font-bold text-foreground tabular-nums">
+              <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+              <span>{visibleDepartments.length}</span>
+              <span>أقسام أساسية</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 4K Grid of Department Cards — Spacious, High-Contrast, Zero Clutter */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {visibleDepartments.map((dept) => {
           const Icon = dept.icon;
+          const previewSubs = dept.subSections.slice(0, 4);
           return (
             <Card
               key={dept.id}
               onClick={() => navigate({ to: dept.to, search: dept.search })}
               className={cn(
-                "group relative flex flex-col justify-between overflow-hidden rounded-2xl border bg-card p-5 sm:p-6 transition-all duration-200 cursor-pointer shadow-xs hover:shadow-md",
+                "group relative flex flex-col justify-between overflow-hidden rounded-2xl border bg-card p-6 transition-all duration-200 cursor-pointer hover:-translate-y-1 hover:shadow-xl",
                 dept.colorScheme.border,
                 dept.colorScheme.hoverBorder,
               )}
             >
-              {/* Top Accent Gradient line */}
+              {/* Subtle Top Accent Bar */}
               <div
                 className={cn(
-                  "absolute top-0 right-0 left-0 h-1 bg-gradient-to-l opacity-70 group-hover:opacity-100 transition",
+                  "absolute top-0 right-0 left-0 h-1.5 bg-gradient-to-l opacity-85 group-hover:opacity-100 transition-opacity",
                   dept.colorScheme.accentGlow,
                 )}
               />
 
-              {/* Card Header: Icon, Badge, and Dedicated Dropdown Trigger */}
-              <div className="flex items-start justify-between gap-3">
-                <div
-                  className={cn(
-                    "flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-border/50 shadow-2xs transition group-hover:scale-105",
-                    dept.colorScheme.iconBg,
-                  )}
-                >
-                  <Icon size={24} />
-                </div>
-
-                {/* Dropdown Menu Trigger - Dedicated button as requested */}
-                <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 gap-1 rounded-xl border-border/80 bg-background/80 hover:bg-muted text-xs font-bold text-foreground px-2.5 shadow-2xs"
-                        title="عرض الأقسام والوظائف الداخلية"
-                      >
-                        <span>الأقسام</span>
-                        <ChevronDown size={13} className="text-muted-foreground" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent
-                      align="end"
-                      className="w-64 p-1.5 rounded-2xl shadow-xl border-border bg-popover"
+              <div>
+                {/* Card Top Header: Crisp 4K Icon + Title + Sub-modules Dropdown */}
+                <div className="flex items-start justify-between gap-3 pt-1">
+                  <div className="flex items-center gap-3.5 min-w-0">
+                    <div
+                      className={cn(
+                        "flex h-13 w-13 shrink-0 items-center justify-center rounded-2xl border transition-transform duration-200 group-hover:scale-105",
+                        dept.colorScheme.iconBg,
+                      )}
                     >
-                      <DropdownMenuLabel className="text-right px-2.5 py-1.5 text-[11px] font-black text-muted-foreground">
-                        {dept.title} - الأقسام الفرعية:
-                      </DropdownMenuLabel>
-                      <DropdownMenuSeparator />
-                      {dept.subSections.map((sub) => {
-                        const SubIcon = sub.icon;
-                        return (
-                          <DropdownMenuItem
-                            key={sub.title}
-                            onClick={() =>
-                              navigate({
-                                to: sub.to,
-                                search: sub.search,
-                              })
-                            }
-                            className="flex items-start gap-2.5 px-2.5 py-2 rounded-xl text-right cursor-pointer hover:bg-muted transition group/item"
-                          >
-                            <div className="mt-0.5 p-1 rounded-lg bg-muted text-primary shrink-0 group-hover/item:bg-primary group-hover/item:text-primary-foreground transition">
-                              <SubIcon size={14} />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <p className="text-xs font-bold text-foreground leading-tight">
-                                {sub.title}
-                              </p>
-                              {sub.desc && (
-                                <p className="text-[10px] text-muted-foreground mt-0.5 truncate leading-tight">
-                                  {sub.desc}
-                                </p>
-                              )}
-                            </div>
-                          </DropdownMenuItem>
-                        );
-                      })}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </div>
+                      <Icon size={25} strokeWidth={2.2} />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="text-lg sm:text-xl font-extrabold text-foreground group-hover:text-primary transition-colors truncate">
+                        {dept.title}
+                      </h3>
+                      <p className="text-xs sm:text-sm font-semibold text-primary/90 truncate mt-0.5">
+                        {dept.subtitle}
+                      </p>
+                    </div>
+                  </div>
 
-              {/* Card Body: Title, Subtitle & Description */}
-              <div className="my-4 space-y-1.5 text-right">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-lg font-black text-foreground group-hover:text-primary transition">
-                    {dept.title}
-                  </h3>
-                  <Badge
-                    variant="secondary"
-                    className={cn(
-                      "text-[10px] font-bold px-2 py-0.5 rounded-lg",
-                      dept.colorScheme.badgeBg,
-                    )}
-                  >
-                    {dept.badgeText}
-                  </Badge>
+                  {/* Clean Sub-Modules Dropdown Menu */}
+                  <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-9 gap-1.5 rounded-xl border-border bg-muted/50 hover:bg-muted text-xs font-bold text-foreground px-3"
+                          title="عرض الأقسام والوظائف الداخلية"
+                        >
+                          <span>الأقسام</span>
+                          <span className="inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-md bg-primary/15 text-primary text-[11px] font-extrabold tabular-nums">
+                            {dept.subSections.length}
+                          </span>
+                          <ChevronDown size={14} className="text-muted-foreground" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent
+                        align="end"
+                        className={cn(
+                          "w-72 p-2 rounded-2xl shadow-2xl border-border bg-popover",
+                          isEn ? "text-left" : "text-right",
+                        )}
+                      >
+                        <DropdownMenuLabel className="px-3 py-1.5 text-xs font-extrabold text-muted-foreground">
+                          {dept.title}
+                        </DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        {dept.subSections.map((sub) => {
+                          const SubIcon = sub.icon;
+                          return (
+                            <DropdownMenuItem
+                              key={sub.title}
+                              onClick={() =>
+                                navigate({
+                                  to: sub.to,
+                                  search: sub.search,
+                                })
+                              }
+                              className="flex items-start gap-3 px-3 py-2.5 rounded-xl cursor-pointer hover:bg-muted transition group/item"
+                            >
+                              <div className="mt-0.5 p-1.5 rounded-lg bg-muted text-primary shrink-0 group-hover/item:bg-primary group-hover/item:text-primary-foreground transition">
+                                <SubIcon size={15} />
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs sm:text-sm font-bold text-foreground leading-snug">
+                                  {sub.title}
+                                </p>
+                                {sub.desc && (
+                                  <p className="text-xs text-muted-foreground mt-0.5 truncate leading-snug">
+                                    {sub.desc}
+                                  </p>
+                                )}
+                              </div>
+                            </DropdownMenuItem>
+                          );
+                        })}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
-                <p className="text-[11px] font-bold text-muted-foreground">{dept.subtitle}</p>
-                <p className="text-xs text-muted-foreground line-clamp-3 leading-relaxed pt-1">
+
+                {/* Clear, High-Contrast Description */}
+                <p className="mt-3.5 text-sm text-muted-foreground line-clamp-2 leading-relaxed">
                   {dept.description}
                 </p>
+
+                {/* Uniform, Structured Quick Sub-Module List (Up to 4 items) */}
+                <div
+                  className="mt-4 pt-4 border-t border-border/70 grid grid-cols-1 sm:grid-cols-2 gap-2"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {previewSubs.map((sub) => {
+                    const SubIcon = sub.icon;
+                    return (
+                      <button
+                        key={sub.title}
+                        type="button"
+                        onClick={() => navigate({ to: sub.to, search: sub.search })}
+                        className="flex items-center gap-2 h-9 px-3 rounded-xl text-xs font-bold bg-muted/50 hover:bg-primary/12 hover:text-primary text-foreground border border-border/60 hover:border-primary/35 transition-colors cursor-pointer w-full min-w-0"
+                      >
+                        <SubIcon size={14} className="text-primary shrink-0" />
+                        <span className="truncate">{sub.title}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
-              {/* Card Footer: Quick Actions */}
-              <div className="pt-3 border-t border-border/60 flex items-center justify-between text-xs font-bold">
-                <span className="text-[11px] text-muted-foreground font-semibold">
-                  {dept.subSections.length} أقسام وتفاصيل
+              {/* Card Footer CTA */}
+              <div className="mt-5 pt-3.5 border-t border-border/70 flex items-center justify-between text-xs sm:text-sm font-bold">
+                <span className="inline-flex items-center gap-2 text-xs text-muted-foreground font-bold">
+                  <span className={cn("h-2 w-2 rounded-full", dept.colorScheme.dotColor)} />
+                  <span>{dept.colorScheme.badgeText}</span>
                 </span>
 
-                <span className="inline-flex items-center gap-1 text-primary group-hover:translate-x-[-3px] transition-transform font-black">
+                <span className="inline-flex items-center gap-1.5 text-primary font-extrabold group-hover:gap-2 transition-all">
                   <span>فتح القسم</span>
-                  <ArrowLeft size={14} />
+                  <ActionArrow size={16} />
                 </span>
               </div>
             </Card>

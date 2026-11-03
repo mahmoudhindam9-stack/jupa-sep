@@ -46,7 +46,10 @@ import {
   DEFAULT_EMPLOYEES,
   type Employee,
   type PayrollRecord,
+  type SystemUser,
 } from "@/shared/services/erpStore";
+import { authService } from "@/features/auth/services/authService";
+import { PERMISSIONS_UPDATED_EVENT } from "@/shared/services/userAuthorization";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -113,17 +116,30 @@ const MESSENGER_IDB_KEY = "all_coworker_messages_v1";
 const MESSENGER_LS_FALLBACK_KEY = "restocash_coworker_messages_meta_v1";
 const MESSENGER_ACTIVE_SENDER_KEY = "restocash_messenger_active_sender_id_v1";
 const MESSENGER_SOUND_MUTED_KEY = "restocash_messenger_sound_muted_v1";
+const MESSENGER_ONLINE_SESSIONS_KEY = "restocash_online_sessions_v2";
+const ONLINE_SESSION_TTL_MS = 45_000;
+const DEFAULT_SEED_EMP_IDS = new Set(["emp-1", "emp-2", "emp-3", "emp-4", "emp-5"]);
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "🔥", "👏", "🙏"];
 
 const AVATAR_GRADIENTS = [
-  "from-blue-600 to-cyan-500",
-  "from-indigo-600 to-purple-500",
-  "from-emerald-600 to-teal-500",
-  "from-rose-600 to-orange-500",
-  "from-amber-600 to-yellow-500",
-  "from-fuchsia-600 to-pink-500",
-  "from-sky-600 to-blue-700",
+  "bg-blue-600 from-blue-600 to-cyan-500",
+  "bg-indigo-600 from-indigo-600 to-purple-500",
+  "bg-emerald-600 from-emerald-600 to-teal-500",
+  "bg-rose-600 from-rose-600 to-orange-500",
+  "bg-amber-600 from-amber-600 to-yellow-500",
+  "bg-fuchsia-600 from-fuchsia-600 to-pink-500",
+  "bg-sky-600 from-sky-600 to-blue-700",
+];
+
+const AVATAR_BG_CSS = [
+  "linear-gradient(135deg, #2563eb, #06b6d4)",
+  "linear-gradient(135deg, #4f46e5, #a855f7)",
+  "linear-gradient(135deg, #059669, #14b8a6)",
+  "linear-gradient(135deg, #e11d48, #f97316)",
+  "linear-gradient(135deg, #d97706, #eab308)",
+  "linear-gradient(135deg, #c026d3, #ec4899)",
+  "linear-gradient(135deg, #0284c7, #1d4ed8)",
 ];
 
 function getAvatarGradient(idOrName: string): string {
@@ -135,14 +151,73 @@ function getAvatarGradient(idOrName: string): string {
   return AVATAR_GRADIENTS[Math.abs(hash) % AVATAR_GRADIENTS.length];
 }
 
+function getAvatarStyle(idOrName: string): React.CSSProperties {
+  let hash = 0;
+  const str = String(idOrName || "emp");
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash * 31 + str.charCodeAt(i)) | 0;
+  }
+  return {
+    background: AVATAR_BG_CSS[Math.abs(hash) % AVATAR_BG_CSS.length],
+    color: "#ffffff",
+  };
+}
+
+function formatCleanUserDisplayName(
+  rawName?: string,
+  username?: string,
+  email?: string,
+  role?: string,
+): string {
+  const candidate = String(rawName || "").trim();
+  const uname = String(username || "").trim();
+  const uemail = String(email || "").trim();
+
+  if (
+    uname.toLowerCase() === "admin" &&
+    (!candidate ||
+      candidate.toLowerCase() === "admin" ||
+      candidate.includes("@") ||
+      candidate.includes("المدير العام"))
+  ) {
+    return "المدير العام";
+  }
+
+  // If candidate is a clean human name (not an email and not a dotted username)
+  if (candidate && !candidate.includes("@") && !/^[a-z0-9._-]+$/i.test(candidate)) {
+    return candidate;
+  }
+
+  if (candidate && !candidate.includes("@") && !candidate.includes(".")) {
+    return candidate;
+  }
+
+  // Otherwise derive a clean readable name from candidate / username / email prefix
+  const source = (candidate || uname || uemail).split("@")[0] || "";
+  const tokens = source
+    .split(/[._-]+/)
+    .map((t) => t.replace(/\d+$/g, "").trim())
+    .filter((t) => Boolean(t) && t.toLowerCase() !== "admin");
+
+  if (tokens.length > 0) {
+    return tokens
+      .map((t) => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase())
+      .join(" ");
+  }
+
+  if (role === "super_admin" || role === "admin") return "مدير النظام";
+  return candidate || uname || "مستخدم النظام";
+}
+
 function getInitials(name: string): string {
-  const parts = String(name || "")
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
+  const cleaned = String(name || "")
+    .split("@")[0]
+    .replace(/[._-]+/g, " ")
+    .trim();
+  const parts = cleaned.split(/\s+/).filter(Boolean);
   if (parts.length === 0) return "م";
-  if (parts.length === 1) return parts[0].slice(0, 2);
-  return `${parts[0][0] || ""}${parts[1][0] || ""}`;
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
 }
 
 export function makeConversationKey(empA: string, empB: string): string {
@@ -474,59 +549,8 @@ export async function sendPrivateSalarySlipMessages(
   return createdMessages.length;
 }
 
-function buildSeedMessages(employees: Employee[]): MessengerMessage[] {
-  if (!employees || employees.length < 2) return [];
-  const emp1 = employees[0];
-  const emp2 = employees[1];
-  const emp3 = employees[2] || employees[0];
-  const now = Date.now();
-
-  return [
-    {
-      id: "seed-msg-1",
-      conversationKey: makeConversationKey(emp1.id, emp2.id),
-      senderId: emp2.id,
-      senderName: emp2.name,
-      senderJobTitle: emp2.job_title,
-      receiverId: emp1.id,
-      receiverName: emp1.name,
-      receiverJobTitle: emp1.job_title,
-      text: `أهلاً بك يا ${emp1.name.split(" ")[0]}! هذا نظام محادثات الزملاء الداخلي الجديد للتواصل السريع وإرسال الملفات والصور والرسائل الصوتية مباشرة.`,
-      attachments: [],
-      createdAt: new Date(now - 1000 * 60 * 25).toISOString(),
-      readByReceiver: true,
-    },
-    {
-      id: "seed-msg-2",
-      conversationKey: makeConversationKey(emp1.id, emp3.id),
-      senderId: emp3.id,
-      senderName: emp3.name,
-      senderJobTitle: emp3.job_title,
-      receiverId: emp1.id,
-      receiverName: emp1.name,
-      receiverJobTitle: emp1.job_title,
-      text: "تم تجهيز تقارير الوردية، يمكنك إرفاق أي مستندات أو صور مباشرة من هنا.",
-      attachments: [],
-      createdAt: new Date(now - 1000 * 60 * 10).toISOString(),
-      readByReceiver: true,
-    },
-    {
-      id: "seed-group-1",
-      conversationKey: "group:ALL",
-      senderId: emp2.id,
-      senderName: emp2.name,
-      senderJobTitle: emp2.job_title,
-      receiverId: "group:ALL",
-      receiverName: "المجموعة العامة للشركة",
-      receiverJobTitle: "جميع الأقسام",
-      text: "مرحباً بجميع الزملاء في المجموعة العامة للشركة! يمكنكم التواصل هنا أو عبر مجموعات الأقسام.",
-      attachments: [],
-      createdAt: new Date(now - 1000 * 60 * 40).toISOString(),
-      readByReceiver: true,
-      isGroupMessage: true,
-      groupDepartment: "ALL",
-    },
-  ];
+function buildSeedMessages(_employees: Employee[]): MessengerMessage[] {
+  return [];
 }
 
 export function Chatbot() {
@@ -555,14 +579,133 @@ export function Chatbot() {
   const [isMounted, setIsMounted] = useState(false);
   useEffect(() => {
     setIsMounted(true);
+    try {
+      localStorage.removeItem("restocash_online_sessions_v1");
+    } catch {
+      // ignore
+    }
   }, []);
 
-  // Subscribe to HR Employees & Users/Permissions in erpStore
+  // Subscribe to HR Employees & Users/Permissions in erpStore + Live Cloud Profiles
   const [erpState, setErpState] = useState(() => erpStore.getState());
+  const [cloudUsers, setCloudUsers] = useState<SystemUser[]>([]);
+
   useEffect(() => {
-    return erpStore.subscribe(() => {
+    let mounted = true;
+
+    const refreshLocalErp = () => {
+      if (!mounted) return;
       setErpState(erpStore.getState());
-    });
+    };
+
+    const unsubStore = erpStore.subscribe(refreshLocalErp);
+    if (typeof window !== "undefined") {
+      window.addEventListener("restocash-user-sync-updated", refreshLocalErp);
+      window.addEventListener(PERMISSIONS_UPDATED_EVENT, refreshLocalErp);
+    }
+
+    const syncRealUsersFromCloud = async () => {
+      try {
+        const authUser = await authService.getCurrentUser().catch(() => null);
+        const profiles = await authService.getUsers();
+        if (!mounted || !Array.isArray(profiles) || profiles.length === 0) return;
+
+        let mapped: SystemUser[] = profiles
+          .filter((p: any) => Boolean(p && (p.id || p.username || p.email)))
+          .map((p: any, idx: number) => {
+            const email = String(p.email || "").trim().toLowerCase();
+            const username = String(p.username || email.split("@")[0] || `user_${idx + 1}`)
+              .trim()
+              .toLowerCase();
+            return {
+              id: String(p.id || `cloud-${username}`),
+              employee_code: p.employee_code ? String(p.employee_code).trim() : undefined,
+              full_name: String(p.full_name || p.username || "").trim(),
+              username,
+              email,
+              phone: String(p.phone || "").trim(),
+              role: (p.role || "cashier") as SystemUser["role"],
+              permissions: (p.permissions || {}) as any,
+              created_at: p.created_at || new Date().toISOString(),
+            };
+          });
+
+        // If more than one admin account exists in Supabase profiles, keep only the active/real admin
+        // and delete the duplicate admin account from Supabase and local store.
+        const cloudAdmins = mapped.filter(
+          (u) => u.role === "admin" || u.role === "super_admin",
+        );
+        if (cloudAdmins.length > 1) {
+          const activeStored =
+            typeof window !== "undefined"
+              ? (
+                  localStorage.getItem("restocash_auth_user") ||
+                  sessionStorage.getItem("restocash_auth_user") ||
+                  ""
+                )
+                  .trim()
+                  .toLowerCase()
+              : "";
+          const keptAdmin =
+            cloudAdmins.find((u) => authUser?.id && u.id === authUser.id) ||
+            cloudAdmins.find(
+              (u) =>
+                activeStored &&
+                (u.email === activeStored ||
+                  u.username === activeStored ||
+                  u.username === activeStored.split("@")[0]),
+            ) ||
+            cloudAdmins.find(
+              (u) => u.username !== "admin" && u.email !== "admin@restocash.com",
+            ) ||
+            cloudAdmins[0];
+
+          const duplicateAdmins = cloudAdmins.filter((u) => u.id !== keptAdmin.id);
+          for (const dup of duplicateAdmins) {
+            erpStore.deleteUser(dup.id);
+            if (authUser?.id && dup.id !== authUser.id && !dup.id.startsWith("u-")) {
+              void authService.deleteUser(dup.id).catch(() => undefined);
+            }
+          }
+          mapped = mapped.filter(
+            (u) =>
+              (u.role !== "admin" && u.role !== "super_admin") ||
+              u.id === keptAdmin.id,
+          );
+        }
+
+        if (mapped.length > 0) {
+          setCloudUsers(mapped);
+          erpStore.replaceManagedUsers(mapped);
+          setErpState(erpStore.getState());
+        }
+      } catch {
+        // Fallback seamlessly to local erpStore users when offline
+      }
+    };
+
+    void syncRealUsersFromCloud();
+
+    const profilesChannel = supabase
+      .channel("messenger-users-directory-rt")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "profiles" },
+        () => {
+          void syncRealUsersFromCloud();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      mounted = false;
+      unsubStore();
+      if (typeof window !== "undefined") {
+        window.removeEventListener("restocash-user-sync-updated", refreshLocalErp);
+        window.removeEventListener(PERMISSIONS_UPDATED_EVENT, refreshLocalErp);
+      }
+      void supabase.removeChannel(profilesChannel);
+    };
   }, []);
 
   const roleTitleAr = (role?: string) => {
@@ -584,48 +727,153 @@ export function Chatbot() {
     }
   };
 
-  // Merge HR employees with any Users from the Users page so the logged-in user and all staff are represented with their employee_code
-  const hrEmployees: Employee[] = useMemo(() => {
-    const baseList =
-      Array.isArray(erpState?.employees) && erpState.employees.length > 0
-        ? erpState.employees
-        : DEFAULT_EMPLOYEES;
-    const employeesMap = new Map<string, Employee>();
-    baseList.forEach((e, idx) => {
-      if (!e || !e.name) return;
-      employeesMap.set(e.id, {
-        ...e,
-        employee_code: e.employee_code || String(1001 + idx),
-      });
+  const roleDepartmentAr = (role?: string) => {
+    switch (role) {
+      case "super_admin":
+      case "admin":
+      case "manager":
+        return "الإدارة";
+      case "kitchen":
+        return "المطبخ";
+      case "cashier":
+      case "captain":
+        return "الصالة والتوصيل";
+      default:
+        return "المطعم";
+    }
+  };
+
+  // Deduplicated list of actual system users (from Cloud profiles + erpStore users)
+  // Enforces keeping only ONE administration account.
+  const syncedSystemUsers: SystemUser[] = useMemo(() => {
+    const map = new Map<string, SystemUser>();
+    const rawUsers = [
+      ...(Array.isArray(cloudUsers) ? cloudUsers : []),
+      ...(Array.isArray(erpState?.users) ? erpState.users : []),
+    ];
+
+    rawUsers.forEach((u: any) => {
+      if (!u) return;
+      const uname = String(u.username || "").trim().toLowerCase();
+      const uemail = String(u.email || "").trim().toLowerCase();
+      const uid = String(u.id || "").trim();
+      if (!uname && !uemail && !uid) return;
+
+      const dedupeKey = uname || uemail.split("@")[0] || uid;
+      const existing = map.get(dedupeKey);
+      if (!existing) {
+        map.set(dedupeKey, u);
+      } else {
+        // Prefer record with a clean non-email full_name or cloud id
+        const existingHasCleanName =
+          existing.full_name && !existing.full_name.includes("@");
+        const nextHasCleanName = u.full_name && !String(u.full_name).includes("@");
+        map.set(dedupeKey, {
+          ...existing,
+          ...u,
+          full_name: nextHasCleanName
+            ? u.full_name
+            : existingHasCleanName
+              ? existing.full_name
+              : u.full_name || existing.full_name,
+          employee_code: existing.employee_code || u.employee_code,
+        });
+      }
     });
 
-    // Ensure every user in Users page has a corresponding entry or is linked by employee_code/full_name
-    const users = Array.isArray(erpState?.users) ? erpState.users : [];
-    users.forEach((u: any, idx: number) => {
-      if (!u || (!u.full_name && !u.username)) return;
-      const uName = String(u.full_name || u.username).trim();
+    const allUsers = Array.from(map.values());
+    const admins = allUsers.filter(
+      (u) => u.role === "admin" || u.role === "super_admin",
+    );
+    if (admins.length <= 1) return allUsers;
+
+    const activeStored =
+      typeof window !== "undefined"
+        ? (
+            localStorage.getItem("restocash_auth_user") ||
+            sessionStorage.getItem("restocash_auth_user") ||
+            ""
+          )
+            .trim()
+            .toLowerCase()
+        : "";
+    const keptAdmin =
+      admins.find(
+        (u) =>
+          activeStored &&
+          (String(u.email || "").toLowerCase() === activeStored ||
+            String(u.username || "").toLowerCase() === activeStored ||
+            String(u.username || "").toLowerCase() === activeStored.split("@")[0]),
+      ) ||
+      admins.find(
+        (u) =>
+          String(u.id || "") !== "u-admin" &&
+          String(u.username || "").toLowerCase() !== "admin" &&
+          String(u.email || "").toLowerCase() !== "admin@restocash.com",
+      ) ||
+      admins[0];
+
+    return allUsers.filter(
+      (u) =>
+        (u.role !== "admin" && u.role !== "super_admin") ||
+        u.id === keptAdmin.id,
+    );
+  }, [cloudUsers, erpState?.users]);
+
+  // Synchronize Messenger contacts with actual system users (plus any custom non-seed HR employees)
+  const hrEmployees: Employee[] = useMemo(() => {
+    const rawHrList: Employee[] = Array.isArray(erpState?.employees)
+      ? erpState.employees
+      : [];
+    const contactsMap = new Map<string, Employee>();
+    const matchedHrIds = new Set<string>();
+
+    // 1. Primary source: Actual users from Users & Permissions page / Supabase profiles
+    syncedSystemUsers.forEach((u: any, idx: number) => {
+      const uname = String(u.username || "").trim().toLowerCase();
       const uCode = String(u.employee_code || "").trim();
-      const existing = Array.from(employeesMap.values()).find(
-        (emp) =>
-          (uCode && emp.employee_code === uCode) ||
-          emp.name.trim() === uName ||
-          emp.name.includes(uName) ||
-          uName.includes(emp.name.trim()),
+      const rawFullName = String(u.full_name || "").trim();
+      const cleanName = formatCleanUserDisplayName(
+        rawFullName,
+        u.username,
+        u.email,
+        u.role,
       );
-      if (existing) {
-        employeesMap.set(existing.id, {
-          ...existing,
-          employee_code: existing.employee_code || uCode || String(1001 + idx),
-          name: u.full_name ? u.full_name.trim() : existing.name,
+
+      // Check if this user is linked to an HR employee record
+      const linkedHr = rawHrList.find((emp) => {
+        if (!emp || !emp.name) return false;
+        if (DEFAULT_SEED_EMP_IDS.has(emp.id) && syncedSystemUsers.length > 0) {
+          return false;
+        }
+        const empName = emp.name.trim();
+        return (
+          (uCode && emp.employee_code === uCode) ||
+          empName === cleanName ||
+          (rawFullName && empName === rawFullName)
+        );
+      });
+
+      if (linkedHr) {
+        matchedHrIds.add(linkedHr.id);
+        contactsMap.set(linkedHr.id, {
+          ...linkedHr,
+          employee_code: linkedHr.employee_code || uCode || String(1000 + idx),
+          name: cleanName || linkedHr.name,
+          job_title: linkedHr.job_title || roleTitleAr(u.role),
+          department: linkedHr.department || roleDepartmentAr(u.role),
+          phone: u.phone || linkedHr.phone || "",
         });
       } else {
-        const syntheticId = `user-emp-${u.id || u.username}`;
-        employeesMap.set(syntheticId, {
-          id: syntheticId,
-          employee_code: uCode || String(1000 + idx),
-          name: uName,
+        const contactId = u.id
+          ? `user-emp-${u.id}`
+          : `user-emp-${uname || idx}`;
+        contactsMap.set(contactId, {
+          id: contactId,
+          employee_code: uCode || (uname === "admin" ? "1000" : String(1001 + idx)),
+          name: cleanName,
           job_title: roleTitleAr(u.role),
-          department: u.role === "admin" || u.role === "super_admin" ? "الإدارة" : "المطعم",
+          department: roleDepartmentAr(u.role),
           phone: u.phone || "",
           hire_date: (u.created_at || new Date().toISOString()).split("T")[0],
           salary: 0,
@@ -635,10 +883,26 @@ export function Chatbot() {
       }
     });
 
-    return Array.from(employeesMap.values());
-  }, [erpState?.employees, erpState?.users]);
+    // 2. Include any custom HR employees added by the user (excluding hardcoded DEFAULT_EMPLOYEES)
+    rawHrList.forEach((emp, idx) => {
+      if (!emp || !emp.name || matchedHrIds.has(emp.id)) return;
+      if (DEFAULT_SEED_EMP_IDS.has(emp.id) && contactsMap.size > 0) return;
+      contactsMap.set(emp.id, {
+        ...emp,
+        name: formatCleanUserDisplayName(emp.name),
+        employee_code: emp.employee_code || String(1010 + idx),
+      });
+    });
 
-  // Automatically resolve the active chat identity from the logged-in user in the Users page (no manual identity switching)
+    // Fallback if store is completely empty
+    if (contactsMap.size === 0) {
+      DEFAULT_EMPLOYEES.forEach((emp) => contactsMap.set(emp.id, emp));
+    }
+
+    return Array.from(contactsMap.values());
+  }, [syncedSystemUsers, erpState?.employees]);
+
+  // Automatically resolve the active chat identity from the logged-in user in the Users page
   const currentSenderEmployee: Employee = useMemo(() => {
     try {
       const storedAuth =
@@ -652,7 +916,7 @@ export function Chatbot() {
         .toLowerCase();
       const normShort = norm.split("@")[0];
 
-      const matchedUser = (erpState?.users || []).find((u: any) => {
+      const matchedUser = syncedSystemUsers.find((u: any) => {
         const uname = String(u.username || "").trim().toLowerCase();
         const uemail = String(u.email || "").trim().toLowerCase();
         return (
@@ -662,29 +926,36 @@ export function Chatbot() {
       });
 
       if (matchedUser) {
-        const uName = String(matchedUser.full_name || matchedUser.username || "").trim();
+        const cleanName = formatCleanUserDisplayName(
+          matchedUser.full_name,
+          matchedUser.username,
+          matchedUser.email,
+          matchedUser.role,
+        );
         const uCode = String(matchedUser.employee_code || "").trim();
+        const expectedId = matchedUser.id
+          ? `user-emp-${matchedUser.id}`
+          : `user-emp-${String(matchedUser.username || "").toLowerCase()}`;
+
         const empMatch = hrEmployees.find(
           (e) =>
+            e.id === expectedId ||
             (uCode && e.employee_code === uCode) ||
-            e.name.trim() === uName ||
-            e.name.includes(uName) ||
-            uName.includes(e.name.trim()) ||
-            e.id === `user-emp-${matchedUser.id || matchedUser.username}`,
+            e.name.trim() === cleanName,
         );
         if (empMatch) {
           return {
             ...empMatch,
-            name: uName || empMatch.name,
+            name: cleanName || empMatch.name,
             employee_code: uCode || empMatch.employee_code,
           };
         }
         return {
-          id: `user-emp-${matchedUser.id || matchedUser.username}`,
+          id: expectedId,
           employee_code: uCode || "1000",
-          name: uName || "مستخدم النظام",
+          name: cleanName,
           job_title: roleTitleAr(matchedUser.role),
-          department: "الإدارة",
+          department: roleDepartmentAr(matchedUser.role),
           phone: matchedUser.phone || "",
           hire_date: "",
           salary: 0,
@@ -700,8 +971,8 @@ export function Chatbot() {
       hrEmployees[0] || {
         id: "emp-admin",
         employee_code: "1000",
-        name: "مدير النظام",
-        job_title: "الإدارة العامة",
+        name: "المدير العام",
+        job_title: "مدير النظام الأعلى",
         department: "الإدارة",
         phone: "",
         hire_date: "",
@@ -710,30 +981,70 @@ export function Chatbot() {
         status: "active",
       }
     );
-  }, [hrEmployees, erpState?.users, erpState?.currentUser]);
+  }, [hrEmployees, syncedSystemUsers, erpState?.currentUser]);
 
-  // Track real Online/Offline login sessions for all users/employees
+  // Track real Online/Offline login sessions for all actual users with TTL heartbeat
   const [onlineEmployeeIds, setOnlineEmployeeIds] = useState<Record<string, boolean>>({});
+  const [heartbeatTick, setHeartbeatTick] = useState(0);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const raw = localStorage.getItem("restocash_online_sessions_v1");
-      const sessions = raw ? JSON.parse(raw) || {} : {};
-      if (currentSenderEmployee?.id) {
-        sessions[`emp:${currentSenderEmployee.id}`] = Date.now();
-        if (currentSenderEmployee.employee_code) {
-          sessions[`code:${currentSenderEmployee.employee_code}`] = Date.now();
+    if (typeof window === "undefined" || !isMounted) return;
+
+    const writeHeartbeat = () => {
+      try {
+        const now = Date.now();
+        const raw = localStorage.getItem(MESSENGER_ONLINE_SESSIONS_KEY);
+        const parsed = raw ? JSON.parse(raw) || {} : {};
+        const nextSessions: Record<string, number> = {};
+
+        // Keep only non-expired sessions (TTL = 45s)
+        Object.entries(parsed).forEach(([k, ts]) => {
+          if (typeof ts === "number" && now - ts < ONLINE_SESSION_TTL_MS) {
+            nextSessions[k] = ts;
+          }
+        });
+
+        if (currentSenderEmployee?.id) {
+          nextSessions[`emp:${currentSenderEmployee.id}`] = now;
+          if (currentSenderEmployee.employee_code) {
+            nextSessions[`code:${currentSenderEmployee.employee_code}`] = now;
+          }
         }
-        if (currentSenderEmployee.name) {
-          sessions[`name:${currentSenderEmployee.name.trim()}`] = Date.now();
+
+        const activeAuth = (
+          localStorage.getItem("restocash_auth_user") ||
+          sessionStorage.getItem("restocash_auth_user") ||
+          erpState?.currentUser ||
+          ""
+        )
+          .trim()
+          .toLowerCase();
+        if (activeAuth) {
+          nextSessions[`auth:${activeAuth}`] = now;
+          nextSessions[`auth:${activeAuth.split("@")[0]}`] = now;
         }
-        localStorage.setItem("restocash_online_sessions_v1", JSON.stringify(sessions));
+
+        localStorage.setItem(MESSENGER_ONLINE_SESSIONS_KEY, JSON.stringify(nextSessions));
+        setHeartbeatTick((t) => t + 1);
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
-    }
-  }, [currentSenderEmployee]);
+    };
+
+    writeHeartbeat();
+    const interval = window.setInterval(writeHeartbeat, 15_000);
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === MESSENGER_ONLINE_SESSIONS_KEY || e.key === "restocash_auth_user") {
+        setHeartbeatTick((t) => t + 1);
+      }
+    };
+    window.addEventListener("storage", onStorage);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [isMounted, currentSenderEmployee.id, currentSenderEmployee.employee_code, erpState?.currentUser]);
 
   const isEmployeeOnline = useCallback(
     (emp: Employee | null | undefined): boolean => {
@@ -741,40 +1052,37 @@ export function Chatbot() {
       // The currently logged-in user is always Online
       if (emp.id === currentSenderEmployee.id) return true;
       if (onlineEmployeeIds[emp.id]) return true;
+      if (emp.employee_code && onlineEmployeeIds[`code:${emp.employee_code}`]) return true;
 
-      // Check active login sessions in localStorage matched against Users page
       if (typeof window !== "undefined") {
         try {
-          const activeAuth = (
-            localStorage.getItem("restocash_auth_user") ||
-            sessionStorage.getItem("restocash_auth_user") ||
-            erpState?.currentUser ||
-            ""
-          )
-            .trim()
-            .toLowerCase();
+          const now = Date.now();
+          const raw = localStorage.getItem(MESSENGER_ONLINE_SESSIONS_KEY);
+          const sessions: Record<string, number> = raw ? JSON.parse(raw) || {} : {};
+          const isFresh = (key: string) =>
+            Boolean(sessions[key] && now - Number(sessions[key]) < ONLINE_SESSION_TTL_MS);
 
-          const raw = localStorage.getItem("restocash_online_sessions_v1");
-          const sessions = raw ? JSON.parse(raw) || {} : {};
+          if (isFresh(`emp:${emp.id}`)) return true;
+          if (emp.employee_code && isFresh(`code:${emp.employee_code}`)) return true;
 
-          if (sessions[`emp:${emp.id}`]) return true;
-          if (emp.employee_code && sessions[`code:${emp.employee_code}`]) return true;
-          if (emp.name && sessions[`name:${emp.name.trim()}`]) return true;
+          // Match against linked actual user in syncedSystemUsers
+          const linkedUser = syncedSystemUsers.find((u: any) => {
+            const expectedId = u.id
+              ? `user-emp-${u.id}`
+              : `user-emp-${String(u.username || "").toLowerCase()}`;
+            return (
+              emp.id === expectedId ||
+              (emp.employee_code && String(u.employee_code || "").trim() === emp.employee_code)
+            );
+          });
 
-          // Check if a system user linked to this employee has an active login session
-          const linkedUser = (erpState?.users || []).find(
-            (u: any) =>
-              (emp.employee_code && u.employee_code === emp.employee_code) ||
-              (u.full_name && u.full_name.trim() === emp.name.trim()),
-          );
           if (linkedUser) {
             const uname = String(linkedUser.username || "").trim().toLowerCase();
             const uemail = String(linkedUser.email || "").trim().toLowerCase();
-            if (
-              (activeAuth && (activeAuth === uname || activeAuth === uemail)) ||
-              (uname && sessions[uname]) ||
-              (uemail && sessions[uemail])
-            ) {
+            if (uname && (onlineEmployeeIds[`user:${uname}`] || isFresh(`auth:${uname}`))) {
+              return true;
+            }
+            if (uemail && (onlineEmployeeIds[`user:${uemail}`] || isFresh(`auth:${uemail}`))) {
               return true;
             }
           }
@@ -784,7 +1092,12 @@ export function Chatbot() {
       }
       return false;
     },
-    [currentSenderEmployee.id, onlineEmployeeIds, erpState?.users, erpState?.currentUser],
+    [
+      currentSenderEmployee.id,
+      onlineEmployeeIds,
+      syncedSystemUsers,
+      heartbeatTick,
+    ],
   );
 
   // Check if current logged-in user or active employee has Broadcast Messaging permission
@@ -802,7 +1115,7 @@ export function Chatbot() {
       const username = String(erpState?.currentUser || storedAuth.split("@")[0] || "")
         .trim()
         .toLowerCase();
-      const matchedUser = (erpState?.users || []).find(
+      const matchedUser = syncedSystemUsers.find(
         (u: any) =>
           String(u.username || "").toLowerCase() === username ||
           (!!storedAuth && String(u.email || "").toLowerCase() === storedAuth),
@@ -825,7 +1138,6 @@ export function Chatbot() {
         return true;
       }
 
-      // Also check if currentSenderEmployee is in Administration / Manager role
       if (
         currentSenderEmployee.department === "الإدارة" ||
         currentSenderEmployee.job_title.includes("مدير") ||
@@ -837,7 +1149,7 @@ export function Chatbot() {
       return true;
     }
     return false;
-  }, [erpState, currentSenderEmployee]);
+  }, [erpState, syncedSystemUsers, currentSenderEmployee]);
 
   // Check if current viewer is HR/Admin for viewing sent salary slips
   const isHrPayrollManager = useMemo(() => {
@@ -958,23 +1270,31 @@ export function Chatbot() {
     return () => clearTimeout(timer);
   }, [incomingToastMsg]);
 
-  // Load persisted messages from IndexedDB on mount
+  // Load persisted messages from IndexedDB on mount (filtering out old demo seed messages)
   useEffect(() => {
     let mounted = true;
     loadMessagesFromIDB().then((stored) => {
       if (!mounted) return;
       if (stored && stored.length > 0) {
-        setMessages(stored);
+        const cleaned = stored.filter(
+          (m) =>
+            m &&
+            m.id !== "seed-msg-1" &&
+            m.id !== "seed-msg-2" &&
+            m.id !== "seed-group-1",
+        );
+        setMessages(cleaned);
+        if (cleaned.length !== stored.length) {
+          saveMessagesToIDB(cleaned);
+        }
       } else {
-        const seeded = buildSeedMessages(hrEmployees);
-        setMessages(seeded);
-        saveMessagesToIDB(seeded);
+        setMessages([]);
       }
     });
     return () => {
       mounted = false;
     };
-  }, [hrEmployees.length]);
+  }, []);
 
   // Sync messages across tabs, external dispatches (e.g., HR Salary Slips), & Supabase Realtime
   useEffect(() => {
@@ -1011,6 +1331,15 @@ export function Chatbot() {
       };
     }
 
+    const activeAuth = (
+      localStorage.getItem("restocash_auth_user") ||
+      sessionStorage.getItem("restocash_auth_user") ||
+      erpState?.currentUser ||
+      ""
+    )
+      .trim()
+      .toLowerCase();
+
     const channel = supabase
       .channel("restocash_employee_messenger_rt", {
         config: { presence: { key: currentSenderEmployee.id } },
@@ -1030,8 +1359,19 @@ export function Chatbot() {
       .on("presence", { event: "sync" }, () => {
         const state = channel.presenceState();
         const nextOnline: Record<string, boolean> = {};
-        Object.keys(state || {}).forEach((k) => {
+        Object.entries(state || {}).forEach(([k, list]) => {
           nextOnline[k] = true;
+          if (Array.isArray(list)) {
+            list.forEach((entry: any) => {
+              if (entry?.empId) nextOnline[String(entry.empId)] = true;
+              if (entry?.employee_code) nextOnline[`code:${entry.employee_code}`] = true;
+              if (entry?.authUser) {
+                const au = String(entry.authUser).toLowerCase();
+                nextOnline[`user:${au}`] = true;
+                nextOnline[`user:${au.split("@")[0]}`] = true;
+              }
+            });
+          }
         });
         setOnlineEmployeeIds(nextOnline);
       })
@@ -1041,6 +1381,7 @@ export function Chatbot() {
             empId: currentSenderEmployee.id,
             name: currentSenderEmployee.name,
             employee_code: currentSenderEmployee.employee_code,
+            authUser: activeAuth,
             online_at: new Date().toISOString(),
           });
         }
@@ -1051,7 +1392,13 @@ export function Chatbot() {
       bc?.close();
       supabase.removeChannel(channel);
     };
-  }, [notifyIncomingMessage, currentSenderEmployee.id, currentSenderEmployee.name, currentSenderEmployee.employee_code]);
+  }, [
+    notifyIncomingMessage,
+    currentSenderEmployee.id,
+    currentSenderEmployee.name,
+    currentSenderEmployee.employee_code,
+    erpState?.currentUser,
+  ]);
 
   const broadcastNewMessage = useCallback((msg: MessengerMessage) => {
     try {
@@ -1870,6 +2217,7 @@ export function Chatbot() {
       >
         <div className="flex items-start gap-2.5">
           <div
+            style={getAvatarStyle(incomingToastMsg.senderId)}
             className={cn(
               "h-9 w-9 rounded-full bg-gradient-to-br text-white flex items-center justify-center font-black text-xs shrink-0 shadow-xs",
               getAvatarGradient(incomingToastMsg.senderId),
@@ -1899,7 +2247,7 @@ export function Chatbot() {
               </button>
             </div>
             <div className="flex items-baseline gap-1.5 truncate mt-0.5">
-              <span className="font-black text-xs text-black truncate">
+              <span dir="auto" className="font-black text-xs text-black truncate">
                 {incomingToastMsg.senderName}
               </span>
               <span className="text-[10px] font-bold text-black/70 shrink-0">
@@ -1937,46 +2285,20 @@ export function Chatbot() {
               }
             }
           }}
-          className="group relative flex flex-col items-stretch rounded-3xl bg-gradient-to-tr from-[#006AFF] via-[#0084FF] to-[#00C6FF] p-3.5 pr-4 pl-5 text-white shadow-[0_10px_30px_rgba(0,132,255,0.45)] hover:shadow-[0_14px_36px_rgba(0,132,255,0.6)] hover:scale-[1.03] active:scale-95 transition-all duration-200 cursor-pointer border border-white/25 max-w-xs"
-          title="فتح محادثات الزملاء (Messenger)"
+          style={{
+            background: "linear-gradient(135deg, #006AFF, #0084FF, #00C6FF)",
+            color: "#ffffff",
+          }}
+          className="group relative flex h-14 w-14 items-center justify-center rounded-full bg-[#006AFF] text-white shadow-[0_8px_24px_rgba(0,132,255,0.45)] hover:shadow-[0_12px_30px_rgba(0,132,255,0.65)] hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer border-2 border-white/30"
+          title="فتح الدردشة الداخلية (Messenger)"
+          aria-label="فتح الدردشة الداخلية"
         >
-          <div className="flex items-center gap-3">
-            <div className="relative flex h-10 w-10 items-center justify-center rounded-full bg-white/20 backdrop-blur-xs shrink-0">
-              <MessageCircle className="h-6 w-6 fill-white text-white" />
-              <span className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-emerald-400 ring-2 ring-[#0078FF]" />
-            </div>
-            <div className="text-right hidden sm:block min-w-0" suppressHydrationWarning>
-              <div className="flex items-center gap-1.5">
-                <span className="font-black text-sm tracking-tight">ماسنجر الزملاء</span>
-                <span className="text-[10px] font-extrabold bg-white/20 px-1.5 py-0.5 rounded-full">
-                  أونلاين
-                </span>
-              </div>
-              <p className="text-[11px] text-blue-100 font-semibold truncate max-w-[180px]" suppressHydrationWarning>
-                {currentSenderEmployee.name} •{" "}
-                <span className="opacity-90">#{currentSenderEmployee.employee_code}</span>
-              </p>
-            </div>
-          </div>
+          <MessageCircle className="h-7 w-7 fill-white text-white" />
+          <span className="absolute bottom-0.5 right-0.5 h-3.5 w-3.5 rounded-full bg-emerald-400 ring-2 ring-white" />
 
-          {/* In-Box Notification Preview inside the Chat Widget Button */}
-          {incomingToastMsg && (
-            <div className="mt-2 pt-2 border-t border-white/25 flex items-center gap-2 text-right bg-white rounded-xl px-2.5 py-1.5 text-black shadow-xs">
-              <Bell size={13} className="text-[#006AFF] animate-bounce shrink-0" />
-              <div className="min-w-0 flex-1">
-                <p className="text-[10px] font-black text-[#006AFF] truncate">
-                  رسالة جديدة من {incomingToastMsg.senderName}
-                </p>
-                <p className="text-[11px] font-bold text-black truncate">
-                  {incomingToastMsg.text || "📎 مرفق جديد"}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {totalUnreadCount > 0 && (
-            <span className="absolute -top-2 -left-1 flex h-6 min-w-6 items-center justify-center rounded-full bg-rose-500 px-1.5 text-xs font-black text-white shadow-md ring-2 ring-white animate-bounce">
-              {totalUnreadCount}
+          {(totalUnreadCount > 0 || incomingToastMsg) && (
+            <span className="absolute -top-1.5 -left-1.5 flex h-6 min-w-6 items-center justify-center rounded-full bg-rose-500 px-1.5 text-xs font-black text-white shadow-md ring-2 ring-white animate-bounce">
+              {totalUnreadCount > 0 ? totalUnreadCount : 1}
             </span>
           )}
         </button>
@@ -1987,29 +2309,35 @@ export function Chatbot() {
   // ============================================================================
   // RENDER EMPLOYEE & GROUPS LIST PANE (Contacts & Conversations List)
   // ============================================================================
-  // ============================================================================
-  // RENDER EMPLOYEE & GROUPS LIST PANE (Contacts & Conversations List)
-  // ============================================================================
+  const onlineCount = hrEmployees.filter((e) => isEmployeeOnline(e)).length;
+
   const renderContactsListPane = () => (
     <div className="flex flex-col h-full bg-white text-black select-none">
       {/* Messenger Top Brand Header */}
-      <div className="px-4 pt-3.5 pb-3 border-b border-slate-200 bg-gradient-to-l from-[#006AFF]/10 via-[#0084FF]/5 to-white">
+      <div className="px-4 pt-3.5 pb-3 border-b border-slate-200 bg-slate-50/70">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="h-9 w-9 rounded-2xl bg-gradient-to-tr from-[#006AFF] to-[#00C6FF] flex items-center justify-center text-white shadow-sm shrink-0">
+            <div
+              style={{
+                background: "linear-gradient(135deg, #006AFF, #00C6FF)",
+                color: "#ffffff",
+              }}
+              className="h-9 w-9 rounded-2xl bg-[#006AFF] flex items-center justify-center text-white shadow-sm shrink-0"
+            >
               <MessageCircle className="h-5 w-5 fill-white" />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
-                <h2 className="font-black text-base text-black truncate">
+                <h2 className="font-black text-base text-slate-900 truncate">
                   الدردشة الداخلية
                 </h2>
-                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-[#0084FF]/15 text-[#006AFF]">
+                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-blue-100 text-[#006AFF]">
                   Messenger
                 </span>
               </div>
-              <p className="text-[11px] text-black/70 font-bold truncate">
-                جميع موظفي المؤسسة ({hrEmployees.length})
+              <p className="text-[11px] text-slate-600 font-bold truncate">
+                المستخدمون الفعليون ({hrEmployees.length}) •{" "}
+                <span className="text-emerald-700">{onlineCount} متصل الآن</span>
               </p>
             </div>
           </div>
@@ -2022,7 +2350,7 @@ export function Chatbot() {
                 "h-8 w-8 rounded-full flex items-center justify-center transition cursor-pointer",
                 isSoundMuted
                   ? "bg-amber-100 text-amber-700"
-                  : "hover:bg-slate-100 text-black",
+                  : "hover:bg-slate-200/70 text-slate-700",
               )}
               title={isSoundMuted ? "تفعيل صوت الإشعارات" : "كتم صوت الإشعارات"}
             >
@@ -2031,7 +2359,7 @@ export function Chatbot() {
             <button
               type="button"
               onClick={() => setIsMaximized((prev) => !prev)}
-              className="h-8 w-8 rounded-full hover:bg-slate-100 flex items-center justify-center text-black transition cursor-pointer"
+              className="h-8 w-8 rounded-full hover:bg-slate-200/70 flex items-center justify-center text-slate-700 transition cursor-pointer"
               title={isMaximized ? "تصغير النافذة" : "ملء الشاشة"}
             >
               {isMaximized ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
@@ -2039,7 +2367,7 @@ export function Chatbot() {
             <button
               type="button"
               onClick={() => setIsOpen(false)}
-              className="h-8 w-8 rounded-full hover:bg-rose-50 flex items-center justify-center text-black hover:text-rose-600 transition cursor-pointer"
+              className="h-8 w-8 rounded-full hover:bg-rose-50 flex items-center justify-center text-slate-700 hover:text-rose-600 transition cursor-pointer"
               title="إغلاق"
             >
               <X size={17} />
@@ -2047,14 +2375,15 @@ export function Chatbot() {
           </div>
         </div>
 
-        {/* Fixed Logged-In User Identity Bar (From Users Page — No Manual Switcher) */}
+        {/* Fixed Logged-In User Identity Bar (Synced with Active System User) */}
         <div className="mt-2.5">
-          <div className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-100 border border-slate-200 text-right">
-            <div className="flex items-center gap-2 min-w-0">
+          <div className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-white border border-slate-200 shadow-2xs text-right">
+            <div className="flex items-center gap-2.5 min-w-0">
               <div className="relative shrink-0">
                 <div
+                  style={getAvatarStyle(currentSenderEmployee.id)}
                   className={cn(
-                    "h-7 w-7 rounded-full bg-gradient-to-br text-white flex items-center justify-center text-[10px] font-black",
+                    "h-8 w-8 rounded-full text-white flex items-center justify-center text-[11px] font-black shadow-2xs",
                     getAvatarGradient(currentSenderEmployee.id),
                   )}
                 >
@@ -2062,21 +2391,26 @@ export function Chatbot() {
                 </div>
                 <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />
               </div>
-              <div className="flex items-baseline gap-1.5 min-w-0 truncate">
-                <span className="text-xs font-black text-black truncate">
-                  {currentSenderEmployee.name}
-                </span>
-                <span className="text-[10px] font-bold text-[#006AFF] shrink-0">
-                  ({currentSenderEmployee.job_title})
-                </span>
-                {currentSenderEmployee.employee_code && (
-                  <span className="text-[10px] font-mono font-black text-black/70 bg-white px-1.5 py-0.5 rounded border border-slate-200 shrink-0">
-                    #{currentSenderEmployee.employee_code}
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span
+                    dir="auto"
+                    className="text-xs font-black text-slate-900 truncate max-w-[160px]"
+                  >
+                    {currentSenderEmployee.name}
                   </span>
-                )}
+                  {currentSenderEmployee.employee_code && (
+                    <span className="text-[10px] font-mono font-bold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 shrink-0">
+                      #{currentSenderEmployee.employee_code}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[10px] font-bold text-[#006AFF] truncate">
+                  {currentSenderEmployee.job_title}
+                </p>
               </div>
             </div>
-            <span className="inline-flex items-center gap-1 text-[10px] font-black text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full shrink-0">
+            <span className="inline-flex items-center gap-1 text-[10px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full shrink-0">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
               أونلاين
             </span>
@@ -2096,24 +2430,28 @@ export function Chatbot() {
                 );
                 setIsBroadcastModalOpen(true);
               }}
-              className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-gradient-to-l from-indigo-600 via-[#006AFF] to-sky-500 hover:opacity-95 text-white font-black text-xs shadow-sm transition cursor-pointer"
+              style={{
+                background: "linear-gradient(to left, #4f46e5, #006AFF, #0284c7)",
+                color: "#ffffff",
+              }}
+              className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-[#006AFF] hover:opacity-95 text-white font-black text-xs shadow-xs transition cursor-pointer"
             >
-              <Megaphone size={14} />
-              <span>رسالة جماعية / تحديد موظفين معينين</span>
+              <Megaphone size={14} className="text-white shrink-0" />
+              <span className="text-white">رسالة جماعية / تحديد مستخدمين معينين</span>
             </button>
           </div>
         )}
 
         {/* Mode Switcher: Direct Coworkers vs Department Groups */}
-        <div className="grid grid-cols-2 gap-1.5 mt-2.5 p-1 bg-slate-100 rounded-xl">
+        <div className="grid grid-cols-2 gap-1.5 mt-2.5 p-1 bg-slate-200/70 rounded-xl">
           <button
             type="button"
             onClick={() => setContactListMode("direct")}
             className={cn(
               "flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-black transition cursor-pointer",
               contactListMode === "direct"
-                ? "bg-white text-[#006AFF] shadow-2xs"
-                : "text-black hover:text-[#006AFF]",
+                ? "bg-white text-[#006AFF] shadow-xs"
+                : "text-slate-700 hover:text-[#006AFF]",
             )}
           >
             <MessageCircle size={13} />
@@ -2130,8 +2468,8 @@ export function Chatbot() {
             className={cn(
               "flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-black transition cursor-pointer",
               contactListMode === "groups"
-                ? "bg-white text-[#006AFF] shadow-2xs"
-                : "text-black hover:text-[#006AFF]",
+                ? "bg-white text-[#006AFF] shadow-xs"
+                : "text-slate-700 hover:text-[#006AFF]",
             )}
           >
             <Users size={13} />
@@ -2143,19 +2481,19 @@ export function Chatbot() {
         {contactListMode === "direct" && (
           <>
             <div className="relative mt-2.5">
-              <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-black/60" />
+              <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="ابحث بالاسم أو الرقم الوظيفي أو الوظيفة..."
                 style={{ color: "#000000" }}
-                className="w-full rounded-full bg-white border border-slate-300 pr-9 pl-3 py-2 text-xs font-bold !text-black placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-[#0084FF]"
+                className="w-full rounded-xl bg-white border border-slate-300 pr-9 pl-3 py-2 text-xs font-bold !text-black placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0084FF]"
               />
             </div>
 
             {departments.length > 0 && (
-              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-2.5 pb-0.5">
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-2 pb-0.5">
                 <button
                   type="button"
                   onClick={() => setSelectedDept("ALL")}
@@ -2163,7 +2501,7 @@ export function Chatbot() {
                     "px-2.5 py-1 rounded-full text-[11px] font-extrabold whitespace-nowrap transition cursor-pointer",
                     selectedDept === "ALL"
                       ? "bg-[#0084FF] text-white shadow-xs"
-                      : "bg-slate-100 text-black hover:bg-slate-200",
+                      : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-100",
                   )}
                 >
                   الكل ({hrEmployees.length})
@@ -2177,7 +2515,7 @@ export function Chatbot() {
                       "px-2.5 py-1 rounded-full text-[11px] font-extrabold whitespace-nowrap transition cursor-pointer",
                       selectedDept === dept
                         ? "bg-[#0084FF] text-white shadow-xs"
-                        : "bg-slate-100 text-black hover:bg-slate-200",
+                        : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-100",
                     )}
                   >
                     {dept}
@@ -2189,68 +2527,8 @@ export function Chatbot() {
         )}
       </div>
 
-      {/* Horizontal Messenger Active Now Strip (Direct mode) */}
-      {contactListMode === "direct" && (
-        <div className="px-3 py-2.5 border-b border-slate-200 bg-slate-50">
-          <div className="flex items-center gap-3 overflow-x-auto no-scrollbar">
-            {hrEmployees.map((emp) => {
-              const isSelected = selectedEmployeeId === emp.id && !selectedGroupRoomId;
-              const unread = unreadByEmployeeId[emp.id] || 0;
-              const online = isEmployeeOnline(emp);
-              return (
-                <button
-                  key={emp.id}
-                  type="button"
-                  onClick={() => {
-                    setSelectedGroupRoomId(null);
-                    setSelectedEmployeeId(emp.id);
-                    setShowSharedFilesDrawer(false);
-                  }}
-                  className="group flex flex-col items-center gap-1 min-w-[64px] max-w-[70px] text-center cursor-pointer"
-                >
-                  <div className="relative">
-                    <div
-                      className={cn(
-                        "h-11 w-11 rounded-full bg-gradient-to-br text-white flex items-center justify-center font-black text-xs shadow-sm transition-transform group-hover:scale-105",
-                        getAvatarGradient(emp.id),
-                        isSelected && "ring-2 ring-[#0084FF] ring-offset-2",
-                      )}
-                    >
-                      {getInitials(emp.name)}
-                    </div>
-                    <span
-                      title={online ? "أونلاين (متصل)" : "أوفلاين (غير متصل)"}
-                      className={cn(
-                        "absolute bottom-0 right-0 h-3 w-3 rounded-full ring-2 ring-white",
-                        online ? "bg-emerald-500" : "bg-slate-400",
-                      )}
-                    />
-                    {unread > 0 && (
-                      <span className="absolute -top-1 -left-1 h-4 min-w-4 px-1 rounded-full bg-rose-500 text-[10px] font-black text-white flex items-center justify-center ring-2 ring-white">
-                        {unread}
-                      </span>
-                    )}
-                  </div>
-                  <span className="text-[11px] font-black text-black truncate w-full leading-tight">
-                    {emp.name.split(" ")[0]}
-                  </span>
-                  <span
-                    className={cn(
-                      "text-[9px] font-bold truncate w-full -mt-0.5",
-                      online ? "text-emerald-700" : "text-slate-500",
-                    )}
-                  >
-                    {online ? "أونلاين" : "أوفلاين"}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
       {/* List Body: Either Department Groups OR Vertical Employee List */}
-      <div className="flex-1 overflow-y-auto divide-y divide-slate-200/80 bg-white">
+      <div className="flex-1 overflow-y-auto divide-y divide-slate-100 bg-white">
         {contactListMode === "groups" ? (
           departmentGroups.map((grp) => {
             const isSelected = selectedGroupRoomId === grp.id;
@@ -2265,20 +2543,25 @@ export function Chatbot() {
                   setShowSharedFilesDrawer(false);
                 }}
                 className={cn(
-                  "w-full flex items-center gap-3 px-4 py-3.5 text-right transition cursor-pointer",
-                  isSelected ? "bg-[#0084FF]/10" : "hover:bg-slate-50",
+                  "w-full flex items-center gap-3 px-4 py-3 text-right transition cursor-pointer",
+                  isSelected ? "bg-blue-50/80" : "hover:bg-slate-50",
                 )}
               >
                 <div className="relative shrink-0">
                   <div
-                    className={cn(
-                      "h-12 w-12 rounded-2xl bg-gradient-to-br text-white flex items-center justify-center font-black text-sm shadow-xs",
+                    style={
                       grp.department === "ALL"
-                        ? "from-[#006AFF] to-indigo-600"
+                        ? { background: "linear-gradient(135deg, #006AFF, #4f46e5)", color: "#fff" }
+                        : getAvatarStyle(grp.id)
+                    }
+                    className={cn(
+                      "h-11 w-11 rounded-2xl text-white flex items-center justify-center font-black text-sm shadow-xs",
+                      grp.department === "ALL"
+                        ? "bg-[#006AFF]"
                         : getAvatarGradient(grp.id),
                     )}
                   >
-                    <Users size={20} />
+                    <Users size={19} />
                   </div>
                   <span className="absolute -bottom-1 -right-1 px-1.5 py-0.2 rounded-full bg-emerald-500 text-white text-[9px] font-black ring-2 ring-white">
                     {grp.memberCount}
@@ -2287,19 +2570,19 @@ export function Chatbot() {
 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-black text-sm text-black truncate">
+                    <span className="font-black text-sm text-slate-900 truncate">
                       {grp.name}
                     </span>
                     {lastMsg && (
-                      <span className="text-[10px] font-bold text-black/60 shrink-0">
+                      <span className="text-[10px] font-bold text-slate-500 shrink-0">
                         {formatRelativeTimeAr(lastMsg.createdAt)}
                       </span>
                     )}
                   </div>
                   <p className="text-[11px] font-bold text-[#006AFF] truncate mt-0.5">
-                    {grp.subtitle} ({grp.memberCount} موظف)
+                    {grp.subtitle} ({grp.memberCount} مستخدم)
                   </p>
-                  <p className="text-xs text-black/80 font-semibold truncate mt-0.5">
+                  <p className="text-xs text-slate-600 font-semibold truncate mt-0.5">
                     {lastMsg
                       ? `${lastMsg.senderName.split(" ")[0]}: ${lastMsg.text || "📎 مرفق"}`
                       : "اضغط لفتح محادثة المجموعة ومشاركة الملفات"}
@@ -2309,9 +2592,9 @@ export function Chatbot() {
             );
           })
         ) : filteredEmployees.length === 0 ? (
-          <div className="py-12 px-4 text-center text-black/60">
-            <p className="font-bold text-sm text-black">لا يوجد موظفون مطابقون للبحث</p>
-            <p className="text-xs mt-1">يمكنك إضافة أو تعديل الموظفين من صفحة الموارد البشرية</p>
+          <div className="py-12 px-4 text-center text-slate-500">
+            <p className="font-bold text-sm text-slate-800">لا يوجد مستخدمون مطابقون للبحث</p>
+            <p className="text-xs mt-1">تتم مزامنة المستخدمين تلقائياً مع صفحة المستخدمين والصلاحيات</p>
           </div>
         ) : (
           filteredEmployees.map((emp) => {
@@ -2353,14 +2636,15 @@ export function Chatbot() {
                 }}
                 className={cn(
                   "w-full flex items-center gap-3 px-4 py-3 text-right transition cursor-pointer",
-                  isSelected ? "bg-[#0084FF]/10" : "hover:bg-slate-50",
+                  isSelected ? "bg-blue-50/80" : "hover:bg-slate-50",
                 )}
               >
                 {/* Avatar */}
                 <div className="relative shrink-0">
                   <div
+                    style={getAvatarStyle(emp.id)}
                     className={cn(
-                      "h-12 w-12 rounded-full bg-gradient-to-br text-white flex items-center justify-center font-black text-sm shadow-xs",
+                      "h-11 w-11 rounded-full text-white flex items-center justify-center font-black text-xs shadow-xs",
                       getAvatarGradient(emp.id),
                     )}
                   >
@@ -2369,35 +2653,38 @@ export function Chatbot() {
                   <span
                     title={online ? "أونلاين (متصل)" : "أوفلاين (غير متصل)"}
                     className={cn(
-                      "absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full ring-2 ring-white",
-                      online ? "bg-emerald-500" : "bg-slate-400",
+                      "absolute bottom-0 right-0 h-3 w-3 rounded-full ring-2 ring-white",
+                      online ? "bg-emerald-500" : "bg-slate-300",
                     )}
                   />
                 </div>
 
-                {/* Employee Full Name + Small Job Title + Online/Offline Badge + Preview */}
+                {/* User Full Name + Job Title + Preview */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-baseline gap-1.5 min-w-0 truncate">
-                      <span className="text-sm font-black text-black truncate">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span
+                        dir="auto"
+                        className="text-sm font-black text-slate-900 truncate"
+                      >
                         {emp.name}
                       </span>
-                      <span className="text-[10px] font-bold text-[#006AFF] bg-[#0084FF]/10 px-1.5 py-0.5 rounded-md shrink-0">
+                      <span className="text-[10px] font-bold text-[#006AFF] bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded-md shrink-0">
                         {emp.job_title}
                       </span>
                       {emp.employee_code && (
-                        <span className="text-[9px] font-mono font-bold text-black/70 bg-slate-100 px-1.5 py-0.5 rounded shrink-0">
+                        <span className="text-[9px] font-mono font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded shrink-0">
                           #{emp.employee_code}
                         </span>
                       )}
                       {isSelf && (
-                        <span className="text-[9px] font-black text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-md shrink-0">
+                        <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-md shrink-0">
                           أنت
                         </span>
                       )}
                     </div>
                     {lastMsg && (
-                      <span className="text-[10px] font-bold text-black/60 shrink-0">
+                      <span className="text-[10px] font-bold text-slate-400 shrink-0">
                         {formatRelativeTimeAr(lastMsg.createdAt)}
                       </span>
                     )}
@@ -2407,7 +2694,7 @@ export function Chatbot() {
                     <p
                       className={cn(
                         "text-xs truncate",
-                        unread > 0 ? "font-black text-black" : "font-semibold text-black/80",
+                        unread > 0 ? "font-black text-slate-900" : "font-medium text-slate-500",
                       )}
                     >
                       {lastPreview}
@@ -2415,10 +2702,10 @@ export function Chatbot() {
                     <div className="flex items-center gap-1.5 shrink-0">
                       <span
                         className={cn(
-                          "text-[9px] font-black px-1.5 py-0.5 rounded-full",
+                          "text-[9px] font-bold px-2 py-0.5 rounded-full",
                           online
-                            ? "bg-emerald-100 text-emerald-700"
-                            : "bg-slate-100 text-slate-600",
+                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200/70"
+                            : "bg-slate-100 text-slate-500",
                         )}
                       >
                         {online ? "● أونلاين" : "○ أوفلاين"}
@@ -2446,14 +2733,20 @@ export function Chatbot() {
     if (!selectedEmployee && !selectedGroupRoom) {
       return (
         <div className="flex flex-col items-center justify-center h-full bg-slate-50/70 dark:bg-slate-950/50 p-6 text-center select-none">
-          <div className="h-16 w-16 rounded-3xl bg-gradient-to-tr from-[#006AFF] to-[#00C6FF] text-white flex items-center justify-center shadow-lg mb-3">
+          <div
+            style={{
+              background: "linear-gradient(135deg, #006AFF, #00C6FF)",
+              color: "#ffffff",
+            }}
+            className="h-16 w-16 rounded-3xl bg-[#006AFF] text-white flex items-center justify-center shadow-lg mb-3"
+          >
             <MessageCircle className="h-8 w-8 fill-white" />
           </div>
           <h3 className="font-black text-base text-slate-800 dark:text-slate-100">
             ماسنجر الزملاء الداخلي
           </h3>
           <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mt-1 leading-relaxed">
-            اختر أي موظف أو مجموعة قسم من القائمة لبدء المحادثة الفورية، إرسال الملاحظات الصوتية،
+            اختر أي مستخدم أو مجموعة قسم من القائمة لبدء المحادثة الفورية، إرسال الملاحظات الصوتية،
             أو مشاركة كافة أنواع الملفات والصور والفيديو مباشرة من الكاميرا.
           </p>
         </div>
@@ -2521,8 +2814,9 @@ export function Chatbot() {
 
             <div className="relative shrink-0">
               <div
+                style={getAvatarStyle(isGroup ? selectedGroupRoom!.id : selectedEmployee!.id)}
                 className={cn(
-                  "h-10 w-10 rounded-full bg-gradient-to-br text-white flex items-center justify-center font-black text-xs shadow-xs",
+                  "h-10 w-10 rounded-full text-white flex items-center justify-center font-black text-xs shadow-xs",
                   getAvatarGradient(isGroup ? selectedGroupRoom!.id : selectedEmployee!.id),
                 )}
               >
@@ -2538,7 +2832,7 @@ export function Chatbot() {
 
             <div className="min-w-0">
               <div className="flex items-baseline gap-1.5 min-w-0">
-                <h3 className="font-black text-sm text-black truncate">
+                <h3 dir="auto" className="font-black text-sm text-black truncate">
                   {chatTitle}
                 </h3>
                 <span className="text-[10px] font-extrabold text-[#006AFF] bg-[#0084FF]/10 px-1.5 py-0.5 rounded-md shrink-0">
@@ -2667,15 +2961,16 @@ export function Chatbot() {
           {/* Top Profile Card inside Conversation */}
           <div className="flex flex-col items-center text-center py-4">
             <div
+              style={getAvatarStyle(isGroup ? selectedGroupRoom!.id : selectedEmployee!.id)}
               className={cn(
-                "h-16 w-16 rounded-full bg-gradient-to-br text-white flex items-center justify-center font-black text-lg shadow-md mb-2",
+                "h-16 w-16 rounded-full text-white flex items-center justify-center font-black text-lg shadow-md mb-2",
                 getAvatarGradient(isGroup ? selectedGroupRoom!.id : selectedEmployee!.id),
               )}
             >
               {isGroup ? <Users size={28} /> : getInitials(selectedEmployee!.name)}
             </div>
             <div className="flex items-center gap-1.5 flex-wrap justify-center">
-              <h4 className="font-black text-sm text-black">{chatTitle}</h4>
+              <h4 dir="auto" className="font-black text-sm text-black">{chatTitle}</h4>
               <span className="text-[11px] font-bold text-[#006AFF] bg-[#0084FF]/10 px-2 py-0.5 rounded-full">
                 {chatJobBadge}
               </span>
@@ -2694,7 +2989,7 @@ export function Chatbot() {
               >
                 {/* Sender Name + Small Job Title above bubble */}
                 <div className="flex items-baseline gap-1.5 px-2 mb-1">
-                  <span className="text-[11px] font-black text-black">
+                  <span dir="auto" className="text-[11px] font-black text-black">
                     {isMine ? "أنت" : msg.senderName}
                   </span>
                   <span className="text-[9px] font-bold text-black/65">
@@ -2716,8 +3011,9 @@ export function Chatbot() {
                   {/* Small Avatar for recipient */}
                   {!isMine && (
                     <div
+                      style={getAvatarStyle(msg.senderId)}
                       className={cn(
-                        "h-7 w-7 rounded-full bg-gradient-to-br text-white flex items-center justify-center font-black text-[10px] shrink-0 mb-1 shadow-2xs",
+                        "h-7 w-7 rounded-full text-white flex items-center justify-center font-black text-[10px] shrink-0 mb-1 shadow-2xs",
                         getAvatarGradient(msg.senderId),
                       )}
                     >

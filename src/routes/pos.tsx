@@ -1877,145 +1877,6 @@ function Index() {
         </Modal>
       )}
 
-      {invoice && (
-        <Modal onClose={() => setInvoice(null)}>
-          <InvoiceView invoice={invoice} onClose={() => setInvoice(null)} />
-        </Modal>
-      )}
-
-      {noteEditingItem && (
-        <Modal onClose={() => setNoteEditingItem(null)}>
-          <div
-            className="p-6 font-cairo max-w-md w-full mx-auto"
-            dir={lang === "ar" ? "rtl" : "ltr"}
-          >
-            <div className="flex items-center justify-between pb-3 border-b border-border mb-4">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 bg-amber-100 text-amber-800 rounded-xl">
-                  <FileText size={18} />
-                </div>
-                <div>
-                  <h3 className="font-black text-base text-foreground">
-                    {lang === "ar" ? "ملاحظة خاصة بالصنف" : "Item Note"}
-                  </h3>
-                  <p className="text-xs text-muted-foreground font-bold line-clamp-1">
-                    {noteEditingItem.name}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setNoteEditingItem(null)}
-                className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground transition"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1.5">
-                  {lang === "ar" ? "نص الملاحظة للطلب والمطبخ:" : "Note for Order & Kitchen:"}
-                </label>
-                <textarea
-                  rows={3}
-                  value={noteEditingItem.notes}
-                  onChange={(e) =>
-                    setNoteEditingItem((prev) => (prev ? { ...prev, notes: e.target.value } : null))
-                  }
-                  placeholder={
-                    lang === "ar"
-                      ? "مثال: بدون بصل، صوص إضافي، بدون ملح، مستوي زيادة..."
-                      : "e.g. No onion, extra sauce, well done..."
-                  }
-                  className="w-full bg-background border border-input rounded-xl p-3 text-xs font-bold outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none leading-relaxed"
-                  autoFocus
-                />
-              </div>
-
-              <div>
-                <span className="text-[11px] font-bold text-muted-foreground block mb-2">
-                  {lang === "ar" ? "اختيارات سريعة شائعة:" : "Quick Preset Options:"}
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  {[
-                    "بدون بصل",
-                    "بدون ملح",
-                    "بدون شطة",
-                    "صوص إضافي",
-                    "حار جداً 🌶️",
-                    "مستوي زيادة",
-                    "سُكر خفيف",
-                    "تغليف سفري",
-                  ].map((preset) => (
-                    <button
-                      key={preset}
-                      type="button"
-                      onClick={() => {
-                        setNoteEditingItem((prev) => {
-                          if (!prev) return null;
-                          const existing = prev.notes.trim();
-                          const newNotes = existing ? `${existing}، ${preset}` : preset;
-                          return { ...prev, notes: newNotes };
-                        });
-                      }}
-                      className="text-[11px] font-bold bg-muted hover:bg-amber-100 hover:text-amber-900 border border-border px-2.5 py-1 rounded-lg transition active:scale-95"
-                    >
-                      +{preset}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="pt-3 border-t border-border flex items-center justify-between gap-2">
-                {noteEditingItem.notes ? (
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    size="sm"
-                    className="gap-1 text-xs font-bold rounded-xl h-9"
-                    onClick={() => {
-                      updateItemNotes(noteEditingItem.id, "");
-                      setNoteEditingItem(null);
-                      toast({ title: "تم حذف ملاحظة الصنف" });
-                    }}
-                  >
-                    <Trash2 size={13} />
-                    {lang === "ar" ? "حذف الملاحظة" : "Delete Note"}
-                  </Button>
-                ) : (
-                  <div />
-                )}
-
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="text-xs font-bold rounded-xl h-9"
-                    onClick={() => setNoteEditingItem(null)}
-                  >
-                    {lang === "ar" ? "إلغاء" : "Cancel"}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="bg-primary text-primary-foreground text-xs font-bold rounded-xl h-9 gap-1 shadow-sm"
-                    onClick={() => {
-                      updateItemNotes(noteEditingItem.id, noteEditingItem.notes);
-                      setNoteEditingItem(null);
-                      toast({ title: "تم حفظ ملاحظة الصنف بنجاح" });
-                    }}
-                  >
-                    <CheckCircle2 size={14} />
-                    {lang === "ar" ? "حفظ الملاحظة" : "Save Note"}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </Modal>
-      )}
-
       {/* Floating Cart Icon on the Left (matching Park POS) */}
       {!isMobileCartOpen && (
         <div className="fixed bottom-6 left-6 z-40">
@@ -2122,7 +1983,7 @@ function Index() {
                                 notes: c.notes || "",
                               })
                             }
-                            className={`p-1 rounded-md transition ${
+                            className={`p-1 rounded-md transition cursor-pointer ${
                               c.notes
                                 ? "bg-amber-100 text-amber-800 hover:bg-amber-200"
                                 : "text-muted-foreground hover:text-foreground hover:bg-muted"
@@ -2175,7 +2036,7 @@ function Index() {
                               notes: "",
                             })
                           }
-                          className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold text-muted-foreground hover:text-primary transition"
+                          className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold text-muted-foreground hover:text-primary transition cursor-pointer"
                         >
                           <Plus size={11} />
                           <span>{lang === "ar" ? "إضافة ملاحظة..." : "Add note..."}</span>
@@ -2254,6 +2115,161 @@ function Index() {
           </div>
         </div>
       )}
+
+      {invoice && (
+        <Modal onClose={() => setInvoice(null)}>
+          <InvoiceView invoice={invoice} onClose={() => setInvoice(null)} />
+        </Modal>
+      )}
+
+      {noteEditingItem && (
+        <Modal onClose={() => setNoteEditingItem(null)}>
+          <div
+            className="p-6 font-cairo max-w-md w-full mx-auto"
+            dir={lang === "ar" ? "rtl" : "ltr"}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-border mb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-amber-100 text-amber-800 rounded-xl">
+                  <FileText size={18} />
+                </div>
+                <div>
+                  <h3 className="font-black text-base text-foreground">
+                    {lang === "ar" ? "ملاحظة خاصة بالصنف" : "Item Note"}
+                  </h3>
+                  <p className="text-xs text-muted-foreground font-bold line-clamp-1">
+                    {noteEditingItem.name}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setNoteEditingItem(null)}
+                className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground transition cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1.5">
+                  {lang === "ar" ? "نص الملاحظة للطلب والمطبخ:" : "Note for Order & Kitchen:"}
+                </label>
+                <textarea
+                  rows={3}
+                  value={noteEditingItem.notes}
+                  onChange={(e) =>
+                    setNoteEditingItem((prev) => (prev ? { ...prev, notes: e.target.value } : null))
+                  }
+                  placeholder={
+                    lang === "ar"
+                      ? "مثال: بدون بصل، صوص إضافي، بدون ملح، مستوي زيادة..."
+                      : "e.g. No onion, extra sauce, well done..."
+                  }
+                  className="w-full bg-background border border-input rounded-xl p-3 text-xs font-bold outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none leading-relaxed"
+                  autoFocus
+                />
+              </div>
+
+              {(() => {
+                const allPresets = [
+                  "بدون بصل",
+                  "بدون ملح",
+                  "بدون شطة",
+                  "صوص إضافي",
+                  "حار جداً 🌶️",
+                  "مستوي زيادة",
+                  "سُكر خفيف",
+                  "تغليف سفري",
+                ];
+                const rawNotes = String(noteEditingItem.notes || "").trim();
+                const currentTokens = rawNotes
+                  .split(/[،,\n]+/)
+                  .map((s) => s.trim())
+                  .filter(Boolean);
+                const availablePresets = allPresets.filter(
+                  (preset) => !currentTokens.includes(preset) && !rawNotes.includes(preset),
+                );
+
+                if (availablePresets.length === 0) return null;
+
+                return (
+                  <div>
+                    <span className="text-[11px] font-bold text-muted-foreground block mb-2">
+                      {lang === "ar" ? "اختيارات سريعة شائعة:" : "Quick Preset Options:"}
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {availablePresets.map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => {
+                            setNoteEditingItem((prev) => {
+                              if (!prev) return null;
+                              const existing = prev.notes.trim();
+                              const newNotes = existing ? `${existing}، ${preset}` : preset;
+                              return { ...prev, notes: newNotes };
+                            });
+                          }}
+                          className="text-[11px] font-bold bg-muted hover:bg-amber-100 hover:text-amber-900 border border-border px-2.5 py-1 rounded-lg transition active:scale-95 cursor-pointer"
+                        >
+                          +{preset}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <div className="pt-3 border-t border-border flex items-center justify-between gap-2">
+                {noteEditingItem.notes ? (
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    className="gap-1 text-xs font-bold rounded-xl h-9"
+                    onClick={() => {
+                      updateItemNotes(noteEditingItem.id, "");
+                      setNoteEditingItem(null);
+                      toast({ title: "تم حذف ملاحظة الصنف" });
+                    }}
+                  >
+                    <Trash2 size={13} />
+                    {lang === "ar" ? "حذف الملاحظة" : "Delete Note"}
+                  </Button>
+                ) : (
+                  <div />
+                )}
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="text-xs font-bold rounded-xl h-9"
+                    onClick={() => setNoteEditingItem(null)}
+                  >
+                    {lang === "ar" ? "إلغاء" : "Cancel"}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="bg-primary text-primary-foreground text-xs font-bold rounded-xl h-9 gap-1 shadow-sm"
+                    onClick={() => {
+                      updateItemNotes(noteEditingItem.id, noteEditingItem.notes);
+                      setNoteEditingItem(null);
+                      toast({ title: "تم حفظ ملاحظة الصنف بنجاح" });
+                    }}
+                  >
+                    <CheckCircle2 size={14} />
+                    {lang === "ar" ? "حفظ الملاحظة" : "Save Note"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -2321,11 +2337,11 @@ function PayOption({
 function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-foreground/40 backdrop-blur-sm animate-in fade-in"
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in"
       onClick={onClose}
     >
       <div
-        className="bg-card rounded-3xl w-full max-w-md max-h-[90vh] overflow-y-auto"
+        className="bg-card rounded-3xl w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl"
         style={{ boxShadow: "var(--shadow-elegant)" }}
         onClick={(e) => e.stopPropagation()}
       >

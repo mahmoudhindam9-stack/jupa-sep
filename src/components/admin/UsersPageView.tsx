@@ -1317,6 +1317,57 @@ export function UsersPage() {
     editingUserId: editing?.id || null,
   });
 
+  const pruneDuplicateAdminAccounts = async (
+    usersList: SystemUser[],
+    currentAuthUserId?: string,
+  ): Promise<SystemUser[]> => {
+    const admins = usersList.filter(
+      (u) => u.role === "admin" || u.role === "super_admin",
+    );
+    if (admins.length <= 1) return usersList;
+
+    const activeStored =
+      typeof window !== "undefined"
+        ? (
+            localStorage.getItem("restocash_auth_user") ||
+            sessionStorage.getItem("restocash_auth_user") ||
+            ""
+          )
+            .trim()
+            .toLowerCase()
+        : "";
+
+    const keptAdmin =
+      admins.find((u) => currentAuthUserId && u.id === currentAuthUserId) ||
+      admins.find(
+        (u) =>
+          activeStored &&
+          (String(u.email || "").toLowerCase() === activeStored ||
+            String(u.username || "").toLowerCase() === activeStored ||
+            String(u.username || "").toLowerCase() === activeStored.split("@")[0]),
+      ) ||
+      admins.find(
+        (u) =>
+          u.username !== "admin" &&
+          String(u.email || "").toLowerCase() !== "admin@restocash.com",
+      ) ||
+      admins[0];
+
+    const duplicateAdmins = admins.filter((u) => u.id !== keptAdmin.id);
+    for (const dup of duplicateAdmins) {
+      erpStore.deleteUser(dup.id);
+      if (currentAuthUserId && dup.id !== currentAuthUserId && !String(dup.id).startsWith("u-")) {
+        await authService.deleteUser(dup.id).catch(() => undefined);
+      }
+    }
+
+    return usersList.filter(
+      (u) =>
+        (u.role !== "admin" && u.role !== "super_admin") ||
+        u.id === keptAdmin.id,
+    );
+  };
+
   const handleManualCloudSync = async () => {
     setIsSyncingDirectory(true);
     try {
@@ -1324,10 +1375,11 @@ export function UsersPage() {
       const authUser = await authService.getCurrentUser();
       if (authUser?.id) {
         const profiles = (await authService.getUsers()) as any[];
-        const cloudUsers = (profiles || [])
+        const rawCloudUsers = (profiles || [])
           .filter((profile) => Boolean(profile?.id && profile?.username))
           .map(profileToSystemUser)
           .sort((a, b) => a.username.localeCompare(b.username));
+        const cloudUsers = await pruneDuplicateAdminAccounts(rawCloudUsers, authUser.id);
         erpStore.replaceManagedUsers(cloudUsers);
       }
       setLocalUsers(localLoginUsers());
@@ -1384,10 +1436,11 @@ export function UsersPage() {
 
             setActorProfile(actor);
             setIsCloudSyncActive(true);
-            const cloudUsers = (profiles || [])
+            const rawCloudUsers = (profiles || [])
               .filter((profile) => Boolean(profile?.id && profile?.username))
               .map(profileToSystemUser)
               .sort((a, b) => a.username.localeCompare(b.username));
+            const cloudUsers = await pruneDuplicateAdminAccounts(rawCloudUsers, authUser.id);
 
             erpStore.replaceManagedUsers(cloudUsers);
             setLocalUsers(localLoginUsers());

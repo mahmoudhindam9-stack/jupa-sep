@@ -684,7 +684,14 @@ export function TableOrderModal({
               />
 
               <div className="flex flex-wrap gap-1.5">
-                {QUICK_ORDER_NOTE_PRESETS.map((preset) => (
+                {QUICK_ORDER_NOTE_PRESETS.filter((preset) => {
+                  const raw = String(orderNotes || "").trim();
+                  const tokens = raw
+                    .split(/[،,\n]+/)
+                    .map((s) => s.trim())
+                    .filter(Boolean);
+                  return !tokens.includes(preset) && !raw.includes(preset);
+                }).map((preset) => (
                   <button
                     key={preset}
                     type="button"
@@ -1204,7 +1211,14 @@ export function TableOrderModal({
                     className="w-full bg-white border border-amber-300 rounded-xl p-2.5 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-amber-500 transition resize-none"
                   />
                   <div className="flex flex-wrap gap-1.5">
-                    {QUICK_ORDER_NOTE_PRESETS.map((preset) => (
+                    {QUICK_ORDER_NOTE_PRESETS.filter((preset) => {
+                      const raw = String(orderNotes || "").trim();
+                      const tokens = raw
+                        .split(/[،,\n]+/)
+                        .map((s) => s.trim())
+                        .filter(Boolean);
+                      return !tokens.includes(preset) && !raw.includes(preset);
+                    }).map((preset) => (
                       <button
                         key={preset}
                         type="button"
@@ -1344,30 +1358,43 @@ export function TableOrderModal({
                 />
               </div>
 
-              <div>
-                <span className="text-[11px] font-bold text-slate-500 block mb-2">
-                  {lang === "ar" ? "خيارات سريعة شائعة:" : "Quick Preset Options:"}
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  {QUICK_ITEM_NOTE_PRESETS.map((preset) => (
-                    <button
-                      key={preset}
-                      type="button"
-                      onClick={() => {
-                        setNoteEditingItem((prev) => {
-                          if (!prev) return null;
-                          const existing = prev.notes.trim();
-                          const newNotes = existing ? `${existing}، ${preset}` : preset;
-                          return { ...prev, notes: newNotes };
-                        });
-                      }}
-                      className="text-[11px] font-bold bg-slate-100 hover:bg-amber-100 hover:text-amber-900 border border-slate-200 px-2.5 py-1.5 rounded-xl transition active:scale-95 text-slate-700 cursor-pointer"
-                    >
-                      +{preset}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              {(() => {
+                const rawNotes = String(noteEditingItem.notes || "").trim();
+                const currentTokens = rawNotes
+                  .split(/[،,\n]+/)
+                  .map((s) => s.trim())
+                  .filter(Boolean);
+                const availablePresets = QUICK_ITEM_NOTE_PRESETS.filter(
+                  (preset) => !currentTokens.includes(preset) && !rawNotes.includes(preset),
+                );
+                if (availablePresets.length === 0) return null;
+                return (
+                  <div>
+                    <span className="text-[11px] font-bold text-slate-500 block mb-2">
+                      {lang === "ar" ? "خيارات سريعة شائعة:" : "Quick Preset Options:"}
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {availablePresets.map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => {
+                            setNoteEditingItem((prev) => {
+                              if (!prev) return null;
+                              const existing = prev.notes.trim();
+                              const newNotes = existing ? `${existing}، ${preset}` : preset;
+                              return { ...prev, notes: newNotes };
+                            });
+                          }}
+                          className="text-[11px] font-bold bg-slate-100 hover:bg-amber-100 hover:text-amber-900 border border-slate-200 px-2.5 py-1.5 rounded-xl transition active:scale-95 text-slate-700 cursor-pointer"
+                        >
+                          +{preset}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
                 {noteEditingItem.notes ? (

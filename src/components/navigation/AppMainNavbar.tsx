@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { BellRing, ChevronDown, Grid3X3, LogOut } from "lucide-react";
+import { BellRing, ChevronDown, Grid3X3, LogOut, ShieldCheck } from "lucide-react";
 import { RestocashLogo } from "@/components/RestocashLogo";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { CurrencySwitcher } from "@/components/CurrencySwitcher";
@@ -19,13 +19,13 @@ import { useToast } from "@/hooks/use-toast";
 import { toast as sonnerToast } from "sonner";
 import {
   getActiveUserPermissionsSync,
-  hasAnyRequestedPermission,
   isDepartmentPermitted,
   PERMISSIONS_UPDATED_EVENT,
   signOutCurrentUser,
 } from "@/shared/services/userAuthorization";
 import { erpStore } from "@/shared/services/erpStore";
 import { tableOrdersStore } from "@/shared/services/tableOrdersStore";
+import { useSettings } from "@/hooks/use-settings";
 import {
   NAVIGATION_DEPARTMENTS,
   resolveNavigationState,
@@ -57,6 +57,8 @@ export function AppMainNavbar({
   showSystemVersionLink = true,
   className,
 }: AppMainNavbarProps) {
+  const { lang } = useSettings();
+  const isEn = lang === "en";
   const location = useLocation();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -141,7 +143,6 @@ export function AppMainNavbar({
           return;
         }
 
-        // Only notify when inside a restaurant page (and not on /captain which already handles its own toast)
         const isCaptainPage = location.pathname.startsWith("/captain");
         for (const r of rows) {
           if (!seenNavbarOrderIdsRef.current.has(r.id)) {
@@ -275,61 +276,84 @@ export function AppMainNavbar({
   };
 
   const displayName =
-    activeUser?.name || activeUser?.email?.split("@")[0] || "المسؤول";
-  const displayRole = activeUser?.role || "مشرف";
+    activeUser?.name || activeUser?.email?.split("@")[0] || (isEn ? "Administrator" : "المسؤول");
+  const rawRole = String(activeUser?.role || "admin").toLowerCase();
+  const displayRole =
+    rawRole === "admin" || rawRole === "super_admin"
+      ? isEn
+        ? "System Admin"
+        : "مدير النظام"
+      : rawRole === "manager"
+        ? isEn
+          ? "Finance Manager"
+          : "محاسب / مشرف"
+        : rawRole === "cashier"
+          ? isEn
+            ? "POS Cashier"
+            : "كاشير"
+          : rawRole === "captain"
+            ? isEn
+              ? "Floor Captain"
+              : "كابتن صالة"
+            : rawRole === "kitchen"
+              ? isEn
+                ? "Kitchen Chef"
+                : "شيف المطبخ"
+              : activeUser?.role || (isEn ? "Supervisor" : "مشرف");
 
   return (
     <header
       className={cn(
-        "sticky top-0 z-40 shrink-0 bg-card/95 backdrop-blur-md border-b border-border px-2.5 sm:px-6 h-14 flex items-center justify-between gap-1.5 sm:gap-3 shadow-2xs",
+        "sticky top-0 z-40 shrink-0 bg-card/90 backdrop-blur-xl border-b border-border/90 px-3 sm:px-6 h-14 flex items-center justify-between gap-2 sm:gap-3 shadow-2xs",
         className,
       )}
-      dir="rtl"
+      dir={isEn ? "ltr" : "rtl"}
     >
-      {/* Right Zone (RTL): Brand Logo & Program Name + Quick Departments Switcher */}
-      <div className="flex items-center gap-1.5 sm:gap-4 min-w-0">
+      {/* Brand Logo + Quick Departments Switcher */}
+      <div className="flex items-center gap-2 sm:gap-3.5 min-w-0">
         <Link
           to="/admin"
           onClick={() => dispatchSubTabCommand("/admin", "")}
-          className="flex items-center gap-1.5 sm:gap-2 shrink-0 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-lg"
-          title="العودة إلى لوحة الأقسام الرئيسية"
+          className="flex items-center gap-2 shrink-0 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-xl py-1"
+          title={isEn ? "Return to Main Departments Hub" : "العودة إلى لوحة الأقسام الرئيسية"}
         >
-          <RestocashLogo size={24} />
-          <span className="font-black text-xs sm:text-base tracking-tight text-foreground group-hover:text-primary transition-colors whitespace-nowrap shrink-0">
-            <span className="hidden sm:inline">Restocash ERP</span>
-            <span className="sm:hidden">Restocash</span>
-          </span>
+          <RestocashLogo size={22} showDeveloper={false} />
         </Link>
 
-        <span className="h-5 w-px bg-border/80 hidden sm:inline-block shrink-0" aria-hidden="true" />
+        <span className="h-5 w-px bg-border hidden sm:inline-block shrink-0" aria-hidden="true" />
 
         {/* Quick Departments Dropdown Switcher */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg text-xs font-bold bg-muted/60 hover:bg-muted text-foreground border border-border/70 transition-colors cursor-pointer whitespace-nowrap shrink-0"
-              title="الانتقال السريع بين أقسام النظام"
+              className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold bg-muted/70 hover:bg-muted text-foreground border border-border/80 transition-all cursor-pointer whitespace-nowrap shrink-0"
+              title={isEn ? "Quick Switch Between Modules" : "الانتقال السريع بين أقسام النظام"}
             >
               <Grid3X3 size={14} className="text-primary shrink-0" />
-              <span className="hidden md:inline">الأقسام الرئيسية</span>
-              <span className="md:hidden">الأقسام</span>
+              <span className="hidden md:inline">
+                {isEn ? "System Modules" : "الأقسام الرئيسية"}
+              </span>
+              <span className="md:hidden">{isEn ? "Modules" : "الأقسام"}</span>
               <ChevronDown size={13} className="text-muted-foreground shrink-0" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-60 p-1.5 font-cairo text-right">
+          <DropdownMenuContent
+            align="start"
+            className={cn("w-64 p-1.5 rounded-xl shadow-lg border-border", isEn ? "text-left" : "text-right")}
+          >
             <DropdownMenuItem
               onClick={() => {
                 dispatchSubTabCommand("/admin", "");
                 navigate({ to: "/admin" });
               }}
               className={cn(
-                "flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-bold cursor-pointer",
-                isRootDashboard && "bg-primary/10 text-primary font-black",
+                "flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold cursor-pointer",
+                isRootDashboard && "bg-primary/10 text-primary font-extrabold",
               )}
             >
               <Grid3X3 size={15} className="text-primary shrink-0" />
-              <span>لوحة الأقسام الرئيسية</span>
+              <span>{isEn ? "Main Departments Hub" : "لوحة الأقسام الرئيسية"}</span>
             </DropdownMenuItem>
             <DropdownMenuSeparator className="my-1" />
             {visibleDepartments.map((dept) => {
@@ -343,8 +367,8 @@ export function AppMainNavbar({
                     navigate({ to: dept.to, search: dept.search });
                   }}
                   className={cn(
-                    "flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-bold cursor-pointer",
-                    isActive && "bg-primary/10 text-primary font-black",
+                    "flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold cursor-pointer",
+                    isActive && "bg-primary/10 text-primary font-extrabold",
                   )}
                 >
                   <Icon
@@ -362,8 +386,8 @@ export function AppMainNavbar({
         </DropdownMenu>
       </div>
 
-      {/* Left Zone (RTL): QR Self-Order Alert (Restaurant Screens Only), Language, Currency, Theme Toggle, Version & User Profile */}
-      <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+      {/* Controls Zone: QR Self-Order Alert, Language, Currency, Theme Toggle, Version & User Profile */}
+      <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
         {isRestaurantScreen && pendingSelfOrdersCount > 0 && (
           <Link
             to="/captain"
@@ -373,13 +397,23 @@ export function AppMainNavbar({
                 ? "bg-red-600 text-white border-red-700 hover:bg-red-700"
                 : "bg-amber-500 text-slate-950 border-amber-600 hover:bg-amber-400",
             )}
-            title="اضغط لفتح شاشة الكابتن ومراجعة طلبات العملاء الذاتية"
+            title={
+              isEn
+                ? "Open Captain Screen to review customer QR orders"
+                : "اضغط لفتح شاشة الكابتن ومراجعة طلبات العملاء الذاتية"
+            }
           >
             <BellRing size={14} className="animate-bounce shrink-0" />
             <span className="hidden sm:inline">
-              {hasUrgentTableCall ? "استدعاء طاولة / طلبات QR" : "طلبات عملاء QR"}
+              {hasUrgentTableCall
+                ? isEn
+                  ? "Table Call / QR Orders"
+                  : "استدعاء طاولة / طلبات QR"
+                : isEn
+                  ? "Customer QR Orders"
+                  : "طلبات عملاء QR"}
             </span>
-            <span className="inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-black/20 text-[11px] font-black">
+            <span className="inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-black/20 text-[11px] font-black tabular-nums">
               {pendingSelfOrdersCount}
             </span>
           </Link>
@@ -393,27 +427,30 @@ export function AppMainNavbar({
           <CurrencySwitcher compact />
         </div>
 
-        {/* Integrated Theme Toggle (Dark / Light mode) */}
-        <ThemeToggle className="h-8 w-8 rounded-lg border-border/80 bg-muted/60 hover:bg-muted text-foreground shrink-0" />
+        {/* Integrated 6-Mode 4K Theme Switcher */}
+        <ThemeToggle className="h-8 rounded-xl border-border/80 bg-muted/60 hover:bg-muted text-foreground shrink-0" />
 
         {/* System Version Link */}
         {showSystemVersionLink && (
           <Link
             to="/admin/system-update"
-            className="hidden xl:inline-flex items-center text-[11px] text-muted-foreground hover:text-foreground font-mono tabular-nums bg-muted/50 px-2 py-1 rounded-lg border border-border/60 whitespace-nowrap shrink-0 transition-colors"
-            title="تحديثات النظام"
+            className="hidden xl:inline-flex items-center text-[11px] text-muted-foreground hover:text-foreground font-mono tabular-nums bg-muted/50 px-2 py-1 rounded-lg border border-border/70 whitespace-nowrap shrink-0 transition-colors"
+            title={isEn ? "System Updates & Backup" : "تحديثات النظام"}
           >
             v{CURRENT_VERSION}
           </Link>
         )}
 
         {/* User Profile & Sign Out */}
-        <div className="flex items-center gap-1.5 bg-muted/60 border border-border/80 px-2 py-1 rounded-xl shrink-0">
-          <div className="text-right hidden lg:block max-w-[120px]">
-            <p className="text-[11px] font-black text-foreground truncate leading-tight">
+        <div className="flex items-center gap-2 bg-muted/60 border border-border/80 px-2.5 py-1 rounded-xl shrink-0">
+          <div className="hidden sm:flex h-6 w-6 rounded-lg bg-primary/15 text-primary items-center justify-center shrink-0">
+            <ShieldCheck size={13} />
+          </div>
+          <div className={cn("hidden lg:block max-w-[130px]", isEn ? "text-left" : "text-right")}>
+            <p className="text-[11px] font-extrabold text-foreground truncate leading-tight">
               {displayName}
             </p>
-            <p className="text-[9px] text-muted-foreground font-semibold truncate leading-tight">
+            <p className="text-[10px] text-muted-foreground font-semibold truncate leading-tight">
               {displayRole}
             </p>
           </div>
@@ -423,10 +460,10 @@ export function AppMainNavbar({
             size="icon"
             className="h-7 w-7 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
             onClick={handleLogout}
-            title="تسجيل الخروج"
-            aria-label="تسجيل الخروج"
+            title={isEn ? "Sign Out" : "تسجيل الخروج"}
+            aria-label={isEn ? "Sign Out" : "تسجيل الخروج"}
           >
-            <LogOut size={15} />
+            <LogOut size={14} />
           </Button>
         </div>
       </div>

@@ -1154,7 +1154,11 @@ export const DEFAULT_SUPPLIERS: Supplier[] = ORACLE_MIGRATION_ACCOUNTS.filter(
   deleted: false,
 }));
 
-export const LEGACY_DEFAULT_USER_IDS = new Set(["u-manager", "u-cashier"]);
+export const LEGACY_DEFAULT_USER_IDS = new Set([
+  "u-manager",
+  "u-cashier",
+  "u-owner-mahmoud",
+]);
 
 export const DEFAULT_COMPLIANT_ADMIN_PASSWORD = "Admin@12345";
 
@@ -1243,6 +1247,19 @@ function isCompliantPasswordValue(pw: unknown): boolean {
   return /[A-Za-z]/.test(pw) && /[0-9]/.test(pw);
 }
 
+function isSeedAdminRecord(u: SystemUser): boolean {
+  const uid = String(u.id || "").trim().toLowerCase();
+  const uname = String(u.username || "").trim().toLowerCase();
+  const uemail = String(u.email || "").trim().toLowerCase();
+  return (
+    uid === "u-admin" ||
+    uid === "u-owner-mahmoud" ||
+    uname === "admin" ||
+    uemail === "admin@restocash.com" ||
+    uemail === "admin@restocash.local"
+  );
+}
+
 export function ensureCurrentManagedUsers(
   users: unknown,
   employees: Employee[] = DEFAULT_EMPLOYEES,
@@ -1319,7 +1336,7 @@ export function ensureCurrentManagedUsers(
     ) as SystemUser["role"];
 
     const resolvedPermissions =
-      compliantUsername === "admin"
+      resolvedRole === "super_admin" || resolvedRole === "admin" || compliantUsername === "admin"
         ? { ...ROOT_DEFAULT_ADMIN.permissions, ...(user.permissions || {}) }
         : { ...(user.permissions || {}) };
 
@@ -1360,16 +1377,60 @@ export function ensureCurrentManagedUsers(
     };
   });
 
-  const hasAdmin = normalizedList.some((u) => u.username === "admin");
-  if (!hasAdmin) {
-    normalizedList.unshift({
+  // Enforce keeping ONLY ONE administration account (admin / super_admin):
+  // If multiple admin accounts exist, keep the active logged-in admin or the real non-seed admin
+  // and remove the extra/default admin account.
+  const adminUsers = normalizedList.filter(
+    (u) => u.role === "admin" || u.role === "super_admin",
+  );
+
+  let finalList = normalizedList;
+  if (adminUsers.length > 1) {
+    const activeAuth =
+      typeof window !== "undefined"
+        ? (
+            window.localStorage?.getItem("restocash_auth_user") ||
+            window.sessionStorage?.getItem("restocash_auth_user") ||
+            ""
+          )
+            .trim()
+            .toLowerCase()
+        : "";
+    const activeBase = activeAuth.split("@")[0];
+
+    const keptAdmin =
+      adminUsers.find((u) => {
+        if (!activeAuth) return false;
+        const uname = String(u.username || "").trim().toLowerCase();
+        const uemail = String(u.email || "").trim().toLowerCase();
+        return (
+          uemail === activeAuth ||
+          uname === activeAuth ||
+          (Boolean(activeBase) && (uname === activeBase || uemail.split("@")[0] === activeBase))
+        );
+      }) ||
+      adminUsers.find((u) => !isSeedAdminRecord(u)) ||
+      adminUsers[0];
+
+    finalList = normalizedList.filter(
+      (u) =>
+        (u.role !== "admin" && u.role !== "super_admin") ||
+        u.id === keptAdmin.id,
+    );
+  }
+
+  const hasAnyAdmin = finalList.some(
+    (u) => u.role === "admin" || u.role === "super_admin",
+  );
+  if (!hasAnyAdmin) {
+    finalList.unshift({
       ...ROOT_DEFAULT_ADMIN,
       employee_code: usedCodes.has("1000") ? "1000-A" : "1000",
       permissions: { ...ROOT_DEFAULT_ADMIN.permissions },
     });
   }
 
-  return normalizedList;
+  return finalList;
 }
 
 export const DEFAULT_PERMISSIONS: Record<string, UserPermission> = {
