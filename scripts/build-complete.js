@@ -4,64 +4,39 @@ import path from "node:path";
 const rootDir = process.cwd();
 const distDir = path.join(rootDir, "dist");
 const distClientDir = path.join(distDir, "client");
+const distServerDir = path.join(distDir, "server");
 const distPrerenderDir = path.join(distDir, "prerendered");
-const outputPublicDir = path.join(rootDir, ".output", "public");
 const outputDir = path.join(rootDir, ".output");
 const buildDir = path.join(rootDir, "build");
 
-console.log("[build-complete] Post-processing build artifacts...");
+console.log("[build-complete] Preparing clean SPA build artifacts for Vercel & static hosts...");
 
-// 1. Identify source files containing index.html
-const candidateDirs = [
-  distClientDir,
-  outputPublicDir,
-  distPrerenderDir,
-  distDir,
-  outputDir,
-  buildDir,
-];
-
+// 1. Identify source directory containing freshly generated client index.html and assets
 let sourceDir = null;
-for (const dir of candidateDirs) {
-  if (fs.existsSync(dir) && fs.existsSync(path.join(dir, "index.html"))) {
-    try {
-      const stat = fs.statSync(path.join(dir, "index.html"));
-      if (stat.size > 50) {
-        sourceDir = dir;
-        break;
-      }
-    } catch {
-      // ignore
-    }
-  }
+if (fs.existsSync(distClientDir) && fs.existsSync(path.join(distClientDir, "index.html"))) {
+  sourceDir = distClientDir;
+} else if (fs.existsSync(distDir) && fs.existsSync(path.join(distDir, "index.html"))) {
+  sourceDir = distDir;
 }
 
 // 2. Identify assets directory (client assets with js/css)
 let assetsDir = null;
-const candidateAssetDirs = [
-  path.join(distClientDir, "assets"),
-  path.join(distDir, "assets"),
-  path.join(outputPublicDir, "assets"),
-  path.join(buildDir, "assets"),
-];
-for (const dir of candidateAssetDirs) {
-  if (fs.existsSync(dir)) {
-    try {
-      if (fs.readdirSync(dir).length > 0) {
-        assetsDir = dir;
-        break;
-      }
-    } catch {
-      // ignore
-    }
-  }
+if (fs.existsSync(path.join(distClientDir, "assets"))) {
+  assetsDir = path.join(distClientDir, "assets");
+} else if (fs.existsSync(path.join(distDir, "assets"))) {
+  assetsDir = path.join(distDir, "assets");
 }
 
-// 3. Fallback: If no index.html exists anywhere, synthesize a valid production SPA index.html
+// 3. Read or synthesize SPA index.html
 let rootIndexHtmlContent = "";
 if (sourceDir) {
-  console.log(`[build-complete] Found index.html in: ${sourceDir}`);
+  console.log(`[build-complete] Using generated index.html from: ${sourceDir}`);
   rootIndexHtmlContent = fs.readFileSync(path.join(sourceDir, "index.html"), "utf8");
+  // Ensure no legacy inline redirect script remains in index.html
+  rootIndexHtmlContent = rootIndexHtmlContent.replace(
+    /<script>try\{var u=new URLSearchParams\(window\.location\.search\);[\s\S]*?window\.location\.replace\(hasUser\?"\/admin":"\/login"\);\}\}catch\(e\)\{\}<\/script>/g,
+    "",
+  );
 } else {
   console.warn(
     "[build-complete] No index.html found. Synthesizing valid SPA index.html from bundle assets...",
@@ -85,7 +60,7 @@ if (sourceDir) {
   }
 
   rootIndexHtmlContent = `<!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="ar" dir="rtl" translate="no">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -101,78 +76,47 @@ if (sourceDir) {
 </html>`;
 }
 
-// 4. Targets to populate so artifact uploaders (Vite dist, React build, or Nitro .output/public) always find complete, valid artifacts
-const targets = [distDir, distClientDir, buildDir, outputPublicDir];
-
-// Key SPA entry routes that must resolve with HTTP 200 on static hosts
-const spaRouteDirs = [
-  "menu",
-  "captain",
-  "pos",
-  "oven",
-  "login",
-  "admin",
-  "cashier-treasury",
-  "setup",
-];
-
-targets.forEach((target) => {
-  if (!fs.existsSync(target)) {
-    fs.mkdirSync(target, { recursive: true });
+// 4. Clean stale top-level dist files (except client/) before flattening dist/client into dist/
+if (fs.existsSync(distDir)) {
+  for (const entry of fs.readdirSync(distDir)) {
+    if (entry === "client") continue;
+    fs.rmSync(path.join(distDir, entry), { recursive: true, force: true });
   }
+} else {
+  fs.mkdirSync(distDir, { recursive: true });
+}
 
-  // Ensure assets exist in target
-  const targetAssetsDir = path.join(target, "assets");
-  if (assetsDir && targetAssetsDir !== assetsDir) {
-    if (!fs.existsSync(targetAssetsDir)) {
-      fs.mkdirSync(targetAssetsDir, { recursive: true });
+// 5. Copy all files and folders from dist/client into dist/ root
+if (fs.existsSync(distClientDir)) {
+  for (const item of fs.readdirSync(distClientDir)) {
+    const srcItem = path.join(distClientDir, item);
+    const destItem = path.join(distDir, item);
+    // Skip any route-named subdirectories so Vercel rewrites handle all routes cleanly without 308 slash redirects
+    if (
+      fs.statSync(srcItem).isDirectory() &&
+      item !== "assets" &&
+      item !== "data" &&
+      item !== "icons" &&
+      item !== "images"
+    ) {
+      continue;
     }
-    const assetItems = fs.readdirSync(assetsDir);
-    assetItems.forEach((item) => {
-      const srcItem = path.join(assetsDir, item);
-      const destItem = path.join(targetAssetsDir, item);
-      if (srcItem !== destItem) {
-        fs.cpSync(srcItem, destItem, { recursive: true, force: true });
-      }
-    });
+    fs.cpSync(srcItem, destItem, { recursive: true, force: true });
   }
+}
 
-  // If sourceDir had other files (like icons, data, etc.), mirror them
-  if (sourceDir && sourceDir !== target) {
-    const items = fs.readdirSync(sourceDir);
-    items.forEach((item) => {
-      if (item === "client" || item === "server" || item === "assets") return;
-      const srcItem = path.join(sourceDir, item);
-      const destItem = path.join(target, item);
-      if (srcItem !== destItem) {
-        fs.cpSync(srcItem, destItem, { recursive: true, force: true });
-      }
-    });
+// 6. Write clean index.html, 404.html, and _redirects at dist/ root
+fs.writeFileSync(path.join(distDir, "index.html"), rootIndexHtmlContent, "utf8");
+fs.writeFileSync(path.join(distDir, "404.html"), rootIndexHtmlContent, "utf8");
+fs.writeFileSync(path.join(distDir, "_redirects"), "/*    /index.html   200\n", "utf8");
+
+// 7. Remove dist/client, dist/server, dist/prerendered, build/, and .output/ so Vercel serves dist/ as a pure static SPA
+for (const dirToClean of [distClientDir, distServerDir, distPrerenderDir, outputDir, buildDir]) {
+  if (fs.existsSync(dirToClean)) {
+    fs.rmSync(dirToClean, { recursive: true, force: true });
   }
-
-  // Write index.html
-  const targetIndexHtml = path.join(target, "index.html");
-  fs.writeFileSync(targetIndexHtml, rootIndexHtmlContent, "utf8");
-
-  // Write 404.html
-  const target404 = path.join(target, "404.html");
-  fs.writeFileSync(target404, rootIndexHtmlContent, "utf8");
-
-  // Write _redirects for Netlify / Cloudflare Pages / Static hosts
-  const redirectsFile = path.join(target, "_redirects");
-  fs.writeFileSync(redirectsFile, "/*    /index.html   200\n", "utf8");
-
-  // Populate key SPA route directories
-  spaRouteDirs.forEach((routeDir) => {
-    const routePath = path.join(target, routeDir);
-    if (!fs.existsSync(routePath)) {
-      fs.mkdirSync(routePath, { recursive: true });
-    }
-    const routeIndex = path.join(routePath, "index.html");
-    fs.writeFileSync(routeIndex, rootIndexHtmlContent, "utf8");
-  });
-});
+}
 
 console.log(
-  `[build-complete] Successfully mirrored build artifacts (${rootIndexHtmlContent.length} bytes index.html) to dist/, dist/client/, build/, and .output/public/`,
+  `[build-complete] Clean SPA build ready in dist/ (${rootIndexHtmlContent.length} bytes index.html).`,
 );

@@ -51,9 +51,17 @@ export default defineConfig({
           defaultBehavior: [],
         },
       },
+      spa: {
+        enabled: true,
+        prerender: {
+          outputPath: "/index",
+          crawlLinks: false,
+        },
+      },
       prerender: {
         enabled: true,
         autoStaticPathsDiscovery: false,
+        crawlLinks: false,
         failOnError: false,
       },
     }),

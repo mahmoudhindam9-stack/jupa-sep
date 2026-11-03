@@ -235,7 +235,10 @@ function LoginPage() {
     };
 
     if (hosted) {
-      void continueWithHostedSession()
+      const timeoutPromise = new Promise<boolean>((resolve) =>
+        window.setTimeout(() => resolve(false), 1500),
+      );
+      void Promise.race([continueWithHostedSession(), timeoutPromise])
         .then((restored) => {
           if (!restored) {
             checkStoredLocalSession();
@@ -433,9 +436,12 @@ function LoginPage() {
     localStorage.setItem("remember_me", rememberMe ? "true" : "false");
 
     try {
-      // 1. Always attempt Supabase Auth + public.profiles login first on ANY host
+      // 1. Always attempt Supabase Auth + public.profiles login first on ANY host (with 2.5s timeout so local login is never blocked)
       try {
-        const authenticated = await signInHostedUser(normalizedUsername, normalizedPassword);
+        const authenticated = await Promise.race([
+          signInHostedUser(normalizedUsername, normalizedPassword),
+          new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 2500)),
+        ]);
         if (authenticated && "session" in authenticated && authenticated.session?.user?.id) {
           const { session, profile, email } = authenticated;
           const activeUsername = String(
