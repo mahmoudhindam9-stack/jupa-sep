@@ -825,14 +825,17 @@ function AdminDashboard() {
         </div>
       )}
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+      <div className="w-full">
         {/* TAB 0: THE DEPARTMENTS GRID (PRIMARY LANDING VIEW AFTER LOGIN) */}
-        <TabsContent value="grid" className="space-y-6">
-          <DepartmentsGridHub />
-        </TabsContent>
+        {activeTab === "grid" && (
+          <div data-tab-panel="grid" className="space-y-6">
+            <DepartmentsGridHub />
+          </div>
+        )}
 
         {/* TAB 1: EXECUTIVE DASHBOARD */}
-        <TabsContent value="dashboard" className="space-y-6 mt-4">
+        {activeTab === "dashboard" && (
+          <div data-tab-panel="dashboard" className="space-y-6 mt-4">
           <ComprehensiveFinancialPositionCard />
           <div data-dashboard-accounting-sync="true" className="space-y-4">
             <div className="rounded-3xl border border-border/70 bg-white p-5 shadow-sm">
@@ -1208,10 +1211,12 @@ function AdminDashboard() {
               </Card>
             </>
           )}
-        </TabsContent>
+          </div>
+        )}
 
         {/* TAB 2: TREASURY MANAGEMENT & RECONCILIATION */}
-        <TabsContent value="treasury" className="space-y-6 mt-4">
+        {activeTab === "treasury" && (
+          <div data-tab-panel="treasury" className="space-y-6 mt-4">
           {/* Top Quick Print & Reports Shortcut Bar */}
           <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-4 rounded-3xl border border-indigo-500/30 shadow-lg flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-3 text-right">
@@ -1879,54 +1884,63 @@ function AdminDashboard() {
               </form>
             </div>
           </div>
-        </TabsContent>
+          </div>
+        )}
 
         {/* TAB 3: VOUCHERS ENTRY */}
-        <TabsContent value="vouchers_entry" className="space-y-4 mt-4">
-          <div className="rounded-2xl border border-emerald-500/30 bg-emerald-50/60 dark:bg-emerald-950/20 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-emerald-600 text-white shadow-md">
-                <BookOpen size={20} />
+        {activeTab === "vouchers_entry" && (
+          <div data-tab-panel="vouchers_entry" className="space-y-4 mt-4">
+            <div className="rounded-2xl border border-emerald-500/30 bg-emerald-50/60 dark:bg-emerald-950/20 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-emerald-600 text-white shadow-md">
+                  <BookOpen size={20} />
+                </div>
+                <div>
+                  <h4 className="font-black text-sm text-foreground">
+                    تم دمج وتوسيع تسجيل سندات الإيراد والمصروف ضمن حساب الأستاذ العام
+                  </h4>
+                  <p className="text-xs text-muted-foreground font-medium">
+                    يمكنك تسجيل وترحيل السندات المباشرة هنا، أو الانتقال لقسم السندات في دفتر الأستاذ
+                    العام والدفاتر المحاسبية.
+                  </p>
+                </div>
               </div>
-              <div>
-                <h4 className="font-black text-sm text-foreground">
-                  تم دمج وتوسيع تسجيل سندات الإيراد والمصروف ضمن حساب الأستاذ العام
-                </h4>
-                <p className="text-xs text-muted-foreground font-medium">
-                  يمكنك تسجيل وترحيل السندات المباشرة هنا، أو الانتقال لقسم السندات في دفتر الأستاذ
-                  العام والدفاتر المحاسبية.
-                </p>
-              </div>
+              <Link to="/admin/ledger">
+                <Button
+                  size="sm"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl gap-1.5 shadow-md"
+                >
+                  <BookOpen size={14} />
+                  فتح في حساب الأستاذ العام
+                </Button>
+              </Link>
             </div>
-            <Link to="/admin/ledger">
-              <Button
-                size="sm"
-                className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl gap-1.5 shadow-md"
-              >
-                <BookOpen size={14} />
-                فتح في حساب الأستاذ العام
-              </Button>
-            </Link>
-          </div>
 
-          <VouchersLedgerSection />
-        </TabsContent>
+            <VouchersLedgerSection />
+          </div>
+        )}
 
         {/* TAB 4: CHART OF ACCOUNTS (دليل الحسابات المحاسبي المحترف) */}
-        <TabsContent value="chart_of_accounts" className="space-y-6 mt-4">
-          <OracleAccountsViewer />
-        </TabsContent>
+        {activeTab === "chart_of_accounts" && (
+          <div data-tab-panel="chart_of_accounts" className="space-y-6 mt-4">
+            <OracleAccountsViewer />
+          </div>
+        )}
 
         {/* TAB 5: SHIFT AUDIT LOGS (Supabase) */}
-        <TabsContent value="shift_audit" className="space-y-6 mt-4">
-          <ShiftAuditLogViewer />
-        </TabsContent>
+        {activeTab === "shift_audit" && (
+          <div data-tab-panel="shift_audit" className="space-y-6 mt-4">
+            <ShiftAuditLogViewer />
+          </div>
+        )}
 
         {/* TAB 6: AUDIT OPERATIONS LOG (سجل العمليات والرقابة العامة) */}
-        <TabsContent value="audit_logs" className="space-y-6 mt-4">
-          <AuditOperationsView logs={erpState.auditLogs || []} />
-        </TabsContent>
-      </Tabs>
+        {activeTab === "audit_logs" && (
+          <div data-tab-panel="audit_logs" className="space-y-6 mt-4">
+            <AuditOperationsView logs={erpState.auditLogs || []} />
+          </div>
+        )}
+      </div>
 
       <AuditOperationsModal
         open={isAuditOperationsOpen}
