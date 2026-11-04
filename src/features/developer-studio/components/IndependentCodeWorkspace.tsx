@@ -14,7 +14,7 @@ type OpenFile = { path: string; sha: string; original: string; content: string; 
 type RunInfo = { id: number; name: string; status: string; conclusion: string | null; html_url: string; created_at: string };
 
 const DEFAULT_REPO = "mahmoudhindam9-stack/jupa-sep";
-const DEFAULT_BRANCH = "feat/independent-developer-workspace";
+const DEFAULT_BRANCH = "main";
 const WORKFLOW = "verify-users-page-auth.yml";
 const MAX_FILE_BYTES = 800 * 1024;
 const MAX_AI_CONTEXT = 45_000;
