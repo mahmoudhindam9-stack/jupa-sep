@@ -315,6 +315,7 @@ function RootComponent() {
 
     const applyStudioEdits = (edits: Record<string, any>) => {
       for (const [selector, edit] of Object.entries(edits || {}) as Array<[string, any]>) {
+        if (selector.startsWith("__studio_")) continue;
         if (!edit || typeof edit !== "object") continue;
         let element: Element | null = null;
         try { element = document.querySelector(selector); } catch { continue; }
@@ -328,6 +329,15 @@ function RootComponent() {
           if (node) node.textContent = String(edit.text);
           else if (!html.children.length) html.textContent = String(edit.text);
           html.dataset.studioTextApplied = String(edit.text);
+        }
+        if (edit.ariaLabel) html.setAttribute("aria-label", String(edit.ariaLabel));
+        if (edit.role) html.setAttribute("role", String(edit.role));
+        if (edit.attributes && typeof edit.attributes === "object") {
+          for (const [attrKey, attrVal] of Object.entries(edit.attributes)) {
+            if (typeof attrVal === "string" && attrVal && !attrKey.toLowerCase().startsWith("on")) {
+              try { html.setAttribute(attrKey, attrVal); } catch {}
+            }
+          }
         }
         if (edit.styles && typeof edit.styles === "object") for (const [key, value] of Object.entries(edit.styles)) {
           if (typeof value !== "string") continue;

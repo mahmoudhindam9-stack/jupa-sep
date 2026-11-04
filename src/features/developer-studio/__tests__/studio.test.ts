@@ -4,7 +4,7 @@
  * optimistic concurrency conflict detection, smart merging, and rollback.
  */
 
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it, beforeEach, vi } from "vitest";
 import {
   ElementModel,
   PageModel,
@@ -19,6 +19,135 @@ import {
   detectCycle,
   CURRENT_SCHEMA_VERSION,
 } from "../models/studio.types";
+
+let mockServerPublished: any = null;
+let mockServerDrafts: Record<string, any> = {};
+let mockServerHistory: any[] = [];
+
+vi.mock("@/integrations/supabase/client", () => ({
+  supabase: {
+    auth: {
+      getUser: async () => ({ data: { user: { id: "u1", email: "admin@restocash.com" } }, error: null }),
+      getSession: async () => ({ data: { session: { user: { id: "u1", email: "admin@restocash.com" } } }, error: null }),
+    },
+    from: (table: string) => {
+      if (table === "studio_published_configs") {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({ data: mockServerPublished, error: null }),
+            }),
+          }),
+        };
+      }
+      if (table === "studio_drafts") {
+        return {
+          select: () => ({
+            eq: (_col: string, owner: string) => ({
+              order: () => ({
+                limit: () => ({
+                  maybeSingle: async () => ({ data: mockServerDrafts[owner] || null, error: null }),
+                }),
+              }),
+              maybeSingle: async () => ({ data: mockServerDrafts[owner] || null, error: null }),
+            }),
+          }),
+        };
+      }
+      if (table === "studio_history") {
+        return {
+          select: () => ({
+            order: () => ({
+              limit: async () => ({ data: mockServerHistory, error: null }),
+            }),
+            eq: (_col: string, rev: number) => ({
+              maybeSingle: async () => ({
+                data: mockServerHistory.find((h) => h.revision === rev) || null,
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+      return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) };
+    },
+    rpc: async (fnName: string, args: any) => {
+      if (fnName === "developer_studio_access_status") {
+        return {
+          data: { authenticated: true, profile_found: true, allowed: true, role: "admin" },
+          error: null,
+        };
+      }
+      if (fnName === "developer_studio_save_draft") {
+        const now = new Date().toISOString();
+        const owner = args.p_owner || "tester";
+        mockServerDrafts[owner] = {
+          id: args.p_draft_id || `draft_${owner}`,
+          owner,
+          base_revision: args.p_base_revision,
+          schema_version: args.p_schema_version,
+          pages: args.p_pages,
+          elements: args.p_elements,
+          dom_edits: args.p_dom_edits,
+          updated_at: now,
+          created_at: now,
+        };
+        return {
+          data: {
+            success: true,
+            id: mockServerDrafts[owner].id,
+            serverUpdatedAt: now,
+            base_revision: args.p_base_revision,
+          },
+          error: null,
+        };
+      }
+      if (fnName === "publish_studio_configuration") {
+        const currentRev = mockServerPublished?.revision || 1;
+        if (args.p_expected_revision !== currentRev) {
+          return {
+            data: { success: false, conflict: true, currentRevision: currentRev },
+            error: null,
+          };
+        }
+        const nextRev = currentRev + 1;
+        const now = new Date().toISOString();
+        if (mockServerPublished) {
+          mockServerHistory.unshift({
+            id: mockServerHistory.length + 1,
+            revision: mockServerPublished.revision,
+            schema_version: mockServerPublished.schema_version,
+            published_by: mockServerPublished.published_by,
+            published_at: mockServerPublished.published_at,
+            summary: mockServerPublished.summary,
+            snapshot: {
+              pages: mockServerPublished.pages,
+              elements: mockServerPublished.elements,
+              domEdits: mockServerPublished.dom_edits,
+            },
+          });
+        }
+        mockServerPublished = {
+          id: "active",
+          revision: nextRev,
+          schema_version: args.p_schema_version,
+          published_at: now,
+          published_by: "admin",
+          summary: args.p_summary,
+          pages: args.p_pages,
+          elements: args.p_elements,
+          dom_edits: args.p_dom_edits,
+        };
+        return {
+          data: { success: true, newRevision: nextRev, publishedAt: now },
+          error: null,
+        };
+      }
+      return { data: null, error: null };
+    },
+  },
+}));
+
 import { studioService, DEFAULT_STUDIO_PUBLISHED_CONFIG } from "../services/studioService";
 
 describe("Developer Studio Pro — Data Models & Runtime Validation", () => {

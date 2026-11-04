@@ -1,6 +1,11 @@
 /**
- * Developer Studio Pro — Strongly Typed Models & Runtime Validation
+ * Developer Studio Pro — Core Data Models & Schema Validators
+ * Supports hierarchical Page -> Section/Container -> Element -> Style/Props architecture,
+ * Optimistic Concurrency Control (revisions), Design System tokens, Asset Management,
+ * Reusable Components, Responsive Overrides, Animations, Audits, and Diff Comparison.
  */
+
+export const CURRENT_SCHEMA_VERSION = 1;
 
 export type ElementType =
   | "heading"
@@ -14,101 +19,53 @@ export type ElementType =
   | "badge"
   | "divider";
 
-export interface HeadingContent {
-  text: string;
-  level: "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
+export type ViewportBreakpoint = "desktop" | "tablet" | "mobile";
+
+export type StudioSaveState =
+  | "saved"
+  | "saving"
+  | "unsaved"
+  | "offline"
+  | "conflict"
+  | "error";
+
+export interface ElementAnimationConfig {
+  type?: "none" | "fade-in" | "slide-up" | "slide-right" | "slide-left" | "zoom-in" | "bounce";
+  durationMs?: number;
+  delayMs?: number;
+  easing?: "ease" | "ease-in-out" | "linear" | "spring";
+  hoverEffect?: "none" | "lift" | "scale" | "glow" | "brighten";
+  previewEnabled?: boolean;
 }
 
-export interface TextContent {
-  text: string;
-  format?: "plain" | "markdown";
+export interface ElementSvgConfig {
+  fill?: string;
+  stroke?: string;
+  strokeWidth?: string;
+  opacity?: number;
+  rotate?: string;
+  scale?: number;
+  preserveAspectRatio?: boolean;
+  iconName?: string;
+  shapeBg?: "none" | "circle" | "rounded" | "square";
+  pathData?: string;
 }
-
-export interface ButtonContent {
-  label: string;
-  action?: "link" | "submit" | "alert" | "none" | "external" | "formula" | "toggle";
-  /** Internal app route or external URL, depending on the chosen action. */
-  url?: string;
-  /** Friendly message shown when the button is clicked. */
-  message?: string;
-  /** Arithmetic expression used by the calculation action. */
-  formula?: string;
-  /** Existing visual element affected by the show/hide action. */
-  targetElementId?: string;
-  variant?: "default" | "secondary" | "outline" | "destructive" | "ghost";
-}
-
-export interface ImageContent {
-  src: string;
-  alt: string;
-  fit?: "cover" | "contain" | "fill";
-}
-
-export interface CardContent {
-  title?: string;
-  subtitle?: string;
-  description?: string;
-  showHeader?: boolean;
-}
-
-export interface ContainerContent {
-  direction?: "row" | "column";
-  wrap?: boolean;
-}
-
-export interface TableColumn {
-  id: string;
-  label: string;
-}
-
-export interface TableContent {
-  columns: TableColumn[];
-  rows: Array<Record<string, any>>;
-}
-
-export interface InputContent {
-  label?: string;
-  placeholder?: string;
-  inputType?: "text" | "number" | "email" | "password" | "search";
-  defaultValue?: string;
-}
-
-export interface BadgeContent {
-  label: string;
-  variant?: "default" | "secondary" | "outline" | "destructive" | "success";
-}
-
-export interface DividerContent {
-  label?: string;
-  orientation?: "horizontal" | "vertical";
-}
-
-export type ElementContent =
-  | HeadingContent
-  | TextContent
-  | ButtonContent
-  | ImageContent
-  | CardContent
-  | ContainerContent
-  | TableContent
-  | InputContent
-  | BadgeContent
-  | DividerContent
-  | Record<string, any>;
 
 export interface ElementStyles {
-  // Colors
+  // Colors & Gradients
   textColor?: string;
   backgroundColor?: string;
+  backgroundGradient?: string;
   borderColor?: string;
-  accentColor?: string;
-  opacity?: number;
+  hoverBackgroundColor?: string;
+  hoverTextColor?: string;
+  activeBackgroundColor?: string;
 
   // Typography
   fontSize?: string;
   fontWeight?: string;
   fontFamily?: string;
-  textAlign?: "left" | "center" | "right" | "justify";
+  textAlign?: "right" | "center" | "left" | "justify";
   lineHeight?: string;
   letterSpacing?: string;
   textTransform?: "none" | "uppercase" | "lowercase" | "capitalize";
@@ -121,55 +78,164 @@ export interface ElementStyles {
   minHeight?: string;
   maxHeight?: string;
 
-  // Spacing
+  // Spacing (Margin & Padding)
+  margin?: string;
   marginTop?: string;
   marginRight?: string;
   marginBottom?: string;
   marginLeft?: string;
+  padding?: string;
   paddingTop?: string;
   paddingRight?: string;
   paddingBottom?: string;
   paddingLeft?: string;
 
-  // Borders & Shape
+  // Borders & Effects
   borderWidth?: string;
-  borderStyle?: "none" | "solid" | "dashed" | "dotted" | "double";
+  borderStyle?: "none" | "solid" | "dashed" | "dotted";
   borderRadius?: string;
-  boxShadow?: "none" | "sm" | "md" | "lg" | "xl" | "2xl";
+  outline?: string;
+  boxShadow?: "none" | "sm" | "md" | "lg" | "xl" | "2xl" | string;
+  opacity?: number;
 
-  // Alignment & Flex
-  display?: "block" | "inline-block" | "flex" | "inline-flex" | "grid";
-  flexDirection?: "row" | "row-reverse" | "column" | "column-reverse";
-  justifyContent?:
-    | "flex-start"
-    | "center"
-    | "flex-end"
-    | "space-between"
-    | "space-around"
-    | "space-evenly";
-  alignItems?: "flex-start" | "center" | "flex-end" | "stretch" | "baseline";
+  // Layout & Flexbox / Grid
+  display?: "block" | "flex" | "inline-flex" | "grid" | "none";
+  flexDirection?: "row" | "column" | "row-reverse" | "column-reverse";
+  justifyContent?: "flex-start" | "center" | "flex-end" | "space-between" | "space-around";
+  alignItems?: "flex-start" | "center" | "flex-end" | "stretch";
   gap?: string;
-  flexWrap?: "nowrap" | "wrap" | "wrap-reverse";
+  flexWrap?: "nowrap" | "wrap";
+  gridTemplateColumns?: string;
+  overflow?: "visible" | "hidden" | "auto" | "scroll";
+  zIndex?: string;
+}
+
+export interface ResponsiveStyleOverrides {
+  desktop?: Partial<ElementStyles> & { hidden?: boolean };
+  tablet?: Partial<ElementStyles> & { hidden?: boolean };
+  mobile?: Partial<ElementStyles> & { hidden?: boolean };
 }
 
 export interface ElementLayout {
-  position: "static" | "relative" | "absolute";
+  position: "static" | "relative" | "absolute" | "sticky";
+  top?: string;
+  right?: string;
+  bottom?: string;
+  left?: string;
+  zIndex?: number;
   order: number;
   visibility: boolean;
+  responsiveVisibility?: {
+    desktop?: boolean;
+    tablet?: boolean;
+    mobile?: boolean;
+  };
   responsive?: {
+    desktop?: boolean;
+    tablet?: boolean;
+    mobile?: boolean;
     hideOnMobile?: boolean;
     hideOnTablet?: boolean;
     hideOnDesktop?: boolean;
   };
 }
 
-export interface ElementModel {
+// Type-specific structured content definitions
+export interface HeadingContent {
+  text: string;
+  level: "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
+  iconName?: string;
+}
+
+export interface TextContent {
+  text: string;
+  format?: "plain" | "markdown";
+}
+
+export interface ButtonContent {
+  label: string;
+  action?: "link" | "alert" | "submit" | "external" | "formula" | "toggle" | "none";
+  url?: string;
+  message?: string;
+  formula?: string;
+  targetElementId?: string;
+  variant?: "default" | "secondary" | "outline" | "destructive" | "ghost";
+  icon?: string;
+}
+
+export interface ImageContent {
+  src: string;
+  alt: string;
+  caption?: string;
+  fit?: "cover" | "contain" | "fill";
+  assetId?: string;
+}
+
+export interface CardContent {
+  title: string;
+  subtitle?: string;
+  description: string;
+  badgeText?: string;
+  footerText?: string;
+  showHeader?: boolean;
+  iconName?: string;
+}
+
+export interface TableContent {
+  columns: Array<{ id: string; label: string; align?: "right" | "center" | "left" }>;
+  rows: Array<Record<string, any>>;
+  striped?: boolean;
+  bordered?: boolean;
+}
+
+export interface InputContent {
+  label: string;
+  placeholder: string;
+  inputType?: "text" | "number" | "email" | "password" | "date" | "select";
+  required?: boolean;
+  defaultValue?: string;
+}
+
+export interface BadgeContent {
+  label: string;
+  variant?: "default" | "secondary" | "outline" | "destructive" | "success";
+}
+
+export interface ContainerContent {
+  label?: string;
+  direction?: "row" | "column";
+  wrap?: boolean;
+}
+
+export interface DividerContent {
+  label?: string;
+  thickness?: string;
+}
+
+export type ElementContentMap = {
+  heading: HeadingContent;
+  text: TextContent;
+  button: ButtonContent;
+  image: ImageContent;
+  card: CardContent;
+  container: ContainerContent;
+  table: TableContent;
+  input: InputContent;
+  badge: BadgeContent;
+  divider: DividerContent;
+};
+
+export interface ElementModel<T extends ElementType = ElementType> {
   id: string;
   pageId: string;
   parentId: string | null;
-  type: ElementType;
+  type: T;
+  name?: string;
   content: Record<string, any>;
   styles: ElementStyles;
+  responsiveStyles?: ResponsiveStyleOverrides;
+  svgProps?: ElementSvgConfig;
+  animation?: ElementAnimationConfig;
   layout: ElementLayout;
   attributes: Record<string, any>;
   locked: boolean;
@@ -183,8 +249,11 @@ export interface PageModel {
   id: string;
   route: string;
   name: string;
+  description?: string;
+  visibleInNav?: boolean;
+  iconName?: string;
   elementIds: string[];
-  styles: Record<string, any>;
+  styles: ElementStyles;
   schemaVersion: number;
   revision: number;
   updatedAt: string;
@@ -192,92 +261,190 @@ export interface PageModel {
 }
 
 /**
- * Return a page's element references in first-seen order, removing repeated IDs.
- * A duplicate reference must never render the same card/table twice.
+ * Direct visual edits made on real application DOM elements in the live preview.
+ * Keyed by deterministic CSS selector inside StudioDraft.domEdits.
  */
-export function uniquePageElementIds(ids: readonly string[] | null | undefined): string[] {
-  const seen = new Set<string>();
-  return (Array.isArray(ids) ? ids : []).filter((id): id is string => {
-    if (typeof id !== "string" || !id.trim() || seen.has(id)) return false;
-    seen.add(id);
-    return true;
-  });
-}
-
-function stableStudioValue(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? String(value);
-  if (Array.isArray(value)) return "[" + value.map(stableStudioValue).join(",") + "]";
-  const record = value as Record<string, unknown>;
-  return "{" + Object.keys(record).sort().map((key) =>
-    JSON.stringify(key) + ":" + stableStudioValue(record[key]),
-  ).join(",") + "}";
-}
-
-/**
- * The initial database migration seeds demo cards/headings as an editor example.
- * Do not inject those untouched examples into real application pages alongside their
- * existing production UI. A deliberately customized seed is still rendered normally.
- */
-export function isUnmodifiedStudioStarterElement(
-  element: ElementModel,
-  starter: ElementModel | undefined,
-): boolean {
-  if (!starter) return false;
-  return element.id === starter.id &&
-    element.pageId === starter.pageId &&
-    element.parentId === starter.parentId &&
-    element.type === starter.type &&
-    stableStudioValue(element.content || {}) === stableStudioValue(starter.content || {}) &&
-    stableStudioValue(element.styles || {}) === stableStudioValue(starter.styles || {}) &&
-    stableStudioValue(element.layout || {}) === stableStudioValue(starter.layout || {}) &&
-    stableStudioValue(element.attributes || {}) === stableStudioValue(starter.attributes || {});
-}
-
-/** Generate collision-resistant IDs for new pages and elements, even on rapid repeated clicks. */
-export function createStudioId(prefix: string, reservedIds: Iterable<string> = []): string {
-  const reserved = new Set(reservedIds);
-  const randomPart =
-    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID().replace(/-/g, "")
-      : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
-  const base = `${prefix}_${randomPart}`;
-  let candidate = base;
-  let suffix = 1;
-  while (reserved.has(candidate)) {
-    candidate = `${base}_${suffix++}`;
-  }
-  return candidate;
-}
-
-/** Arabic, user-facing names used instead of internal component/type names. */
-export const ELEMENT_TYPE_LABELS: Record<ElementType, string> = {
-  heading: "عنوان",
-  text: "نص وصفي",
-  button: "زر وإجراء",
-  image: "صورة",
-  card: "بطاقة",
-  container: "مجموعة عناصر",
-  table: "جدول بيانات",
-  input: "حقل إدخال",
-  badge: "حالة",
-  divider: "فاصل",
-};
-
-export function getElementDisplayName(element: Pick<ElementModel, "type" | "content">): string {
-  const content = element.content || {};
-  const value = content.title || content.text || content.label || content.alt || content.placeholder;
-  if (typeof value === "string" && value.trim()) {
-    return value.trim().replace(/\s+/g, " ").slice(0, 42);
-  }
-  return ELEMENT_TYPE_LABELS[element.type] || "عنصر";
-}
-
 export interface StudioDomEdit {
   text?: string;
   styles?: Record<string, string>;
+  responsiveStyles?: {
+    desktop?: Record<string, string>;
+    tablet?: Record<string, string>;
+    mobile?: Record<string, string>;
+  };
+  hoverStyles?: Record<string, string>;
+  activeStyles?: Record<string, string>;
+  svgProps?: ElementSvgConfig;
+  animation?: ElementAnimationConfig;
+  attributes?: Record<string, string>;
+  className?: string;
+  customId?: string;
+  ariaLabel?: string;
+  role?: string;
   deleted?: boolean;
+  locked?: boolean;
+  hiddenOn?: {
+    desktop?: boolean;
+    tablet?: boolean;
+    mobile?: boolean;
+  };
   duplicateCount?: number;
   order?: number;
+  label?: string;
+}
+
+/**
+ * Global Design System Tokens managed in Developer Studio Pro
+ */
+export interface StudioDesignSystem {
+  themePreset: "pearl-light" | "obsidian-dark" | "emerald-luxury" | "royal-gold" | "ocean-blue";
+  mode: "light" | "dark";
+  colors: {
+    primary: string;
+    secondary: string;
+    accent: string;
+    background: string;
+    surface: string;
+    textPrimary: string;
+    textSecondary: string;
+    border: string;
+    success: string;
+    warning: string;
+    danger: string;
+  };
+  typography: {
+    fontFamily: string;
+    headingFontFamily: string;
+    monoFontFamily: string;
+    baseFontSize: string;
+    scaleRatio: number;
+    lineHeight: string;
+  };
+  spacing: {
+    unitPx: number;
+    containerPadding: string;
+    sectionGap: string;
+    cardPadding: string;
+  };
+  radius: {
+    sm: string;
+    md: string;
+    lg: string;
+    xl: string;
+    button: string;
+    card: string;
+  };
+  shadows: {
+    card: string;
+    button: string;
+    modal: string;
+  };
+}
+
+export const DEFAULT_STUDIO_DESIGN_SYSTEM: StudioDesignSystem = {
+  themePreset: "pearl-light",
+  mode: "light",
+  colors: {
+    primary: "#4f46e5",
+    secondary: "#0ea5e9",
+    accent: "#f59e0b",
+    background: "#f8fafc",
+    surface: "#ffffff",
+    textPrimary: "#0f172a",
+    textSecondary: "#475569",
+    border: "#e2e8f0",
+    success: "#10b981",
+    warning: "#f59e0b",
+    danger: "#ef4444",
+  },
+  typography: {
+    fontFamily: "Cairo, sans-serif",
+    headingFontFamily: "Cairo, sans-serif",
+    monoFontFamily: "JetBrains Mono, monospace",
+    baseFontSize: "14px",
+    scaleRatio: 1.2,
+    lineHeight: "1.6",
+  },
+  spacing: {
+    unitPx: 4,
+    containerPadding: "20px",
+    sectionGap: "16px",
+    cardPadding: "16px",
+  },
+  radius: {
+    sm: "6px",
+    md: "10px",
+    lg: "14px",
+    xl: "20px",
+    button: "10px",
+    card: "16px",
+  },
+  shadows: {
+    card: "0 4px 14px rgba(15, 23, 42, 0.06)",
+    button: "0 2px 6px rgba(79, 70, 229, 0.18)",
+    modal: "0 20px 50px rgba(15, 23, 42, 0.2)",
+  },
+};
+
+export interface StudioAssetItem {
+  id: string;
+  name: string;
+  type: "image" | "svg" | "icon";
+  mimeType: string;
+  url: string;
+  folder: string;
+  sizeBytes: number;
+  width?: number;
+  height?: number;
+  svgContent?: string;
+  alt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StudioReusableComponent {
+  id: string;
+  name: string;
+  category: "cards" | "buttons" | "headers" | "navigation" | "tables" | "forms" | "containers" | "custom";
+  description: string;
+  variant: "primary" | "secondary" | "outline" | "glass" | "minimal";
+  rootType: ElementType;
+  content: Record<string, any>;
+  styles: ElementStyles;
+  createdAt: string;
+}
+
+export interface StudioNamedSnapshot {
+  id: string;
+  name: string;
+  createdAt: string;
+  createdBy: string;
+  baseRevision: number;
+  note?: string;
+  snapshot: {
+    pages: Record<string, PageModel>;
+    elements: Record<string, ElementModel>;
+    domEdits: Record<string, StudioDomEdit>;
+    designSystem?: StudioDesignSystem;
+    assets?: StudioAssetItem[];
+    reusableComponents?: StudioReusableComponent[];
+  };
+}
+
+export interface StudioPublishedConfig {
+  id: string;
+  revision: number;
+  schemaVersion: number;
+  schema_version?: number;
+  pages: Record<string, PageModel>;
+  elements: Record<string, ElementModel>;
+  domEdits?: Record<string, StudioDomEdit>;
+  designSystem?: StudioDesignSystem;
+  assets?: StudioAssetItem[];
+  reusableComponents?: StudioReusableComponent[];
+  publishedBy: string;
+  publishedAt: string;
+  summary: string;
 }
 
 export interface StudioDraft {
@@ -287,110 +454,279 @@ export interface StudioDraft {
   schemaVersion: number;
   pages: Record<string, PageModel>;
   elements: Record<string, ElementModel>;
-  domEdits: Record<string, StudioDomEdit>;
+  domEdits?: Record<string, StudioDomEdit>;
+  designSystem?: StudioDesignSystem;
+  assets?: StudioAssetItem[];
+  reusableComponents?: StudioReusableComponent[];
+  namedSnapshots?: StudioNamedSnapshot[];
   updatedAt: string;
   createdAt: string;
-  /** Last server-confirmed draft row timestamp; used to detect writes from other sessions. */
+  /** Exact `updated_at` timestamp confirmed by `studio_drafts` on Supabase. */
   serverUpdatedAt?: string;
-  /** True only when the current browser has edits that were not confirmed by Supabase. */
-  hasUnsavedLocalChanges?: boolean;
   hasUnpublishedChanges: boolean;
+  /** True when local preview edits have not been manually saved to Supabase yet. */
+  hasUnsavedLocalChanges?: boolean;
+}
+
+export interface StudioHistoryRecord {
+  id?: number;
+  revision: number;
+  schemaVersion: number;
+  publishedBy: string;
+  publishedAt: string;
+  summary: string;
+  isNamedCheckpoint?: boolean;
+  checkpointName?: string;
+  snapshot: {
+    pages: Record<string, PageModel>;
+    elements: Record<string, ElementModel>;
+    domEdits?: Record<string, StudioDomEdit>;
+    designSystem?: StudioDesignSystem;
+  };
+}
+
+export interface ConflictDetail {
+  type: "page_modified" | "element_modified" | "revision_gap" | "draft_session_conflict";
+  targetId: string;
+  title: string;
+  localValue: any;
+  serverValue: any;
+  description: string;
+}
+
+export interface ValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
+export interface StudioAuditIssue {
+  id: string;
+  category: "accessibility" | "responsive" | "consistency";
+  severity: "error" | "warning" | "info";
+  title: string;
+  description: string;
+  targetId?: string;
+  selector?: string;
+  autoFixable?: boolean;
+  fixType?:
+    | "add_alt"
+    | "fix_contrast"
+    | "fix_heading_level"
+    | "add_button_label"
+    | "fix_mobile_width"
+    | "fix_mobile_font"
+    | "align_color_token"
+    | "align_radius_token";
+}
+
+export interface StudioDiffItem {
+  id: string;
+  scope: "page" | "element" | "domEdit" | "designSystem";
+  changeType: "added" | "modified" | "deleted";
+  title: string;
+  path: string;
+  beforeValue: any;
+  afterValue: any;
+}
+
+export const STUDIO_META_KEY = "__studio_meta__";
+
+/**
+ * Pack Studio workspace metadata (designSystem, assets, reusableComponents, namedSnapshots)
+ * inside `domEdits.__studio_meta__` so it persists atomically through existing Supabase RPCs
+ * without requiring schema DDL changes, while keeping clean separation from real DOM selectors.
+ */
+export function packDomEditsWithMeta(draft: Pick<StudioDraft, "domEdits" | "designSystem" | "assets" | "reusableComponents" | "namedSnapshots">): Record<string, any> {
+  const cleanEdits: Record<string, any> = {};
+  for (const [key, value] of Object.entries(draft.domEdits || {})) {
+    if (key === STUDIO_META_KEY || key.startsWith("__studio_")) continue;
+    cleanEdits[key] = value;
+  }
+  const hasMeta =
+    !!draft.designSystem ||
+    (Array.isArray(draft.assets) && draft.assets.length > 0) ||
+    (Array.isArray(draft.reusableComponents) && draft.reusableComponents.length > 0) ||
+    (Array.isArray(draft.namedSnapshots) && draft.namedSnapshots.length > 0);
+
+  if (hasMeta) {
+    cleanEdits[STUDIO_META_KEY] = {
+      designSystem: draft.designSystem || DEFAULT_STUDIO_DESIGN_SYSTEM,
+      assets: draft.assets || [],
+      reusableComponents: draft.reusableComponents || [],
+      namedSnapshots: draft.namedSnapshots || [],
+    };
+  }
+  return cleanEdits;
 }
 
 /**
- * Repair only repeated references to the exact same element ID. It deliberately does
- * not delete distinct elements that happen to have similar text or styling.
+ * Unpack `domEdits` from Supabase row into clean DOM selector edits + workspace metadata.
+ */
+export function unpackDomEditsAndMeta(rawDomEdits: Record<string, any> | undefined | null): {
+  domEdits: Record<string, StudioDomEdit>;
+  designSystem: StudioDesignSystem;
+  assets: StudioAssetItem[];
+  reusableComponents: StudioReusableComponent[];
+  namedSnapshots: StudioNamedSnapshot[];
+} {
+  const domEdits: Record<string, StudioDomEdit> = {};
+  let meta: Record<string, any> = {};
+  if (rawDomEdits && typeof rawDomEdits === "object") {
+    for (const [key, value] of Object.entries(rawDomEdits)) {
+      if (key === STUDIO_META_KEY && value && typeof value === "object") {
+        meta = value;
+      } else if (!key.startsWith("__studio_")) {
+        domEdits[key] = value as StudioDomEdit;
+      }
+    }
+  }
+  return {
+    domEdits,
+    designSystem: meta.designSystem
+      ? {
+          ...DEFAULT_STUDIO_DESIGN_SYSTEM,
+          ...meta.designSystem,
+          colors: { ...DEFAULT_STUDIO_DESIGN_SYSTEM.colors, ...(meta.designSystem.colors || {}) },
+          typography: { ...DEFAULT_STUDIO_DESIGN_SYSTEM.typography, ...(meta.designSystem.typography || {}) },
+          spacing: { ...DEFAULT_STUDIO_DESIGN_SYSTEM.spacing, ...(meta.designSystem.spacing || {}) },
+          radius: { ...DEFAULT_STUDIO_DESIGN_SYSTEM.radius, ...(meta.designSystem.radius || {}) },
+          shadows: { ...DEFAULT_STUDIO_DESIGN_SYSTEM.shadows, ...(meta.designSystem.shadows || {}) },
+        }
+      : DEFAULT_STUDIO_DESIGN_SYSTEM,
+    assets: Array.isArray(meta.assets) ? meta.assets : [],
+    reusableComponents: Array.isArray(meta.reusableComponents) ? meta.reusableComponents : [],
+    namedSnapshots: Array.isArray(meta.namedSnapshots) ? meta.namedSnapshots : [],
+  };
+}
+
+let studioEntityCounter = 0;
+
+/**
+ * Generate a collision-safe Studio entity identifier.
+ */
+export function createStudioId(prefix: string, existingIds: Iterable<string> = []): string {
+  const reserved = new Set(existingIds);
+  const cleanPrefix = prefix.replace(/[^a-zA-Z0-9_-]/g, "_") || "studio";
+
+  for (let attempt = 0; attempt < 16; attempt++) {
+    studioEntityCounter = (studioEntityCounter + 1) % 1_000_000;
+    const randomPart =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID().slice(0, 8)
+        : Math.random().toString(36).slice(2, 10);
+    const candidate = `${cleanPrefix}_${Date.now().toString(36)}_${studioEntityCounter.toString(36)}_${randomPart}`;
+    if (!reserved.has(candidate)) return candidate;
+  }
+
+  return `${cleanPrefix}_${Date.now()}_${++studioEntityCounter}`;
+}
+
+/**
+ * Preserve the first appearance of each non-empty element ID.
+ */
+export function uniquePageElementIds(elementIds: readonly string[] | undefined | null): string[] {
+  if (!Array.isArray(elementIds)) return [];
+  const seen = new Set<string>();
+  const output: string[] = [];
+  for (const rawId of elementIds) {
+    const id = typeof rawId === "string" ? rawId.trim() : "";
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    output.push(id);
+  }
+  return output;
+}
+
+/**
+ * Return a new draft whose page `elementIds` lists have no duplicate IDs.
  */
 export function normalizeStudioDraftPageReferences(draft: StudioDraft): {
   draft: StudioDraft;
   changed: boolean;
 } {
   let changed = false;
-  const pages = Object.fromEntries(
-    Object.entries(draft.pages || {}).map(([pageKey, page]) => {
-      const originalIds = Array.isArray(page.elementIds) ? page.elementIds : [];
-      const elementIds = uniquePageElementIds(originalIds);
-      const hasChanged = elementIds.length !== originalIds.length ||
-        elementIds.some((id, index) => id !== originalIds[index]);
-      if (hasChanged) changed = true;
-      return [pageKey, hasChanged ? { ...page, elementIds } : page];
-    }),
-  );
-  return { draft: changed ? { ...draft, pages } : draft, changed };
-}
+  const pages: Record<string, PageModel> = {};
 
-export interface StudioPublishedConfig {
-  id?: string;
-  revision: number;
-  schemaVersion?: number;
-  schema_version?: number;
-  publishedAt: string;
-  publishedBy: string;
-  summary: string;
-  pages: Record<string, PageModel>;
-  elements: Record<string, ElementModel>;
-  domEdits: Record<string, StudioDomEdit>;
-}
+  for (const [pageId, page] of Object.entries(draft.pages || {})) {
+    const deduped = uniquePageElementIds(page?.elementIds);
+    const sameLength = Array.isArray(page?.elementIds) && deduped.length === page.elementIds.length;
+    const sameOrder = sameLength && deduped.every((id, index) => id === page.elementIds[index]);
+    if (!sameOrder) changed = true;
+    pages[pageId] = sameOrder ? page : { ...page, elementIds: deduped };
+  }
 
-export interface StudioHistoryRecord {
-  id?: number | string;
-  revision: number;
-  schemaVersion: number;
-  publishedBy: string;
-  publishedAt: string;
-  summary: string;
-  snapshot: {
-    pages: Record<string, PageModel>;
-    elements: Record<string, ElementModel>;
-    domEdits?: Record<string, StudioDomEdit>;
+  return {
+    draft: changed ? { ...draft, pages } : draft,
+    changed,
   };
 }
 
-export interface ConflictDetail {
-  type: "page_modified" | "element_modified" | "element_deleted" | "revision_gap";
-  targetId: string;
-  title: string;
-  localValue?: any;
-  serverValue?: any;
-  description: string;
-}
-
-export const CURRENT_SCHEMA_VERSION = 1;
-
 /**
- * Runtime Validation: Detect cycles in element parent tree
+ * Detect whether a published element is still identical to the initial demo seed.
  */
-export function detectCycle(
-  elementId: string,
-  elements: Record<string, ElementModel>,
-  visited = new Set<string>(),
+export function isUnmodifiedStudioStarterElement(
+  element: ElementModel | undefined,
+  starter: ElementModel | undefined,
 ): boolean {
-  if (visited.has(elementId)) return true;
-  visited.add(elementId);
-
-  const el = elements[elementId];
-  if (!el || !el.parentId) return false;
-
-  return detectCycle(el.parentId, elements, visited);
+  if (!element || !starter) return false;
+  return (
+    element.id === starter.id &&
+    element.pageId === starter.pageId &&
+    element.parentId === starter.parentId &&
+    element.type === starter.type &&
+    JSON.stringify(element.content || {}) === JSON.stringify(starter.content || {}) &&
+    JSON.stringify(element.styles || {}) === JSON.stringify(starter.styles || {}) &&
+    JSON.stringify(element.layout || {}) === JSON.stringify(starter.layout || {})
+  );
 }
 
 /**
- * Runtime Validation: Comprehensive element validator
+ * Human-readable element label used across the Studio UI.
  */
-export function validateElement(el: unknown): { valid: boolean; errors: string[] } {
+export function getElementDisplayName(element: Pick<ElementModel, "type" | "content" | "name">): string {
+  if (element.name && element.name.trim()) return element.name.trim();
+  const typeNames: Record<ElementType, string> = {
+    heading: "عنوان",
+    text: "نص",
+    button: "زر",
+    image: "صورة",
+    card: "بطاقة",
+    container: "مجموعة عناصر",
+    table: "جدول",
+    input: "حقل إدخال",
+    badge: "شارة",
+    divider: "فاصل",
+  };
+  const content = element.content || {};
+  const label = String(
+    content.text ||
+      content.title ||
+      content.label ||
+      content.alt ||
+      content.placeholder ||
+      "",
+  ).trim();
+  const baseName = typeNames[element.type] || "عنصر";
+  return label ? `${baseName}: ${label.slice(0, 32)}` : baseName;
+}
+
+/**
+ * Runtime Schema Validator for ElementModel
+ */
+export function validateElement(element: any): ValidationResult {
   const errors: string[] = [];
-  if (!el || typeof el !== "object") {
-    return { valid: false, errors: ["العنصر غير معرف أو ذو بنية غير صالحة"] };
+  const warnings: string[] = [];
+
+  if (!element || typeof element !== "object") {
+    return { valid: false, errors: ["العنصر غير صالح أو فارغ"], warnings };
   }
 
-  const item = el as Partial<ElementModel>;
-
-  if (!item.id || typeof item.id !== "string" || item.id.trim() === "") {
-    errors.push("معرف العنصر (id) مفقود أو غير صالح");
+  if (!element.id || typeof element.id !== "string") {
+    errors.push("معرّف العنصر (id) مفقود أو غير صالح");
   }
-
-  if (!item.pageId || typeof item.pageId !== "string") {
-    errors.push("معرف الصفحة (pageId) مفقود");
+  if (!element.pageId || typeof element.pageId !== "string") {
+    errors.push(`العنصر (${element.id || "unknown"}) لا يحتوي على معرّف صفحة (pageId)`);
   }
 
   const validTypes: ElementType[] = [
@@ -405,129 +741,575 @@ export function validateElement(el: unknown): { valid: boolean; errors: string[]
     "badge",
     "divider",
   ];
-  if (!item.type || !validTypes.includes(item.type)) {
-    errors.push(`نوع العنصر غير معتمد: ${item.type}`);
+  if (!validTypes.includes(element.type)) {
+    errors.push(`نوع العنصر (${element.type}) غير مدعوم في النظام`);
   }
 
-  if (!item.content || typeof item.content !== "object") {
-    errors.push("محتوى العنصر (content) يجب أن يكون كائناً صحيحاً");
+  if (!element.content || typeof element.content !== "object") {
+    errors.push(`محتوى العنصر (${element.id}) مفقود`);
   }
 
-  if (!item.styles || typeof item.styles !== "object") {
-    errors.push("تنسيقات العنصر (styles) مفقودة أو غير صالحة");
+  if (!element.styles || typeof element.styles !== "object") {
+    warnings.push(`تنسيقات العنصر (${element.id}) غير معرّفة، سيتم استخدام التنسيق الافتراضي`);
   }
 
-  if (!item.layout || typeof item.layout !== "object") {
-    errors.push("محددات تخطيط العنصر (layout) مفقودة");
+  if (!element.layout || typeof element.layout !== "object") {
+    errors.push(`إعدادات التخطيط (layout) للعنصر (${element.id}) مفقودة`);
   }
-
-  return { valid: errors.length === 0, errors };
-}
-
-/**
- * Runtime Validation: Validates complete page structure and all children
- */
-export function validatePage(
-  page: unknown,
-  elements: Record<string, ElementModel>,
-): { valid: boolean; errors: string[] } {
-  const errors: string[] = [];
-  if (!page || typeof page !== "object") {
-    return { valid: false, errors: ["بيانات الصفحة غير صالحة"] };
-  }
-
-  const p = page as Partial<PageModel>;
-
-  if (!p.id || typeof p.id !== "string") {
-    errors.push("معرف الصفحة (id) مفقود");
-  }
-
-  if (!p.route || typeof p.route !== "string" || !p.route.startsWith("/")) {
-    errors.push("مسار الصفحة (route) يجب أن يبدأ بـ /");
-  }
-
-  if (!p.name || typeof p.name !== "string") {
-    errors.push("اسم الصفحة (name) مفقود");
-  }
-
-  if (!Array.isArray(p.elementIds)) {
-    errors.push("قائمة معرفات العناصر (elementIds) يجب أن تكون مصفوفة");
-  } else {
-    if (uniquePageElementIds(p.elementIds).length !== p.elementIds.length) {
-      errors.push("قائمة عناصر الصفحة تحتوي على معرفات مكررة؛ يجب أن يظهر كل عنصر مرة واحدة فقط.");
-    }
-    // Check that all elementIds exist
-    p.elementIds.forEach((elemId) => {
-      if (!elements[elemId]) {
-        errors.push(`العنصر #${elemId} مسجل في الصفحة ولكن لا يوجد له كائن في المتجر`);
-      }
-    });
-  }
-
-  return { valid: errors.length === 0, errors };
-}
-
-/**
- * Validates the complete draft hierarchy, acyclic integrity, and references
- */
-export function validateDraftHierarchy(draft: StudioDraft): {
-  valid: boolean;
-  errors: string[];
-  warnings: string[];
-} {
-  const errors: string[] = [];
-  const warnings: string[] = [];
-
-  if (!draft.pages || Object.keys(draft.pages).length === 0) {
-    errors.push("لا توجد أي صفحات معرّفة في المسودة");
-  }
-
-  // Validate all pages and prohibit two page records from claiming the same route.
-  const routeOwners = new Map<string, string>();
-  Object.entries(draft.pages).forEach(([pageKey, page]) => {
-    const pageValidation = validatePage(page, draft.elements);
-    errors.push(...pageValidation.errors);
-
-    if (typeof page.route === "string" && page.route.startsWith("/")) {
-      const normalizedRoute = (page.route.trim().replace(/\/+$/, "") || "/").toLocaleLowerCase();
-      const otherPage = routeOwners.get(normalizedRoute);
-      if (otherPage) {
-        errors.push(`المسار ${page.route} مكرر بين الصفحتين ${otherPage} و${pageKey}.`);
-      } else {
-        routeOwners.set(normalizedRoute, pageKey);
-      }
-    }
-  });
-
-  // Validate all elements
-  Object.values(draft.elements).forEach((elem) => {
-    const elValidation = validateElement(elem);
-    errors.push(...elValidation.errors);
-
-    // Verify parentId points to container/card if specified
-    if (elem.parentId) {
-      const parent = draft.elements[elem.parentId];
-      if (!parent) {
-        errors.push(`العنصر #${elem.id} يشير إلى عنصر أب غير موجود (${elem.parentId})`);
-      } else {
-        if (parent.pageId !== elem.pageId) {
-          errors.push(`العنصر #${elem.id} مرتبط بأب من صفحة أخرى (${parent.pageId}).`);
-        }
-        if (!["container", "card"].includes(parent.type)) {
-          warnings.push(`العنصر الأب #${elem.parentId} ليس حاوية (container أو card)`);
-        }
-      }
-
-      // Check cycles
-      if (detectCycle(elem.id, draft.elements)) {
-        errors.push(`تم اكتشاف دورة هرمية دائرية غير متناسقة في العنصر #${elem.id}`);
-      }
-    }
-  });
 
   return {
     valid: errors.length === 0,
     errors,
     warnings,
   };
+}
+
+/**
+ * Runtime Schema Validator for PageModel
+ */
+export function validatePage(page: any, allElements: Record<string, ElementModel>): ValidationResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  if (!page || typeof page !== "object") {
+    return { valid: false, errors: ["بيانات الصفحة غير صالحة"], warnings };
+  }
+
+  if (!page.id || typeof page.id !== "string") {
+    errors.push("معرّف الصفحة (id) مفقود");
+  }
+  if (!page.route || typeof page.route !== "string" || !page.route.startsWith("/")) {
+    errors.push(`مسار الصفحة (${page.name || page.id}) يجب أن يبدأ بـ /`);
+  }
+  if (!page.name || typeof page.name !== "string") {
+    errors.push(`اسم الصفحة (${page.id}) مفقود`);
+  }
+  if (!Array.isArray(page.elementIds)) {
+    errors.push(`قائمة عناصر الصفحة (${page.id}) يجب أن تكون مصفوفة`);
+  } else {
+    const seenIds = new Set<string>();
+    for (const elId of page.elementIds) {
+      if (seenIds.has(elId)) {
+        errors.push(`الصفحة (${page.name}) تحتوي على معرفات مكررة للعنصر (${elId})`);
+        continue;
+      }
+      seenIds.add(elId);
+      if (!allElements[elId]) {
+        errors.push(`الصفحة (${page.name}) تشير إلى عنصر غير موجود (${elId})`);
+      }
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings,
+  };
+}
+
+/**
+ * Detect parent-child cycles in an element dictionary starting from elementId.
+ */
+export function detectCycle(
+  elementId: string,
+  allElements: Record<string, ElementModel>,
+): boolean {
+  const visited = new Set<string>();
+  let currentId: string | null = elementId;
+  while (currentId) {
+    if (visited.has(currentId)) return true;
+    visited.add(currentId);
+    currentId = allElements[currentId]?.parentId || null;
+  }
+  return false;
+}
+
+/**
+ * Validate complete Studio Draft hierarchy before Save or Publish
+ */
+export function validateDraftHierarchy(draft: StudioDraft): ValidationResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  if (!draft || typeof draft !== "object") {
+    return { valid: false, errors: ["المسودة فارغة أو تالفة"], warnings };
+  }
+
+  const pageEntries = Object.entries(draft.pages || {});
+  if (pageEntries.length === 0) {
+    errors.push("يجب أن تحتوي المسودة على صفحة واحدة على الأقل");
+  }
+
+  const normalizeRoute = (route: string) => (route.trim().replace(/\/+$/, "") || "/").toLocaleLowerCase();
+  const routes = new Map<string, string>();
+
+  for (const [pageKey, page] of pageEntries) {
+    if (page?.id && page.id !== pageKey) {
+      errors.push(`مفتاح الصفحة (${pageKey}) لا يطابق معرّفها الداخلي (${page.id})`);
+    }
+    const res = validatePage(page, draft.elements || {});
+    errors.push(...res.errors);
+    warnings.push(...res.warnings);
+    if (page?.route) {
+      const normalizedRoute = normalizeRoute(page.route);
+      const existingPage = routes.get(normalizedRoute);
+      if (existingPage && existingPage !== page.id) {
+        errors.push(`مسار الصفحة (${normalizedRoute}) مكرر بين الصفحتين (${existingPage}) و(${page.id})`);
+      } else {
+        routes.set(normalizedRoute, page.id);
+      }
+    }
+  }
+
+  for (const [elementKey, elem] of Object.entries(draft.elements || {})) {
+    if (elem?.id && elem.id !== elementKey) {
+      errors.push(`مفتاح العنصر (${elementKey}) لا يطابق معرّفه الداخلي (${elem.id})`);
+    }
+    const res = validateElement(elem);
+    errors.push(...res.errors);
+    warnings.push(...res.warnings);
+
+    if (elem.pageId && !draft.pages?.[elem.pageId]) {
+      errors.push(`العنصر (${elem.id}) ينتمي إلى صفحة غير موجودة (${elem.pageId})`);
+    }
+
+    if (elem.parentId) {
+      const parent = draft.elements[elem.parentId];
+      if (!parent) {
+        errors.push(`العنصر (${elem.id}) مرتبط بحاوية أب غير موجودة (${elem.parentId})`);
+      } else if (parent.pageId !== elem.pageId) {
+        errors.push(`العنصر (${elem.id}) مرتبط بأب من صفحة أخرى (${parent.pageId})`);
+      }
+    }
+
+    let cursor = elem.parentId;
+    const visited = new Set<string>([elem.id]);
+    while (cursor) {
+      if (visited.has(cursor)) {
+        errors.push(`تم اكتشاف حلقة لا نهائية في شجرة العناصر عند العنصر (${elem.id})`);
+        break;
+      }
+      visited.add(cursor);
+      cursor = draft.elements[cursor]?.parentId || null;
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings,
+  };
+}
+
+/**
+ * Find all elements and DOM edits referencing a specific asset (by ID or URL)
+ * to prevent accidental deletion of in-use assets.
+ */
+export function findAssetUsages(
+  asset: Pick<StudioAssetItem, "id" | "url">,
+  draft: Pick<StudioDraft, "elements" | "domEdits">,
+): Array<{ id: string; label: string; type: "element" | "domEdit" }> {
+  const usages: Array<{ id: string; label: string; type: "element" | "domEdit" }> = [];
+  if (!asset.url && !asset.id) return usages;
+
+  for (const elem of Object.values(draft.elements || {})) {
+    const c = elem.content || {};
+    const bg = elem.styles?.backgroundColor || "";
+    if (
+      (asset.id && c.assetId === asset.id) ||
+      (asset.url && (c.src === asset.url || bg.includes(asset.url)))
+    ) {
+      usages.push({
+        id: elem.id,
+        label: getElementDisplayName(elem),
+        type: "element",
+      });
+    }
+  }
+
+  for (const [selector, edit] of Object.entries(draft.domEdits || {})) {
+    if (selector.startsWith("__studio_")) continue;
+    const srcAttr = edit.attributes?.src || "";
+    const bgStyle = edit.styles?.backgroundImage || "";
+    if (asset.url && (srcAttr === asset.url || bgStyle.includes(asset.url))) {
+      usages.push({
+        id: selector,
+        label: edit.label || selector,
+        type: "domEdit",
+      });
+    }
+  }
+
+  return usages;
+}
+
+/**
+ * Parse a hex color (#rgb or #rrggbb) into relative luminance for WCAG contrast checks.
+ */
+function parseHexLuminance(hex: string | undefined): number | null {
+  if (!hex || typeof hex !== "string") return null;
+  const clean = hex.trim().replace(/^#/, "");
+  let r = 0, g = 0, b = 0;
+  if (/^[0-9a-f]{3}$/i.test(clean)) {
+    r = parseInt(clean[0] + clean[0], 16);
+    g = parseInt(clean[1] + clean[1], 16);
+    b = parseInt(clean[2] + clean[2], 16);
+  } else if (/^[0-9a-f]{6}$/i.test(clean)) {
+    r = parseInt(clean.slice(0, 2), 16);
+    g = parseInt(clean.slice(2, 4), 16);
+    b = parseInt(clean.slice(4, 6), 16);
+  } else {
+    return null;
+  }
+  const toLinear = (c: number) => {
+    const s = c / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+}
+
+export function calculateContrastRatio(fgHex?: string, bgHex?: string): number | null {
+  const l1 = parseHexLuminance(fgHex);
+  const l2 = parseHexLuminance(bgHex);
+  if (l1 === null || l2 === null) return null;
+  const lighter = Math.max(l1, l2);
+  const darker = Math.min(l1, l2);
+  return Number(((lighter + 0.05) / (darker + 0.05)).toFixed(2));
+}
+
+/**
+ * Run comprehensive Accessibility, Responsive, and Design Consistency audits on a StudioDraft.
+ */
+export function runStudioAudits(draft: StudioDraft, activePageId?: string): StudioAuditIssue[] {
+  const issues: StudioAuditIssue[] = [];
+  const ds = draft.designSystem || DEFAULT_STUDIO_DESIGN_SYSTEM;
+  const paletteColors = new Set(
+    Object.values(ds.colors || {}).map((c) => c.toLowerCase()),
+  );
+
+  const elements = Object.values(draft.elements || {}).filter(
+    (el) => !activePageId || el.pageId === activePageId,
+  );
+
+  let previousHeadingLevel = 0;
+
+  for (const el of elements) {
+    const displayName = getElementDisplayName(el);
+
+    // 1. Accessibility Audits
+    if (el.type === "image") {
+      const alt = String(el.content?.alt || "").trim();
+      if (!alt) {
+        issues.push({
+          id: `a11y_alt_${el.id}`,
+          category: "accessibility",
+          severity: "error",
+          title: `صورة بدون نص بديل (alt): ${displayName}`,
+          description: "الصور يجب أن تحتوي على وصف بديل (alt) لدعم قارئات الشاشة ومعايير الوصول.",
+          targetId: el.id,
+          autoFixable: true,
+          fixType: "add_alt",
+        });
+      }
+    }
+
+    if (el.type === "button") {
+      const label = String(el.content?.label || "").trim();
+      const aria = String(el.attributes?.["aria-label"] || "").trim();
+      if (!label && !aria) {
+        issues.push({
+          id: `a11y_btn_${el.id}`,
+          category: "accessibility",
+          severity: "error",
+          title: `زر تفاعلي بدون تسمية واضحة (${el.id})`,
+          description: "الأزرار تحتاج إلى نص ظاهر أو خاصية aria-label واضحة.",
+          targetId: el.id,
+          autoFixable: true,
+          fixType: "add_button_label",
+        });
+      }
+    }
+
+    if (el.type === "input") {
+      const label = String(el.content?.label || "").trim();
+      const aria = String(el.attributes?.["aria-label"] || "").trim();
+      if (!label && !aria) {
+        issues.push({
+          id: `a11y_input_${el.id}`,
+          category: "accessibility",
+          severity: "warning",
+          title: `حقل إدخال بدون عنوان وصفي (${el.id})`,
+          description: "يفضل ربط كل حقل إدخال بتسمية توضيحية للمستخدم.",
+          targetId: el.id,
+        });
+      }
+    }
+
+    if (el.type === "heading") {
+      const lvl = parseInt(String(el.content?.level || "h2").replace("h", ""), 10) || 2;
+      if (previousHeadingLevel > 0 && lvl - previousHeadingLevel > 1) {
+        issues.push({
+          id: `a11y_heading_${el.id}`,
+          category: "accessibility",
+          severity: "warning",
+          title: `قفزة في تسلسل العناوين (${displayName})`,
+          description: `الانتقال المباشر من H${previousHeadingLevel} إلى H${lvl} يضعف التسلسل الهرمي الدلالي للصفحة.`,
+          targetId: el.id,
+          autoFixable: true,
+          fixType: "fix_heading_level",
+        });
+      }
+      previousHeadingLevel = lvl;
+    }
+
+    const ratio = calculateContrastRatio(
+      el.styles?.textColor,
+      el.styles?.backgroundColor || ds.colors.surface,
+    );
+    if (ratio !== null && ratio < 4.5) {
+      issues.push({
+        id: `a11y_contrast_${el.id}`,
+        category: "accessibility",
+        severity: ratio < 3 ? "error" : "warning",
+        title: `تباين ألوان منخفض (${ratio}:1) في ${displayName}`,
+        description: "ينصح بمعيار WCAG بنسبة تباين 4.5:1 على الأقل بين النص والخلفية لضمان وضوح القراءة.",
+        targetId: el.id,
+        autoFixable: true,
+        fixType: "fix_contrast",
+      });
+    }
+
+    // 2. Responsive Audits
+    const widthPxMatch = String(el.styles?.width || "").match(/^(\d+)px$/i);
+    if (widthPxMatch && Number(widthPxMatch[1]) > 390 && !el.responsiveStyles?.mobile?.width) {
+      issues.push({
+        id: `resp_width_${el.id}`,
+        category: "responsive",
+        severity: "error",
+        title: `عرض ثابت كبير (${el.styles.width}) قد يسبب التمرير الأفقي على الهاتف`,
+        description: `العنصر «${displayName}» يستخدم عرضاً ثابتاً أكبر من 390px بدون تخصيص متجاوب للهاتف.`,
+        targetId: el.id,
+        autoFixable: true,
+        fixType: "fix_mobile_width",
+      });
+    }
+
+    const fontPxMatch = String(el.styles?.fontSize || "").match(/^(\d+)px$/i);
+    if (fontPxMatch && Number(fontPxMatch[1]) < 12) {
+      issues.push({
+        id: `resp_font_${el.id}`,
+        category: "responsive",
+        severity: "warning",
+        title: `حجم خط صغير جداً (${el.styles.fontSize}) في ${displayName}`,
+        description: "الأحجام الأقل من 12px يصعب قراءتها على شاشات الهواتف الذكية.",
+        targetId: el.id,
+        autoFixable: true,
+        fixType: "fix_mobile_font",
+      });
+    }
+
+    // 3. Design Consistency Audits
+    if (
+      el.styles?.textColor &&
+      /^#[0-9a-f]{6}$/i.test(el.styles.textColor) &&
+      !paletteColors.has(el.styles.textColor.toLowerCase())
+    ) {
+      issues.push({
+        id: `cons_color_${el.id}`,
+        category: "consistency",
+        severity: "info",
+        title: `لون نص خارج نظام التصميم (${el.styles.textColor})`,
+        description: `العنصر «${displayName}» يستخدم لوناً غير معرّف في رموز نظام التصميم الموحد (Design Tokens).`,
+        targetId: el.id,
+        autoFixable: true,
+        fixType: "align_color_token",
+      });
+    }
+  }
+
+  // Also audit live DOM Edits
+  for (const [selector, edit] of Object.entries(draft.domEdits || {})) {
+    if (selector.startsWith("__studio_")) continue;
+    const widthMatch = String(edit.styles?.width || "").match(/^(\d+)px$/i);
+    if (widthMatch && Number(widthMatch[1]) > 390 && !edit.responsiveStyles?.mobile?.width) {
+      issues.push({
+        id: `resp_dom_width_${selector}`,
+        category: "responsive",
+        severity: "warning",
+        title: `تعديل DOM بعرض ثابت (${edit.styles?.width})`,
+        description: `المحدد (${selector}) قد يتجاوز عرض شاشة الجوال (390px).`,
+        selector,
+      });
+    }
+    const domRatio = calculateContrastRatio(edit.styles?.color, edit.styles?.backgroundColor);
+    if (domRatio !== null && domRatio < 4.5) {
+      issues.push({
+        id: `a11y_dom_contrast_${selector}`,
+        category: "accessibility",
+        severity: "warning",
+        title: `تباين منخفض (${domRatio}:1) على العنصر الحي`,
+        description: `المحدد (${selector}) يملك تبايناً أقل من 4.5:1 بين لون النص والخلفية.`,
+        selector,
+      });
+    }
+  }
+
+  return issues;
+}
+
+/**
+ * Compare two Studio snapshots (e.g., Draft vs Saved vs Published) and return structured diff items.
+ */
+export function compareStudioSnapshots(
+  before: Pick<StudioDraft, "pages" | "elements" | "domEdits" | "designSystem"> | null | undefined,
+  after: Pick<StudioDraft, "pages" | "elements" | "domEdits" | "designSystem"> | null | undefined,
+): StudioDiffItem[] {
+  const diffs: StudioDiffItem[] = [];
+  const bPages = before?.pages || {};
+  const aPages = after?.pages || {};
+  const allPageIds = new Set([...Object.keys(bPages), ...Object.keys(aPages)]);
+
+  for (const pageId of allPageIds) {
+    const bp = bPages[pageId];
+    const ap = aPages[pageId];
+    if (!bp && ap) {
+      diffs.push({
+        id: `page_${pageId}`,
+        scope: "page",
+        changeType: "added",
+        title: `إضافة صفحة: ${ap.name} (${ap.route})`,
+        path: `pages.${pageId}`,
+        beforeValue: null,
+        afterValue: ap,
+      });
+    } else if (bp && !ap) {
+      diffs.push({
+        id: `page_${pageId}`,
+        scope: "page",
+        changeType: "deleted",
+        title: `حذف صفحة: ${bp.name} (${bp.route})`,
+        path: `pages.${pageId}`,
+        beforeValue: bp,
+        afterValue: null,
+      });
+    } else if (bp && ap) {
+      const { revision: _r1, updatedAt: _u1, updatedBy: _b1, ...bClean } = bp;
+      const { revision: _r2, updatedAt: _u2, updatedBy: _b2, ...aClean } = ap;
+      if (JSON.stringify(bClean) !== JSON.stringify(aClean)) {
+        diffs.push({
+          id: `page_${pageId}`,
+          scope: "page",
+          changeType: "modified",
+          title: `تعديل صفحة: ${ap.name} (${ap.route})`,
+          path: `pages.${pageId}`,
+          beforeValue: bClean,
+          afterValue: aClean,
+        });
+      }
+    }
+  }
+
+  const bElements = before?.elements || {};
+  const aElements = after?.elements || {};
+  const allElemIds = new Set([...Object.keys(bElements), ...Object.keys(aElements)]);
+
+  for (const elemId of allElemIds) {
+    const be = bElements[elemId];
+    const ae = aElements[elemId];
+    if (!be && ae) {
+      diffs.push({
+        id: `elem_${elemId}`,
+        scope: "element",
+        changeType: "added",
+        title: `إضافة ${getElementDisplayName(ae)}`,
+        path: `elements.${elemId}`,
+        beforeValue: null,
+        afterValue: ae,
+      });
+    } else if (be && !ae) {
+      diffs.push({
+        id: `elem_${elemId}`,
+        scope: "element",
+        changeType: "deleted",
+        title: `حذف ${getElementDisplayName(be)}`,
+        path: `elements.${elemId}`,
+        beforeValue: be,
+        afterValue: null,
+      });
+    } else if (be && ae) {
+      const { revision: _r1, updatedAt: _u1, updatedBy: _b1, ...bClean } = be;
+      const { revision: _r2, updatedAt: _u2, updatedBy: _b2, ...aClean } = ae;
+      if (JSON.stringify(bClean) !== JSON.stringify(aClean)) {
+        diffs.push({
+          id: `elem_${elemId}`,
+          scope: "element",
+          changeType: "modified",
+          title: `تعديل ${getElementDisplayName(ae)}`,
+          path: `elements.${elemId}`,
+          beforeValue: bClean,
+          afterValue: aClean,
+        });
+      }
+    }
+  }
+
+  const bEdits = before?.domEdits || {};
+  const aEdits = after?.domEdits || {};
+  const allSelectors = new Set(
+    [...Object.keys(bEdits), ...Object.keys(aEdits)].filter((k) => !k.startsWith("__studio_")),
+  );
+
+  for (const selector of allSelectors) {
+    const bd = bEdits[selector];
+    const ad = aEdits[selector];
+    if (!bd && ad) {
+      diffs.push({
+        id: `dom_${selector}`,
+        scope: "domEdit",
+        changeType: "added",
+        title: `تخصيص عنصر حي: ${ad.label || selector}`,
+        path: `domEdits.${selector}`,
+        beforeValue: null,
+        afterValue: ad,
+      });
+    } else if (bd && !ad) {
+      diffs.push({
+        id: `dom_${selector}`,
+        scope: "domEdit",
+        changeType: "deleted",
+        title: `إزالة تخصيص عنصر حي: ${bd.label || selector}`,
+        path: `domEdits.${selector}`,
+        beforeValue: bd,
+        afterValue: null,
+      });
+    } else if (bd && ad && JSON.stringify(bd) !== JSON.stringify(ad)) {
+      diffs.push({
+        id: `dom_${selector}`,
+        scope: "domEdit",
+        changeType: "modified",
+        title: `تحديث عنصر حي: ${ad.label || selector}`,
+        path: `domEdits.${selector}`,
+        beforeValue: bd,
+        afterValue: ad,
+      });
+    }
+  }
+
+  if (
+    before?.designSystem &&
+    after?.designSystem &&
+    JSON.stringify(before.designSystem) !== JSON.stringify(after.designSystem)
+  ) {
+    diffs.push({
+      id: "design_system_tokens",
+      scope: "designSystem",
+      changeType: "modified",
+      title: "تحديث رموز نظام التصميم والألوان (Design System)",
+      path: "designSystem",
+      beforeValue: before.designSystem,
+      afterValue: after.designSystem,
+    });
+  }
+
+  return diffs;
 }
