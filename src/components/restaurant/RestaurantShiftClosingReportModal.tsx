@@ -37,6 +37,7 @@ import {
   RestaurantRefundRecord,
   JournalEntry,
 } from "@/shared/services/erpStore";
+import { canCurrentUserCloseShift } from "@/shared/services/userAuthorization";
 import { printRawHtml } from "@/shared/utils/printAccountingDocument";
 import { toast } from "sonner";
 
@@ -202,6 +203,10 @@ export function RestaurantShiftClosingReportModal({
   // Handle Close Shift Action
   const handleExecuteCloseShift = () => {
     if (!currentShift) return;
+    if (!canCurrentUserCloseShift()) {
+      toast.error("غير مصرح للكاشير بإغلاق الوردية. إغلاق الورديات متاح للمدير أو المشرف فقط.");
+      return;
+    }
 
     try {
       // Update totals on shift before closing
@@ -968,7 +973,7 @@ export function RestaurantShiftClosingReportModal({
               طباعة
             </Button>
 
-            {currentShift?.status === "open" && (
+            {currentShift?.status === "open" && canCurrentUserCloseShift() && (
               <Button
                 onClick={handleExecuteCloseShift}
                 className="bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black gap-2 shadow-md cursor-pointer"

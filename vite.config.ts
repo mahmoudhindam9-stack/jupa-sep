@@ -43,7 +43,7 @@ if (isPlaceholderKey(process.env.VITE_SUPABASE_PUBLISHABLE_KEY)) {
   process.env.VITE_SUPABASE_PUBLISHABLE_KEY = REAL_SUPABASE_ANON_KEY;
 }
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [
     tanstackStart({
       router: {
@@ -51,19 +51,23 @@ export default defineConfig({
           defaultBehavior: [],
         },
       },
-      spa: {
-        enabled: true,
-        prerender: {
-          outputPath: "/index",
-          crawlLinks: false,
-        },
-      },
-      prerender: {
-        enabled: true,
-        autoStaticPathsDiscovery: false,
-        crawlLinks: false,
-        failOnError: false,
-      },
+      ...(command === "build"
+        ? {
+            spa: {
+              enabled: true,
+              prerender: {
+                outputPath: "/index",
+                crawlLinks: false,
+              },
+            },
+            prerender: {
+              enabled: true,
+              autoStaticPathsDiscovery: false,
+              crawlLinks: false,
+              failOnError: false,
+            },
+          }
+        : {}),
     }),
     react(),
     tailwindcss(),
@@ -160,4 +164,4 @@ export default defineConfig({
     allowedHosts: true,
     hmr: false,
   },
-});
+}));

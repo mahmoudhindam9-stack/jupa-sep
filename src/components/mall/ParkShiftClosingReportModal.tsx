@@ -34,6 +34,7 @@ import {
   ParkTicketTransaction,
   JournalEntry,
 } from "@/shared/services/erpStore";
+import { canCurrentUserCloseShift } from "@/shared/services/userAuthorization";
 import { printRawHtml } from "@/shared/utils/printAccountingDocument";
 import { toast } from "sonner";
 
@@ -56,6 +57,7 @@ export function ParkShiftClosingReportModal({
   const [activeTab, setActiveTab] = useState<
     "summary" | "transactions" | "journal_entries" | "treasuries"
   >("summary");
+  const canCloseShift = canCurrentUserCloseShift();
 
   const allShifts = useMemo(() => {
     return erpStore.getParkShifts() || [];
@@ -180,6 +182,10 @@ export function ParkShiftClosingReportModal({
 
   // Execute Close Shift
   const handleConfirmClose = () => {
+    if (!canCurrentUserCloseShift()) {
+      toast.error("غير مصرح لحساب الكاشير بإغلاق الوردية. يتم إغلاق الوردية بواسطة المدير أو المشرف فقط.");
+      return;
+    }
     if (!currentShift || currentShift.status !== "open") {
       toast.error("يرجى اختيار وردية مفتوحة لإغلاقها!");
       return;
@@ -780,25 +786,27 @@ export function ParkShiftClosingReportModal({
                       </div>
                     </div>
 
-                    <div className="p-3 bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/40 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3">
-                      <div>
-                        <p className="font-black text-rose-800 dark:text-rose-300 text-xs">
-                          إغلاق الوردية وترحيل الحسابات
-                        </p>
-                        <p className="text-[11px] text-rose-600 dark:text-rose-400">
-                          سيتم قفل هذه الوردية، وتوليد قيود المبيعات والترحيل، وتحديث أرصدة الخزائن
-                          الرئيسية فوراً.
-                        </p>
+                    {canCloseShift && (
+                      <div className="p-3 bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/40 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3">
+                        <div>
+                          <p className="font-black text-rose-800 dark:text-rose-300 text-xs">
+                            إغلاق الوردية وترحيل الحسابات
+                          </p>
+                          <p className="text-[11px] text-rose-600 dark:text-rose-400">
+                            سيتم قفل هذه الوردية، وتوليد قيود المبيعات والترحيل، وتحديث أرصدة الخزائن
+                            الرئيسية فوراً.
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          onClick={handleConfirmClose}
+                          className="bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-black gap-1.5 px-5 text-xs cursor-pointer whitespace-nowrap shadow-sm"
+                        >
+                          <Lock size={14} />
+                          تأكيد إغلاق الوردية وتوليد القيود
+                        </Button>
                       </div>
-                      <Button
-                        type="button"
-                        onClick={handleConfirmClose}
-                        className="bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-black gap-1.5 px-5 text-xs cursor-pointer whitespace-nowrap shadow-sm"
-                      >
-                        <Lock size={14} />
-                        تأكيد إغلاق الوردية وتوليد القيود
-                      </Button>
-                    </div>
+                    )}
                   </div>
                 )}
 

@@ -73,6 +73,8 @@ import {
   TreasuryAccount,
 } from "@/shared/services/erpStore";
 import { getReceiptDesignSettings, ReceiptDesignSettings } from "@/shared/services/receiptSettings";
+import { getCurrentUserIdentitySync, canCurrentUserCloseShift } from "@/shared/services/userAuthorization";
+import { shiftAuditService } from "@/features/shifts/services/shiftAuditService";
 import { printerService } from "@/shared/services/printerService";
 import { RestocashLogo } from "@/components/RestocashLogo";
 import { ParkShiftLauncherModal } from "@/components/mall/ParkShiftLauncherModal";
@@ -126,11 +128,15 @@ export function ParkTicketsPOSView({ onClosePOS }: ParkTicketsPOSViewProps) {
   const [, forceRender] = useState(0);
 
   useEffect(() => {
+    void shiftAuditService.syncOpenShiftsFromSupabase(erpStore);
     return erpStore.subscribe(() => {
       forceRender((prev) => prev + 1);
     });
   }, []);
 
+  const currentIdentity = getCurrentUserIdentitySync();
+  const isCashier = currentIdentity.isCashier;
+  const canCloseShifts = canCurrentUserCloseShift();
   const state = erpStore.getState();
   const ticketItems = erpStore.getParkTicketItems().filter((t) => t.is_active);
   const customers = erpStore.getParkCustomers();
@@ -528,14 +534,26 @@ export function ParkTicketsPOSView({ onClosePOS }: ParkTicketsPOSViewProps) {
           </button>
 
           {activeShift ? (
-            <button
-              type="button"
-              onClick={() => setIsShiftCloseModalOpen(true)}
-              className="bg-rose-950/80 hover:bg-rose-900 text-rose-200 text-xs font-bold px-3 py-1.5 rounded-xl border border-rose-800 transition flex items-center gap-1.5 cursor-pointer"
-            >
-              <Lock size={14} className="text-rose-400" />
-              <span>إغلاق الوردية</span>
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => setIsShiftLauncherModalOpen(true)}
+                className="bg-teal-950/80 hover:bg-teal-900 text-teal-200 text-xs font-bold px-3 py-1.5 rounded-xl border border-teal-800 transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <Clock size={14} className="text-teal-400" />
+                <span>{isCashier ? "بيانات الوردية النشطة" : "تبديل / إدارة الوردية"}</span>
+              </button>
+              {canCloseShifts && (
+                <button
+                  type="button"
+                  onClick={() => setIsShiftCloseModalOpen(true)}
+                  className="bg-rose-950/80 hover:bg-rose-900 text-rose-200 text-xs font-bold px-3 py-1.5 rounded-xl border border-rose-800 transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Lock size={14} className="text-rose-400" />
+                  <span>إغلاق الوردية</span>
+                </button>
+              )}
+            </>
           ) : (
             <button
               type="button"
@@ -1354,7 +1372,7 @@ export function ParkTicketsPOSView({ onClosePOS }: ParkTicketsPOSViewProps) {
       />
 
       <ParkShiftClosingReportModal
-        isOpen={isShiftCloseModalOpen}
+        isOpen={isShiftCloseModalOpen && canCloseShifts}
         onClose={() => setIsShiftCloseModalOpen(false)}
         onShiftClosed={() => {
           setIsShiftCloseModalOpen(false);
@@ -1365,16 +1383,28 @@ export function ParkTicketsPOSView({ onClosePOS }: ParkTicketsPOSViewProps) {
       <ParkCashierTreasuryModal
         isOpen={isCashierTreasuryModalOpen}
         onClose={() => setIsCashierTreasuryModalOpen(false)}
-        onOpenCloseShift={() => {
-          setIsCashierTreasuryModalOpen(false);
-          setIsShiftCloseModalOpen(true);
-        }}
+        onOpenCloseShift={
+          canCloseShifts
+            ? () => {
+                setIsCashierTreasuryModalOpen(false);
+                setIsShiftCloseModalOpen(true);
+              }
+            : undefined
+        }
       />
 
       <ParkShiftLauncherModal
         isOpen={isShiftLauncherModalOpen}
         onClose={() => setIsShiftLauncherModalOpen(false)}
-        onShiftOpened={() => setIsShiftLauncherModalOpen(false)}
+        onOpenPOS={() => setIsShiftLauncherModalOpen(false)}
+        onRequestCloseShift={
+          canCloseShifts
+            ? (shift) => {
+                setIsShiftLauncherModalOpen(false);
+                setIsShiftCloseModalOpen(true);
+              }
+            : undefined
+        }
       />
     </div>
   );

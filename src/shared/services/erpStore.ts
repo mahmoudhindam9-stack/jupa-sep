@@ -1045,14 +1045,55 @@ export class ERPStore {
   }
   getUsers() {
     this.state.employees = ensureEmployeesWithUniqueCodes(this.state.employees || DEFAULT_EMPLOYEES);
-    return ensureCurrentManagedUsers(this.state.users || [], this.state.employees);
+    let extraLocalUsers: any[] = [];
+    if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
+      try {
+        const rawLocalUsers = localStorage.getItem("local_system_users");
+        if (rawLocalUsers) {
+          const parsed = JSON.parse(rawLocalUsers);
+          if (Array.isArray(parsed)) extraLocalUsers = parsed;
+        }
+      } catch {
+        // ignore parse error
+      }
+    }
+    const mergedRaw = [...(this.state.users || [])];
+    for (const lu of extraLocalUsers) {
+      if (
+        lu &&
+        lu.username &&
+        !mergedRaw.some(
+          (u) =>
+            u.id === lu.id ||
+            String(u.username || "").trim().toLowerCase() ===
+              String(lu.username || "").trim().toLowerCase(),
+        )
+      ) {
+        mergedRaw.push(lu);
+      }
+    }
+    return ensureCurrentManagedUsers(mergedRaw, this.state.employees);
   }
-  replaceManagedUsers(users: SystemUser[]) {
+  replaceManagedUsers(
+    users: SystemUser[],
+    options?: { authoritative?: boolean; deletedUsernames?: string[] },
+  ) {
     this.state.employees = ensureEmployeesWithUniqueCodes(this.state.employees || DEFAULT_EMPLOYEES);
+    const deletedSet = new Set(
+      (options?.deletedUsernames || []).map((u) => String(u || "").trim().toLowerCase()),
+    );
     // Reconcile authoritative Supabase directory with local-first users that may still be pending cloud sync.
-    const existingLocalUsers = ensureCurrentManagedUsers(this.state.users || [], this.state.employees);
+    const existingLocalUsers = ensureCurrentManagedUsers(
+      this.state.users || [],
+      this.state.employees,
+    ).filter((u) => !deletedSet.has(String(u.username || "").trim().toLowerCase()));
+
     const cloudUsers = (Array.isArray(users) ? users : [])
-      .filter((user) => Boolean(user?.id && user?.username))
+      .filter(
+        (user) =>
+          Boolean(user?.id && user?.username) &&
+          !deletedSet.has(String(user.username || "").trim().toLowerCase()),
+      )
       .map((user) => {
         const normalizedUsername = String(user.username).trim().toLowerCase();
         const normalizedEmail = String(user.email || `${normalizedUsername}@restocash.com`)
@@ -1088,26 +1129,29 @@ export class ERPStore {
     );
 
     // Keep any local-only users that have not yet been synced to Supabase,
-    // excluding duplicate/default admin accounts when a cloud admin already exists.
-    const unsyncedLocalUsers = existingLocalUsers.filter((local) => {
-      const uid = String(local.id || "").trim().toLowerCase();
-      const uname = String(local.username || "").trim().toLowerCase();
-      const uemail = String(local.email || "").trim().toLowerCase();
-      const isLocalAdmin =
-        local.role === "admin" ||
-        local.role === "super_admin" ||
-        uid === "u-admin" ||
-        uid === "u-owner-mahmoud" ||
-        uname === "admin" ||
-        uemail === "admin@restocash.com";
-      if (cloudHasAdmin && isLocalAdmin) return false;
-      return !cloudUsernames.has(uname) && (!uemail || !cloudEmails.has(uemail));
-    });
+    // excluding deleted users and duplicate/default admin accounts when a cloud admin already exists.
+    const unsyncedLocalUsers = options?.authoritative
+      ? []
+      : existingLocalUsers.filter((local) => {
+          const uid = String(local.id || "").trim().toLowerCase();
+          const uname = String(local.username || "").trim().toLowerCase();
+          const uemail = String(local.email || "").trim().toLowerCase();
+          if (deletedSet.has(uname)) return false;
+          const isLocalAdmin =
+            local.role === "admin" ||
+            local.role === "super_admin" ||
+            uid === "u-admin" ||
+            uid === "u-owner-mahmoud" ||
+            uname === "admin" ||
+            uemail === "admin@restocash.com";
+          if (cloudHasAdmin && isLocalAdmin) return false;
+          return !cloudUsernames.has(uname) && (!uemail || !cloudEmails.has(uemail));
+        });
 
     const combinedUsers = ensureCurrentManagedUsers(
       [...cloudUsers, ...unsyncedLocalUsers],
       this.state.employees,
-    );
+    ).filter((u) => !deletedSet.has(String(u.username || "").trim().toLowerCase()));
     this.state.users = combinedUsers;
 
     const permissionsByIdentity: Record<string, UserPermission> = {
@@ -1221,6 +1265,238 @@ export class ERPStore {
     if (email && !reservedRoleNames.has(email)) delete this.state.userPermissions?.[email];
     this.saveState();
   }
+  resolveCurrentActorIdentity(): {
+    userId: string;
+    username: string;
+    email: string;
+    fullName: string;
+    role: string;
+    isCashier: boolean;
+    canCloseShifts: boolean;
+    canManageAllShifts: boolean;
+  } {
+    let rawUsername = String(this.state?.currentUser || "").trim();
+    let sessionUserId = "";
+    let sessionEmail = "";
+    let sessionRole = "";
+    let sessionFullName = "";
+
+    if (typeof window !== "undefined") {
+      try {
+        const storedAuth =
+          localStorage.getItem("restocash_auth_user") ||
+          sessionStorage.getItem("restocash_auth_user") ||
+          "";
+        if (!rawUsername && storedAuth) {
+          rawUsername = storedAuth.trim();
+        }
+        const storedRole =
+          localStorage.getItem("restocash_user_role") ||
+          sessionStorage.getItem("restocash_user_role") ||
+          "";
+        if (storedRole) {
+          sessionRole = storedRole.trim().toLowerCase();
+        }
+        const rawSession =
+          localStorage.getItem("user_session") || sessionStorage.getItem("user_session");
+        if (rawSession) {
+          const parsed = JSON.parse(rawSession);
+          if (!rawUsername && parsed.username) rawUsername = String(parsed.username).trim();
+          if (parsed.id) sessionUserId = String(parsed.id).trim();
+          if (parsed.email) sessionEmail = String(parsed.email).trim().toLowerCase();
+          if (!sessionRole && parsed.role) sessionRole = String(parsed.role).trim().toLowerCase();
+          if (parsed.fullName || parsed.full_name) {
+            sessionFullName = String(parsed.fullName || parsed.full_name).trim();
+          }
+        }
+      } catch {
+        // ignore storage parse errors
+      }
+    }
+
+    const normalizedUsername = rawUsername.toLowerCase();
+    const localPart = normalizedUsername.includes("@")
+      ? normalizedUsername.split("@")[0]
+      : normalizedUsername;
+
+    const users = this.getUsers() || [];
+    const matchedUser = users.find((u) => {
+      const uId = String(u.id || "").trim();
+      const uName = String(u.username || "")
+        .trim()
+        .toLowerCase();
+      const uEmail = String(u.email || "")
+        .trim()
+        .toLowerCase();
+      const uLocal = uEmail.includes("@") ? uEmail.split("@")[0] : uName;
+      return (
+        (sessionUserId && uId === sessionUserId) ||
+        (normalizedUsername &&
+          (uName === normalizedUsername ||
+            uEmail === normalizedUsername ||
+            uId.toLowerCase() === normalizedUsername)) ||
+        (localPart && (uName === localPart || uLocal === localPart))
+      );
+    });
+
+    let resolvedRole = String(matchedUser?.role || sessionRole || "")
+      .trim()
+      .toLowerCase();
+
+    if (!resolvedRole) {
+      if (
+        normalizedUsername === "admin" ||
+        normalizedUsername === "super_admin" ||
+        localPart === "admin" ||
+        localPart === "mahmoud.hindam9"
+      ) {
+        resolvedRole = "super_admin";
+      } else if (normalizedUsername === "manager") {
+        resolvedRole = "manager";
+      } else if (normalizedUsername === "cashier") {
+        resolvedRole = "cashier";
+      } else if (normalizedUsername) {
+        resolvedRole = "cashier";
+      } else {
+        resolvedRole = "super_admin";
+      }
+    }
+
+    const resolvedUserId = String(matchedUser?.id || sessionUserId || localPart || normalizedUsername).trim();
+    const resolvedUsername = String(matchedUser?.username || localPart || normalizedUsername).trim();
+    const resolvedEmail = String(matchedUser?.email || sessionEmail || "").trim().toLowerCase();
+    const resolvedFullName = String(
+      matchedUser?.full_name || sessionFullName || resolvedUsername || "مستخدم",
+    ).trim();
+
+    const isCashier = resolvedRole === "cashier";
+    const isManagerOrAdmin =
+      !isCashier &&
+      (resolvedRole === "admin" ||
+        resolvedRole === "super_admin" ||
+        resolvedRole === "manager");
+    const hasClosePerm =
+      !isCashier &&
+      (isManagerOrAdmin || Boolean(matchedUser?.permissions?.treasury_open_close));
+
+    return {
+      userId: resolvedUserId,
+      username: resolvedUsername,
+      email: resolvedEmail,
+      fullName: resolvedFullName,
+      role: resolvedRole,
+      isCashier,
+      canCloseShifts: hasClosePerm,
+      canManageAllShifts: isManagerOrAdmin,
+    };
+  }
+
+  doesShiftBelongToUser(
+    shift: {
+      cashier_id?: string;
+      cashier_username?: string;
+      cashier_name?: string;
+    } | null | undefined,
+    identity?: {
+      userId: string;
+      username: string;
+      email: string;
+      fullName: string;
+    },
+  ): boolean {
+    if (!shift) return false;
+    const actor = identity || this.resolveCurrentActorIdentity();
+    const actorId = String(actor.userId || "").trim().toLowerCase();
+    const actorUsername = String(actor.username || "").trim().toLowerCase();
+    const actorEmail = String(actor.email || "").trim().toLowerCase();
+    const actorFullName = String(actor.fullName || "").trim().toLowerCase();
+
+    const shiftCashierId = String(shift.cashier_id || "").trim().toLowerCase();
+    const shiftCashierUsername = String(shift.cashier_username || "").trim().toLowerCase();
+    const shiftCashierName = String(shift.cashier_name || "").trim().toLowerCase();
+
+    if (shiftCashierId) {
+      if (
+        (actorId && shiftCashierId === actorId) ||
+        (actorUsername && shiftCashierId === actorUsername) ||
+        (actorEmail && shiftCashierId === actorEmail)
+      ) {
+        return true;
+      }
+    }
+
+    if (shiftCashierUsername) {
+      if (
+        (actorUsername && shiftCashierUsername === actorUsername) ||
+        (actorId && shiftCashierUsername === actorId) ||
+        (actorEmail && shiftCashierUsername === actorEmail)
+      ) {
+        return true;
+      }
+    }
+
+    // If shift has a specific cashier_id or cashier_username that didn't match above, it belongs to someone else
+    if (shiftCashierId || shiftCashierUsername) {
+      return false;
+    }
+
+    // Fallback for legacy shifts without cashier_id/cashier_username: match by cashier_name
+    if (shiftCashierName) {
+      if (
+        (actorFullName && shiftCashierName === actorFullName) ||
+        (actorUsername && shiftCashierName === actorUsername)
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  getCashierOpenRestaurantShift(targetUserIdOrUsername?: string): RestaurantShift | null {
+    const openShifts = (this.state.restaurantShifts || []).filter((s) => s.status === "open");
+    if (openShifts.length === 0) return null;
+
+    if (targetUserIdOrUsername) {
+      const target = String(targetUserIdOrUsername).trim().toLowerCase();
+      return (
+        openShifts.find(
+          (s) =>
+            String(s.cashier_id || "").trim().toLowerCase() === target ||
+            String(s.cashier_username || "").trim().toLowerCase() === target ||
+            (!s.cashier_id &&
+              !s.cashier_username &&
+              String(s.cashier_name || "").trim().toLowerCase() === target),
+        ) || null
+      );
+    }
+
+    const identity = this.resolveCurrentActorIdentity();
+    return openShifts.find((s) => this.doesShiftBelongToUser(s, identity)) || null;
+  }
+
+  getCashierOpenParkShift(targetUserIdOrUsername?: string): ParkShift | null {
+    const openShifts = (this.state.parkShifts || []).filter((s) => s.status === "open");
+    if (openShifts.length === 0) return null;
+
+    if (targetUserIdOrUsername) {
+      const target = String(targetUserIdOrUsername).trim().toLowerCase();
+      return (
+        openShifts.find(
+          (s) =>
+            String(s.cashier_id || "").trim().toLowerCase() === target ||
+            String(s.cashier_username || "").trim().toLowerCase() === target ||
+            (!s.cashier_id &&
+              !s.cashier_username &&
+              String(s.cashier_name || "").trim().toLowerCase() === target),
+        ) || null
+      );
+    }
+
+    const identity = this.resolveCurrentActorIdentity();
+    return openShifts.find((s) => this.doesShiftBelongToUser(s, identity)) || null;
+  }
+
   setCurrentUser(email: string) {
     const prevUser = this.state.currentUser;
     if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
@@ -1241,8 +1517,20 @@ export class ERPStore {
         // ignore
       }
     }
-    if (this.state.currentUser === email) return;
     this.state.currentUser = email;
+
+    if (!email) {
+      // On logout, detach active session pointers while keeping open shifts in restaurantShifts / parkShifts
+      this.state.restaurantActiveShift = null;
+      this.state.parkActiveShift = null;
+    } else {
+      const identity = this.resolveCurrentActorIdentity();
+      if (identity.isCashier) {
+        this.state.restaurantActiveShift = this.getCashierOpenRestaurantShift();
+        this.state.parkActiveShift = this.getCashierOpenParkShift();
+      }
+    }
+
     this.saveState();
   }
   updateUserPermission(identity: string, permissions: Partial<UserPermission>) {
@@ -7061,6 +7349,29 @@ export class ERPStore {
   }
 
   getActiveParkShift(): ParkShift | null {
+    const identity = this.resolveCurrentActorIdentity();
+    if (identity.isCashier) {
+      if (
+        this.state.parkActiveShift &&
+        this.state.parkActiveShift.status === "open" &&
+        this.doesShiftBelongToUser(this.state.parkActiveShift, identity)
+      ) {
+        const canonical = (this.state.parkShifts || []).find(
+          (s) => s.id === this.state.parkActiveShift?.id,
+        );
+        if (canonical && canonical.status === "open") {
+          this.state.parkActiveShift = canonical;
+          return canonical;
+        }
+      }
+      const myOpenShift = this.getCashierOpenParkShift();
+      if (myOpenShift) {
+        this.state.parkActiveShift = myOpenShift;
+        return myOpenShift;
+      }
+      return null;
+    }
+
     if (this.state.parkActiveShift && this.state.parkActiveShift.status === "open") {
       const canonical = (this.state.parkShifts || []).find(
         (s) => s.id === this.state.parkActiveShift?.id,
@@ -7079,6 +7390,10 @@ export class ERPStore {
   setActiveParkShift(shiftId: string): ParkShift {
     const shift = (this.state.parkShifts || []).find((s) => s.id === shiftId);
     if (!shift) throw new Error("الوردية غير موجودة!");
+    const identity = this.resolveCurrentActorIdentity();
+    if (identity.isCashier && !this.doesShiftBelongToUser(shift, identity)) {
+      throw new Error("غير مصرح للكاشير بالدخول على وردية تخص مستخدم آخر!");
+    }
     this.state.parkActiveShift = shift;
     this.saveState();
     shiftAuditService.logShiftAction({
@@ -7090,6 +7405,7 @@ export class ERPStore {
       status_before: shift.status,
       status_after: shift.status,
       cashier_name: shift.cashier_name,
+      cashier_id: shift.cashier_id,
       performed_by: this.state.currentUser || shift.cashier_name,
       details: `تم تعيين وردية التذاكر كنشطة للجلسة: ${shift.shift_number}`,
     });
@@ -7100,14 +7416,53 @@ export class ERPStore {
   startNewParkShift(payload: {
     shift_number?: string;
     auto_shift_number?: string;
-    cashier_name: string;
+    cashier_name?: string;
+    cashier_id?: string;
+    cashier_username?: string;
+    cashier_type?: "hr" | "manual" | "account";
+    currency?: "EGP" | "USD" | "SSP" | string;
+    exchange_rate?: number;
+    opening_balance?: number;
+    opening_notes?: string;
     notes?: string;
   }): ParkShift {
+    const identity = this.resolveCurrentActorIdentity();
+    const resolvedCashierId =
+      payload.cashier_id || (identity.userId ? identity.userId : undefined);
+    const resolvedCashierUsername =
+      payload.cashier_username || (identity.username ? identity.username : undefined);
+    const resolvedCashierName =
+      (payload.cashier_name && payload.cashier_name.trim()) ||
+      identity.fullName ||
+      identity.username ||
+      "أمين الصندوق";
+
+    // Prevent duplicate active shifts for the same cashier in Garden (Park)
+    const existingOpenForCashier = identity.isCashier
+      ? this.getCashierOpenParkShift()
+      : resolvedCashierId
+        ? this.getCashierOpenParkShift(resolvedCashierId)
+        : null;
+
+    if (existingOpenForCashier) {
+      throw new Error(
+        "يوجد وردية حديقة مفتوحة بالفعل لهذا الكاشير. لا يمكن فتح أكثر من وردية نشطة في نفس القسم.",
+      );
+    }
+
     const autoNum = payload.auto_shift_number || this.generateUniqueParkShiftNumber();
     const finalShiftNum =
       payload.shift_number && payload.shift_number.trim()
         ? payload.shift_number.trim()
         : `وردية تذاكر #${(this.state.parkShifts?.length || 0) + 1} - ${new Date().toLocaleDateString("ar-EG")}`;
+
+    const chosenCurrency = (payload.currency || "USD").toUpperCase();
+    const chosenRate =
+      payload.exchange_rate && Number(payload.exchange_rate) > 0
+        ? Number(payload.exchange_rate)
+        : this.getExchangeRate(chosenCurrency);
+    const openingBalance = Number(payload.opening_balance || 0);
+    const openingNotes = payload.opening_notes ?? payload.notes;
 
     const newShift: ParkShift = {
       id: "shift-park-" + Date.now(),
@@ -7115,8 +7470,15 @@ export class ERPStore {
       shift_number: finalShiftNum,
       start_at: new Date().toISOString(),
       status: "open",
-      cashier_name: payload.cashier_name || "أمين الصندوق",
-      notes: payload.notes,
+      cashier_name: resolvedCashierName,
+      cashier_id: resolvedCashierId,
+      cashier_username: resolvedCashierUsername,
+      cashier_type: payload.cashier_type || (identity.isCashier ? "account" : "hr"),
+      currency: chosenCurrency,
+      exchange_rate: chosenRate,
+      opening_balance: openingBalance,
+      opening_notes: openingNotes,
+      notes: payload.notes ?? openingNotes,
     };
 
     this.state.parkActiveShift = newShift;
@@ -7132,10 +7494,18 @@ export class ERPStore {
       status_before: null,
       status_after: "open",
       cashier_name: newShift.cashier_name,
+      cashier_id: newShift.cashier_id,
       performed_by: this.state.currentUser || newShift.cashier_name,
       details: `تم افتتاح وردية تذاكر جديدة (${finalShiftNum} - رقم تلقائي: ${autoNum}) باسم: ${newShift.cashier_name}`,
       metadata: {
-        notes: payload.notes,
+        notes: newShift.notes,
+        opening_notes: newShift.opening_notes,
+        opening_balance: newShift.opening_balance,
+        currency: newShift.currency,
+        exchange_rate: newShift.exchange_rate,
+        cashier_id: newShift.cashier_id,
+        cashier_username: newShift.cashier_username,
+        cashier_type: newShift.cashier_type,
         start_at: newShift.start_at,
       },
     });
@@ -7151,6 +7521,10 @@ export class ERPStore {
   }
 
   updateParkShift(shiftId: string, updates: Partial<ParkShift>): ParkShift {
+    const identity = this.resolveCurrentActorIdentity();
+    if (identity.isCashier) {
+      throw new Error("غير مصرح للكاشير بتعديل أو إغلاق الوردية.");
+    }
     const shifts = this.state.parkShifts || [];
     const shift = shifts.find((s) => s.id === shiftId);
     if (!shift) throw new Error("الوردية غير موجودة!");
@@ -7183,6 +7557,7 @@ export class ERPStore {
       status_before: shift.status,
       status_after: shift.status,
       cashier_name: shift.cashier_name,
+      cashier_id: shift.cashier_id,
       performed_by: this.state.currentUser || shift.cashier_name,
       details: `تم تعديل بيانات وردية التذاكر (${shift.shift_number})`,
       metadata: updates,
@@ -7219,6 +7594,10 @@ export class ERPStore {
   }
 
   deleteParkShift(shiftId: string): boolean {
+    const identity = this.resolveCurrentActorIdentity();
+    if (identity.isCashier || !identity.canCloseShifts) {
+      throw new Error("غير مصرح للكاشير بحذف الورديات.");
+    }
     const shifts = this.state.parkShifts || [];
     const shift = shifts.find(
       (s) => s.id === shiftId || s.shift_number === shiftId || s.auto_shift_number === shiftId,
@@ -7321,6 +7700,10 @@ export class ERPStore {
     const shift = shifts.find((s) => s.id === shiftId);
     if (!shift) throw new Error("الوردية غير موجودة!");
     if (shift.status !== "open") throw new Error("لا يمكن الدخول على وردية مغلقة!");
+    const identity = this.resolveCurrentActorIdentity();
+    if (identity.isCashier && !this.doesShiftBelongToUser(shift, identity)) {
+      throw new Error("غير مصرح للكاشير بالدخول على وردية تخص مستخدم آخر!");
+    }
 
     this.state.parkActiveShift = shift;
     this.saveState();
@@ -7333,6 +7716,7 @@ export class ERPStore {
       status_before: shift.status,
       status_after: "open",
       cashier_name: shift.cashier_name,
+      cashier_id: shift.cashier_id,
       performed_by: this.state.currentUser || shift.cashier_name,
       details: `تم استئناف وردية التذاكر المفتوحة (${shift.shift_number}) كوردية نشطة للجلسة`,
     });
@@ -7341,7 +7725,7 @@ export class ERPStore {
   }
 
   getOrCreateActiveParkShift(): ParkShift {
-    const active = this.state.parkActiveShift;
+    const active = this.getActiveParkShift();
     if (!active || active.status !== "open") {
       throw new Error("لا توجد وردية مفتوحة حالياً. يرجى فتح وردية أولاً من صفحة الورديات.");
     }
@@ -7565,6 +7949,11 @@ export class ERPStore {
   }
 
   closeParkShift(shiftId?: string) {
+    const identity = this.resolveCurrentActorIdentity();
+    if (identity.isCashier || !identity.canCloseShifts) {
+      throw new Error("غير مصرح للكاشير بإغلاق الوردية. إغلاق الورديات متاح للمدير أو المشرف فقط.");
+    }
+
     let targetShift: any = null;
     if (shiftId) {
       targetShift = (this.state.parkShifts || []).find(
@@ -7838,6 +8227,29 @@ export class ERPStore {
   }
 
   getActiveRestaurantShift(): RestaurantShift | null {
+    const identity = this.resolveCurrentActorIdentity();
+    if (identity.isCashier) {
+      if (
+        this.state.restaurantActiveShift &&
+        this.state.restaurantActiveShift.status === "open" &&
+        this.doesShiftBelongToUser(this.state.restaurantActiveShift, identity)
+      ) {
+        const canonical = (this.state.restaurantShifts || []).find(
+          (s) => s.id === this.state.restaurantActiveShift?.id,
+        );
+        if (canonical && canonical.status === "open") {
+          this.state.restaurantActiveShift = canonical;
+          return canonical;
+        }
+      }
+      const myOpenShift = this.getCashierOpenRestaurantShift();
+      if (myOpenShift) {
+        this.state.restaurantActiveShift = myOpenShift;
+        return myOpenShift;
+      }
+      return null;
+    }
+
     if (this.state.restaurantActiveShift && this.state.restaurantActiveShift.status === "open") {
       const canonical = (this.state.restaurantShifts || []).find(
         (s) => s.id === this.state.restaurantActiveShift?.id,
@@ -7856,6 +8268,10 @@ export class ERPStore {
   setActiveRestaurantShift(shiftId: string): RestaurantShift {
     const shift = (this.state.restaurantShifts || []).find((s) => s.id === shiftId);
     if (!shift) throw new Error("وردية المطعم غير موجودة!");
+    const identity = this.resolveCurrentActorIdentity();
+    if (identity.isCashier && !this.doesShiftBelongToUser(shift, identity)) {
+      throw new Error("غير مصرح للكاشير بالدخول على وردية تخص مستخدم آخر!");
+    }
     this.state.restaurantActiveShift = shift;
     this.saveState();
     shiftAuditService.logShiftAction({
@@ -7880,6 +8296,10 @@ export class ERPStore {
     const shift = shifts.find((s) => s.id === shiftId);
     if (!shift) throw new Error("وردية المطعم غير موجودة!");
     if (shift.status !== "open") throw new Error("لا يمكن الدخول على وردية مغلقة!");
+    const identity = this.resolveCurrentActorIdentity();
+    if (identity.isCashier && !this.doesShiftBelongToUser(shift, identity)) {
+      throw new Error("غير مصرح للكاشير بالدخول على وردية تخص مستخدم آخر!");
+    }
 
     this.state.restaurantActiveShift = shift;
     this.saveState();
@@ -7903,18 +8323,53 @@ export class ERPStore {
   startNewRestaurantShift(payload: {
     shift_number?: string;
     auto_shift_number?: string;
-    cashier_name: string;
+    cashier_name?: string;
     cashier_id?: string;
-    cashier_type?: "hr" | "manual";
+    cashier_username?: string;
+    cashier_type?: "hr" | "manual" | "account";
+    currency?: "EGP" | "USD" | "SSP" | string;
+    exchange_rate?: number;
     opening_balance?: number;
     opening_notes?: string;
     notes?: string;
   }): RestaurantShift {
+    const identity = this.resolveCurrentActorIdentity();
+    const resolvedCashierId =
+      payload.cashier_id || (identity.userId ? identity.userId : undefined);
+    const resolvedCashierUsername =
+      payload.cashier_username || (identity.username ? identity.username : undefined);
+    const resolvedCashierName =
+      (payload.cashier_name && payload.cashier_name.trim()) ||
+      identity.fullName ||
+      identity.username ||
+      "كاشير المطعم";
+
+    // Prevent duplicate active shifts for the same cashier in Restaurant
+    const existingOpenForCashier = identity.isCashier
+      ? this.getCashierOpenRestaurantShift()
+      : resolvedCashierId
+        ? this.getCashierOpenRestaurantShift(resolvedCashierId)
+        : null;
+
+    if (existingOpenForCashier) {
+      throw new Error(
+        "يوجد وردية مطعم مفتوحة بالفعل لهذا الكاشير. لا يمكن فتح أكثر من وردية نشطة في نفس القسم.",
+      );
+    }
+
     const autoNum = payload.auto_shift_number || this.generateUniqueRestaurantShiftNumber();
     const finalShiftNum =
       payload.shift_number && payload.shift_number.trim()
         ? payload.shift_number.trim()
         : `وردية مطعم #${(this.state.restaurantShifts?.length || 0) + 1} - ${new Date().toLocaleDateString("ar-EG")}`;
+
+    const chosenCurrency = (payload.currency || "EGP").toUpperCase();
+    const chosenRate =
+      payload.exchange_rate && Number(payload.exchange_rate) > 0
+        ? Number(payload.exchange_rate)
+        : this.getExchangeRate(chosenCurrency);
+    const openingBalance = Number(payload.opening_balance || 0);
+    const openingNotes = payload.opening_notes ?? payload.notes;
 
     const newShift: RestaurantShift = {
       id: "shift-rest-" + Date.now(),
@@ -7922,12 +8377,15 @@ export class ERPStore {
       shift_number: finalShiftNum,
       start_at: new Date().toISOString(),
       status: "open",
-      cashier_name: payload.cashier_name || "كاشير المطعم",
-      cashier_id: payload.cashier_id,
-      cashier_type: payload.cashier_type || "hr",
-      opening_balance: Number(payload.opening_balance || 0),
-      opening_notes: payload.opening_notes,
-      notes: payload.notes,
+      cashier_name: resolvedCashierName,
+      cashier_id: resolvedCashierId,
+      cashier_username: resolvedCashierUsername,
+      cashier_type: payload.cashier_type || (identity.isCashier ? "account" : "hr"),
+      currency: chosenCurrency,
+      exchange_rate: chosenRate,
+      opening_balance: openingBalance,
+      opening_notes: openingNotes,
+      notes: payload.notes ?? openingNotes,
       generated_journal_refs: [],
       orders_count: 0,
       total_sales: 0,
@@ -7960,6 +8418,11 @@ export class ERPStore {
         start_at: newShift.start_at,
         opening_balance: newShift.opening_balance,
         opening_notes: newShift.opening_notes,
+        notes: newShift.notes,
+        currency: newShift.currency,
+        exchange_rate: newShift.exchange_rate,
+        cashier_id: newShift.cashier_id,
+        cashier_username: newShift.cashier_username,
         cashier_type: newShift.cashier_type,
       },
     });
@@ -7975,6 +8438,10 @@ export class ERPStore {
   }
 
   updateRestaurantShift(shiftId: string, updates: Partial<RestaurantShift>): RestaurantShift {
+    const identity = this.resolveCurrentActorIdentity();
+    if (identity.isCashier) {
+      throw new Error("غير مصرح للكاشير بتعديل أو إغلاق الوردية.");
+    }
     const shifts = this.state.restaurantShifts || [];
     const shift = shifts.find((s) => s.id === shiftId);
     if (!shift) throw new Error("الوردية غير موجودة!");
@@ -8013,6 +8480,10 @@ export class ERPStore {
   }
 
   deleteRestaurantShift(shiftId: string): boolean {
+    const identity = this.resolveCurrentActorIdentity();
+    if (identity.isCashier || !identity.canCloseShifts) {
+      throw new Error("غير مصرح للكاشير بحذف الورديات.");
+    }
     const shifts = this.state.restaurantShifts || [];
     const shiftIdx = shifts.findIndex((s) => s.id === shiftId);
     if (shiftIdx === -1) throw new Error("الوردية غير موجودة!");
@@ -8052,8 +8523,9 @@ export class ERPStore {
   }
 
   getOrCreateActiveRestaurantShift(cashierName = "كاشير المطعم"): RestaurantShift {
-    let active = this.state.restaurantActiveShift;
+    let active = this.getActiveRestaurantShift();
     if (!active || active.status !== "open") {
+      const identity = this.resolveCurrentActorIdentity();
       const autoNum = this.generateUniqueRestaurantShiftNumber();
       active = {
         id: "shift-rest-" + Date.now(),
@@ -8061,7 +8533,13 @@ export class ERPStore {
         shift_number: `وردية مطعم #${(this.state.restaurantShifts?.length || 0) + 1} - ${new Date().toLocaleDateString("ar-EG")}`,
         start_at: new Date().toISOString(),
         status: "open",
-        cashier_name: cashierName,
+        cashier_name: identity.fullName || cashierName,
+        cashier_id: identity.userId || undefined,
+        cashier_username: identity.username || undefined,
+        cashier_type: identity.isCashier ? "account" : "hr",
+        currency: "EGP",
+        exchange_rate: this.getExchangeRate("EGP"),
+        opening_balance: 0,
         generated_journal_refs: [],
         orders_count: 0,
         total_sales: 0,
@@ -8085,12 +8563,15 @@ export class ERPStore {
         action: "AUTO_CREATE",
         status_before: null,
         status_after: "open",
-        cashier_name: cashierName,
-        performed_by: this.state.currentUser || cashierName,
+        cashier_name: active.cashier_name,
+        cashier_id: active.cashier_id,
+        performed_by: this.state.currentUser || active.cashier_name,
         details: `تم إنشاء وردية مطعم تلقائية للجلسة (${active.shift_number})`,
         metadata: {
           start_at: active.start_at,
           auto_created: true,
+          cashier_id: active.cashier_id,
+          cashier_username: active.cashier_username,
         },
       });
 
@@ -8100,9 +8581,17 @@ export class ERPStore {
   }
 
   closeRestaurantShift(shiftId?: string, closingNotes?: string): RestaurantShift {
+    const identity = this.resolveCurrentActorIdentity();
+    if (identity.isCashier || !identity.canCloseShifts) {
+      throw new Error("غير مصرح للكاشير بإغلاق الوردية. إغلاق الورديات متاح للمدير أو المشرف فقط.");
+    }
+
     const activeShift = shiftId
-      ? (this.state.restaurantShifts || []).find((s) => s.id === shiftId)
-      : this.state.restaurantActiveShift;
+      ? (this.state.restaurantShifts || []).find(
+          (s) => s.id === shiftId || s.shift_number === shiftId || s.auto_shift_number === shiftId,
+        )
+      : this.state.restaurantActiveShift ||
+        (this.state.restaurantShifts || []).find((s) => s.status === "open");
 
     if (!activeShift || activeShift.status !== "open") {
       throw new Error("لا توجد وردية مطعم مفتوحة لإغلاقها!");

@@ -1,9 +1,143 @@
 import { authService } from "@/features/auth/services/authService";
+import { supabase } from "@/integrations/supabase/client";
 import { erpStore, type SystemUser } from "@/shared/services/erpStore";
 
 const QUEUE_KEY = "restocash_pending_user_sync_v1";
 const SECRET_PREFIX = "restocash_pending_user_secret_v1:";
+const DELETED_USERS_KEY = "restocash_deleted_usernames_v1";
 const CHANGE_EVENT = "restocash-user-sync-updated";
+export const GLOBAL_USERS_SYNC_SHIFT_ID = "GLOBAL_USERS_DIRECTORY_SYNC_V1";
+
+function readDeletedUsernames(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(DELETED_USERS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed)
+      ? parsed.map((u) => String(u || "").trim().toLowerCase()).filter(Boolean)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function addDeletedUsername(username: string): void {
+  if (typeof window === "undefined") return;
+  const norm = String(username || "").trim().toLowerCase();
+  if (!norm) return;
+  try {
+    const set = new Set(readDeletedUsernames());
+    set.add(norm);
+    window.localStorage.setItem(DELETED_USERS_KEY, JSON.stringify(Array.from(set)));
+  } catch {
+    // ignore
+  }
+}
+
+function removeDeletedUsername(username: string): void {
+  if (typeof window === "undefined") return;
+  const norm = String(username || "").trim().toLowerCase();
+  if (!norm) return;
+  try {
+    const next = readDeletedUsernames().filter((u) => u !== norm);
+    window.localStorage.setItem(DELETED_USERS_KEY, JSON.stringify(next));
+  } catch {
+    // ignore
+  }
+}
+
+export async function pushUsersDirectorySnapshotToSupabase(
+  customUsers?: SystemUser[],
+): Promise<boolean> {
+  try {
+    const deletedUsernames = readDeletedUsernames();
+    const deletedSet = new Set(deletedUsernames);
+    const currentUsers = (customUsers || erpStore.getUsers()).filter(
+      (u) =>
+        Boolean(u?.id && u?.username) &&
+        !deletedSet.has(String(u.username || "").trim().toLowerCase()),
+    );
+    const state = erpStore.getState();
+    const userPermissions = state.userPermissions || {};
+
+    const { error } = await supabase.from("shift_audit_logs").insert({
+      shift_id: GLOBAL_USERS_SYNC_SHIFT_ID,
+      shift_type: "restaurant",
+      shift_number: "USERS_DIRECTORY_SYNC",
+      auto_shift_number: `USR-SYNC-${Date.now()}`,
+      action: "UPDATE",
+      status_before: "active",
+      status_after: "synced",
+      cashier_name: "UsersDirectorySync",
+      performed_by: state.currentUser || "admin",
+      details: `مزامنة تلقائية لدليل المستخدمين والصلاحيات (${currentUsers.length} مستخدم)`,
+      metadata: {
+        users: currentUsers,
+        userPermissions,
+        deletedUsernames,
+        updatedAt: Date.now(),
+      },
+    } as any);
+
+    if (error) {
+      console.warn("[UserSync] Could not push users snapshot to Supabase:", error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn("[UserSync] Exception pushing users snapshot to Supabase:", err);
+    return false;
+  }
+}
+
+export async function pullUsersDirectorySnapshotFromSupabase(): Promise<{
+  users: SystemUser[];
+  userPermissions: Record<string, any>;
+  deletedUsernames: string[];
+  updatedAt: number;
+} | null> {
+  try {
+    const { data, error } = await supabase
+      .from("shift_audit_logs")
+      .select("id, metadata, created_at")
+      .eq("shift_id", GLOBAL_USERS_SYNC_SHIFT_ID)
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if (error || !Array.isArray(data) || data.length === 0) {
+      return null;
+    }
+
+    const row = data[0] as any;
+    const meta = row?.metadata;
+    if (!meta || !Array.isArray(meta.users)) {
+      return null;
+    }
+
+    const remoteDeleted = Array.isArray(meta.deletedUsernames)
+      ? meta.deletedUsernames.map((u: any) => String(u || "").trim().toLowerCase()).filter(Boolean)
+      : [];
+
+    if (typeof window !== "undefined" && remoteDeleted.length > 0) {
+      try {
+        const mergedDeleted = Array.from(new Set([...readDeletedUsernames(), ...remoteDeleted]));
+        window.localStorage.setItem(DELETED_USERS_KEY, JSON.stringify(mergedDeleted));
+      } catch {
+        // ignore
+      }
+    }
+
+    return {
+      users: meta.users as SystemUser[],
+      userPermissions: (meta.userPermissions || {}) as Record<string, any>,
+      deletedUsernames: remoteDeleted,
+      updatedAt: Number(meta.updatedAt || Date.parse(row.created_at) || Date.now()),
+    };
+  } catch (err) {
+    console.warn("[UserSync] Exception pulling users snapshot from Supabase:", err);
+    return null;
+  }
+}
 
 type ProfilePayload = Record<string, any>;
 
@@ -264,6 +398,7 @@ function enqueueChange(input: UserChangeInput): { operationId: string | null; no
 
   if (input.kind === "create") {
     const username = normalizeUsername(input.username);
+    removeDeletedUsername(username);
     let existing = queue.find(
       (operation): operation is QueuedCreate =>
         operation.kind === "create" &&
@@ -295,16 +430,15 @@ function enqueueChange(input: UserChangeInput): { operationId: string | null; no
       updatedAt: now,
       attempts: 0,
     };
-    // Persist the queue before notification, but only wake the sync worker after the
-    // session-scoped password is ready. The password itself never enters localStorage.
     writeQueue([...queue, operation], false);
-    writeCreatePassword(operation.id, input.password);
+    if (input.password) writeCreatePassword(operation.id, input.password);
     announceChange();
     return { operationId: operation.id };
   }
 
   if (input.kind === "upsert") {
     const username = normalizeUsername(input.username);
+    removeDeletedUsername(username);
     const profile: ProfilePayload = { ...safeProfile(input.profile), username };
 
     const pendingCreate = queue.find(
@@ -313,36 +447,6 @@ function enqueueChange(input: UserChangeInput): { operationId: string | null; no
         (operation.localUserId === input.userId ||
           normalizeUsername(operation.username) === username),
     );
-    if (String(input.userId).startsWith("u-") && !pendingCreate) {
-      const localRecord = erpStore
-        .getUsers()
-        .find(
-          (u) =>
-            u.id === input.userId || normalizeUsername(u.username) === username,
-        );
-      const emailToUse = String(
-        profile.email || localRecord?.email || `${username}@restocash.com`,
-      )
-        .trim()
-        .toLowerCase();
-      const passwordToUse =
-        input.password || String(localRecord?.password || "Admin@12345");
-
-      const operation: QueuedCreate = {
-        id: createId(),
-        kind: "create",
-        localUserId: input.userId,
-        email: emailToUse,
-        username,
-        profile: { ...profile, email: emailToUse },
-        updatedAt: now,
-        attempts: 0,
-      };
-      writeQueue([...queue, operation], false);
-      writeCreatePassword(operation.id, passwordToUse);
-      announceChange();
-      return { operationId: operation.id };
-    }
     if (pendingCreate) {
       const updated: QueuedCreate = {
         ...pendingCreate,
@@ -391,17 +495,12 @@ function enqueueChange(input: UserChangeInput): { operationId: string | null; no
     return { operationId: operation.id };
   }
 
+  addDeletedUsername(input.username);
   const pendingCreate = queue.find(
     (operation): operation is QueuedCreate =>
       operation.kind === "create" &&
       operationKeyMatches(operation, input.userId, input.username),
   );
-
-  if (pendingCreate && !pendingCreate.cloudUserId) {
-    writeQueue(queue.filter((operation) => operation.id !== pendingCreate.id));
-    clearCreatePassword(pendingCreate.id);
-    return { operationId: null, noOp: true };
-  }
 
   const targetUserId = pendingCreate?.cloudUserId || input.userId;
   const remaining = queue.filter((operation) => {
@@ -411,9 +510,8 @@ function enqueueChange(input: UserChangeInput): { operationId: string | null; no
     return true;
   });
 
-  if (String(targetUserId).startsWith("u-")) {
-    writeQueue(remaining);
-    return { operationId: null, noOp: true };
+  if (pendingCreate) {
+    clearCreatePassword(pendingCreate.id);
   }
 
   const existingDelete = remaining.find(
@@ -437,92 +535,94 @@ function enqueueChange(input: UserChangeInput): { operationId: string | null; no
 async function sendOperation(
   operation: QueuedChange,
 ): Promise<{ sentUpdatedAt: number; profile?: ProfilePayload; localUserId?: string }> {
+  const hasSession = await authService.hasActiveSupabaseSession().catch(() => false);
+
   if (operation.kind === "delete") {
-    await authService.deleteUser(operation.userId);
+    addDeletedUsername(operation.username);
+    erpStore.deleteUser(operation.userId);
+    if (hasSession && !String(operation.userId).startsWith("u-")) {
+      await authService.deleteUser(operation.userId).catch(() => undefined);
+    }
+    const pushed = await pushUsersDirectorySnapshotToSupabase();
+    if (!pushed && !hasSession) {
+      throw new Error("تعذر الاتصال بقاعدة البيانات لحفظ الحذف؛ سيتم إعادة المحاولة تلقائياً.");
+    }
     return { sentUpdatedAt: operation.updatedAt };
   }
 
   if (operation.kind === "upsert") {
     const sentUpdatedAt = operation.updatedAt;
-    const pendingPassword = readCreatePassword(operation.id);
-    if (pendingPassword) {
-      await authService.updateManagedUserPassword(operation.userId, pendingPassword);
-      clearCreatePassword(operation.id);
-    }
-    const profile = await authService.saveManagedProfile({
-      ...operation.profile,
-      id: operation.userId,
-      username: normalizeUsername(operation.profile.username || operation.username),
-    });
-    return { sentUpdatedAt, profile };
-  }
+    removeDeletedUsername(operation.username);
+    let confirmedProfile: ProfilePayload | undefined;
 
-  let cloudUserId = operation.cloudUserId;
-  if (!cloudUserId) {
-    const localUser = erpStore
-      .getUsers()
-      .find(
-        (u) =>
-          u.id === operation.localUserId ||
-          normalizeUsername(u.username) === normalizeUsername(operation.username),
-      );
-    const password = readCreatePassword(operation.id) || String(localUser?.password || "");
-    if (!password) {
-      throw new Error(
-        "المستخدم محفوظ محليًا لكن الرقم السري غير متاح للمزامنة. افتح تعديل المستخدم وأدخل رقمه السري لإكمال المزامنة.",
-      );
+    if (hasSession && !String(operation.userId).startsWith("u-")) {
+      try {
+        const pendingPassword = readCreatePassword(operation.id);
+        if (pendingPassword) {
+          await authService.updateManagedUserPassword(operation.userId, pendingPassword);
+          clearCreatePassword(operation.id);
+        }
+        confirmedProfile = await authService.saveManagedProfile({
+          ...operation.profile,
+          id: operation.userId,
+          username: normalizeUsername(operation.profile.username || operation.username),
+        });
+      } catch (err) {
+        console.warn("[UserSync] Direct profile RPC fallback to directory snapshot:", err);
+      }
     }
 
-    const created = await authService.createManagedUserAccount({
-      email: operation.email,
-      password,
-      username: operation.username,
-      full_name: operation.profile.full_name || operation.username,
-      phone: operation.profile.phone || "",
-      role: operation.profile.role || "cashier",
-      permissions: operation.profile.permissions || {},
-    });
-    cloudUserId = created?.profile?.id;
-    if (!cloudUserId) {
-      throw new Error(
-        "لم تؤكد خدمة Auth إنشاء الحساب. سيظل الطلب معلّقًا للمحاولة مرة أخرى.",
-      );
-    }
-
-    const latestQueue = readQueue();
-    const latest = latestQueue.find(
-      (item): item is QueuedCreate => item.id === operation.id && item.kind === "create",
-    );
-    if (latest) {
-      persistUpdatedOperation(latestQueue, {
-        ...latest,
-        cloudUserId,
-        lastError: undefined,
-      });
+    const pushed = await pushUsersDirectorySnapshotToSupabase();
+    if (!pushed && !confirmedProfile) {
+      throw new Error("تعذر الاتصال بقاعدة البيانات لمزامنة التعديلات؛ سيتم إعادة المحاولة تلقائياً.");
     }
     clearCreatePassword(operation.id);
+    return { sentUpdatedAt, profile: confirmedProfile };
+  }
 
-    if (created?.profile) {
-      return {
-        sentUpdatedAt: (latest || operation).updatedAt,
-        profile: created.profile,
-        localUserId: (latest || operation).localUserId,
-      };
+  removeDeletedUsername(operation.username);
+  const sentUpdatedAt = operation.updatedAt;
+  let confirmedProfile: ProfilePayload | undefined;
+
+  if (hasSession) {
+    try {
+      const localUser = erpStore
+        .getUsers()
+        .find(
+          (u) =>
+            u.id === operation.localUserId ||
+            normalizeUsername(u.username) === normalizeUsername(operation.username),
+        );
+      const password = readCreatePassword(operation.id) || String(localUser?.password || "");
+      if (password) {
+        const created = await authService.createManagedUserAccount({
+          email: operation.email,
+          password,
+          username: operation.username,
+          full_name: operation.profile.full_name || operation.username,
+          phone: operation.profile.phone || "",
+          role: operation.profile.role || "cashier",
+          permissions: operation.profile.permissions || {},
+        });
+        if (created?.profile?.id) {
+          confirmedProfile = created.profile;
+        }
+      }
+    } catch (err) {
+      console.warn("[UserSync] Managed account RPC fallback to directory snapshot:", err);
     }
   }
 
-  const latestQueue = readQueue();
-  const latest = latestQueue.find(
-    (item): item is QueuedCreate => item.id === operation.id && item.kind === "create",
-  );
-  const current = latest || operation;
-  const sentUpdatedAt = current.updatedAt;
-  const profile = await authService.saveManagedProfile({
-    ...current.profile,
-    id: cloudUserId,
-    username: normalizeUsername(current.profile.username || current.username),
-  });
-  return { sentUpdatedAt, profile, localUserId: current.localUserId };
+  const pushed = await pushUsersDirectorySnapshotToSupabase();
+  if (!pushed && !confirmedProfile) {
+    throw new Error("تعذر الاتصال بقاعدة البيانات لمزامنة المستخدم الجديد؛ سيتم إعادة المحاولة تلقائياً.");
+  }
+  clearCreatePassword(operation.id);
+  return {
+    sentUpdatedAt,
+    profile: confirmedProfile,
+    localUserId: operation.localUserId,
+  };
 }
 
 async function performSync(): Promise<UserSyncSummary> {
@@ -588,9 +688,104 @@ export function syncPendingUserChanges(): Promise<UserSyncSummary> {
   return activeSync;
 }
 
+export async function syncUsersDirectoryWithDatabase(): Promise<{
+  connected: boolean;
+  users: SystemUser[];
+  authUser: any;
+}> {
+  if (!isOnline()) {
+    return { connected: false, users: erpStore.getUsers(), authUser: null };
+  }
+
+  try {
+    // 1. Flush any pending local changes first
+    await syncPendingUserChanges();
+
+    // 2. Fetch both the global directory snapshot and any authenticated profiles
+    const [snapshot, authUser] = await Promise.all([
+      pullUsersDirectorySnapshotFromSupabase(),
+      authService.getCurrentUser().catch(() => null),
+    ]);
+
+    let profileUsers: SystemUser[] = [];
+    if (authUser?.id) {
+      try {
+        const profiles = (await authService.getUsers()) as any[];
+        profileUsers = (profiles || [])
+          .filter((p) => Boolean(p?.id && p?.username))
+          .map(profileToUser);
+      } catch {
+        // ignore if profiles query fails
+      }
+    }
+
+    const deletedSet = new Set([
+      ...readDeletedUsernames(),
+      ...(snapshot?.deletedUsernames || []),
+    ]);
+
+    if (snapshot && Array.isArray(snapshot.users) && snapshot.users.length > 0) {
+      const byUsername = new Map<string, SystemUser>();
+      for (const u of snapshot.users) {
+        if (!u?.username) continue;
+        const uname = normalizeUsername(u.username);
+        if (deletedSet.has(uname)) continue;
+        byUsername.set(uname, {
+          ...u,
+          username: uname,
+          permissions: {
+            ...(snapshot.userPermissions?.[uname] || {}),
+            ...(u.permissions || {}),
+          },
+        });
+      }
+      for (const p of profileUsers) {
+        const uname = normalizeUsername(p.username);
+        if (!uname || deletedSet.has(uname)) continue;
+        const existing = byUsername.get(uname);
+        byUsername.set(uname, {
+          ...existing,
+          ...p,
+          employee_code: (p as any).employee_code || existing?.employee_code,
+          password: existing?.password || p.password,
+          permissions: {
+            ...(existing?.permissions || {}),
+            ...(p.permissions || {}),
+          },
+        });
+      }
+
+      const mergedList = Array.from(byUsername.values());
+      erpStore.replaceManagedUsers(mergedList, {
+        authoritative: true,
+        deletedUsernames: Array.from(deletedSet),
+      });
+      announceChange();
+      return { connected: true, users: erpStore.getUsers(), authUser };
+    }
+
+    if (profileUsers.length > 0) {
+      erpStore.replaceManagedUsers(profileUsers, {
+        deletedUsernames: Array.from(deletedSet),
+      });
+    }
+
+    // No snapshot existed in Supabase yet -> seed Supabase with current directory immediately
+    const pushed = await pushUsersDirectorySnapshotToSupabase();
+    announceChange();
+    return { connected: pushed || Boolean(authUser?.id), users: erpStore.getUsers(), authUser };
+  } catch (err) {
+    console.warn("[UserSync] Error syncing users directory with database:", err);
+    return { connected: false, users: erpStore.getUsers(), authUser: null };
+  }
+}
+
 export async function queueUserChange(input: UserChangeInput): Promise<UserSyncResult> {
   const enqueued = enqueueChange(input);
   if (enqueued.noOp || !enqueued.operationId) {
+    if (isOnline()) {
+      await pushUsersDirectorySnapshotToSupabase();
+    }
     return {
       synced: true,
       pending: false,
@@ -641,14 +836,13 @@ export function needsPasswordForPendingUserCreate(userId: string): boolean {
     (operation): operation is QueuedCreate =>
       operation.kind === "create" && operation.localUserId === userId,
   );
-  // A lost session secret is needed only until Supabase Auth returns the new user's ID.
   return !pendingCreate?.cloudUserId;
 }
 
 export function startUserSync(): () => void {
   if (!canUseBrowserStorage()) return () => {};
   const sync = () => {
-    if (isOnline()) void syncPendingUserChanges();
+    if (isOnline()) void syncUsersDirectoryWithDatabase();
     else announceChange();
   };
   const onStorage = (event: StorageEvent) => {

@@ -28,15 +28,21 @@ import {
   Sparkles,
   ShoppingBag,
   Database,
+  Wallet,
+  Coins,
+  FileText,
 } from "lucide-react";
 import { erpStore, ParkShift, Employee } from "@/shared/services/erpStore";
+import { getCurrentUserIdentitySync } from "@/shared/services/userAuthorization";
+import { shiftAuditService } from "@/features/shifts/services/shiftAuditService";
+import { useSettings } from "@/hooks/use-settings";
 import { ShiftAuditLogViewerModal } from "@/components/admin/ShiftAuditLogViewerModal";
 import { toast } from "sonner";
 
 interface ParkShiftLauncherModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onOpenPOS: (shift: ParkShift) => void;
+  onOpenPOS?: (shift: ParkShift) => void;
   onRequestCloseShift?: (shift: ParkShift) => void;
 }
 
@@ -49,10 +55,21 @@ export function ParkShiftLauncherModal({
   const [state, setState] = useState(erpStore.getState());
   const [isNewShiftFormOpen, setIsNewShiftFormOpen] = useState(false);
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
+  const { currency: appCurrency, exchangeRates } = useSettings();
+
+  // Detect current user role & identity dynamically
+  const currentIdentity = useMemo(
+    () => getCurrentUserIdentitySync(),
+    [isOpen, state.currentUserEmail],
+  );
+  const isCashier = currentIdentity.isCashier;
+  const canCloseShifts = currentIdentity.canCloseShifts;
 
   // New Shift Form State
   const [autoShiftNumber, setAutoShiftNumber] = useState("");
   const [customShiftNumber, setCustomShiftNumber] = useState("");
+  const [shiftCurrency, setShiftCurrency] = useState<"EGP" | "USD" | "SSP">("USD");
+  const [openingBalance, setOpeningBalance] = useState<string>("0");
   const [selectedCashierType, setSelectedCashierType] = useState<string>("hr"); // "hr" | "manual"
   const [selectedHrEmployeeId, setSelectedHrEmployeeId] = useState<string>("");
   const [manualCashierName, setManualCashierName] = useState<string>("");
@@ -75,6 +92,44 @@ export function ParkShiftLauncherModal({
     return unsub;
   }, []);
 
+  // Sync open shifts from Supabase when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      void shiftAuditService.syncOpenShiftsFromSupabase(erpStore);
+    }
+  }, [isOpen]);
+
+  // Available currency options and their exchange rates
+  const currencyOptions = useMemo(() => {
+    const usdRate = Number(exchangeRates?.USD || erpStore.getExchangeRate("USD") || 50);
+    const sspRate = Number(exchangeRates?.SSP || erpStore.getExchangeRate("SSP") || 3000);
+    return [
+      {
+        code: "USD" as const,
+        name: "دولار أمريكي (USD - $)",
+        rate: 1,
+        rateLabel: `سعر الصرف الأساسي (1 USD = ${sspRate.toLocaleString()} SSP)`,
+      },
+      {
+        code: "SSP" as const,
+        name: "جنيه جنوب السودان (SSP)",
+        rate: sspRate,
+        rateLabel: `سعر الصرف: 1 USD = ${sspRate.toLocaleString()} SSP`,
+      },
+      {
+        code: "EGP" as const,
+        name: "جنيه مصري (EGP - ج.م)",
+        rate: usdRate,
+        rateLabel: `سعر الصرف: 1 USD = ${usdRate} ج.م`,
+      },
+    ];
+  }, [exchangeRates, state]);
+
+  const selectedCurrencyMeta = useMemo(
+    () => currencyOptions.find((c) => c.code === shiftCurrency) || currencyOptions[0],
+    [currencyOptions, shiftCurrency],
+  );
+
   // Initialize auto shift number & default fields when opening
   useEffect(() => {
     if (isOpen) {
@@ -84,54 +139,94 @@ export function ParkShiftLauncherModal({
       setCustomShiftNumber(
         `وردية تذاكر #${shiftIndex} - ${new Date().toLocaleDateString("ar-EG")}`,
       );
+      setShiftCurrency("USD");
+      setOpeningBalance("0");
+      setShiftNotes("");
 
-      // Default to first cashier or active employee in HR
-      const cashiers = (state.employees || []).filter(
-        (e) =>
-          e.status === "active" &&
-          (e.job_title?.includes("كاشير") ||
-            e.job_title?.includes("مبيعات") ||
-            e.department?.includes("الصالة") ||
-            e.department?.includes("المبيعات")),
-      );
-      if (cashiers.length > 0) {
-        setSelectedHrEmployeeId(cashiers[0].id);
-      } else if (state.employees && state.employees.length > 0) {
-        setSelectedHrEmployeeId(state.employees[0].id);
-      } else {
+      if (isCashier) {
         setSelectedCashierType("manual");
-        setManualCashierName("أمين الصندوق");
+        setManualCashierName(
+          currentIdentity.fullName || currentIdentity.username || "كاشير الحديقة",
+        );
+      } else {
+        // Default to first cashier or active employee in HR
+        const cashiers = (state.employees || []).filter(
+          (e) =>
+            e.status === "active" &&
+            (e.job_title?.includes("كاشير") ||
+              e.job_title?.includes("مبيعات") ||
+              e.department?.includes("الصالة") ||
+              e.department?.includes("المبيعات")),
+        );
+        if (cashiers.length > 0) {
+          setSelectedHrEmployeeId(cashiers[0].id);
+        } else if (state.employees && state.employees.length > 0) {
+          setSelectedHrEmployeeId(state.employees[0].id);
+        } else {
+          setSelectedCashierType("manual");
+          setManualCashierName("أمين الصندوق");
+        }
       }
     }
-  }, [isOpen, state.parkShifts?.length, state.employees]);
+  }, [isOpen, state.parkShifts?.length, state.employees, isCashier, currentIdentity]);
 
   // HR Employees list
   const hrEmployees: Employee[] = useMemo(() => {
     return state.employees || [];
   }, [state.employees]);
 
-  // Open / Active shifts
+  // Persistent Active Shift Detection for Cashier vs Open Shifts for Manager
+  const cashierActiveShift: ParkShift | null = useMemo(() => {
+    if (!isCashier) return null;
+    return erpStore.getCashierOpenParkShift();
+  }, [isCashier, state.parkShifts, state.parkActiveShift, currentIdentity]);
+
   const openShifts: ParkShift[] = useMemo(() => {
-    return (state.parkShifts || []).filter((s) => s.status === "open");
-  }, [state.parkShifts]);
+    const allOpen = (state.parkShifts || []).filter((s) => s.status === "open");
+    if (isCashier) {
+      return cashierActiveShift ? [cashierActiveShift] : [];
+    }
+    return allOpen;
+  }, [state.parkShifts, isCashier, cashierActiveShift]);
 
   // Auto-expand open new shift form if there are no open shifts
   useEffect(() => {
-    if (isOpen && openShifts.length === 0) {
-      setIsNewShiftFormOpen(true);
+    if (isOpen) {
+      if (isCashier && cashierActiveShift) {
+        setIsNewShiftFormOpen(false);
+      } else if (openShifts.length === 0) {
+        setIsNewShiftFormOpen(true);
+      }
     }
-  }, [isOpen, openShifts.length]);
+  }, [isOpen, openShifts.length, isCashier, cashierActiveShift]);
 
   // Handle Start Shift
   const handleStartShift = () => {
+    if (isCashier && cashierActiveShift) {
+      toast.error(
+        `لديك وردية تذاكر نشطة بالفعل (${cashierActiveShift.shift_number}). يرجى المتابعة فيها.`,
+      );
+      return;
+    }
+
     let finalCashierName = "";
-    if (selectedCashierType === "hr") {
+    let finalCashierId = currentIdentity.userId || undefined;
+    const finalCashierUsername = currentIdentity.username || undefined;
+
+    if (isCashier) {
+      finalCashierName =
+        currentIdentity.fullName ||
+        currentIdentity.username ||
+        manualCashierName.trim() ||
+        "كاشير الحديقة";
+    } else if (selectedCashierType === "hr") {
       const emp = hrEmployees.find((e) => e.id === selectedHrEmployeeId);
       if (!emp) {
         toast.error("يرجى اختيار موظف الكاشير المسؤول من القائمة");
         return;
       }
       finalCashierName = emp.name;
+      finalCashierId = emp.id;
     } else {
       if (!manualCashierName.trim()) {
         toast.error("يرجى إدخال اسم الكاشير المسؤول يدوياً");
@@ -140,17 +235,26 @@ export function ParkShiftLauncherModal({
       finalCashierName = manualCashierName.trim();
     }
 
+    const parsedOpeningBalance = Math.max(0, Number(openingBalance) || 0);
+
     try {
       const newShift = erpStore.startNewParkShift({
-        auto_shift_number: autoShiftNumber,
+        auto_shift_number: autoShiftNumber || erpStore.generateUniqueParkShiftNumber(),
         shift_number: customShiftNumber.trim() || `وردية #${autoShiftNumber}`,
         cashier_name: finalCashierName,
+        cashier_id: finalCashierId,
+        cashier_username: finalCashierUsername,
+        cashier_type: isCashier ? "account" : (selectedCashierType as "hr" | "manual"),
+        currency: shiftCurrency,
+        exchange_rate: selectedCurrencyMeta.rate,
+        opening_balance: parsedOpeningBalance,
+        opening_notes: shiftNotes.trim() || undefined,
         notes: shiftNotes.trim() || undefined,
       });
 
       toast.success(`تم فتح ${newShift.shift_number} بنجاح!`);
       onClose();
-      onOpenPOS(newShift);
+      if (onOpenPOS) onOpenPOS(newShift);
     } catch (err: any) {
       toast.error(err.message || "فشل فتح الوردية الجديدة");
     }
@@ -162,7 +266,7 @@ export function ParkShiftLauncherModal({
       erpStore.setActiveParkShift(shift.id);
       toast.success(`تم الدخول إلى ${shift.shift_number}`);
       onClose();
-      onOpenPOS(shift);
+      if (onOpenPOS) onOpenPOS(shift);
     } catch (err: any) {
       toast.error(err.message || "حدث خطأ أثناء الدخول للوردية");
     }
@@ -213,19 +317,25 @@ export function ParkShiftLauncherModal({
             <div className="flex items-center justify-between">
               <DialogTitle className="text-lg font-black text-foreground flex items-center gap-2">
                 <Trees size={22} className="text-teal-600" />
-                <span>إدارة وجلسات نقطة بيع تذاكر الحديقة</span>
+                <span>
+                  {isCashier
+                    ? "وردية كاشير الحديقة وتذاكر الدخول"
+                    : "إدارة وجلسات نقطة بيع تذاكر الحديقة"}
+                </span>
               </DialogTitle>
               <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsAuditModalOpen(true)}
-                  className="text-xs h-7 gap-1 font-bold text-teal-600 border-teal-500/40 hover:bg-teal-500/10 cursor-pointer"
-                >
-                  <Database size={13} />
-                  سجل التدقيق
-                </Button>
+                {!isCashier && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsAuditModalOpen(true)}
+                    className="text-xs h-7 gap-1 font-bold text-teal-600 border-teal-500/40 hover:bg-teal-500/10 cursor-pointer"
+                  >
+                    <Database size={13} />
+                    سجل التدقيق
+                  </Button>
+                )}
                 <Badge
                   variant="outline"
                   className="bg-teal-50 text-teal-700 border-teal-300 text-xs"
@@ -235,200 +345,333 @@ export function ParkShiftLauncherModal({
               </div>
             </div>
             <DialogDescription className="text-xs text-muted-foreground mt-1">
-              قم باختيار الوردية النشطة للمتابعة وعمليات البيع/المرتجع، أو افتح وردية جديدة بكاشير
-              ورقم مخصص.
+              {isCashier
+                ? cashierActiveShift
+                  ? "لديك وردية تذاكر نشطة مفتوحة حالياً ومرتبطة بحسابك. يمكنك الدخول إليها ومتابعة العمل."
+                  : "قم بفتح وردية تذاكر جديدة لبدء استلام المدفوعات وإصدار تذاكر الحديقة."
+                : "قم باختيار الوردية النشطة للمتابعة وعمليات البيع/المرتجع، أو افتح وردية جديدة بكاشير ورقم مخصص."}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-6 py-3">
-            {/* SECTION 1: QUESTION / OPEN NEW SHIFT */}
-            <div className="p-4 rounded-2xl bg-teal-500/5 border border-teal-500/20 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="p-2 rounded-xl bg-teal-600 text-white shadow-xs">
-                    <PlusCircle size={18} />
+            {/* SECTION 1: OPEN NEW SHIFT (Hidden if Cashier already has an active shift) */}
+            {(!isCashier || !cashierActiveShift) && (
+              <div className="p-4 rounded-2xl bg-teal-500/5 border border-teal-500/20 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-xl bg-teal-600 text-white shadow-xs">
+                      <PlusCircle size={18} />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-black text-foreground">
+                        {isCashier ? "فتح وردية جديدة" : "هل ترغب في فتح وردية جديدة؟"}
+                      </h3>
+                      <p className="text-xs text-muted-foreground">
+                        {isCashier
+                          ? "أدخل بيانات الوردية الأساسية للبدء في إصدار التذاكر فوراً."
+                          : "بدء وردية جديدة برقم نظام تسلسلي فريد وتعيين كاشير المبيعات."}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-sm font-black text-foreground">
-                      هل ترغب في فتح وردية جديدة؟
-                    </h3>
-                    <p className="text-xs text-muted-foreground">
-                      بدء وردية جديدة برقم نظام تسلسلي فريد وتعيين كاشير المبيعات.
-                    </p>
-                  </div>
+
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => setIsNewShiftFormOpen(!isNewShiftFormOpen)}
+                    className={`rounded-xl font-black gap-1.5 transition-all ${
+                      isNewShiftFormOpen
+                        ? "bg-teal-700 text-white shadow-sm"
+                        : "bg-teal-600 hover:bg-teal-700 text-white"
+                    }`}
+                  >
+                    {isNewShiftFormOpen ? (
+                      <>
+                        <ChevronUp size={15} /> إخفاء النموذج
+                      </>
+                    ) : (
+                      <>
+                        <PlusCircle size={15} /> فتح وردية جديدة
+                      </>
+                    )}
+                  </Button>
                 </div>
 
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => setIsNewShiftFormOpen(!isNewShiftFormOpen)}
-                  className={`rounded-xl font-black gap-1.5 transition-all ${
-                    isNewShiftFormOpen
-                      ? "bg-teal-700 text-white shadow-sm"
-                      : "bg-teal-600 hover:bg-teal-700 text-white"
-                  }`}
-                >
-                  {isNewShiftFormOpen ? (
-                    <>
-                      <ChevronUp size={15} /> إخفاء الخيارات
-                    </>
-                  ) : (
-                    <>
-                      <PlusCircle size={15} /> نعم، فتح وردية جديدة
-                    </>
-                  )}
-                </Button>
-              </div>
+                {/* EXPANDABLE NEW SHIFT FORM */}
+                {isNewShiftFormOpen && (
+                  <div className="mt-3 pt-3 border-t border-teal-500/20 space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                    {isCashier ? (
+                      /* SIMPLIFIED 4-FIELD CASHIER FORM */
+                      <div className="space-y-4">
+                        {/* Field 1: Shift Name */}
+                        <div>
+                          <Label className="text-xs font-black flex items-center gap-1.5 text-foreground mb-1.5">
+                            <Sparkles size={14} className="text-amber-600" />
+                            <span>1. اسم الوردية (Shift Name)</span>
+                          </Label>
+                          <Input
+                            placeholder="مثال: وردية تذاكر الحديقة - صباحي"
+                            value={customShiftNumber}
+                            onChange={(e) => setCustomShiftNumber(e.target.value)}
+                            className="h-10 rounded-xl text-xs font-bold bg-background"
+                          />
+                        </div>
 
-              {/* EXPANDABLE NEW SHIFT FORM */}
-              {isNewShiftFormOpen && (
-                <div className="mt-3 pt-3 border-t border-teal-500/20 space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
-                  {/* System Auto Shift Number (Immutable/Stored) & Custom Shift Number */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <Label className="text-xs font-black flex items-center justify-between text-muted-foreground mb-1">
-                        <span className="flex items-center gap-1">
-                          <Hash size={13} className="text-teal-600" />
-                          رقم الوردية التلقائي (النظام)
-                        </span>
-                        <Badge variant="outline" className="bg-muted text-[10px] font-mono">
-                          فريد لا يتكرر
-                        </Badge>
-                      </Label>
-                      <Input
-                        value={autoShiftNumber}
-                        readOnly
-                        className="bg-muted/70 font-mono font-black text-xs h-9 rounded-xl border-dashed cursor-not-allowed text-teal-700 dark:text-teal-400"
-                      />
-                      <p className="text-[10px] text-muted-foreground mt-0.5">
-                        رقم محفوظ في سجل الوردية للعرض في التقارير المحاسبية.
-                      </p>
-                    </div>
+                        {/* Field 2: Shift Currency & Exchange Rate */}
+                        <div>
+                          <Label className="text-xs font-black flex items-center justify-between text-foreground mb-1.5">
+                            <span className="flex items-center gap-1.5">
+                              <Coins size={14} className="text-teal-600" />
+                              <span>2. عملة الوردية وسعر الصرف (Shift Currency)</span>
+                            </span>
+                            <Badge variant="outline" className="text-[10px] font-mono bg-muted">
+                              {selectedCurrencyMeta.rateLabel}
+                            </Badge>
+                          </Label>
+                          <select
+                            value={shiftCurrency}
+                            onChange={(e) =>
+                              setShiftCurrency(e.target.value as "EGP" | "USD" | "SSP")
+                            }
+                            className="w-full h-10 rounded-xl border border-input bg-background px-3 py-1 text-xs font-bold shadow-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                          >
+                            {currencyOptions.map((c) => (
+                              <option key={c.code} value={c.code}>
+                                {c.name} — ({c.rateLabel})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
 
-                    <div>
-                      <Label className="text-xs font-black flex items-center gap-1 text-foreground mb-1">
-                        <Sparkles size={13} className="text-amber-600" />
-                        رقم ومسمى الوردية (قابل للتعديل)
-                      </Label>
-                      <Input
-                        placeholder="مثال: وردية تذاكر #1 - صباحي"
-                        value={customShiftNumber}
-                        onChange={(e) => setCustomShiftNumber(e.target.value)}
-                        className="h-9 rounded-xl text-xs font-bold bg-background"
-                      />
-                      <p className="text-[10px] text-muted-foreground mt-0.5">
-                        يمكنك كتابة اسم أو رقم خاص أو تركه كما هو.
-                      </p>
-                    </div>
-                  </div>
+                        {/* Field 3: Opening Balance */}
+                        <div>
+                          <Label className="text-xs font-black flex items-center gap-1.5 text-foreground mb-1.5">
+                            <Wallet size={14} className="text-emerald-600" />
+                            <span>
+                              3. الرصيد الافتتاحي للدرج (Opening Balance - {shiftCurrency})
+                            </span>
+                          </Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="any"
+                            placeholder="0.00"
+                            value={openingBalance}
+                            onChange={(e) => setOpeningBalance(e.target.value)}
+                            className="h-10 rounded-xl text-xs font-mono font-bold bg-background"
+                          />
+                        </div>
 
-                  {/* Cashier Selection */}
-                  <div className="space-y-2">
-                    <Label className="text-xs font-black flex items-center gap-1 text-foreground">
-                      <UserCheck size={14} className="text-teal-600" />
-                      اسم أمين الصندوق / الكاشير المسؤول:
-                    </Label>
-
-                    <div className="grid grid-cols-2 gap-2 mb-2">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedCashierType("hr")}
-                        className={`p-2 rounded-xl text-xs font-bold border transition text-center cursor-pointer ${
-                          selectedCashierType === "hr"
-                            ? "bg-teal-600 text-white border-teal-600 shadow-xs"
-                            : "bg-background text-foreground border-border hover:bg-muted"
-                        }`}
-                      >
-                        اختيار من موظفي الموارد البشرية ({hrEmployees.length})
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setSelectedCashierType("manual")}
-                        className={`p-2 rounded-xl text-xs font-bold border transition text-center cursor-pointer ${
-                          selectedCashierType === "manual"
-                            ? "bg-teal-600 text-white border-teal-600 shadow-xs"
-                            : "bg-background text-foreground border-border hover:bg-muted"
-                        }`}
-                      >
-                        إدخال اسم كاشير يدوي آخر
-                      </button>
-                    </div>
-
-                    {selectedCashierType === "hr" ? (
-                      <div>
-                        <select
-                          value={selectedHrEmployeeId}
-                          onChange={(e) => setSelectedHrEmployeeId(e.target.value)}
-                          className="w-full h-9 rounded-xl border border-input bg-background px-3 py-1 text-xs font-bold shadow-xs focus:outline-none focus:ring-1 focus:ring-ring"
-                        >
-                          {hrEmployees.length === 0 ? (
-                            <option value="">لا يوجد موظفين مسجلين بالموارد البشرية</option>
-                          ) : (
-                            hrEmployees.map((emp) => {
-                              const isCashier =
-                                emp.job_title?.includes("كاشير") ||
-                                emp.job_title?.includes("مبيعات") ||
-                                emp.department?.includes("الصالة");
-                              return (
-                                <option key={emp.id} value={emp.id}>
-                                  {emp.name} — {emp.job_title} ({emp.department}){" "}
-                                  {isCashier ? "★ [كاشير]" : ""}
-                                </option>
-                              );
-                            })
-                          )}
-                        </select>
+                        {/* Field 4: Opening Notes */}
+                        <div>
+                          <Label className="text-xs font-black flex items-center gap-1.5 text-foreground mb-1.5">
+                            <FileText size={14} className="text-teal-600" />
+                            <span>4. ملاحظات الفتح (Opening Notes - اختياري)</span>
+                          </Label>
+                          <Input
+                            placeholder="أي ملاحظات عند استلام وفتح الوردية..."
+                            value={shiftNotes}
+                            onChange={(e) => setShiftNotes(e.target.value)}
+                            className="h-10 rounded-xl text-xs bg-background"
+                          />
+                        </div>
                       </div>
                     ) : (
-                      <div>
-                        <Input
-                          placeholder="اكتب اسم الكاشير المسؤول..."
-                          value={manualCashierName}
-                          onChange={(e) => setManualCashierName(e.target.value)}
-                          className="h-9 rounded-xl text-xs font-bold bg-background"
-                        />
-                      </div>
+                      /* FULL ADMIN / MANAGER FORM */
+                      <>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <Label className="text-xs font-black flex items-center justify-between text-muted-foreground mb-1">
+                              <span className="flex items-center gap-1">
+                                <Hash size={13} className="text-teal-600" />
+                                رقم الوردية التلقائي (النظام)
+                              </span>
+                              <Badge variant="outline" className="bg-muted text-[10px] font-mono">
+                                فريد لا يتكرر
+                              </Badge>
+                            </Label>
+                            <Input
+                              value={autoShiftNumber}
+                              readOnly
+                              className="bg-muted/70 font-mono font-black text-xs h-9 rounded-xl border-dashed cursor-not-allowed text-teal-700 dark:text-teal-400"
+                            />
+                            <p className="text-[10px] text-muted-foreground mt-0.5">
+                              رقم محفوظ في سجل الوردية للعرض في التقارير المحاسبية.
+                            </p>
+                          </div>
+
+                          <div>
+                            <Label className="text-xs font-black flex items-center gap-1 text-foreground mb-1">
+                              <Sparkles size={13} className="text-amber-600" />
+                              رقم ومسمى الوردية (قابل للتعديل)
+                            </Label>
+                            <Input
+                              placeholder="مثال: وردية تذاكر #1 - صباحي"
+                              value={customShiftNumber}
+                              onChange={(e) => setCustomShiftNumber(e.target.value)}
+                              className="h-9 rounded-xl text-xs font-bold bg-background"
+                            />
+                            <p className="text-[10px] text-muted-foreground mt-0.5">
+                              يمكنك كتابة اسم أو رقم خاص أو تركه كما هو.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <Label className="text-xs font-black flex items-center justify-between text-foreground mb-1">
+                              <span className="flex items-center gap-1">
+                                <Coins size={13} className="text-teal-600" />
+                                عملة الوردية وسعر الصرف
+                              </span>
+                            </Label>
+                            <select
+                              value={shiftCurrency}
+                              onChange={(e) =>
+                                setShiftCurrency(e.target.value as "EGP" | "USD" | "SSP")
+                              }
+                              className="w-full h-9 rounded-xl border border-input bg-background px-3 py-1 text-xs font-bold shadow-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                            >
+                              {currencyOptions.map((c) => (
+                                <option key={c.code} value={c.code}>
+                                  {c.name} — ({c.rateLabel})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div>
+                            <Label className="text-xs font-black flex items-center gap-1 text-foreground mb-1">
+                              <Wallet size={13} className="text-emerald-600" />
+                              الرصيد الافتتاحي ({shiftCurrency})
+                            </Label>
+                            <Input
+                              type="number"
+                              min="0"
+                              step="any"
+                              placeholder="0.00"
+                              value={openingBalance}
+                              onChange={(e) => setOpeningBalance(e.target.value)}
+                              className="h-9 rounded-xl text-xs font-mono font-bold bg-background"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Cashier Selection */}
+                        <div className="space-y-2">
+                          <Label className="text-xs font-black flex items-center gap-1 text-foreground">
+                            <UserCheck size={14} className="text-teal-600" />
+                            اسم أمين الصندوق / الكاشير المسؤول:
+                          </Label>
+
+                          <div className="grid grid-cols-2 gap-2 mb-2">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedCashierType("hr")}
+                              className={`p-2 rounded-xl text-xs font-bold border transition text-center cursor-pointer ${
+                                selectedCashierType === "hr"
+                                  ? "bg-teal-600 text-white border-teal-600 shadow-xs"
+                                  : "bg-background text-foreground border-border hover:bg-muted"
+                              }`}
+                            >
+                              اختيار من موظفي الموارد البشرية ({hrEmployees.length})
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setSelectedCashierType("manual")}
+                              className={`p-2 rounded-xl text-xs font-bold border transition text-center cursor-pointer ${
+                                selectedCashierType === "manual"
+                                  ? "bg-teal-600 text-white border-teal-600 shadow-xs"
+                                  : "bg-background text-foreground border-border hover:bg-muted"
+                              }`}
+                            >
+                              إدخال اسم كاشير يدوي آخر
+                            </button>
+                          </div>
+
+                          {selectedCashierType === "hr" ? (
+                            <div>
+                              <select
+                                value={selectedHrEmployeeId}
+                                onChange={(e) => setSelectedHrEmployeeId(e.target.value)}
+                                className="w-full h-9 rounded-xl border border-input bg-background px-3 py-1 text-xs font-bold shadow-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                              >
+                                {hrEmployees.length === 0 ? (
+                                  <option value="">لا يوجد موظفين مسجلين بالموارد البشرية</option>
+                                ) : (
+                                  hrEmployees.map((emp) => {
+                                    const empIsCashier =
+                                      emp.job_title?.includes("كاشير") ||
+                                      emp.job_title?.includes("مبيعات") ||
+                                      emp.department?.includes("الصالة");
+                                    return (
+                                      <option key={emp.id} value={emp.id}>
+                                        {emp.name} — {emp.job_title} ({emp.department}){" "}
+                                        {empIsCashier ? "★ [كاشير]" : ""}
+                                      </option>
+                                    );
+                                  })
+                                )}
+                              </select>
+                            </div>
+                          ) : (
+                            <div>
+                              <Input
+                                placeholder="اكتب اسم الكاشير المسؤول..."
+                                value={manualCashierName}
+                                onChange={(e) => setManualCashierName(e.target.value)}
+                                className="h-9 rounded-xl text-xs font-bold bg-background"
+                              />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Notes */}
+                        <div>
+                          <Label className="text-xs font-bold text-muted-foreground mb-1 block">
+                            ملاحظات افتتاح الوردية (اختياري):
+                          </Label>
+                          <Input
+                            placeholder="أي تعليمات أو ملاحظات خاصة بهذه الجلسة..."
+                            value={shiftNotes}
+                            onChange={(e) => setShiftNotes(e.target.value)}
+                            className="h-8 rounded-xl text-xs bg-background"
+                          />
+                        </div>
+                      </>
                     )}
-                  </div>
 
-                  {/* Notes */}
-                  <div>
-                    <Label className="text-xs font-bold text-muted-foreground mb-1 block">
-                      ملاحظات افتتاح الوردية (اختياري):
-                    </Label>
-                    <Input
-                      placeholder="أي تعليمات أو ملاحظات خاصة بهذه الجلسة..."
-                      value={shiftNotes}
-                      onChange={(e) => setShiftNotes(e.target.value)}
-                      className="h-8 rounded-xl text-xs bg-background"
-                    />
+                    {/* Start Shift Submit Button */}
+                    <div className="pt-2 flex justify-end">
+                      <Button
+                        type="button"
+                        onClick={handleStartShift}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs gap-2 rounded-xl px-6 py-2 shadow-md cursor-pointer active:scale-95 transition-all"
+                      >
+                        <Play size={15} />
+                        بدء الوردية ودخول نقطة البيع (POS)
+                      </Button>
+                    </div>
                   </div>
+                )}
+              </div>
+            )}
 
-                  {/* Start Shift Submit Button */}
-                  <div className="pt-2 flex justify-end">
-                    <Button
-                      type="button"
-                      onClick={handleStartShift}
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs gap-2 rounded-xl px-6 py-2 shadow-md cursor-pointer active:scale-95 transition-all"
-                    >
-                      <Play size={15} />
-                      بدء الوردية ودخول نقطة البيع (POS)
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* SECTION 2: EXISTING OPEN SHIFTS LIST FOR MANAGERS */}
+            {/* SECTION 2: EXISTING OPEN SHIFTS LIST */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-black text-foreground flex items-center gap-2">
                   <Clock size={16} className="text-amber-600" />
-                  <span>الورديات المفتوحة والنشطة حالياً ({openShifts.length})</span>
+                  <span>
+                    {isCashier
+                      ? "ورديتك النشطة حالياً"
+                      : `الورديات المفتوحة والنشطة حالياً (${openShifts.length})`}
+                  </span>
                 </h3>
                 <span className="text-xs text-muted-foreground">
-                  إمكانية الدخول على الجلسة للبيع والمرتجع، التعديل، أو الحذف
+                  {isCashier
+                    ? "اضغط على زر الدخول للمتابعة في ورديتك المفتوحة"
+                    : "إمكانية الدخول على الجلسة للبيع والمرتجع، التعديل، أو الحذف"}
                 </span>
               </div>
 
@@ -436,7 +679,9 @@ export function ParkShiftLauncherModal({
                 <div className="p-6 rounded-2xl border border-dashed border-border text-center space-y-2 bg-muted/20">
                   <AlertTriangle className="mx-auto text-amber-500" size={28} />
                   <p className="text-xs font-bold text-foreground">
-                    لا توجد أي ورديات مفتوحة حالياً في النظام
+                    {isCashier
+                      ? "لا توجد وردية تذاكر نشطة مفتوحة لحسابك حالياً"
+                      : "لا توجد أي ورديات مفتوحة حالياً في النظام"}
                   </p>
                   <p className="text-[11px] text-muted-foreground">
                     يمكنك فتح وردية جديدة بسهولة عبر النموذج أعلاه لبدء إصدار تذاكر الحديقة.
@@ -463,7 +708,7 @@ export function ParkShiftLauncherModal({
                             <span className="font-black text-xs text-foreground">
                               {shift.shift_number}
                             </span>
-                            {shift.auto_shift_number && (
+                            {!isCashier && shift.auto_shift_number && (
                               <Badge
                                 variant="outline"
                                 className="text-[10px] font-mono text-muted-foreground"
@@ -474,6 +719,11 @@ export function ParkShiftLauncherModal({
                             <Badge className="bg-emerald-500/10 text-emerald-700 border-emerald-300 text-[10px]">
                               وردية مفتوحة
                             </Badge>
+                            {shift.currency && (
+                              <Badge variant="outline" className="text-[10px] font-mono">
+                                العملة: {shift.currency}
+                              </Badge>
+                            )}
                           </div>
 
                           <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
@@ -486,6 +736,16 @@ export function ParkShiftLauncherModal({
                               <Clock size={12} />
                               بدأت: {new Date(shift.start_at).toLocaleTimeString("ar-EG")}
                             </span>
+                            {typeof shift.opening_balance === "number" &&
+                              shift.opening_balance > 0 && (
+                                <>
+                                  <span>•</span>
+                                  <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400">
+                                    رصيد افتتاحي: {shift.opening_balance.toLocaleString()}{" "}
+                                    {shift.currency || "USD"}
+                                  </span>
+                                </>
+                              )}
                             <span>•</span>
                             <span className="flex items-center gap-1 text-teal-600 font-black">
                               <ShoppingBag size={12} />
@@ -511,25 +771,27 @@ export function ParkShiftLauncherModal({
                             دخول الوردية (بيع / مرتجع)
                           </Button>
 
-                          {/* Edit Shift Info */}
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setEditingShift(shift);
-                              setEditShiftNumber(shift.shift_number);
-                              setEditCashierName(shift.cashier_name);
-                              setEditNotes(shift.notes || "");
-                            }}
-                            className="rounded-xl text-xs font-bold gap-1 cursor-pointer h-8"
-                            title="تعديل بيانات الجلسة"
-                          >
-                            <Edit size={13} className="text-blue-600" />
-                            تعديل
-                          </Button>
+                          {/* Edit Shift Info - Manager/Admin Only */}
+                          {!isCashier && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setEditingShift(shift);
+                                setEditShiftNumber(shift.shift_number);
+                                setEditCashierName(shift.cashier_name);
+                                setEditNotes(shift.notes || "");
+                              }}
+                              className="rounded-xl text-xs font-bold gap-1 cursor-pointer h-8"
+                              title="تعديل بيانات الجلسة"
+                            >
+                              <Edit size={13} className="text-blue-600" />
+                              تعديل
+                            </Button>
+                          )}
 
-                          {/* Close Shift */}
-                          {onRequestCloseShift && (
+                          {/* Close Shift - Manager/Admin Only */}
+                          {canCloseShifts && onRequestCloseShift && (
                             <Button
                               size="sm"
                               variant="outline"
@@ -545,16 +807,18 @@ export function ParkShiftLauncherModal({
                             </Button>
                           )}
 
-                          {/* Delete Shift with Confirmation */}
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setDeletingShift(shift)}
-                            className="rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-100 hover:text-rose-700 h-8 px-2 cursor-pointer"
-                            title="حذف الجلسة من النظام"
-                          >
-                            <Trash2 size={14} />
-                          </Button>
+                          {/* Delete Shift with Confirmation - Manager/Admin Only */}
+                          {!isCashier && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setDeletingShift(shift)}
+                              className="rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-100 hover:text-rose-700 h-8 px-2 cursor-pointer"
+                              title="حذف الجلسة من النظام"
+                            >
+                              <Trash2 size={14} />
+                            </Button>
+                          )}
                         </div>
                       </div>
                     );
@@ -694,3 +958,4 @@ export function ParkShiftLauncherModal({
     </>
   );
 }
+

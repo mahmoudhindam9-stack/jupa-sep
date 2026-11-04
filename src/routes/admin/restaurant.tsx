@@ -40,6 +40,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { erpStore, RestaurantShift } from "@/shared/services/erpStore";
+import { shiftAuditService } from "@/features/shifts/services/shiftAuditService";
 import { RestaurantShiftLauncherModal } from "@/components/restaurant/RestaurantShiftLauncherModal";
 import { RestaurantShiftClosingReportModal } from "@/components/restaurant/RestaurantShiftClosingReportModal";
 import { ShiftAuditLogViewerModal } from "@/components/admin/ShiftAuditLogViewerModal";
@@ -50,6 +51,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { VouchersLedgerSection } from "@/components/admin/VouchersLedgerSection";
 import {
   getActiveUserPermissionsSync,
+  getCurrentUserIdentitySync,
   hasAnyRequestedPermission,
   PERMISSIONS_UPDATED_EVENT,
 } from "@/shared/services/userAuthorization";
@@ -158,6 +160,7 @@ function RestaurantHubPage() {
       setActivePerms(getActiveUserPermissionsSync());
     };
     refreshStateAndPerms();
+    shiftAuditService.syncOpenShiftsFromSupabase(erpStore).catch(() => {});
     const unsub = erpStore.subscribe(refreshStateAndPerms);
     window.addEventListener(PERMISSIONS_UPDATED_EVENT, refreshStateAndPerms);
     return () => {
@@ -255,8 +258,20 @@ function RestaurantHubPage() {
     };
   }, []);
 
-  const restaurantShifts: RestaurantShift[] = erpState.restaurantShifts || [];
-  const openShifts = restaurantShifts.filter((s) => s.status === "open");
+  const currentIdentity = getCurrentUserIdentitySync();
+  const isCashier = currentIdentity.isCashier;
+  const canCloseShifts = currentIdentity.canCloseShifts;
+
+  const allRestaurantShifts: RestaurantShift[] = erpState.restaurantShifts || [];
+  const restaurantShifts: RestaurantShift[] = isCashier
+    ? allRestaurantShifts.filter((s) => erpStore.doesShiftBelongToUser(s, currentIdentity))
+    : allRestaurantShifts;
+  const cashierActiveShift = isCashier ? erpStore.getCashierOpenRestaurantShift() : null;
+  const openShifts = isCashier
+    ? cashierActiveShift
+      ? [cashierActiveShift]
+      : []
+    : restaurantShifts.filter((s) => s.status === "open");
   const closedShifts = restaurantShifts.filter((s) => s.status === "closed");
   const activeRestaurantShift = erpStore.getActiveRestaurantShift();
 
@@ -414,14 +429,16 @@ function RestaurantHubPage() {
                 <Grid3X3 size={16} />
                 <span>نقطة بيع المطعم (POS)</span>
               </Button>
-              <Button
-                onClick={() => setIsLauncherOpen(true)}
-                variant="outline"
-                className="font-bold text-xs h-9 px-3.5 rounded-xl gap-1.5 cursor-pointer"
-              >
-                <Plus size={15} />
-                <span>فتح وردية جديدة</span>
-              </Button>
+              {(!isCashier || !cashierActiveShift) && (
+                <Button
+                  onClick={() => setIsLauncherOpen(true)}
+                  variant="outline"
+                  className="font-bold text-xs h-9 px-3.5 rounded-xl gap-1.5 cursor-pointer"
+                >
+                  <Plus size={15} />
+                  <span>فتح وردية جديدة</span>
+                </Button>
+              )}
             </div>
           )}
         </div>
@@ -512,26 +529,30 @@ function RestaurantHubPage() {
                 </CardDescription>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
-                <Button
-                  onClick={() => {
-                    setSelectedShiftForAudit(null);
-                    setIsShiftAuditLogOpen(true);
-                  }}
-                  variant="outline"
-                  size="sm"
-                  className="font-bold rounded-xl text-xs gap-1.5 border-indigo-500/30 text-indigo-600 dark:text-indigo-400 cursor-pointer"
-                >
-                  <History size={14} />
-                  سجل التدقيق وفحص الورديات
-                </Button>
-                <Button
-                  onClick={() => setIsLauncherOpen(true)}
-                  size="sm"
-                  className="bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl text-xs gap-1.5 cursor-pointer"
-                >
-                  <Plus size={14} />
-                  فتح وردية جديدة
-                </Button>
+                {!isCashier && (
+                  <Button
+                    onClick={() => {
+                      setSelectedShiftForAudit(null);
+                      setIsShiftAuditLogOpen(true);
+                    }}
+                    variant="outline"
+                    size="sm"
+                    className="font-bold rounded-xl text-xs gap-1.5 border-indigo-500/30 text-indigo-600 dark:text-indigo-400 cursor-pointer"
+                  >
+                    <History size={14} />
+                    سجل التدقيق وفحص الورديات
+                  </Button>
+                )}
+                {(!isCashier || !cashierActiveShift) && (
+                  <Button
+                    onClick={() => setIsLauncherOpen(true)}
+                    size="sm"
+                    className="bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl text-xs gap-1.5 cursor-pointer"
+                  >
+                    <Plus size={14} />
+                    فتح وردية جديدة
+                  </Button>
+                )}
               </div>
             </CardHeader>
             <CardContent className="p-0 overflow-x-auto">
@@ -559,7 +580,7 @@ function RestaurantHubPage() {
                       <tr key={s.id} className="hover:bg-muted/30 transition">
                         <td className="p-3">
                           <div className="font-black text-foreground">{s.shift_number}</div>
-                          {s.auto_shift_number && (
+                          {!isCashier && s.auto_shift_number && (
                             <div className="text-[10px] font-mono text-muted-foreground">
                               {s.auto_shift_number}
                             </div>
@@ -576,7 +597,7 @@ function RestaurantHubPage() {
                         </td>
                         <td className="p-3 font-mono font-bold text-emerald-600 dark:text-emerald-400">
                           {s.orders_count || 0} طلب ({Number(s.total_sales || 0).toLocaleString()}{" "}
-                          ج.م)
+                          {s.currency || "ج.م"})
                         </td>
                         <td className="p-3">
                           <span
@@ -605,15 +626,17 @@ function RestaurantHubPage() {
                                   <Play size={12} className="ml-1 fill-white" />
                                   دخول الوردية
                                 </Button>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => setClosingShift(s)}
-                                  className="h-7 px-2 text-xs font-bold text-rose-600 border-rose-200 hover:bg-rose-50 cursor-pointer"
-                                >
-                                  <Lock size={12} className="ml-1" />
-                                  إغلاق
-                                </Button>
+                                {canCloseShifts && !isCashier && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => setClosingShift(s)}
+                                    className="h-7 px-2 text-xs font-bold text-rose-600 border-rose-200 hover:bg-rose-50 cursor-pointer"
+                                  >
+                                    <Lock size={12} className="ml-1" />
+                                    إغلاق
+                                  </Button>
+                                )}
                               </>
                             ) : (
                               <Button
@@ -626,41 +649,45 @@ function RestaurantHubPage() {
                                 تقرير الوردية
                               </Button>
                             )}
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                setEditingShift(s);
-                                setEditShiftNumber(s.shift_number);
-                                setEditCashierName(s.cashier_name);
-                                setEditOpeningBalance(String(s.opening_balance || 0));
-                                setEditNotes(s.notes || s.opening_notes || "");
-                              }}
-                              className="h-7 px-2 text-xs font-bold text-blue-600 cursor-pointer"
-                            >
-                              <Edit size={13} className="ml-1" />
-                              تعديل
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                setSelectedShiftForAudit(s);
-                                setIsShiftAuditLogOpen(true);
-                              }}
-                              className="h-7 px-2 text-xs font-bold text-indigo-600 cursor-pointer"
-                            >
-                              سجل التدقيق
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => setDeletingShift(s)}
-                              className="h-7 w-7 p-0 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-full cursor-pointer"
-                              title="حذف الوردية"
-                            >
-                              <Trash2 size={14} />
-                            </Button>
+                            {canCloseShifts && !isCashier && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    setEditingShift(s);
+                                    setEditShiftNumber(s.shift_number);
+                                    setEditCashierName(s.cashier_name);
+                                    setEditOpeningBalance(String(s.opening_balance || 0));
+                                    setEditNotes(s.notes || s.opening_notes || "");
+                                  }}
+                                  className="h-7 px-2 text-xs font-bold text-blue-600 cursor-pointer"
+                                >
+                                  <Edit size={13} className="ml-1" />
+                                  تعديل
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    setSelectedShiftForAudit(s);
+                                    setIsShiftAuditLogOpen(true);
+                                  }}
+                                  className="h-7 px-2 text-xs font-bold text-indigo-600 cursor-pointer"
+                                >
+                                  سجل التدقيق
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => setDeletingShift(s)}
+                                  className="h-7 w-7 p-0 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-full cursor-pointer"
+                                  title="حذف الوردية"
+                                >
+                                  <Trash2 size={14} />
+                                </Button>
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -693,7 +720,7 @@ function RestaurantHubPage() {
                         <h3 className="font-black text-sm text-foreground">
                           {shift.shift_number || `وردية مطعم #${shift.auto_shift_number || "1"}`}
                         </h3>
-                        {shift.auto_shift_number && (
+                        {!isCashier && shift.auto_shift_number && (
                           <span className="border border-border/80 bg-muted/40 text-muted-foreground text-[11px] font-mono px-2.5 py-0.5 rounded-full">
                             رقم النظام: {shift.auto_shift_number}
                           </span>
@@ -728,7 +755,8 @@ function RestaurantHubPage() {
                           <>
                             <span>•</span>
                             <span className="font-mono font-bold text-foreground">
-                              عهدة البداية: {Number(shift.opening_balance || 0).toLocaleString()} ج.م
+                              عهدة البداية: {Number(shift.opening_balance || 0).toLocaleString()}{" "}
+                              {shift.currency || "ج.م"}
                             </span>
                           </>
                         )}
@@ -739,7 +767,7 @@ function RestaurantHubPage() {
                         <ShoppingBag size={14} />
                         <span>
                           {shift.orders_count || 0} مبيعات (
-                          {Number(shift.total_sales || 0).toLocaleString()} ج.م)
+                          {Number(shift.total_sales || 0).toLocaleString()} {shift.currency || "ج.م"})
                         </span>
                         {(shift.refunds_count || 0) > 0 && (
                           <span className="text-rose-600 font-bold mr-1">
@@ -765,46 +793,48 @@ function RestaurantHubPage() {
                         <span>دخول الوردية (بيع / مرتجع)</span>
                       </Button>
 
-                      {/* Edit, Close, and Delete buttons */}
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setEditingShift(shift);
-                            setEditShiftNumber(shift.shift_number);
-                            setEditCashierName(shift.cashier_name);
-                            setEditOpeningBalance(String(shift.opening_balance || 0));
-                            setEditNotes(shift.notes || shift.opening_notes || "");
-                          }}
-                          className="border border-amber-200/90 bg-amber-50/50 hover:bg-amber-100/60 dark:bg-amber-950/20 dark:border-amber-900/50 text-foreground rounded-full text-xs font-bold px-3 py-1 flex items-center gap-1 cursor-pointer h-7"
-                          title="تعديل بيانات الوردية"
-                        >
-                          <Edit size={13} className="text-blue-600" />
-                          <span>تعديل</span>
-                        </Button>
+                      {/* Edit, Close, and Delete buttons (Restricted to Managers/Admins; hidden for Cashiers) */}
+                      {canCloseShifts && !isCashier && (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setEditingShift(shift);
+                              setEditShiftNumber(shift.shift_number);
+                              setEditCashierName(shift.cashier_name);
+                              setEditOpeningBalance(String(shift.opening_balance || 0));
+                              setEditNotes(shift.notes || shift.opening_notes || "");
+                            }}
+                            className="border border-amber-200/90 bg-amber-50/50 hover:bg-amber-100/60 dark:bg-amber-950/20 dark:border-amber-900/50 text-foreground rounded-full text-xs font-bold px-3 py-1 flex items-center gap-1 cursor-pointer h-7"
+                            title="تعديل بيانات الوردية"
+                          >
+                            <Edit size={13} className="text-blue-600" />
+                            <span>تعديل</span>
+                          </Button>
 
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setClosingShift(shift)}
-                          className="border border-rose-200/90 bg-rose-50/50 hover:bg-rose-100/60 dark:bg-rose-950/20 dark:border-rose-900/50 text-rose-700 dark:text-rose-300 rounded-full text-xs font-bold px-3 py-1 flex items-center gap-1 cursor-pointer h-7"
-                          title="إغلاق الوردية وإصدار التقرير"
-                        >
-                          <Lock size={12} className="text-rose-600" />
-                          <span>إغلاق الوردية</span>
-                        </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setClosingShift(shift)}
+                            className="border border-rose-200/90 bg-rose-50/50 hover:bg-rose-100/60 dark:bg-rose-950/20 dark:border-rose-900/50 text-rose-700 dark:text-rose-300 rounded-full text-xs font-bold px-3 py-1 flex items-center gap-1 cursor-pointer h-7"
+                            title="إغلاق الوردية وإصدار التقرير"
+                          >
+                            <Lock size={12} className="text-rose-600" />
+                            <span>إغلاق الوردية</span>
+                          </Button>
 
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setDeletingShift(shift)}
-                          className="text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/30 p-1.5 h-7 w-7 rounded-full cursor-pointer transition flex items-center justify-center"
-                          title="حذف الوردية"
-                        >
-                          <Trash2 size={15} />
-                        </Button>
-                      </div>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setDeletingShift(shift)}
+                            className="text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/30 p-1.5 h-7 w-7 rounded-full cursor-pointer transition flex items-center justify-center"
+                            title="حذف الوردية"
+                          >
+                            <Trash2 size={15} />
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );

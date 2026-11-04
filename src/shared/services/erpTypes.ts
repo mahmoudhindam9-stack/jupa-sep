@@ -638,6 +638,13 @@ export interface ParkShift {
   end_at?: string;
   status: "open" | "closed";
   cashier_name: string;
+  cashier_id?: string;
+  cashier_username?: string;
+  cashier_type?: "hr" | "manual" | "account";
+  currency?: "USD" | "SSP" | "EGP" | string;
+  exchange_rate?: number;
+  opening_balance?: number;
+  opening_notes?: string;
   operational_treasury_balances_at_close?: Record<string, number>;
   destination_transfers?: Array<{
     op_treasury_id: string;
@@ -663,7 +670,10 @@ export interface RestaurantShift {
   status: "open" | "closed";
   cashier_name: string;
   cashier_id?: string;
-  cashier_type?: "hr" | "manual";
+  cashier_username?: string;
+  cashier_type?: "hr" | "manual" | "account";
+  currency?: "EGP" | "USD" | "SSP" | string;
+  exchange_rate?: number;
   opening_balance?: number;
   opening_notes?: string;
   closing_notes?: string;

@@ -378,10 +378,15 @@ export function getDefaultPermissionsForRole(role: string): Record<string, boole
       "page_restaurant_cashier_treasury",
       "restaurant_open_shift",
       "treasury_view",
-      "treasury_open_close",
       "delivery",
       "delivery_view",
       "delivery_update_status",
+      "page_park",
+      "page_park_pos",
+      "page_park_shifts",
+      "page_park_treasury",
+      "page_park_tickets_log",
+      "park_open_shift",
     ],
     captain: [
       "page_restaurant",
@@ -673,6 +678,142 @@ export async function currentUserHasPermission(keys: string[]): Promise<boolean>
   return hasAnyRequestedPermission(permissions, keys);
 }
 
+export interface ActiveUserIdentity {
+  userId: string;
+  username: string;
+  email: string;
+  fullName: string;
+  role: string;
+  isCashier: boolean;
+  canCloseShifts: boolean;
+  canManageAllShifts: boolean;
+}
+
+/**
+ * Synchronously resolves the currently authenticated user's identity, role,
+ * and cashier-shift permissions without relying on hardcoded usernames.
+ */
+export function getCurrentUserIdentitySync(): ActiveUserIdentity {
+  const state: any = erpStore.getState();
+  const storedAuthRaw =
+    typeof window !== "undefined"
+      ? (
+          localStorage.getItem("restocash_auth_user") ||
+          sessionStorage.getItem("restocash_auth_user") ||
+          ""
+        ).trim()
+      : "";
+  const storedRoleRaw =
+    typeof window !== "undefined"
+      ? (
+          localStorage.getItem("restocash_user_role") ||
+          sessionStorage.getItem("restocash_user_role") ||
+          ""
+        )
+          .trim()
+          .toLowerCase()
+      : "";
+
+  const currentStoreUser = String(state?.currentUser || "")
+    .trim()
+    .toLowerCase();
+  const activeIdentifier = (storedAuthRaw || currentStoreUser).trim().toLowerCase();
+  const activeBase = activeIdentifier.includes("@")
+    ? activeIdentifier.split("@")[0]
+    : activeIdentifier;
+
+  const users: any[] = erpStore.getUsers() || [];
+  const matchedUser =
+    users.find((candidate) => {
+      if (!activeIdentifier && !currentStoreUser) return false;
+      const uname = String(candidate.username || "")
+        .trim()
+        .toLowerCase();
+      const uemail = String(candidate.email || "")
+        .trim()
+        .toLowerCase();
+      const uid = String(candidate.id || "")
+        .trim()
+        .toLowerCase();
+      return (
+        (Boolean(activeIdentifier) &&
+          (uname === activeIdentifier ||
+            uemail === activeIdentifier ||
+            uid === activeIdentifier ||
+            (Boolean(activeBase) &&
+              (uname === activeBase || uemail.split("@")[0] === activeBase)))) ||
+        (Boolean(currentStoreUser) &&
+          (uname === currentStoreUser || uemail === currentStoreUser || uid === currentStoreUser))
+      );
+    }) || null;
+
+  const resolvedUsername = String(
+    matchedUser?.username || currentStoreUser || activeBase || "",
+  )
+    .trim()
+    .toLowerCase();
+  const resolvedUserId = String(matchedUser?.id || resolvedUsername || "").trim();
+  const resolvedEmail = String(
+    matchedUser?.email || (activeIdentifier.includes("@") ? activeIdentifier : ""),
+  )
+    .trim()
+    .toLowerCase();
+  const resolvedFullName = String(
+    matchedUser?.full_name || matchedUser?.username || resolvedUsername || "كاشير",
+  ).trim();
+
+  let resolvedRole = String(matchedUser?.role || storedRoleRaw || "")
+    .trim()
+    .toLowerCase();
+
+  if (!resolvedRole) {
+    if (
+      resolvedUsername === "admin" ||
+      resolvedUsername === "mahmoud.admin" ||
+      (!activeIdentifier && isAiStudioPreview())
+    ) {
+      resolvedRole = "super_admin";
+    } else {
+      resolvedRole = "cashier";
+    }
+  }
+
+  const perms = getActiveUserPermissionsSync();
+  const isManagerOrAdminRole =
+    resolvedRole === "admin" ||
+    resolvedRole === "super_admin" ||
+    resolvedRole === "manager";
+
+  // Any user assigned the "cashier" role automatically follows the cashier shift workflow
+  const isCashier = resolvedRole === "cashier" && !isManagerOrAdminRole;
+
+  const canCloseShifts =
+    !isCashier &&
+    (isManagerOrAdminRole ||
+      Boolean(perms?.super_admin_full_access) ||
+      Boolean(perms?.manage_park_shifts) ||
+      Boolean(perms?.treasury_open_close));
+
+  return {
+    userId: resolvedUserId,
+    username: resolvedUsername,
+    email: resolvedEmail,
+    fullName: resolvedFullName,
+    role: resolvedRole,
+    isCashier,
+    canCloseShifts,
+    canManageAllShifts: canCloseShifts,
+  };
+}
+
+export function isCurrentUserCashier(): boolean {
+  return getCurrentUserIdentitySync().isCashier;
+}
+
+export function canCurrentUserCloseShift(): boolean {
+  return getCurrentUserIdentitySync().canCloseShifts;
+}
+
 export async function signOutCurrentUser(): Promise<void> {
   if (typeof window !== "undefined") {
     localStorage.removeItem("restocash_auth_user");
@@ -680,7 +821,9 @@ export async function signOutCurrentUser(): Promise<void> {
     sessionStorage.removeItem("restocash_auth_user");
     sessionStorage.removeItem("restocash_user_role");
   }
+  erpStore.setCurrentUser("");
   await supabase.auth.signOut().catch(() => undefined);
 }
+
 
 

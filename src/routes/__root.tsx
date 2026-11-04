@@ -234,15 +234,8 @@ function RootComponent() {
     } catch {
       // Ignored: storage unavailable in restricted environment
     }
-    try {
-      translator.start();
-    } catch (e) {
-      console.error("Failed to start translator:", e);
-    }
-
     // A Studio iframe has a draft-specific preview bridge. Skip the global DOM-edit
-    // applier there to avoid applying duplicateCount twice (for example duplicating
-    // the same card, table, or layout box in the preview).
+    // applier there to avoid applying duplicateCount twice.
     if (new URLSearchParams(window.location.search).get("__studio_preview") === "1") {
       const stopAppSync = createAppSync(queryClient);
       return () => {
@@ -250,8 +243,6 @@ function RootComponent() {
       };
     }
 
-    // Unpublished Pro drafts are never read by the real app. Only a confirmed published
-    // configuration or the legacy editor's explicitly saved map can be applied here.
     type StudioRuntimeSnapshot = {
       element: HTMLElement;
       styleAttribute: string | null;
@@ -341,8 +332,6 @@ function RootComponent() {
         if (edit.styles && typeof edit.styles === "object") for (const [key, value] of Object.entries(edit.styles)) {
           if (typeof value !== "string") continue;
           if (key in html.style) (html.style as any)[key] = value;
-          // SVG paths often define their own stroke/fill attributes. Mirror published
-          // vector styles onto the drawing primitives so icon edits survive reloads.
           if (html.tagName.toLowerCase() === "svg" && ["fill", "stroke", "strokeWidth", "color"].includes(key)) {
             html.querySelectorAll("path,circle,rect,line,polyline,polygon,ellipse").forEach((node) => {
               if (key in (node as HTMLElement).style) ((node as HTMLElement).style as any)[key] = value;
@@ -402,14 +391,25 @@ function RootComponent() {
     const storageHandler = (event: StorageEvent) => {
       if (event.key === "custom_text_map") legacyEditsUpdatedHandler();
     };
-    refreshLegacyStudioEdits();
+
+    const initTimer = window.setTimeout(() => {
+      try {
+        translator.start();
+      } catch (e) {
+        console.error("Failed to start translator:", e);
+      }
+      refreshLegacyStudioEdits();
+      rebuildRuntimeStudioEdits();
+      void studioService
+        .getPublishedConfig()
+        .then(applyPublishedStudioEdits)
+        .catch((error) => console.warn("Published Studio config could not be loaded:", error));
+      studioObserverInstance.observe(document.body, { childList: true, subtree: true });
+    }, 80);
+
     window.addEventListener("studio_published_updated", publishedHandler);
     window.addEventListener("studio_legacy_edits_updated", legacyEditsUpdatedHandler);
     window.addEventListener("storage", storageHandler);
-    void studioService
-      .getPublishedConfig()
-      .then(applyPublishedStudioEdits)
-      .catch((error) => console.warn("Published Studio config could not be loaded:", error));
 
     const studioObserverInstance = new MutationObserver(() => {
       studioObserverInstance.disconnect();
@@ -417,9 +417,9 @@ function RootComponent() {
       studioObserverInstance.observe(document.body, { childList: true, subtree: true });
     });
     studioObserver = studioObserverInstance;
-    studioObserver.observe(document.body, { childList: true, subtree: true });
     const stopAppSync = createAppSync(queryClient);
     return () => {
+      window.clearTimeout(initTimer);
       studioObserver?.disconnect();
       window.removeEventListener("studio_published_updated", publishedHandler);
       window.removeEventListener("studio_legacy_edits_updated", legacyEditsUpdatedHandler);

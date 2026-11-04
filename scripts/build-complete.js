@@ -37,6 +37,17 @@ if (sourceDir) {
     /<script>try\{var u=new URLSearchParams\(window\.location\.search\);[\s\S]*?window\.location\.replace\(hasUser\?"\/admin":"\/login"\);\}\}catch\(e\)\{\}<\/script>/g,
     "",
   );
+  // Strip SSR $_TSR stream scripts and Suspense comment markers from static index.html
+  // so client.tsx mounts cleanly via createRoot on all Vercel SPA routes without hydration mismatch
+  const moduleScriptMatch = rootIndexHtmlContent.match(
+    /<script\b[^>]*\btype="module"[^>]*\bsrc="[^"]+"[^>]*><\/script>/i,
+  );
+  if (moduleScriptMatch) {
+    rootIndexHtmlContent = rootIndexHtmlContent.replace(
+      /<body[^>]*>[\s\S]*?<\/body>/i,
+      `<body class="min-h-screen bg-background text-foreground antialiased selection:bg-primary/20 selection:text-primary">${moduleScriptMatch[0]}</body>`,
+    );
+  }
 } else {
   console.warn(
     "[build-complete] No index.html found. Synthesizing valid SPA index.html from bundle assets...",

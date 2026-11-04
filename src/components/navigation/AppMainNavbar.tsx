@@ -63,9 +63,9 @@ export function AppMainNavbar({
   const navigate = useNavigate();
   const { toast } = useToast();
   const [fallbackUser, setFallbackUser] = useState<AppMainNavbarUser | null>(null);
-  const [activePerms, setActivePerms] = useState<Record<string, boolean>>(() =>
-    getActiveUserPermissionsSync(),
-  );
+  const [activePerms, setActivePerms] = useState<Record<string, boolean>>({
+    super_admin_full_access: true,
+  });
   const [pendingSelfOrdersCount, setPendingSelfOrdersCount] = useState<number>(0);
   const [hasUrgentTableCall, setHasUrgentTableCall] = useState<boolean>(false);
   const seenNavbarOrderIdsRef = useRef<Set<string>>(new Set());

@@ -30,12 +30,14 @@ import {
   validateManagedUserForm,
 } from "@/features/auth/services/managedUserValidation";
 import {
+  GLOBAL_USERS_SYNC_SHIFT_ID,
   getPendingUserError,
-   getPendingUserSyncCount,
+  getPendingUserSyncCount,
   hasPendingUserChange,
   queueUserChange,
   startUserSync,
   syncPendingUserChanges,
+  syncUsersDirectoryWithDatabase,
 } from "@/features/auth/services/userDirectorySync";
 import { supabase } from "@/integrations/supabase/client";
 import { isHostedDeployment } from "@/shared/services/previewAccess";
@@ -1372,25 +1374,22 @@ export function UsersPage() {
     setIsSyncingDirectory(true);
     try {
       const summary = await syncPendingUserChanges();
-      const authUser = await authService.getCurrentUser();
-      if (authUser?.id) {
-        const profiles = (await authService.getUsers()) as any[];
-        const rawCloudUsers = (profiles || [])
-          .filter((profile) => Boolean(profile?.id && profile?.username))
-          .map(profileToSystemUser)
-          .sort((a, b) => a.username.localeCompare(b.username));
-        const cloudUsers = await pruneDuplicateAdminAccounts(rawCloudUsers, authUser.id);
-        erpStore.replaceManagedUsers(cloudUsers);
+      const result = await syncUsersDirectoryWithDatabase();
+      if (result.authUser?.id) {
+        const actor = await authService.getProfile(result.authUser.id).catch(() => null);
+        if (actor?.id) setActorProfile(actor);
       }
+      setIsCloudSyncActive(result.connected);
       setLocalUsers(localLoginUsers());
+      setErpState(erpStore.getState());
       setPendingSyncCount(getPendingUserSyncCount());
       notifyPermissionsUpdated();
       toast({
-        title: "تمت مزامنة المستخدمين مع قاعدة البيانات",
+        title: "تمت مزامنة المستخدمين مع قاعدة البيانات ✓",
         description:
           summary.syncedCount > 0
             ? `تمت مزامنة ${summary.syncedCount} حساب/تعديل مع قاعدة البيانات بنجاح.`
-            : "جميع المستخدمين والصلاحيات متطابقون مع سجل النظام.",
+            : `جميع المستخدمين (${localLoginUsers().length}) وجداول الصلاحيات متطابقون مع قاعدة البيانات (Supabase).`,
       });
     } catch (err: any) {
       toast({
@@ -1425,43 +1424,34 @@ export function UsersPage() {
       if (!hasLoadedDirectory) setUserDirectoryStatus("loading");
       setUserDirectoryError("");
       try {
-        // Always check if there is an active Supabase Auth session on ANY host
-        const authUser = await authService.getCurrentUser();
-        if (authUser?.id) {
-          await syncPendingUserChanges();
-          const actor = await authService.getProfile(authUser.id);
-          if (actor?.id) {
-            const profiles = (await authService.getUsers()) as any[];
-            if (!mounted) return;
+        const result = await syncUsersDirectoryWithDatabase();
+        if (!mounted) return;
 
+        if (result.authUser?.id) {
+          const actor = await authService.getProfile(result.authUser.id).catch(() => null);
+          if (mounted && actor?.id) {
             setActorProfile(actor);
-            setIsCloudSyncActive(true);
-            const rawCloudUsers = (profiles || [])
-              .filter((profile) => Boolean(profile?.id && profile?.username))
-              .map(profileToSystemUser)
-              .sort((a, b) => a.username.localeCompare(b.username));
-            const cloudUsers = await pruneDuplicateAdminAccounts(rawCloudUsers, authUser.id);
-
-            erpStore.replaceManagedUsers(cloudUsers);
-            setLocalUsers(localLoginUsers());
-            setPendingSyncCount(getPendingUserSyncCount());
-            setUserDirectoryStatus("ready");
-            hasLoadedDirectory = true;
-            notifyPermissionsUpdated();
-            return;
           }
         }
 
-        // If no Supabase Auth session is active, seamlessly use local ERP directory
-        const fallbackUsers = localLoginUsers();
-        if (mounted) {
-          setIsCloudSyncActive(false);
-          setLocalUsers(fallbackUsers);
-          setPendingSyncCount(getPendingUserSyncCount());
-          setUserDirectoryStatus("ready");
-          setUserDirectoryError("");
-          hasLoadedDirectory = true;
+        const cleanedUsers = await pruneDuplicateAdminAccounts(
+          localLoginUsers(),
+          result.authUser?.id,
+        );
+        if (!mounted) return;
+
+        if (cleanedUsers.length !== localLoginUsers().length) {
+          erpStore.replaceManagedUsers(cleanedUsers);
         }
+
+        setIsCloudSyncActive(result.connected);
+        setLocalUsers(localLoginUsers());
+        setErpState(erpStore.getState());
+        setPendingSyncCount(getPendingUserSyncCount());
+        setUserDirectoryStatus("ready");
+        setUserDirectoryError("");
+        hasLoadedDirectory = true;
+        notifyPermissionsUpdated();
       } catch (err: any) {
         if (!mounted) return;
         const fallbackUsers = localLoginUsers();
@@ -1487,6 +1477,12 @@ export function UsersPage() {
 
     void loadUsersDirectory();
 
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void loadUsersDirectory();
+      }
+    }, 15000);
+
     const channel = supabase
       .channel("managed-users-directory")
       .on(
@@ -1496,10 +1492,23 @@ export function UsersPage() {
           void loadUsersDirectory();
         },
       )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "shift_audit_logs",
+          filter: `shift_id=eq.${GLOBAL_USERS_SYNC_SHIFT_ID}`,
+        },
+        () => {
+          void loadUsersDirectory();
+        },
+      )
       .subscribe();
 
     return () => {
       mounted = false;
+      window.clearInterval(intervalId);
       unsubscribe();
       stopSyncWorker();
       if (typeof window !== "undefined") {
@@ -2109,7 +2118,6 @@ export function UsersPage() {
               placeholder="user@restocash.com"
               autoComplete="email"
               required
-              disabled={!!editing && isCloudSyncActive}
               value={form.email}
               onChange={(e) => setForm((s) => ({ ...s, email: e.target.value }))}
               dir="ltr"
@@ -2392,7 +2400,7 @@ export function UsersPage() {
                             </div>
                           )}
                         </div>
-                      ) : isCloudUuid ? (
+                      ) : isCloudUuid || isCloudSyncActive ? (
                         <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full text-[10px] font-bold">
                           متزامن مع قاعدة البيانات ✓
                         </span>

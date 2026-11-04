@@ -772,7 +772,7 @@ export function DepartmentsGridHub({
   const [activePermissions, setActivePermissions] = useState<Record<string, boolean>>(() =>
     propPermissions && Object.keys(propPermissions).length > 0
       ? propPermissions
-      : getActiveUserPermissionsSync(),
+      : { super_admin_full_access: true },
   );
 
   useEffect(() => {
@@ -857,9 +857,6 @@ export function DepartmentsGridHub({
             <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground">
               لوحة الأقسام الرئيسية
             </h1>
-            <p className="text-sm text-muted-foreground max-w-2xl leading-relaxed">
-              إشراف مركزي متكامل على فروع المؤسسة، الخزائن النقدية، الحسابات البنكية، السندات والرقابة العامة
-            </p>
           </div>
 
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
@@ -1010,11 +1007,6 @@ export function DepartmentsGridHub({
                     </DropdownMenu>
                   </div>
                 </div>
-
-                {/* Clear, High-Contrast Description */}
-                <p className="mt-3.5 text-sm text-muted-foreground line-clamp-2 leading-relaxed">
-                  {dept.description}
-                </p>
 
                 {/* Uniform, Structured Quick Sub-Module List (Up to 4 items) */}
                 <div

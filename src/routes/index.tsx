@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -16,56 +16,6 @@ export const Route = createFileRoute("/")({
       search.allowLangSwitch !== undefined ? String(search.allowLangSwitch) : undefined,
     welcome: search.welcome ? String(search.welcome) : undefined,
   }),
-  beforeLoad: ({ search }) => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const urlParams = new URLSearchParams(window.location.search);
-    const page = search.page || urlParams.get("page") || undefined;
-    const selfOrder = search.selfOrder || urlParams.get("selfOrder") || undefined;
-    const table = search.table || urlParams.get("table") || undefined;
-    const tableId = search.tableId || urlParams.get("tableId") || undefined;
-    const table_id = search.table_id || urlParams.get("table_id") || undefined;
-    const tableName = search.tableName || urlParams.get("tableName") || undefined;
-    const zone = search.zone || urlParams.get("zone") || undefined;
-    const currency = search.currency || urlParams.get("currency") || undefined;
-    const lang = search.lang || urlParams.get("lang") || undefined;
-    const allowLangSwitch =
-      search.allowLangSwitch || urlParams.get("allowLangSwitch") || undefined;
-    const welcome = search.welcome || urlParams.get("welcome") || undefined;
-
-    const isMenuQrRedirect =
-      page === "menu" ||
-      selfOrder === "1" ||
-      Boolean(tableId || table_id || table);
-
-    if (isMenuQrRedirect) {
-      throw redirect({
-        to: "/menu",
-        search: {
-          table,
-          tableId,
-          table_id,
-          tableName,
-          zone,
-          currency,
-          lang,
-          allowLangSwitch,
-          welcome,
-        },
-      });
-    }
-
-    const hasStoredUser = Boolean(
-      localStorage.getItem("restocash_auth_user") ||
-        sessionStorage.getItem("restocash_auth_user"),
-    );
-
-    throw redirect({
-      to: hasStoredUser ? "/admin" : "/login",
-    });
-  },
   head: () => ({
     meta: [
       { title: "Restocash — لوحة التحكم الرئيسية" },

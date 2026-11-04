@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Landmark, Printer, RotateCcw, Lock, Eye } from "lucide-react";
 import { erpStore } from "@/shared/services/erpStore";
+import { canCurrentUserCloseShift } from "@/shared/services/userAuthorization";
 import { printRawHtml } from "@/shared/utils/printAccountingDocument";
 
 const formatTicketPrice = (usd: number) => {
@@ -16,12 +17,13 @@ const formatTicketPrice = (usd: number) => {
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  onOpenCloseShift: () => void;
+  onOpenCloseShift?: () => void;
 }
 
 export function ParkCashierTreasuryModal({ isOpen, onClose, onOpenCloseShift }: Props) {
   const state = erpStore.getState();
   const activeShift = erpStore.getActiveParkShift();
+  const canCloseShift = canCurrentUserCloseShift();
 
   const shiftTransactions = useMemo(() => {
     if (!activeShift) return [];
@@ -148,16 +150,18 @@ export function ParkCashierTreasuryModal({ isOpen, onClose, onOpenCloseShift }: 
               >
                 <Printer size={14} /> طباعة التقرير
               </Button>
-              <Button
-                onClick={() => {
-                  onClose();
-                  onOpenCloseShift();
-                }}
-                variant="destructive"
-                className="rounded-xl text-xs font-bold gap-2"
-              >
-                <Lock size={14} /> إغلاق الوردية
-              </Button>
+              {canCloseShift && onOpenCloseShift && (
+                <Button
+                  onClick={() => {
+                    onClose();
+                    onOpenCloseShift();
+                  }}
+                  variant="destructive"
+                  className="rounded-xl text-xs font-bold gap-2"
+                >
+                  <Lock size={14} /> إغلاق الوردية
+                </Button>
+              )}
             </div>
 
             <div className="border border-border rounded-2xl overflow-hidden bg-card">

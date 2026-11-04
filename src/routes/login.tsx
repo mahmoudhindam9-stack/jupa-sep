@@ -15,7 +15,10 @@ import {
   validateManagedUserForm,
   userValidationErrorMessage,
 } from "@/features/auth/services/managedUserValidation";
-import { resetLocalManagedUserDirectoryForBootstrap } from "@/features/auth/services/userDirectorySync";
+import {
+  resetLocalManagedUserDirectoryForBootstrap,
+  syncUsersDirectoryWithDatabase,
+} from "@/features/auth/services/userDirectorySync";
 import { useSettings } from "@/hooks/use-settings";
 import { isAiStudioPreview, isHostedDeployment } from "@/shared/services/previewAccess";
 import {
@@ -121,6 +124,10 @@ function LoginPage() {
     setIsMounted(true);
     const currentLocalUsers = localLoginUsers();
     setHasLocalAccounts(currentLocalUsers.length > 0);
+
+    void syncUsersDirectoryWithDatabase().then(() => {
+      setHasLocalAccounts(localLoginUsers().length > 0);
+    });
 
     if (!isHostedDeployment() || currentLocalUsers.length > 0) {
       setIsBootstrapChecked(true);

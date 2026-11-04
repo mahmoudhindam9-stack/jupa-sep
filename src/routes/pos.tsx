@@ -1,5 +1,11 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { currentUserHasPermission, signOutCurrentUser } from "@/shared/services/userAuthorization";
+import {
+  currentUserHasPermission,
+  signOutCurrentUser,
+  getCurrentUserIdentitySync,
+  canCurrentUserCloseShift,
+} from "@/shared/services/userAuthorization";
+import { shiftAuditService } from "@/features/shifts/services/shiftAuditService";
 import { RestocashLogo } from "@/components/RestocashLogo";
 import {
   DEFAULT_RECEIPT_SETTINGS,
@@ -166,15 +172,22 @@ function Index() {
 
   useEffect(() => {
     setMounted(true);
+    void shiftAuditService.syncOpenShiftsFromSupabase(erpStore);
     return erpStore.subscribe(() => {
       setErpState({ ...erpStore.getState() });
     });
   }, []);
 
+  const currentIdentity = getCurrentUserIdentitySync();
+  const isCashier = currentIdentity.isCashier;
+  const canCloseShifts = canCurrentUserCloseShift();
   const activeRestaurantShift = erpStore.getActiveRestaurantShift();
-  const openRestaurantShifts = (erpState.restaurantShifts || []).filter(
-    (s) => s.status === "open",
-  );
+  const openRestaurantShifts = isCashier
+    ? (() => {
+        const ownShift = erpStore.getCashierOpenRestaurantShift();
+        return ownShift ? [ownShift] : [];
+      })()
+    : (erpState.restaurantShifts || []).filter((s) => s.status === "open");
 
   const [cart, setCart] = useState<CartLine[]>([]);
   const [search, setSearch] = useState("");
@@ -1255,16 +1268,26 @@ function Index() {
                   className="inline-flex items-center gap-1.5 bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 rounded-lg px-3 h-8 transition text-xs font-bold text-teal-700 dark:text-teal-300 whitespace-nowrap shrink-0 cursor-pointer"
                 >
                   <Play size={13} className="text-teal-600 shrink-0" />
-                  <span>{lang === "ar" ? "تبديل / إدارة الوردية" : "Manage Shift"}</span>
+                  <span>
+                    {isCashier
+                      ? lang === "ar"
+                        ? "بيانات الوردية النشطة"
+                        : "Active Shift"
+                      : lang === "ar"
+                        ? "تبديل / إدارة الوردية"
+                        : "Manage Shift"}
+                  </span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setClosingShift(activeRestaurantShift)}
-                  className="inline-flex items-center gap-1.5 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 rounded-lg px-3 h-8 transition text-xs font-bold text-rose-700 dark:text-rose-300 whitespace-nowrap shrink-0 cursor-pointer"
-                >
-                  <Lock size={13} className="text-rose-600 shrink-0" />
-                  <span>{lang === "ar" ? "إغلاق الوردية" : "Close Shift"}</span>
-                </button>
+                {canCloseShifts && (
+                  <button
+                    type="button"
+                    onClick={() => setClosingShift(activeRestaurantShift)}
+                    className="inline-flex items-center gap-1.5 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 rounded-lg px-3 h-8 transition text-xs font-bold text-rose-700 dark:text-rose-300 whitespace-nowrap shrink-0 cursor-pointer"
+                  >
+                    <Lock size={13} className="text-rose-600 shrink-0" />
+                    <span>{lang === "ar" ? "إغلاق الوردية" : "Close Shift"}</span>
+                  </button>
+                )}
               </>
             ) : (
               <button
@@ -1275,7 +1298,11 @@ function Index() {
                 <Plus size={14} className="shrink-0" />
                 <span>
                   {openRestaurantShifts.length > 0
-                    ? `دخول وردية مفتوحة (${openRestaurantShifts.length}) / فتح جديدة`
+                    ? isCashier
+                      ? lang === "ar"
+                        ? "الدخول للوردية النشطة"
+                        : "Enter Active Shift"
+                      : `دخول وردية مفتوحة (${openRestaurantShifts.length}) / فتح جديدة`
                     : lang === "ar"
                       ? "فتح وردية جديدة"
                       : "Open New Shift"}
@@ -1505,13 +1532,17 @@ function Index() {
         isOpen={isShiftLauncherOpen}
         onClose={() => setIsShiftLauncherOpen(false)}
         onPreviewPOS={() => setIsShiftLauncherOpen(false)}
-        onRequestCloseShift={(shift) => {
-          setIsShiftLauncherOpen(false);
-          setClosingShift(shift);
-        }}
+        onRequestCloseShift={
+          canCloseShifts
+            ? (shift) => {
+                setIsShiftLauncherOpen(false);
+                setClosingShift(shift);
+              }
+            : undefined
+        }
       />
 
-      {closingShift && (
+      {closingShift && canCloseShifts && (
         <RestaurantShiftClosingReportModal
           isOpen={!!closingShift}
           onClose={() => setClosingShift(null)}

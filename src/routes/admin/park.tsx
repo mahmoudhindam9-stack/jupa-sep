@@ -39,6 +39,8 @@ import {
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { erpStore } from "@/shared/services/erpStore";
+import { getCurrentUserIdentitySync, canCurrentUserCloseShift } from "@/shared/services/userAuthorization";
+import { shiftAuditService } from "@/features/shifts/services/shiftAuditService";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -87,6 +89,21 @@ function ParkManagementPage() {
   useEffect(() => {
     setActiveTab(tabParam || "grid");
   }, [tabParam]);
+
+  useEffect(() => {
+    void shiftAuditService.syncOpenShiftsFromSupabase(erpStore);
+  }, []);
+
+  const currentIdentity = useMemo(
+    () => getCurrentUserIdentitySync(),
+    [state.currentUserEmail, state.parkShifts, state.parkActiveShift],
+  );
+  const isCashier = currentIdentity.isCashier;
+  const canCloseShifts = canCurrentUserCloseShift();
+  const cashierActiveShift = useMemo(
+    () => (isCashier ? erpStore.getCashierOpenParkShift() : null),
+    [isCashier, state.parkShifts, state.parkActiveShift, currentIdentity],
+  );
 
   useSyncedSubTab("/admin/park", activeTab, setActiveTab, "grid");
 
@@ -159,7 +176,19 @@ function ParkManagementPage() {
   const [dateFilter, setDateFilter] = useState("all");
 
   const transactions = state.parkTicketTransactions || state.parkTransactions || [];
-  const shifts = state.parkShifts || [];
+  const rawShifts = state.parkShifts || [];
+  const shifts = useMemo(() => {
+    if (!isCashier) return rawShifts;
+    return rawShifts.filter(
+      (s: any) =>
+        (cashierActiveShift && s.id === cashierActiveShift.id) ||
+        (currentIdentity.userId && s.cashier_id === currentIdentity.userId) ||
+        (currentIdentity.username &&
+          s.cashier_username?.toLowerCase() === currentIdentity.username.toLowerCase()) ||
+        (currentIdentity.fullName &&
+          s.cashier_name?.toLowerCase() === currentIdentity.fullName.toLowerCase()),
+    );
+  }, [rawShifts, isCashier, cashierActiveShift, currentIdentity]);
   const operationalTreasuries = state.parkOperationalTreasuries || [];
 
   const filteredTransactions = useMemo(() => {
@@ -182,8 +211,11 @@ function ParkManagementPage() {
   }, [transactions]);
 
   const openShifts = useMemo(() => {
+    if (isCashier) {
+      return cashierActiveShift ? [cashierActiveShift] : [];
+    }
     return shifts.filter((s: any) => s.status === "open");
-  }, [shifts]);
+  }, [shifts, isCashier, cashierActiveShift]);
 
   const handleExportExcel = () => {
     try {
@@ -238,14 +270,16 @@ function ParkManagementPage() {
               <Ticket size={16} />
               <span>نقطة بيع التذاكر (POS)</span>
             </Button>
-            <Button
-              onClick={() => setIsParkShiftLauncherOpen(true)}
-              variant="outline"
-              className="font-bold text-xs h-9 px-3.5 rounded-xl gap-1.5"
-            >
-              <Plus size={15} />
-              <span>فتح وردية جديدة</span>
-            </Button>
+            {(!isCashier || !cashierActiveShift) && (
+              <Button
+                onClick={() => setIsParkShiftLauncherOpen(true)}
+                variant="outline"
+                className="font-bold text-xs h-9 px-3.5 rounded-xl gap-1.5"
+              >
+                <Plus size={15} />
+                <span>فتح وردية جديدة</span>
+              </Button>
+            )}
           </div>
         </div>
       ) : (
@@ -342,7 +376,7 @@ function ParkManagementPage() {
                         <h3 className="font-black text-sm text-foreground">
                           {shift.shift_number || `وردية تذاكر #${shift.auto_shift_number || "1"}`}
                         </h3>
-                        {shift.auto_shift_number && (
+                        {!isCashier && shift.auto_shift_number && (
                           <span className="border border-border/80 bg-muted/40 text-muted-foreground text-[11px] font-mono px-2.5 py-0.5 rounded-full">
                             رقم النظام: {shift.auto_shift_number}
                           </span>
@@ -350,10 +384,15 @@ function ParkManagementPage() {
                       </div>
 
                       {/* Row 2: "وردية مفتوحة" badge */}
-                      <div>
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="inline-flex items-center bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700/60 text-xs font-bold px-2.5 py-0.5 rounded-full">
                           وردية مفتوحة
                         </span>
+                        {shift.currency && (
+                          <span className="inline-flex items-center border border-border/80 bg-muted/40 text-muted-foreground text-[11px] font-mono px-2.5 py-0.5 rounded-full">
+                            العملة: {shift.currency}
+                          </span>
+                        )}
                       </div>
 
                       {/* Row 3: Cashier and start time */}
@@ -403,34 +442,36 @@ function ParkManagementPage() {
                         <span>دخول الوردية (بيع / مرتجع)</span>
                       </Button>
 
-                      {/* Edit and Delete buttons */}
-                      <div className="flex items-center gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setEditingShift(shift);
-                            setEditShiftNumber(shift.shift_number);
-                            setEditCashierName(shift.cashier_name);
-                            setEditNotes(shift.notes || "");
-                          }}
-                          className="border border-amber-200/90 bg-amber-50/50 hover:bg-amber-100/60 dark:bg-amber-950/20 dark:border-amber-900/50 text-foreground rounded-full text-xs font-bold px-3 py-1 flex items-center gap-1 cursor-pointer h-7"
-                          title="تعديل بيانات الوردية"
-                        >
-                          <Edit size={13} className="text-blue-600" />
-                          <span>تعديل</span>
-                        </Button>
+                      {/* Edit and Delete buttons - Manager/Admin Only */}
+                      {!isCashier && (
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setEditingShift(shift);
+                              setEditShiftNumber(shift.shift_number);
+                              setEditCashierName(shift.cashier_name);
+                              setEditNotes(shift.notes || "");
+                            }}
+                            className="border border-amber-200/90 bg-amber-50/50 hover:bg-amber-100/60 dark:bg-amber-950/20 dark:border-amber-900/50 text-foreground rounded-full text-xs font-bold px-3 py-1 flex items-center gap-1 cursor-pointer h-7"
+                            title="تعديل بيانات الوردية"
+                          >
+                            <Edit size={13} className="text-blue-600" />
+                            <span>تعديل</span>
+                          </Button>
 
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setDeletingShift(shift)}
-                          className="text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/30 p-1.5 h-7 w-7 rounded-full cursor-pointer transition flex items-center justify-center"
-                          title="حذف الوردية"
-                        >
-                          <Trash2 size={15} />
-                        </Button>
-                      </div>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setDeletingShift(shift)}
+                            className="text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/30 p-1.5 h-7 w-7 rounded-full cursor-pointer transition flex items-center justify-center"
+                            title="حذف الوردية"
+                          >
+                            <Trash2 size={15} />
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -730,15 +771,17 @@ function ParkManagementPage() {
                 دليل عملاء الحديقة
               </Button>
 
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsParkShiftCloseModalOpen(true)}
-                className="rounded-xl text-xs font-bold gap-1.5 border-rose-200 text-rose-700 hover:bg-rose-50 dark:border-rose-900/50 dark:text-rose-400"
-              >
-                <History size={14} />
-                سجل إغلاق الورديات
-              </Button>
+              {canCloseShifts && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsParkShiftCloseModalOpen(true)}
+                  className="rounded-xl text-xs font-bold gap-1.5 border-rose-200 text-rose-700 hover:bg-rose-50 dark:border-rose-900/50 dark:text-rose-400"
+                >
+                  <History size={14} />
+                  سجل إغلاق الورديات
+                </Button>
+              )}
             </div>
 
             <Button
@@ -918,20 +961,22 @@ function ParkManagementPage() {
                     سجل الورديات المفتوحة والمغلقة، تقارير الإغلاق، ومطابقة الصناديق
                   </CardDescription>
                 </div>
-                <Button
-                  onClick={() => setIsParkShiftLauncherOpen(true)}
-                  size="sm"
-                  className="bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl text-xs gap-1.5"
-                >
-                  <Plus size={14} />
-                  فتح وردية جديدة
-                </Button>
+                {(!isCashier || !cashierActiveShift) && (
+                  <Button
+                    onClick={() => setIsParkShiftLauncherOpen(true)}
+                    size="sm"
+                    className="bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl text-xs gap-1.5"
+                  >
+                    <Plus size={14} />
+                    فتح وردية جديدة
+                  </Button>
+                )}
               </CardHeader>
               <CardContent className="p-0 overflow-x-auto">
                 <table className="w-full text-right text-xs">
                   <thead className="bg-muted/50 border-b border-border text-muted-foreground font-bold">
                     <tr>
-                      <th className="p-3">رقم الوردية</th>
+                      <th className="p-3">{isCashier ? "اسم الوردية" : "رقم الوردية"}</th>
                       <th className="p-3">الكاشير المسؤول</th>
                       <th className="p-3">وقت الفتح</th>
                       <th className="p-3">وقت الإغلاق</th>
@@ -950,14 +995,16 @@ function ParkManagementPage() {
                     ) : (
                       shifts.map((s: any) => (
                         <tr key={s.id} className="hover:bg-muted/30 transition">
-                          <td className="p-3 font-mono font-bold">{s.id.slice(0, 8)}</td>
+                          <td className="p-3 font-bold">
+                            {isCashier ? s.shift_number : s.shift_number || s.id.slice(0, 8)}
+                          </td>
                           <td className="p-3 font-bold text-foreground">{s.cashier_name}</td>
                           <td className="p-3 text-muted-foreground font-mono">
-                            {new Date(s.opened_at).toLocaleString("ar-EG")}
+                            {new Date(s.opened_at || s.start_at).toLocaleString("ar-EG")}
                           </td>
                           <td className="p-3 text-muted-foreground font-mono">
-                            {s.closed_at
-                              ? new Date(s.closed_at).toLocaleString("ar-EG")
+                            {s.closed_at || s.end_at
+                              ? new Date(s.closed_at || s.end_at).toLocaleString("ar-EG")
                               : "— نشطة حالياً —"}
                           </td>
                           <td className="p-3 font-medium">
@@ -976,6 +1023,20 @@ function ParkManagementPage() {
                           </td>
                           <td className="p-3 text-center">
                             <div className="flex items-center justify-center gap-1.5">
+                              {s.status === "open" && (
+                                <Button
+                                  size="sm"
+                                  onClick={() => {
+                                    erpStore.setActiveParkShift(s.id);
+                                    toast.success(`تم الدخول إلى ${s.shift_number}`);
+                                    setIsParkPosOpen(true);
+                                  }}
+                                  className="h-7 px-2.5 text-xs font-black bg-teal-600 hover:bg-teal-700 text-white rounded-lg gap-1"
+                                >
+                                  <Play size={12} />
+                                  دخول الوردية
+                                </Button>
+                              )}
                               <Button
                                 size="sm"
                                 variant="ghost"
@@ -987,17 +1048,19 @@ function ParkManagementPage() {
                               >
                                 تقرير الوردية
                               </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => {
-                                  setSelectedShiftForAudit(s);
-                                  setIsShiftAuditLogOpen(true);
-                                }}
-                                className="h-7 px-2 text-xs font-bold text-indigo-600"
-                              >
-                                سجل التدقيق
-                              </Button>
+                              {!isCashier && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    setSelectedShiftForAudit(s);
+                                    setIsShiftAuditLogOpen(true);
+                                  }}
+                                  className="h-7 px-2 text-xs font-bold text-indigo-600"
+                                >
+                                  سجل التدقيق
+                                </Button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -1129,19 +1192,29 @@ function ParkManagementPage() {
         onClose={() => setIsParkPricesModalOpen(false)}
       />
       <ParkShiftClosingModal
-        isOpen={isParkShiftCloseModalOpen}
+        isOpen={isParkShiftCloseModalOpen && canCloseShifts}
         onClose={() => setIsParkShiftCloseModalOpen(false)}
         onShiftClosed={() => setIsParkShiftCloseModalOpen(false)}
       />
       <ParkShiftLauncherModal
         isOpen={isParkShiftLauncherOpen}
         onClose={() => setIsParkShiftLauncherOpen(false)}
+        onOpenPOS={() => setIsParkPosOpen(true)}
+        onRequestCloseShift={
+          canCloseShifts
+            ? (shift) => {
+                setIsParkShiftLauncherOpen(false);
+                setSelectedShiftForReport(shift);
+                setIsShiftClosingReportOpen(true);
+              }
+            : undefined
+        }
       />
       <ParkShiftClosingReportModal
         isOpen={isShiftClosingReportOpen}
         onClose={() => setIsShiftClosingReportOpen(false)}
         viewOnlyShift={selectedShiftForReport}
-        shiftToClose={selectedShiftForReport}
+        shiftToClose={canCloseShifts ? selectedShiftForReport : undefined}
       />
       <ShiftAuditLogViewerModal
         isOpen={isShiftAuditLogOpen}
