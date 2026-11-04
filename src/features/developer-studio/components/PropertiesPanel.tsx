@@ -598,12 +598,51 @@ export function PropertiesPanel({
           {element.type === "container" && (
             <div className="space-y-3">
               <div>
-                <Label className="text-xs font-bold mb-1.5 block">ترتيب العناصر</Label>
+                <Label className="text-xs font-bold mb-1.5 block">أسلوب عرض المحتوى (Grid / List)</Label>
                 <div className="grid grid-cols-2 gap-1.5">
                   <Button
                     type="button"
                     size="sm"
+                    variant={element.styles.display === "grid" ? "default" : "outline"}
+                    disabled={element.locked}
+                    onClick={() => {
+                      updateStyles({
+                        display: "grid",
+                        gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                        gap: element.styles.gap || "16px",
+                      });
+                    }}
+                    className="text-xs h-7 cursor-pointer"
+                  >
+                    شبكة (Grid)
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
                     variant={
+                      element.styles.display === "flex" &&
+                      (element.content as ContainerContent).direction === "column"
+                        ? "default"
+                        : "outline"
+                    }
+                    disabled={element.locked}
+                    onClick={() => {
+                      updateContent({ direction: "column" });
+                      updateStyles({
+                        display: "flex",
+                        flexDirection: "column",
+                        gridTemplateColumns: "none",
+                      });
+                    }}
+                    className="text-xs h-7 cursor-pointer"
+                  >
+                    قائمة رأسية (List)
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={
+                      element.styles.display !== "grid" &&
                       (element.content as ContainerContent).direction === "row"
                         ? "default"
                         : "outline"
@@ -611,28 +650,27 @@ export function PropertiesPanel({
                     disabled={element.locked}
                     onClick={() => {
                       updateContent({ direction: "row" });
-                      updateStyles({ flexDirection: "row", display: "flex" });
+                      updateStyles({
+                        flexDirection: "row",
+                        display: "flex",
+                        gridTemplateColumns: "none",
+                      });
                     }}
                     className="text-xs h-7 cursor-pointer"
                   >
-                    أفقي
+                    صف أفقي (Row)
                   </Button>
                   <Button
                     type="button"
                     size="sm"
-                    variant={
-                      (element.content as ContainerContent).direction !== "row"
-                        ? "default"
-                        : "outline"
-                    }
+                    variant={element.styles.display === "block" ? "default" : "outline"}
                     disabled={element.locked}
                     onClick={() => {
-                      updateContent({ direction: "column" });
-                      updateStyles({ flexDirection: "column", display: "flex" });
+                      updateStyles({ display: "block", gridTemplateColumns: "none" });
                     }}
                     className="text-xs h-7 cursor-pointer"
                   >
-                    عمودي
+                    كتلة عادية (Block)
                   </Button>
                 </div>
               </div>
@@ -1013,9 +1051,83 @@ export function PropertiesPanel({
             </div>
           </div>
 
-          {/* Flexbox Alignment */}
+          {/* Flexbox & Grid Display Mode */}
           <div className="space-y-2">
-            <h4 className="text-xs font-bold text-foreground">المحاذاة والتباعد</h4>
+            <h4 className="text-xs font-bold text-foreground">أسلوب عرض المحتوى والمحاذاة</h4>
+            <div className="grid grid-cols-2 gap-1.5 mb-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={element.styles.display === "grid" ? "default" : "outline"}
+                disabled={element.locked}
+                onClick={() =>
+                  updateStyles({
+                    display: "grid",
+                    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                    gap: element.styles.gap || "16px",
+                  })
+                }
+                className="text-[11px] h-7 cursor-pointer"
+              >
+                شبكة (Grid)
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={
+                  element.styles.display === "flex" && element.styles.flexDirection === "column"
+                    ? "default"
+                    : "outline"
+                }
+                disabled={element.locked}
+                onClick={() =>
+                  updateStyles({
+                    display: "flex",
+                    flexDirection: "column",
+                    gridTemplateColumns: "none",
+                  })
+                }
+                className="text-[11px] h-7 cursor-pointer"
+              >
+                قائمة رأسية (List)
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={
+                  element.styles.display === "flex" && element.styles.flexDirection !== "column"
+                    ? "default"
+                    : "outline"
+                }
+                disabled={element.locked}
+                onClick={() =>
+                  updateStyles({
+                    display: "flex",
+                    flexDirection: "row",
+                    flexWrap: "wrap",
+                    gridTemplateColumns: "none",
+                  })
+                }
+                className="text-[11px] h-7 cursor-pointer"
+              >
+                صف أفقي (Row)
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={element.styles.display === "block" ? "default" : "outline"}
+                disabled={element.locked}
+                onClick={() =>
+                  updateStyles({
+                    display: "block",
+                    gridTemplateColumns: "none",
+                  })
+                }
+                className="text-[11px] h-7 cursor-pointer"
+              >
+                كتلة عادية (Block)
+              </Button>
+            </div>
             <div>
               <Label className="text-[11px] font-medium text-muted-foreground mb-1 block">
                 المسافة بين العناصر
@@ -1092,6 +1204,21 @@ export function PropertiesPanel({
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Persistent Footer Delete Action */}
+      <div className="shrink-0 p-3 border-t border-border bg-muted/20 flex items-center gap-2">
+        <Button
+          type="button"
+          variant="destructive"
+          size="sm"
+          disabled={element.locked}
+          onClick={() => onDeleteElement(element.id)}
+          className="w-full h-8 text-xs font-bold gap-1.5 cursor-pointer"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+          <span>حذف هذا العنصر</span>
+        </Button>
+      </div>
     </div>
   );
 }

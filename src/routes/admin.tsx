@@ -471,7 +471,12 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
           navigate({ to: "/login" });
         }
       } finally {
-        await new Promise((resolve) => setTimeout(resolve, 400));
+        const isStudioIframe =
+          typeof window !== "undefined" &&
+          new URLSearchParams(window.location.search).get("__studio_preview") === "1";
+        if (!isStudioIframe) {
+          await new Promise((resolve) => setTimeout(resolve, 400));
+        }
         if (mounted) setAuthChecking(false);
       }
     };
@@ -602,6 +607,7 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
     return pathname.startsWith(item.to);
   };
   const activeNavItem = nav.find(isNavItemActive);
+  const isStudioRoute = pathname.startsWith("/admin/studio");
 
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-background text-foreground">
@@ -620,12 +626,24 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
         ])}
       />
 
-      {/* 2. Contextual Breadcrumb Bar (Appears ONLY inside sections/subsections, zero duplication) */}
-      <AppBreadcrumbBar />
+      {/* 2. Contextual Breadcrumb Bar (Hidden inside full-screen Studio to eliminate duplicate bars and maximize canvas) */}
+      {!isStudioRoute && <AppBreadcrumbBar />}
 
-      {/* Main Content Area - Full width, no sidebar margins */}
-      <main className="flex-1 w-full min-w-0 overflow-y-auto">
-        <div className="px-4 sm:px-6 pb-8 pt-0 max-w-7xl mx-auto w-full">
+      {/* Main Content Area - Full-bleed edge-to-edge on Studio route, standard container on other admin pages */}
+      <main
+        className={
+          isStudioRoute
+            ? "flex-1 w-full min-w-0 min-h-0 overflow-hidden flex flex-col"
+            : "flex-1 w-full min-w-0 overflow-y-auto"
+        }
+      >
+        <div
+          className={
+            isStudioRoute
+              ? "flex-1 w-full h-full min-h-0 p-0 max-w-none flex flex-col"
+              : "px-4 sm:px-6 pb-8 pt-0 max-w-7xl mx-auto w-full"
+          }
+        >
           {children || <Outlet />}
         </div>
       </main>

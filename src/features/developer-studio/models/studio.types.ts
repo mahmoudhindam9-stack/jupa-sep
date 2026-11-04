@@ -291,6 +291,69 @@ export interface StudioDomEdit {
   duplicateCount?: number;
   order?: number;
   label?: string;
+  pageRoute?: string;
+}
+
+/**
+ * Filter out unsafe or unscoped positional `body > ...` selectors that can collide across routes
+ * or accidentally target Studio UI / Top Bar / hidden tab panels.
+ */
+export function sanitizeStudioDomEditsMap(
+  rawEdits: Record<string, any> | undefined | null,
+): Record<string, StudioDomEdit> {
+  if (!rawEdits || typeof rawEdits !== "object") return {};
+  const clean: Record<string, StudioDomEdit> = {};
+  for (const [selector, edit] of Object.entries(rawEdits)) {
+    if (!selector || selector.startsWith("__studio_")) continue;
+    if (!edit || typeof edit !== "object") continue;
+    const trimmed = selector.trim();
+    // Drop legacy unscoped positional paths starting from `body >` that lacked a pageRoute
+    // or targeted top-level layout wrappers (`body > div`, `header`, `aside`, `[role="tabpanel"]`)
+    if (trimmed.startsWith("body >") && !edit.pageRoute) {
+      continue;
+    }
+    if (
+      trimmed === "body" ||
+      trimmed === "main" ||
+      trimmed === "header" ||
+      trimmed === "aside" ||
+      trimmed.includes('[data-studio-ui-root') ||
+      trimmed.includes('[data-studio-preserve') ||
+      trimmed.includes('[role="tabpanel"]')
+    ) {
+      continue;
+    }
+    // Strip accidental pointer-drag translate styles on non-positioned elements
+    const nextEdit: StudioDomEdit = { ...edit };
+    if (nextEdit.styles && typeof nextEdit.styles === "object") {
+      const nextStyles = { ...nextEdit.styles };
+      if (nextStyles.translate) {
+        delete nextStyles.translate;
+        if (nextStyles.zIndex === "10") {
+          delete nextStyles.zIndex;
+        }
+      }
+      nextEdit.styles = nextStyles;
+      if (
+        Object.keys(nextStyles).length === 0 &&
+        nextEdit.text === undefined &&
+        !nextEdit.deleted &&
+        !nextEdit.ariaLabel &&
+        !nextEdit.role &&
+        !nextEdit.attributes &&
+        !nextEdit.responsiveStyles &&
+        !nextEdit.hoverStyles &&
+        !nextEdit.animation &&
+        !nextEdit.hiddenOn &&
+        nextEdit.duplicateCount === undefined &&
+        nextEdit.order === undefined
+      ) {
+        continue;
+      }
+    }
+    clean[selector] = nextEdit;
+  }
+  return clean;
 }
 
 /**
@@ -561,6 +624,41 @@ export function packDomEditsWithMeta(draft: Pick<StudioDraft, "domEdits" | "desi
 }
 
 /**
+ * Ensure any partial or legacy designSystem object has all required nested token groups.
+ */
+export function normalizeStudioDesignSystem(
+  raw?: Partial<StudioDesignSystem> | null,
+): StudioDesignSystem {
+  if (!raw || typeof raw !== "object") {
+    return JSON.parse(JSON.stringify(DEFAULT_STUDIO_DESIGN_SYSTEM));
+  }
+  return {
+    ...DEFAULT_STUDIO_DESIGN_SYSTEM,
+    ...raw,
+    colors: {
+      ...DEFAULT_STUDIO_DESIGN_SYSTEM.colors,
+      ...(raw.colors && typeof raw.colors === "object" ? raw.colors : {}),
+    },
+    typography: {
+      ...DEFAULT_STUDIO_DESIGN_SYSTEM.typography,
+      ...(raw.typography && typeof raw.typography === "object" ? raw.typography : {}),
+    },
+    spacing: {
+      ...DEFAULT_STUDIO_DESIGN_SYSTEM.spacing,
+      ...(raw.spacing && typeof raw.spacing === "object" ? raw.spacing : {}),
+    },
+    radius: {
+      ...DEFAULT_STUDIO_DESIGN_SYSTEM.radius,
+      ...(raw.radius && typeof raw.radius === "object" ? raw.radius : {}),
+    },
+    shadows: {
+      ...DEFAULT_STUDIO_DESIGN_SYSTEM.shadows,
+      ...(raw.shadows && typeof raw.shadows === "object" ? raw.shadows : {}),
+    },
+  };
+}
+
+/**
  * Unpack `domEdits` from Supabase row into clean DOM selector edits + workspace metadata.
  */
 export function unpackDomEditsAndMeta(rawDomEdits: Record<string, any> | undefined | null): {
@@ -576,24 +674,14 @@ export function unpackDomEditsAndMeta(rawDomEdits: Record<string, any> | undefin
     for (const [key, value] of Object.entries(rawDomEdits)) {
       if (key === STUDIO_META_KEY && value && typeof value === "object") {
         meta = value;
-      } else if (!key.startsWith("__studio_")) {
+      } else if (!key.startsWith("__studio_") && value && typeof value === "object") {
         domEdits[key] = value as StudioDomEdit;
       }
     }
   }
   return {
-    domEdits,
-    designSystem: meta.designSystem
-      ? {
-          ...DEFAULT_STUDIO_DESIGN_SYSTEM,
-          ...meta.designSystem,
-          colors: { ...DEFAULT_STUDIO_DESIGN_SYSTEM.colors, ...(meta.designSystem.colors || {}) },
-          typography: { ...DEFAULT_STUDIO_DESIGN_SYSTEM.typography, ...(meta.designSystem.typography || {}) },
-          spacing: { ...DEFAULT_STUDIO_DESIGN_SYSTEM.spacing, ...(meta.designSystem.spacing || {}) },
-          radius: { ...DEFAULT_STUDIO_DESIGN_SYSTEM.radius, ...(meta.designSystem.radius || {}) },
-          shadows: { ...DEFAULT_STUDIO_DESIGN_SYSTEM.shadows, ...(meta.designSystem.shadows || {}) },
-        }
-      : DEFAULT_STUDIO_DESIGN_SYSTEM,
+    domEdits: sanitizeStudioDomEditsMap(domEdits),
+    designSystem: normalizeStudioDesignSystem(meta.designSystem),
     assets: Array.isArray(meta.assets) ? meta.assets : [],
     reusableComponents: Array.isArray(meta.reusableComponents) ? meta.reusableComponents : [],
     namedSnapshots: Array.isArray(meta.namedSnapshots) ? meta.namedSnapshots : [],
@@ -662,6 +750,24 @@ export function normalizeStudioDraftPageReferences(draft: StudioDraft): {
   };
 }
 
+function canonicalizeJson(value: any): string {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return "[" + value.map(canonicalizeJson).join(",") + "]";
+  }
+  const keys = Object.keys(value).sort();
+  return (
+    "{" +
+    keys
+      .filter((k) => value[k] !== undefined)
+      .map((k) => JSON.stringify(k) + ":" + canonicalizeJson(value[k]))
+      .join(",") +
+    "}"
+  );
+}
+
 /**
  * Detect whether a published element is still identical to the initial demo seed.
  */
@@ -675,9 +781,9 @@ export function isUnmodifiedStudioStarterElement(
     element.pageId === starter.pageId &&
     element.parentId === starter.parentId &&
     element.type === starter.type &&
-    JSON.stringify(element.content || {}) === JSON.stringify(starter.content || {}) &&
-    JSON.stringify(element.styles || {}) === JSON.stringify(starter.styles || {}) &&
-    JSON.stringify(element.layout || {}) === JSON.stringify(starter.layout || {})
+    canonicalizeJson(element.content || {}) === canonicalizeJson(starter.content || {}) &&
+    canonicalizeJson(element.styles || {}) === canonicalizeJson(starter.styles || {}) &&
+    canonicalizeJson(element.layout || {}) === canonicalizeJson(starter.layout || {})
   );
 }
 
@@ -910,9 +1016,10 @@ export function findAssetUsages(
   draft: Pick<StudioDraft, "elements" | "domEdits">,
 ): Array<{ id: string; label: string; type: "element" | "domEdit" }> {
   const usages: Array<{ id: string; label: string; type: "element" | "domEdit" }> = [];
-  if (!asset.url && !asset.id) return usages;
+  if (!asset?.url && !asset?.id) return usages;
 
-  for (const elem of Object.values(draft.elements || {})) {
+  for (const elem of Object.values(draft?.elements || {})) {
+    if (!elem || typeof elem !== "object") continue;
     const c = elem.content || {};
     const bg = elem.styles?.backgroundColor || "";
     if (
@@ -927,8 +1034,8 @@ export function findAssetUsages(
     }
   }
 
-  for (const [selector, edit] of Object.entries(draft.domEdits || {})) {
-    if (selector.startsWith("__studio_")) continue;
+  for (const [selector, edit] of Object.entries(draft?.domEdits || {})) {
+    if (selector.startsWith("__studio_") || !edit || typeof edit !== "object") continue;
     const srcAttr = edit.attributes?.src || "";
     const bgStyle = edit.styles?.backgroundImage || "";
     if (asset.url && (srcAttr === asset.url || bgStyle.includes(asset.url))) {
@@ -982,13 +1089,16 @@ export function calculateContrastRatio(fgHex?: string, bgHex?: string): number |
  */
 export function runStudioAudits(draft: StudioDraft, activePageId?: string): StudioAuditIssue[] {
   const issues: StudioAuditIssue[] = [];
-  const ds = draft.designSystem || DEFAULT_STUDIO_DESIGN_SYSTEM;
+  if (!draft || typeof draft !== "object") return issues;
+  const ds = normalizeStudioDesignSystem(draft.designSystem);
   const paletteColors = new Set(
-    Object.values(ds.colors || {}).map((c) => c.toLowerCase()),
+    Object.values(ds.colors || {})
+      .filter((c): c is string => typeof c === "string")
+      .map((c) => c.toLowerCase()),
   );
 
   const elements = Object.values(draft.elements || {}).filter(
-    (el) => !activePageId || el.pageId === activePageId,
+    (el): el is ElementModel => Boolean(el && typeof el === "object" && (!activePageId || el.pageId === activePageId)),
   );
 
   let previousHeadingLevel = 0;
@@ -1129,7 +1239,7 @@ export function runStudioAudits(draft: StudioDraft, activePageId?: string): Stud
 
   // Also audit live DOM Edits
   for (const [selector, edit] of Object.entries(draft.domEdits || {})) {
-    if (selector.startsWith("__studio_")) continue;
+    if (selector.startsWith("__studio_") || !edit || typeof edit !== "object") continue;
     const widthMatch = String(edit.styles?.width || "").match(/^(\d+)px$/i);
     if (widthMatch && Number(widthMatch[1]) > 390 && !edit.responsiveStyles?.mobile?.width) {
       issues.push({
@@ -1262,7 +1372,7 @@ export function compareStudioSnapshots(
   for (const selector of allSelectors) {
     const bd = bEdits[selector];
     const ad = aEdits[selector];
-    if (!bd && ad) {
+    if (!bd && ad && typeof ad === "object") {
       diffs.push({
         id: `dom_${selector}`,
         scope: "domEdit",
@@ -1272,7 +1382,7 @@ export function compareStudioSnapshots(
         beforeValue: null,
         afterValue: ad,
       });
-    } else if (bd && !ad) {
+    } else if (bd && typeof bd === "object" && !ad) {
       diffs.push({
         id: `dom_${selector}`,
         scope: "domEdit",
@@ -1282,7 +1392,7 @@ export function compareStudioSnapshots(
         beforeValue: bd,
         afterValue: null,
       });
-    } else if (bd && ad && JSON.stringify(bd) !== JSON.stringify(ad)) {
+    } else if (bd && ad && typeof bd === "object" && typeof ad === "object" && JSON.stringify(bd) !== JSON.stringify(ad)) {
       diffs.push({
         id: `dom_${selector}`,
         scope: "domEdit",

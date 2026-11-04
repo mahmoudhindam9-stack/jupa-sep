@@ -163,6 +163,7 @@ export function AppBreadcrumbBar({
 
   return (
     <nav
+      data-studio-preserve="top-navigation-bar"
       aria-label={isEn ? "Breadcrumb Navigation" : "مسار التنقل الهرمي"}
       dir={isEn ? "ltr" : "rtl"}
       className={cn(

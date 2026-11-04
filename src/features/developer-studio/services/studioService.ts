@@ -19,14 +19,17 @@ import {
   ElementModel,
   StudioDomEdit,
   DEFAULT_STUDIO_DESIGN_SYSTEM,
+  normalizeStudioDesignSystem,
   packDomEditsWithMeta,
   unpackDomEditsAndMeta,
+  sanitizeStudioDomEditsMap,
   StudioNamedSnapshot,
   createStudioId,
 } from "../models/studio.types";
 
 const LOCAL_PUBLISHED_KEY = "restocash_studio_published_v1";
 const LOCAL_DRAFT_KEY = "restocash_studio_draft_v1";
+const LOCAL_SAVED_DRAFT_KEY = "restocash_studio_saved_draft_v1";
 const LOCAL_HISTORY_KEY = "restocash_studio_history_v1";
 
 export interface StudioAccessDiagnostics {
@@ -70,8 +73,35 @@ export function isNetworkOrOfflineError(error: unknown): boolean {
     msg.includes("load failed") ||
     msg.includes("offline") ||
     msg.includes("timeout") ||
-    msg.includes("timed out")
+    msg.includes("timed out") ||
+    msg.includes("aborted")
   );
+}
+
+/**
+ * Wrap any promise or Supabase PostgrestBuilder in an explicit timeout so hung requests
+ * never block Studio initialization or synchronization indefinitely.
+ */
+export function withStudioTimeout<T>(
+  promiseLike: PromiseLike<T>,
+  timeoutMs = 5_000,
+  label = "Supabase request",
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = globalThis.setTimeout(() => {
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+    Promise.resolve(promiseLike).then(
+      (value) => {
+        globalThis.clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        globalThis.clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 }
 
 /**
@@ -273,14 +303,36 @@ class StudioService {
   private hydrateFromLocal() {
     if (typeof window === "undefined") return;
     try {
+      // One-time cleanup of corrupted unscoped `body > ...` selectors or accidental click-drag edits in browser storage
+      if (!localStorage.getItem("restocash_studio_clean_v2")) {
+        localStorage.removeItem("custom_text_map");
+        localStorage.removeItem("restocash_studio_local_dom_edits_v1");
+        for (const key of [LOCAL_PUBLISHED_KEY, LOCAL_DRAFT_KEY, LOCAL_SAVED_DRAFT_KEY]) {
+          const raw = localStorage.getItem(key);
+          if (raw) {
+            try {
+              const parsed = JSON.parse(raw);
+              if (parsed && typeof parsed === "object") {
+                const unpacked = unpackDomEditsAndMeta(parsed.domEdits || parsed.dom_edits);
+                parsed.domEdits = sanitizeStudioDomEditsMap(unpacked.domEdits);
+                localStorage.setItem(key, JSON.stringify(parsed));
+              }
+            } catch {
+              // ignore malformed JSON
+            }
+          }
+        }
+        localStorage.setItem("restocash_studio_clean_v2", "1");
+      }
+
       const pubRaw = localStorage.getItem(LOCAL_PUBLISHED_KEY);
       if (pubRaw) {
         const parsed = JSON.parse(pubRaw);
         const unpacked = unpackDomEditsAndMeta(parsed.domEdits || parsed.dom_edits);
         this.inMemoryPublished = {
           ...parsed,
-          domEdits: unpacked.domEdits,
-          designSystem: parsed.designSystem || unpacked.designSystem,
+          domEdits: sanitizeStudioDomEditsMap(unpacked.domEdits),
+          designSystem: normalizeStudioDesignSystem(parsed.designSystem || unpacked.designSystem),
           assets: parsed.assets || unpacked.assets,
           reusableComponents: parsed.reusableComponents || unpacked.reusableComponents,
         };
@@ -294,8 +346,8 @@ class StudioService {
         const unpacked = unpackDomEditsAndMeta(parsed.domEdits || parsed.dom_edits);
         this.inMemoryDraft = {
           ...parsed,
-          domEdits: unpacked.domEdits,
-          designSystem: parsed.designSystem || unpacked.designSystem,
+          domEdits: sanitizeStudioDomEditsMap(unpacked.domEdits),
+          designSystem: normalizeStudioDesignSystem(parsed.designSystem || unpacked.designSystem),
           assets: parsed.assets || unpacked.assets,
           reusableComponents: parsed.reusableComponents || unpacked.reusableComponents,
           namedSnapshots: parsed.namedSnapshots || unpacked.namedSnapshots,
@@ -326,6 +378,53 @@ class StudioService {
     } catch {
       this.inMemoryPublished = JSON.parse(JSON.stringify(DEFAULT_STARTER_CONFIG));
     }
+  }
+
+  /**
+   * Check whether an active Supabase Auth session exists.
+   * When the user logs in via the local ERP directory (/login -> restocash_auth_user),
+   * Supabase Auth has no cloud session (`false`), so Studio persists & publishes
+   * authoritatively in local ERP Admin mode without failing with a missing-session error.
+   */
+  async hasSupabaseAuthSession(): Promise<boolean> {
+    try {
+      const { data } = await supabase.auth.getSession();
+      return Boolean(data?.session?.user?.id || data?.session?.access_token);
+    } catch {
+      return false;
+    }
+  }
+
+  private getLocalErpAdminUser(): { id: string; email: string; role: string; name?: string } | null {
+    if (typeof window === "undefined") return null;
+    try {
+      const rawUser =
+        localStorage.getItem("restocash_auth_user") ||
+        sessionStorage.getItem("restocash_auth_user");
+      const rawRole =
+        localStorage.getItem("restocash_user_role") ||
+        sessionStorage.getItem("restocash_user_role");
+      if (rawUser) {
+        const parsed = JSON.parse(rawUser);
+        const role = String(parsed.role || rawRole || "admin").toLowerCase();
+        return {
+          id: String(parsed.id || "local_admin"),
+          email: String(parsed.email || parsed.username || "admin@restocash.local"),
+          role,
+          name: parsed.name,
+        };
+      }
+      if (rawRole) {
+        return {
+          id: "local_admin",
+          email: "admin@restocash.local",
+          role: String(rawRole).toLowerCase(),
+        };
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return null;
   }
 
   private async formatStudioSyncError(error: any, fallbackMessage: string): Promise<string> {
@@ -386,6 +485,22 @@ class StudioService {
       // Fall back to session inspection below
     }
 
+    if (!sessionUser?.id) {
+      const localAdmin = this.getLocalErpAdminUser();
+      if (localAdmin) {
+        return {
+          authenticated: true,
+          userId: localAdmin.id,
+          email: localAdmin.email,
+          profileFound: true,
+          role: localAdmin.role,
+          developerOptions: true,
+          allowed: true,
+          reason: "local_erp_admin_session",
+        };
+      }
+    }
+
     return {
       authenticated: Boolean(sessionUser?.id),
       userId: sessionUser?.id,
@@ -399,11 +514,21 @@ class StudioService {
 
   /**
    * Fetch the latest published configuration for the live application runtime.
-   * Authoritative server data always wins when reachable.
+   * Authoritative server data wins unless a higher locally-published ERP revision exists.
    */
   async getPublishedConfig(): Promise<StudioPublishedConfig> {
+    this.hydrateFromLocal();
+    const localCached = this.inMemoryPublished;
     try {
       const config = await this.fetchRemotePublishedConfig();
+      const hasCloudSession = await this.hasSupabaseAuthSession();
+      if (
+        !hasCloudSession &&
+        localCached &&
+        Number(localCached.revision || 0) > Number(config.revision || 0)
+      ) {
+        return localCached;
+      }
       this.inMemoryPublished = config;
       if (typeof window !== "undefined") {
         try {
@@ -424,14 +549,224 @@ class StudioService {
   }
 
   /**
+   * Synchronously return the latest locally cached or default published configuration
+   * so the Studio UI can mount immediately without waiting for network calls.
+   */
+  getImmediateLocalOrDefaultPublishedConfig(): StudioPublishedConfig {
+    this.hydrateFromLocal();
+    if (!this.inMemoryPublished) {
+      this.inMemoryPublished = JSON.parse(JSON.stringify(DEFAULT_STARTER_CONFIG));
+    }
+    return JSON.parse(JSON.stringify(this.inMemoryPublished));
+  }
+
+  /**
+   * Synchronously return the latest locally cached draft (or create a default draft from
+   * cached published config) so the Visual Editor opens in 0ms without blocking on Supabase.
+   */
+  getImmediateLocalOrDefaultDraft(owner = "admin"): StudioDraft {
+    this.hydrateFromLocal();
+    if (this.inMemoryDraft && this.inMemoryDraft.pages && Object.keys(this.inMemoryDraft.pages).length > 0) {
+      return JSON.parse(JSON.stringify(this.inMemoryDraft));
+    }
+    const published = this.getImmediateLocalOrDefaultPublishedConfig();
+    const freshDraft: StudioDraft = {
+      id: "draft_" + owner,
+      owner,
+      baseRevision: published.revision || 1,
+      schemaVersion: published.schemaVersion || published.schema_version || CURRENT_SCHEMA_VERSION,
+      pages: JSON.parse(JSON.stringify(published.pages)),
+      elements: JSON.parse(JSON.stringify(published.elements)),
+      domEdits: JSON.parse(JSON.stringify(published.domEdits || {})),
+      designSystem: JSON.parse(JSON.stringify(published.designSystem || DEFAULT_STUDIO_DESIGN_SYSTEM)),
+      assets: JSON.parse(JSON.stringify(published.assets || [])),
+      reusableComponents: JSON.parse(JSON.stringify(published.reusableComponents || [])),
+      namedSnapshots: [],
+      updatedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      hasUnpublishedChanges: false,
+      hasUnsavedLocalChanges: false,
+    };
+    this.inMemoryDraft = freshDraft;
+    return JSON.parse(JSON.stringify(freshDraft));
+  }
+
+  /**
+   * Background synchronization with Supabase using independent request timeouts.
+   * Never blocks UI initialization and never overwrites newer local edits.
+   */
+  async syncWithServerInBackground(
+    owner = "admin",
+    timeoutMs = 5_000,
+  ): Promise<{
+    draft: StudioDraft;
+    publishedConfig: StudioPublishedConfig;
+    serverSavedDraft: StudioDraft | null;
+    hadRemoteError: boolean;
+    offline: boolean;
+    error?: string;
+    preservedNewerLocalChanges: boolean;
+  }> {
+    this.hydrateFromLocal();
+    const localBefore = this.inMemoryDraft ? JSON.parse(JSON.stringify(this.inMemoryDraft)) : null;
+    const localPublishedBefore = this.inMemoryPublished
+      ? JSON.parse(JSON.stringify(this.inMemoryPublished))
+      : null;
+    const hasCloudSession = await this.hasSupabaseAuthSession();
+
+    const [pubSettled, serverDraftSettled] = await Promise.allSettled([
+      withStudioTimeout(this.fetchRemotePublishedConfig(), timeoutMs, "fetchRemotePublishedConfig"),
+      hasCloudSession
+        ? withStudioTimeout(
+            (async () => {
+              const { data, error } = (await supabase
+                .from("studio_drafts" as any)
+                .select("*")
+                .eq("owner", owner)
+                .order("updated_at", { ascending: false })
+                .limit(1)
+                .maybeSingle()) as any;
+              if (error) throw error;
+              return data;
+            })(),
+            timeoutMs,
+            "fetchRemoteServerDraft",
+          )
+        : Promise.resolve(null),
+    ]);
+
+    let hadRemoteError = false;
+    let offline = typeof navigator !== "undefined" && navigator.onLine === false;
+    const errors: string[] = [];
+
+    let publishedConfig = this.getImmediateLocalOrDefaultPublishedConfig();
+    if (pubSettled.status === "fulfilled" && pubSettled.value) {
+      if (
+        !hasCloudSession &&
+        localPublishedBefore &&
+        Number(localPublishedBefore.revision || 0) > Number(pubSettled.value.revision || 0)
+      ) {
+        publishedConfig = localPublishedBefore;
+        this.inMemoryPublished = localPublishedBefore;
+      } else {
+        publishedConfig = pubSettled.value;
+        this.inMemoryPublished = publishedConfig;
+        if (typeof window !== "undefined") {
+          try {
+            localStorage.setItem(LOCAL_PUBLISHED_KEY, JSON.stringify(publishedConfig));
+          } catch {
+            // ignore
+          }
+        }
+      }
+    } else if (pubSettled.status === "rejected") {
+      hadRemoteError = true;
+      if (isNetworkOrOfflineError(pubSettled.reason)) offline = true;
+      errors.push(String(pubSettled.reason?.message || pubSettled.reason || "تعذر جلب النسخة المنشورة"));
+    }
+
+    let serverSavedDraft: StudioDraft | null = null;
+    if (serverDraftSettled.status === "fulfilled" && serverDraftSettled.value?.pages) {
+      const data = serverDraftSettled.value;
+      const unpacked = unpackDomEditsAndMeta(data.dom_edits);
+      serverSavedDraft = {
+        id: data.id,
+        owner: data.owner || owner,
+        baseRevision: Number(data.base_revision || 1),
+        schemaVersion: Number(data.schema_version || CURRENT_SCHEMA_VERSION),
+        pages: data.pages,
+        elements: data.elements || {},
+        domEdits: unpacked.domEdits,
+        designSystem: unpacked.designSystem,
+        assets: unpacked.assets,
+        reusableComponents: unpacked.reusableComponents,
+        namedSnapshots: unpacked.namedSnapshots,
+        updatedAt: data.updated_at,
+        serverUpdatedAt: data.updated_at,
+        createdAt: data.created_at,
+        hasUnpublishedChanges: true,
+        hasUnsavedLocalChanges: false,
+      };
+    } else if (serverDraftSettled.status === "rejected") {
+      hadRemoteError = true;
+      if (isNetworkOrOfflineError(serverDraftSettled.reason)) offline = true;
+      errors.push(String(serverDraftSettled.reason?.message || serverDraftSettled.reason || "تعذر جلب المسودة السحابية"));
+    }
+
+    // Re-read current in-memory draft in case the user edited while background requests were in flight
+    const currentLocal = this.inMemoryDraft || localBefore;
+    let resolvedDraft: StudioDraft;
+    let preservedNewerLocalChanges = false;
+
+    if (currentLocal?.hasUnsavedLocalChanges) {
+      // Never overwrite unsaved local changes! Only attach serverUpdatedAt/id if serverSavedDraft was found
+      preservedNewerLocalChanges = true;
+      resolvedDraft = {
+        ...currentLocal,
+        id: serverSavedDraft?.id || currentLocal.id,
+        serverUpdatedAt: serverSavedDraft?.updatedAt || currentLocal.serverUpdatedAt,
+        hasUnsavedLocalChanges: true,
+        hasUnpublishedChanges: true,
+      };
+      this.inMemoryDraft = resolvedDraft;
+      this.persistLocalDraft(resolvedDraft);
+    } else if (serverSavedDraft) {
+      const localTime = Date.parse(currentLocal?.updatedAt || "");
+      const serverTime = Date.parse(serverSavedDraft.updatedAt || "");
+      if (
+        currentLocal &&
+        currentLocal.hasUnsavedLocalChanges &&
+        !Number.isNaN(localTime) &&
+        !Number.isNaN(serverTime) &&
+        localTime > serverTime
+      ) {
+        preservedNewerLocalChanges = true;
+        resolvedDraft = {
+          ...currentLocal,
+          id: serverSavedDraft.id,
+          serverUpdatedAt: serverSavedDraft.updatedAt,
+          hasUnsavedLocalChanges: true,
+        };
+      } else {
+        resolvedDraft = serverSavedDraft;
+      }
+      this.inMemoryDraft = resolvedDraft;
+      this.persistLocalDraft(resolvedDraft);
+    } else if (currentLocal && Object.keys(currentLocal.pages || {}).length > 0) {
+      resolvedDraft = {
+        ...currentLocal,
+        baseRevision: Math.max(currentLocal.baseRevision || 1, publishedConfig.revision || 1),
+      };
+      this.inMemoryDraft = resolvedDraft;
+      this.persistLocalDraft(resolvedDraft);
+    } else {
+      resolvedDraft = this.getImmediateLocalOrDefaultDraft(owner);
+    }
+
+    return {
+      draft: resolvedDraft,
+      publishedConfig,
+      serverSavedDraft,
+      hadRemoteError,
+      offline,
+      error: errors.length > 0 ? errors.join(" • ") : undefined,
+      preservedNewerLocalChanges,
+    };
+  }
+
+  /**
    * Read the authoritative published configuration from Supabase without silent fallback.
    */
-  async fetchRemotePublishedConfig(): Promise<StudioPublishedConfig> {
-    const { data, error } = (await supabase
-      .from("studio_published_configs" as any)
-      .select("*")
-      .eq("id", "active")
-      .maybeSingle()) as any;
+  async fetchRemotePublishedConfig(timeoutMs = 5_000): Promise<StudioPublishedConfig> {
+    const { data, error } = (await withStudioTimeout(
+      supabase
+        .from("studio_published_configs" as any)
+        .select("*")
+        .eq("id", "active")
+        .maybeSingle() as any,
+      timeoutMs,
+      "fetchRemotePublishedConfig",
+    )) as any;
 
     if (error) {
       throw new Error(await this.formatStudioSyncError(error, "تعذر قراءة النسخة المنشورة من Supabase."));
@@ -485,15 +820,41 @@ class StudioService {
   /**
    * Read the last server-confirmed draft without local unsaved overrides (for Diff comparison).
    */
-  async getServerSavedDraft(owner = "admin"): Promise<StudioDraft | null> {
+  async getServerSavedDraft(owner = "admin", timeoutMs = 5_000): Promise<StudioDraft | null> {
+    const hasCloudSession = await this.hasSupabaseAuthSession();
+    if (!hasCloudSession) {
+      if (typeof window !== "undefined") {
+        try {
+          const savedRaw = localStorage.getItem(LOCAL_SAVED_DRAFT_KEY);
+          if (savedRaw) {
+            const parsed = JSON.parse(savedRaw);
+            const unpacked = unpackDomEditsAndMeta(parsed.domEdits || parsed.dom_edits);
+            return {
+              ...parsed,
+              domEdits: unpacked.domEdits,
+              designSystem: normalizeStudioDesignSystem(parsed.designSystem || unpacked.designSystem),
+              hasUnsavedLocalChanges: false,
+            };
+          }
+        } catch {
+          // ignore
+        }
+      }
+      return null;
+    }
+
     try {
-      const { data, error } = (await supabase
-        .from("studio_drafts" as any)
-        .select("*")
-        .eq("owner", owner)
-        .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle()) as any;
+      const { data, error } = (await withStudioTimeout(
+        supabase
+          .from("studio_drafts" as any)
+          .select("*")
+          .eq("owner", owner)
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle() as any,
+        timeoutMs,
+        "getServerSavedDraft",
+      )) as any;
 
       if (!error && data && data.pages) {
         const unpacked = unpackDomEditsAndMeta(data.dom_edits);
@@ -526,17 +887,22 @@ class StudioService {
    * Load or initialize an editable draft for the Studio workspace.
    * Preserves unsaved local recovery drafts if they are newer than the server row.
    */
-  async getDraft(owner = "admin"): Promise<StudioDraft> {
+  async getDraft(owner = "admin", timeoutMs = 5_000): Promise<StudioDraft> {
+    this.hydrateFromLocal();
     const localRecovery = this.inMemoryDraft?.hasUnsavedLocalChanges ? this.inMemoryDraft : null;
 
     try {
-      const { data, error } = (await supabase
-        .from("studio_drafts" as any)
-        .select("*")
-        .eq("owner", owner)
-        .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle()) as any;
+      const { data, error } = (await withStudioTimeout(
+        supabase
+          .from("studio_drafts" as any)
+          .select("*")
+          .eq("owner", owner)
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle() as any,
+        timeoutMs,
+        "getDraft",
+      )) as any;
 
       if (!error && data && data.pages) {
         const unpacked = unpackDomEditsAndMeta(data.dom_edits);
@@ -663,19 +1029,51 @@ class StudioService {
     this.inMemoryDraft = updatedDraft;
     this.persistLocalDraft(updatedDraft);
 
+    const hasCloudSession = await this.hasSupabaseAuthSession();
+    if (!hasCloudSession) {
+      const confirmedLocalDraft: StudioDraft = {
+        ...updatedDraft,
+        id: updatedDraft.id || "draft_" + updatedDraft.owner,
+        updatedAt,
+        serverUpdatedAt: updatedAt,
+        hasUnsavedLocalChanges: false,
+      };
+      if (!hasNewerLocalChanges(this.inMemoryDraft)) {
+        this.inMemoryDraft = confirmedLocalDraft;
+        this.persistLocalDraft(confirmedLocalDraft);
+      }
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem(LOCAL_SAVED_DRAFT_KEY, JSON.stringify(confirmedLocalDraft));
+        } catch {
+          // ignore
+        }
+      }
+      this.applyLocalDomEditsToRuntime(confirmedLocalDraft.domEdits || {});
+      return {
+        success: true,
+        updatedAt: confirmedLocalDraft.updatedAt,
+        serverUpdatedAt: confirmedLocalDraft.serverUpdatedAt,
+      };
+    }
+
     const packedDomEdits = packDomEditsWithMeta(updatedDraft);
 
     try {
-      const { data, error } = (await supabase.rpc("developer_studio_save_draft" as any, {
-        p_owner: updatedDraft.owner,
-        p_draft_id: updatedDraft.id || "draft_" + updatedDraft.owner,
-        p_expected_updated_at: updatedDraft.serverUpdatedAt || null,
-        p_base_revision: updatedDraft.baseRevision,
-        p_schema_version: updatedDraft.schemaVersion,
-        p_pages: updatedDraft.pages,
-        p_elements: updatedDraft.elements,
-        p_dom_edits: packedDomEdits,
-      } as any)) as any;
+      const { data, error } = (await withStudioTimeout(
+        supabase.rpc("developer_studio_save_draft" as any, {
+          p_owner: updatedDraft.owner,
+          p_draft_id: updatedDraft.id || "draft_" + updatedDraft.owner,
+          p_expected_updated_at: updatedDraft.serverUpdatedAt || null,
+          p_base_revision: updatedDraft.baseRevision,
+          p_schema_version: updatedDraft.schemaVersion,
+          p_pages: updatedDraft.pages,
+          p_elements: updatedDraft.elements,
+          p_dom_edits: packedDomEdits,
+        } as any) as any,
+        6_000,
+        "developer_studio_save_draft",
+      )) as any;
 
       if (error) throw error;
 
@@ -721,6 +1119,14 @@ class StudioService {
         this.inMemoryDraft = confirmedDraft;
         this.persistLocalDraft(confirmedDraft);
       }
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem(LOCAL_SAVED_DRAFT_KEY, JSON.stringify(confirmedDraft));
+        } catch {
+          // ignore
+        }
+      }
+      this.applyLocalDomEditsToRuntime(confirmedDraft.domEdits || {});
 
       return {
         success: true,
@@ -853,11 +1259,24 @@ class StudioService {
     offline?: boolean;
     conflict?: boolean;
   }> {
+    const hasCloudSession = await this.hasSupabaseAuthSession();
+    if (!hasCloudSession) {
+      return {
+        compatible: true,
+        needsRebase: false,
+        serverUpdatedAt: draft.serverUpdatedAt || draft.updatedAt || new Date().toISOString(),
+      };
+    }
+
     try {
-      const { data, error } = (await supabase.rpc("developer_studio_check_draft_sync" as any, {
-        p_owner: draft.owner,
-        p_expected_updated_at: draft.serverUpdatedAt || null,
-      } as any)) as any;
+      const { data, error } = (await withStudioTimeout(
+        supabase.rpc("developer_studio_check_draft_sync" as any, {
+          p_owner: draft.owner,
+          p_expected_updated_at: draft.serverUpdatedAt || null,
+        } as any) as any,
+        5_000,
+        "developer_studio_check_draft_sync",
+      )) as any;
       if (error) throw error;
 
       const result = data as Record<string, any> | null;
@@ -1000,6 +1419,56 @@ class StudioService {
    * Discard unsaved local draft changes and restore the last server-saved draft (or published baseline).
    */
   async discardDraft(owner = "admin"): Promise<StudioDraft> {
+    const hasCloudSession = await this.hasSupabaseAuthSession();
+    if (!hasCloudSession) {
+      if (typeof window !== "undefined") {
+        try {
+          const savedRaw = localStorage.getItem(LOCAL_SAVED_DRAFT_KEY);
+          if (savedRaw) {
+            const parsed = JSON.parse(savedRaw);
+            const unpacked = unpackDomEditsAndMeta(parsed.domEdits || parsed.dom_edits);
+            const restoredSaved: StudioDraft = {
+              ...parsed,
+              domEdits: unpacked.domEdits,
+              designSystem: normalizeStudioDesignSystem(parsed.designSystem || unpacked.designSystem),
+              hasUnsavedLocalChanges: false,
+            };
+            this.inMemoryDraft = restoredSaved;
+            this.persistLocalDraft(restoredSaved);
+            this.applyLocalDomEditsToRuntime(restoredSaved.domEdits || {});
+            return restoredSaved;
+          }
+        } catch {
+          // fall back to published config below
+        }
+      }
+      const published = this.getImmediateLocalOrDefaultPublishedConfig();
+      const restoredFromPub: StudioDraft = {
+        id: "draft_" + owner,
+        owner,
+        baseRevision: published.revision,
+        schemaVersion:
+          published.schemaVersion || published.schema_version || CURRENT_SCHEMA_VERSION,
+        pages: JSON.parse(JSON.stringify(published.pages || {})),
+        elements: JSON.parse(JSON.stringify(published.elements || {})),
+        domEdits: JSON.parse(JSON.stringify(published.domEdits || {})),
+        designSystem: JSON.parse(
+          JSON.stringify(published.designSystem || DEFAULT_STUDIO_DESIGN_SYSTEM),
+        ),
+        assets: JSON.parse(JSON.stringify(published.assets || [])),
+        reusableComponents: JSON.parse(JSON.stringify(published.reusableComponents || [])),
+        namedSnapshots: [],
+        updatedAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        hasUnpublishedChanges: false,
+        hasUnsavedLocalChanges: false,
+      };
+      this.inMemoryDraft = restoredFromPub;
+      this.persistLocalDraft(restoredFromPub);
+      this.applyLocalDomEditsToRuntime(restoredFromPub.domEdits || {});
+      return restoredFromPub;
+    }
+
     const { data, error } = (await supabase
       .from("studio_drafts" as any)
       .select("*")
@@ -1061,6 +1530,7 @@ class StudioService {
 
     this.inMemoryDraft = freshDraft;
     this.persistLocalDraft(freshDraft);
+    this.applyLocalDomEditsToRuntime(freshDraft.domEdits || {});
     return freshDraft;
   }
 
@@ -1114,6 +1584,16 @@ class StudioService {
     error?: string;
     offline?: boolean;
   }> {
+    const hasCloudSession = await this.hasSupabaseAuthSession();
+    if (!hasCloudSession) {
+      const localPublished = this.getImmediateLocalOrDefaultPublishedConfig();
+      return {
+        hasConflict: false,
+        serverRevision: localPublished.revision || draft.baseRevision || 1,
+        conflicts: [],
+      };
+    }
+
     let latestPublished: StudioPublishedConfig;
     try {
       latestPublished = await this.fetchRemotePublishedConfig();
@@ -1451,7 +1931,7 @@ class StudioService {
       };
     }
 
-    // Step 2: Ensure the latest draft snapshot is saved & confirmed on Supabase first
+    // Step 2: Ensure the latest draft snapshot is saved & confirmed first
     // (Publishing must never silently publish an older snapshot)
     let workingDraft: StudioDraft = draft;
     if (draft.hasUnsavedLocalChanges) {
@@ -1472,6 +1952,107 @@ class StudioService {
         updatedAt: saveResult.updatedAt,
         serverUpdatedAt: saveResult.serverUpdatedAt || saveResult.updatedAt,
         hasUnsavedLocalChanges: false,
+      };
+    }
+
+    const hasCloudSession = await this.hasSupabaseAuthSession();
+    if (!hasCloudSession) {
+      const localPublished = this.getImmediateLocalOrDefaultPublishedConfig();
+      const confirmedRevision =
+        Math.max(Number(localPublished.revision || 1), Number(workingDraft.baseRevision || 1)) + 1;
+      const publishedAt = new Date().toISOString();
+      const stampedPages: Record<string, PageModel> = {};
+      Object.entries(workingDraft.pages).forEach(([key, page]) => {
+        stampedPages[key] = {
+          ...page,
+          revision: confirmedRevision,
+          updatedAt: publishedAt,
+          updatedBy: author,
+        };
+      });
+      const stampedElements: Record<string, ElementModel> = {};
+      Object.entries(workingDraft.elements).forEach(([key, element]) => {
+        stampedElements[key] = {
+          ...element,
+          revision: confirmedRevision,
+          updatedAt: publishedAt,
+          updatedBy: author,
+        };
+      });
+
+      const nextSummary = summary || "الإصدار رقم " + confirmedRevision;
+      const verifiedConfig: StudioPublishedConfig = {
+        id: "active",
+        revision: confirmedRevision,
+        schemaVersion: CURRENT_SCHEMA_VERSION,
+        schema_version: CURRENT_SCHEMA_VERSION,
+        pages: stampedPages,
+        elements: stampedElements,
+        domEdits: JSON.parse(JSON.stringify(workingDraft.domEdits || {})),
+        designSystem: JSON.parse(
+          JSON.stringify(workingDraft.designSystem || DEFAULT_STUDIO_DESIGN_SYSTEM),
+        ),
+        assets: JSON.parse(JSON.stringify(workingDraft.assets || [])),
+        reusableComponents: JSON.parse(JSON.stringify(workingDraft.reusableComponents || [])),
+        publishedBy: author,
+        publishedAt,
+        summary: nextSummary,
+      };
+
+      const historyRecord: StudioHistoryRecord = {
+        revision: localPublished.revision,
+        schemaVersion:
+          localPublished.schemaVersion || localPublished.schema_version || CURRENT_SCHEMA_VERSION,
+        publishedBy: localPublished.publishedBy,
+        publishedAt: localPublished.publishedAt,
+        summary: localPublished.summary,
+        snapshot: {
+          pages: localPublished.pages,
+          elements: localPublished.elements,
+          domEdits: localPublished.domEdits || {},
+          designSystem: localPublished.designSystem,
+        },
+      };
+      this.inMemoryHistory.unshift(historyRecord);
+      this.inMemoryHistory = this.inMemoryHistory.slice(0, 50);
+      this.inMemoryPublished = verifiedConfig;
+
+      const refreshedDraft: StudioDraft = {
+        ...workingDraft,
+        id: workingDraft.id || "draft_" + workingDraft.owner,
+        baseRevision: verifiedConfig.revision,
+        pages: verifiedConfig.pages,
+        elements: verifiedConfig.elements,
+        domEdits: verifiedConfig.domEdits || {},
+        designSystem: verifiedConfig.designSystem || workingDraft.designSystem,
+        assets: verifiedConfig.assets || workingDraft.assets,
+        reusableComponents: verifiedConfig.reusableComponents || workingDraft.reusableComponents,
+        hasUnpublishedChanges: false,
+        hasUnsavedLocalChanges: false,
+        updatedAt: publishedAt,
+        serverUpdatedAt: publishedAt,
+      };
+      this.inMemoryDraft = refreshedDraft;
+      this.persistLocalDraft(refreshedDraft);
+      this.applyLocalDomEditsToRuntime(verifiedConfig.domEdits || {});
+
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem(LOCAL_HISTORY_KEY, JSON.stringify(this.inMemoryHistory));
+          localStorage.setItem(LOCAL_PUBLISHED_KEY, JSON.stringify(verifiedConfig));
+          localStorage.setItem(LOCAL_SAVED_DRAFT_KEY, JSON.stringify(refreshedDraft));
+        } catch {
+          // ignore quota errors
+        }
+        window.dispatchEvent(
+          new CustomEvent("studio_published_updated", { detail: verifiedConfig }),
+        );
+      }
+
+      return {
+        success: true,
+        newRevision: verifiedConfig.revision,
+        publishedAt: verifiedConfig.publishedAt,
       };
     }
 
@@ -1539,14 +2120,18 @@ class StudioService {
     // Step 4 & 5: Publish using the secure Supabase RPC and require an explicit successful server response
     let confirmedRevision = 0;
     try {
-      const { data, error } = (await supabase.rpc("publish_studio_configuration" as any, {
-        p_expected_revision: workingDraft.baseRevision,
-        p_schema_version: CURRENT_SCHEMA_VERSION,
-        p_pages: stampedPages,
-        p_elements: stampedElements,
-        p_dom_edits: packedDomEdits,
-        p_summary: nextSummary,
-      } as any)) as any;
+      const { data, error } = (await withStudioTimeout(
+        supabase.rpc("publish_studio_configuration" as any, {
+          p_expected_revision: workingDraft.baseRevision,
+          p_schema_version: CURRENT_SCHEMA_VERSION,
+          p_pages: stampedPages,
+          p_elements: stampedElements,
+          p_dom_edits: packedDomEdits,
+          p_summary: nextSummary,
+        } as any) as any,
+        8_000,
+        "publish_studio_configuration",
+      )) as any;
 
       if (error) {
         throw error;
@@ -1736,7 +2321,10 @@ class StudioService {
         };
       }
 
-      const currentPublished = await this.fetchRemotePublishedConfig();
+      const hasCloudSession = await this.hasSupabaseAuthSession();
+      const currentPublished = hasCloudSession
+        ? await this.fetchRemotePublishedConfig()
+        : this.getImmediateLocalOrDefaultPublishedConfig();
       const unpacked = unpackDomEditsAndMeta((snapshotToRestore as any).domEdits);
       const rollbackDraft: StudioDraft = {
         id: this.inMemoryDraft?.id || `draft_${author}`,
@@ -1937,7 +2525,10 @@ class StudioService {
    * Get revision history
    */
   async getHistory(): Promise<StudioHistoryRecord[]> {
+    this.hydrateFromLocal();
+    const localHistoryBefore = [...this.inMemoryHistory];
     try {
+      const hasCloudSession = await this.hasSupabaseAuthSession();
       const { data, error } = (await supabase
         .from("studio_history" as any)
         .select("*")
@@ -1945,7 +2536,7 @@ class StudioService {
         .limit(40)) as any;
 
       if (!error && Array.isArray(data) && data.length > 0) {
-        const history: StudioHistoryRecord[] = data.map((item) => {
+        const remoteHistory: StudioHistoryRecord[] = data.map((item) => {
           const unpacked = unpackDomEditsAndMeta(item.snapshot?.domEdits);
           return {
             id: item.id,
@@ -1962,15 +2553,22 @@ class StudioService {
             },
           };
         });
-        this.inMemoryHistory = history;
+        if (!hasCloudSession && localHistoryBefore.length > 0) {
+          const byRev = new Map<number, StudioHistoryRecord>();
+          for (const item of remoteHistory) byRev.set(item.revision, item);
+          for (const item of localHistoryBefore) byRev.set(item.revision, item);
+          this.inMemoryHistory = Array.from(byRev.values()).sort((a, b) => b.revision - a.revision);
+        } else {
+          this.inMemoryHistory = remoteHistory;
+        }
         if (typeof window !== "undefined") {
           try {
-            localStorage.setItem(LOCAL_HISTORY_KEY, JSON.stringify(history));
+            localStorage.setItem(LOCAL_HISTORY_KEY, JSON.stringify(this.inMemoryHistory));
           } catch {
             // ignore
           }
         }
-        return history;
+        return this.inMemoryHistory;
       }
     } catch {
       // Fallback to cached history

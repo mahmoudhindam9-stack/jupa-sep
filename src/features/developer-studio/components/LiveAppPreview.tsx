@@ -38,6 +38,7 @@ import {
   Layout,
   Sliders,
   Play,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,6 +53,7 @@ import type {
   ViewportBreakpoint,
 } from "../models/studio.types";
 import { DEFAULT_STUDIO_DESIGN_SYSTEM } from "../models/studio.types";
+import { StudioSectionSaveDiscardBar } from "./StudioSectionSaveDiscardBar";
 
 export type SelectedDomElement = {
   selector: string;
@@ -84,6 +86,7 @@ export type SelectedDomElement = {
   justifyContent: string;
   alignItems: string;
   gap: string;
+  gridTemplateColumns?: string;
   position: string;
   zIndex: string;
   overflow: string;
@@ -107,6 +110,36 @@ export type SelectedDomElement = {
   rectWidth: number;
   rectHeight: number;
 };
+
+function toHexColor(raw: string | undefined | null, fallback = "#111827"): string {
+  if (!raw || typeof raw !== "string") return fallback;
+  const val = raw.trim();
+  if (/^#[0-9a-f]{6}$/i.test(val)) return val.toLowerCase();
+  if (/^#[0-9a-f]{3}$/i.test(val)) {
+    return (
+      "#" +
+      val[1] +
+      val[1] +
+      val[2] +
+      val[2] +
+      val[3] +
+      val[3]
+    ).toLowerCase();
+  }
+  const rgbMatch = val.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)$/i);
+  if (rgbMatch) {
+    const alpha = rgbMatch[4] !== undefined ? parseFloat(rgbMatch[4]) : 1;
+    if (alpha === 0) return fallback;
+    const r = Math.max(0, Math.min(255, parseInt(rgbMatch[1], 10)));
+    const g = Math.max(0, Math.min(255, parseInt(rgbMatch[2], 10)));
+    const b = Math.max(0, Math.min(255, parseInt(rgbMatch[3], 10)));
+    return (
+      "#" +
+      [r, g, b].map((n) => n.toString(16).padStart(2, "0")).join("")
+    ).toLowerCase();
+  }
+  return fallback;
+}
 
 type LiveTreeNode = {
   selector: string;
@@ -144,8 +177,14 @@ type Props = {
   onSaveReusableComponent?: (comp: Omit<StudioReusableComponent, "id" | "createdAt">) => void;
   onOpenAssetPicker?: (onPicked: (url: string) => void) => void;
   onSelectedDomChange?: (selector: string | null) => void;
+  onOpenDrawer?: () => void;
+  closeDrawersSignal?: number;
   externalXRayMode?: boolean;
   designerMode?: boolean;
+  hasUnsavedChanges?: boolean;
+  isSaving?: boolean;
+  onSaveChanges?: () => void;
+  onDiscardChanges?: () => void;
 };
 
 export type PreviewSize = "desktop" | "tablet" | "mobile";
@@ -267,12 +306,22 @@ export function LiveAppPreview({
   onSaveReusableComponent,
   onOpenAssetPicker,
   onSelectedDomChange,
+  onOpenDrawer,
+  closeDrawersSignal = 0,
   externalXRayMode = false,
   designerMode = true,
+  hasUnsavedChanges,
+  isSaving = false,
+  onSaveChanges,
+  onDiscardChanges,
 }: Props) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const editsRef = useRef<Record<string, StudioDomEdit>>(initialEdits || {});
+  const lastCommittedEditsRef = useRef<Record<string, StudioDomEdit> | null>(null);
+  const selfCommittedSetRef = useRef<WeakSet<object>>(new WeakSet());
+  const readyRef = useRef(false);
   const changeCallbackRef = useRef(onEditsChange);
+  const [hasLocalEditSinceSave, setHasLocalEditSinceSave] = useState(false);
 
   // Selection & Multi-selection
   const [selected, setSelected] = useState<SelectedDomElement | null>(null);
@@ -280,11 +329,13 @@ export function LiveAppPreview({
   const [copiedStyleClipboard, setCopiedStyleClipboard] = useState<Record<string, string> | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
 
-  // Workspace Panels & Modes
-  const [showLeftPanel, setShowLeftPanel] = useState(true);
+  // Workspace Panels & Modes (Hidden by default; only shown when explicitly opened)
+  const [showLeftPanel, setShowLeftPanel] = useState(false);
   const [leftTab, setLeftTab] = useState<"pages" | "layers" | "components">("layers");
-  const [showRightPanel, setShowRightPanel] = useState(true);
+  const [showRightPanel, setShowRightPanel] = useState(false);
   const [rightTab, setRightTab] = useState<"content" | "style" | "layout" | "responsive" | "advanced">("style");
+  const [layoutTargetMode, setLayoutTargetMode] = useState<"self" | "parent">("self");
+  const [gridColumnsCount, setGridColumnsCount] = useState<string>("3");
 
   // Preview Controls
   const [previewSize, setPreviewSize] = useState<PreviewSize>("desktop");
@@ -379,6 +430,13 @@ export function LiveAppPreview({
   }, [externalXRayMode]);
 
   useEffect(() => {
+    if (closeDrawersSignal > 0) {
+      setShowLeftPanel(false);
+      setShowRightPanel(false);
+    }
+  }, [closeDrawersSignal]);
+
+  useEffect(() => {
     setCurrentRoute(route);
   }, [route]);
 
@@ -407,13 +465,27 @@ export function LiveAppPreview({
     () => (previewSource === "published" ? publishedEdits : edits),
     [previewSource, publishedEdits, edits],
   );
+  const activeDisplayedEditsRef = useRef(activeDisplayedEdits);
+  activeDisplayedEditsRef.current = activeDisplayedEdits;
+  const designSystemRef = useRef(designSystem);
+  designSystemRef.current = designSystem;
+
+  useEffect(() => {
+    if (hasUnsavedChanges === false) {
+      setHasLocalEditSinceSave(false);
+    }
+  }, [hasUnsavedChanges]);
+
+  const showContextualSaveDiscard = Boolean(hasUnsavedChanges || hasLocalEditSinceSave);
 
   const commitEdits = useCallback((selector: string, patch: StudioDomEdit) => {
     if (!selector || selector.startsWith("__studio_")) return;
     const previous = editsRef.current[selector] || {};
+    const activePageRoute = (safeRoute.split("?")[0] || "/admin").replace(/\/+$/, "") || "/";
     const mergedEdit: StudioDomEdit = {
       ...previous,
       ...patch,
+      pageRoute: patch.pageRoute || previous.pageRoute || activePageRoute,
       ...(patch.styles ? { styles: { ...(previous.styles || {}), ...patch.styles } } : {}),
       ...(patch.responsiveStyles
         ? {
@@ -444,18 +516,22 @@ export function LiveAppPreview({
     };
     const next = { ...editsRef.current, [selector]: mergedEdit };
     editsRef.current = next;
+    lastCommittedEditsRef.current = next;
+    selfCommittedSetRef.current.add(next);
+    setHasLocalEditSinceSave(true);
     setEdits(next);
     changeCallbackRef.current(next);
-  }, []);
+  }, [safeRoute]);
 
   const populateInspectorFromElement = useCallback((item: SelectedDomElement) => {
     setSelected(item);
+    setLayoutTargetMode("self");
     onSelectedDomChange?.(item.selector);
     const existingEdit = editsRef.current[item.selector] || {};
     setLayerLabel(existingEdit.label || "");
     setTextValue(item.text || "");
-    setTextColor(item.color || "#111827");
-    setBackgroundColor(item.backgroundColor || "#ffffff");
+    setTextColor(toHexColor(item.color, "#111827"));
+    setBackgroundColor(toHexColor(item.backgroundColor, "#ffffff"));
     setBackgroundGradient(existingEdit.styles?.backgroundImage || "");
     setFontSize(String(parseInt(item.fontSize, 10) || 16));
     setFontWeight(item.fontWeight || "400");
@@ -477,27 +553,26 @@ export function LiveAppPreview({
     setMarginRight(item.marginRight || "");
     setMarginBottom(item.marginBottom || "");
     setMarginLeft(item.marginLeft || "");
-    setDisplayMode(item.display || "block");
-    setFlexDirection(item.flexDirection || "row");
-    setJustifyContent(item.justifyContent || "flex-start");
-    setAlignItems(item.alignItems || "stretch");
-    setGapValue(item.gap === "normal" ? "" : item.gap || "");
+    setDisplayMode(existingEdit.styles?.display || item.display || "block");
+    setFlexDirection(existingEdit.styles?.flexDirection || item.flexDirection || "row");
+    setJustifyContent(existingEdit.styles?.justifyContent || item.justifyContent || "flex-start");
+    setAlignItems(existingEdit.styles?.alignItems || item.alignItems || "stretch");
+    setGapValue(item.gap === "normal" ? "" : existingEdit.styles?.gap || item.gap || "");
+    const existingCols = existingEdit.styles?.gridTemplateColumns || item.gridTemplateColumns || "";
+    if (existingCols.includes("repeat(2")) setGridColumnsCount("2");
+    else if (existingCols.includes("repeat(4")) setGridColumnsCount("4");
+    else if (existingCols.includes("auto-fill") || existingCols.includes("auto-fit")) setGridColumnsCount("auto");
+    else setGridColumnsCount("3");
     setPositionMode(item.position || "static");
     setZIndexValue(item.zIndex === "auto" ? "" : item.zIndex || "");
     setOverflowMode(item.overflow || "visible");
     setBorderWidth(item.borderWidth || "0px");
     setBorderStyle(item.borderStyle || "solid");
-    setBorderColor(item.borderColor || "#e2e8f0");
+    setBorderColor(toHexColor(item.borderColor, "#e2e8f0"));
     setBorderRadius(item.borderRadius || "8px");
     setOpacity(String(Math.max(0, Math.min(1, parseFloat(item.opacity) || 1))));
-    setFillColor(/^#[0-9a-f]{6}$/i.test(item.fill) ? item.fill : "#6366f1");
-    setStrokeColor(
-      /^#[0-9a-f]{6}$/i.test(item.stroke)
-        ? item.stroke
-        : item.color && /^#[0-9a-f]{6}$/i.test(item.color)
-          ? item.color
-          : "#334155",
-    );
+    setFillColor(toHexColor(item.fill, "#6366f1"));
+    setStrokeColor(toHexColor(item.stroke, toHexColor(item.color, "#334155")));
     setStrokeWidth(String(parseFloat(item.strokeWidth) || 2));
     setIconRotation(item.rotate || "0deg");
     setHoverBgColor(existingEdit.hoverStyles?.backgroundColor || "");
@@ -576,6 +651,7 @@ export function LiveAppPreview({
           ),
         );
       } else if (event.data.type === "STUDIO_BRIDGE_READY") {
+        readyRef.current = true;
         setReady(true);
         setBridgeTimedOut(false);
         setStatus("المعاينة الحقيقية متصلة وجاهزة");
@@ -587,8 +663,8 @@ export function LiveAppPreview({
         });
         send({
           action: "restore",
-          edits: activeDisplayedEdits,
-          designSystem,
+          edits: activeDisplayedEditsRef.current,
+          designSystem: designSystemRef.current,
         });
       }
     },
@@ -599,8 +675,6 @@ export function LiveAppPreview({
       editMode,
       xRayMode,
       snapToGrid,
-      activeDisplayedEdits,
-      designSystem,
       send,
     ],
   );
@@ -612,6 +686,7 @@ export function LiveAppPreview({
 
   // Bridge health timeout recovery detector
   useEffect(() => {
+    readyRef.current = false;
     setReady(false);
     setBridgeTimedOut(false);
     setSelected(null);
@@ -620,7 +695,9 @@ export function LiveAppPreview({
     setPageLinks([]);
     setStatus("جاري تحميل الصفحة الفعلية: " + safeRoute);
     const timer = window.setTimeout(() => {
-      setBridgeTimedOut((prev) => (!ready ? true : prev));
+      if (!readyRef.current) {
+        setBridgeTimedOut(true);
+      }
     }, 6500);
     return () => window.clearTimeout(timer);
   }, [safeRoute, frameKey]);
@@ -637,11 +714,15 @@ export function LiveAppPreview({
   }, [editMode, previewSource, xRayMode, snapToGrid, ready, send]);
 
   // Keep iframe synchronized with undo/redo, Draft vs Published toggle, and Design System tokens
+  // Skip full restore echo when the change originated from this LiveAppPreview instance itself
   useEffect(() => {
     const snapshot = initialEdits || {};
+    const isSelfCommit =
+      previewSource === "draft" &&
+      (snapshot === lastCommittedEditsRef.current || selfCommittedSetRef.current.has(snapshot));
     editsRef.current = snapshot;
     setEdits(snapshot);
-    if (ready) {
+    if (ready && !isSelfCommit) {
       send({
         action: "restore",
         edits: previewSource === "published" ? publishedEdits : snapshot,
@@ -689,7 +770,8 @@ export function LiveAppPreview({
       `;
       doc.head.appendChild(style);
     }
-    if (doc.getElementById("coding-studio-bridge")) {
+      if (doc.getElementById("coding-studio-bridge")) {
+      readyRef.current = true;
       setReady(true);
       setBridgeTimedOut(false);
       send({
@@ -709,13 +791,26 @@ export function LiveAppPreview({
     script.id = "coding-studio-bridge";
     script.textContent = String.raw`(() => {
       const parentOrigin = location.origin;
-      const selectorFor = (el) => {
-        if (el.id && !el.id.startsWith("radix-")) return "#" + CSS.escape(el.id);
-        const tid = el.getAttribute("data-testid");
+      const anchorFor = (node) => {
+        if (!node || node.nodeType !== 1) return null;
+        const sid = node.getAttribute("data-studio-id");
+        if (sid) return '[data-studio-id="' + CSS.escape(sid) + '"]';
+        if (node.id && !node.id.startsWith("radix-")) return "#" + CSS.escape(node.id);
+        const tid = node.getAttribute("data-testid");
         if (tid) return '[data-testid="' + CSS.escape(tid) + '"]';
+        return null;
+      };
+      const selectorFor = (el) => {
+        const directAnchor = anchorFor(el);
+        if (directAnchor) return directAnchor;
         const path = [];
         let node = el;
         while (node && node.nodeType === 1 && node !== document.body) {
+          const nodeAnchor = anchorFor(node);
+          if (nodeAnchor) {
+            path.unshift(nodeAnchor);
+            return path.join(" > ");
+          }
           let part = node.tagName.toLowerCase();
           const parent = node.parentElement;
           if (!parent) break;
@@ -728,7 +823,7 @@ export function LiveAppPreview({
       };
       const send = (type, data) => window.parent.postMessage({ type, ...data }, parentOrigin);
       const find = (selector) => { try { return document.querySelector(selector); } catch (_) { return null; } };
-      const preservedSelector = '[data-studio-preserve="currency-switcher-tools"], [data-studio-preserve="currency-switcher"]';
+      const preservedSelector = '[data-studio-preserve], [data-studio-ui-root="true"]';
       const isProtected = (el) => !!(el && el.closest(preservedSelector));
       const containsProtected = (el) => !!(el && el.querySelector(preservedSelector));
       const hidesProtected = (edit) => {
@@ -753,12 +848,12 @@ export function LiveAppPreview({
           idAttr: el.getAttribute("id"),
           ariaLabel: el.getAttribute("aria-label"),
           roleAttr: el.getAttribute("role"),
-          leafText: el.children.length === 0 ? (el.textContent || "") : null,
-          directTextNodes: el.children.length === 0 ? [] : Array.from(el.childNodes)
+          directTextNodes: Array.from(el.childNodes)
             .filter((node) => node.nodeType === Node.TEXT_NODE)
-            .map((node) => ({ node, text: node.textContent })),
+            .map((node) => ({ node, text: node.nodeValue })),
           parent: el.parentNode,
           nextSibling: el.nextSibling,
+          wasReordered: false,
         });
       };
       const resetPreviewEdits = () => {
@@ -767,18 +862,18 @@ export function LiveAppPreview({
         if (respStyle) respStyle.textContent = "";
         for (const state of Array.from(originalStates.values()).reverse()) {
           const el = state.el;
-          if (!el.isConnected) continue;
-          if (state.leafText !== null) {
-            el.textContent = state.leafText;
-          } else {
+          if (!el || !el.isConnected) continue;
+          if (Array.isArray(state.directTextNodes)) {
             for (const item of state.directTextNodes) {
-              if (item.node.parentNode === el) item.node.textContent = item.text;
+              if (item.node && item.node.parentNode === el) {
+                item.node.nodeValue = item.text;
+              }
             }
           }
           delete el.dataset.codingStudioTextApplied;
           if (state.styleAttribute === null) el.removeAttribute("style");
           else el.setAttribute("style", state.styleAttribute);
-          if (state.parent && el.parentNode === state.parent) {
+          if (state.wasReordered && state.parent && el.parentNode === state.parent) {
             if (state.nextSibling && state.nextSibling.parentNode === state.parent) state.parent.insertBefore(el, state.nextSibling);
             else state.parent.appendChild(el);
           }
@@ -832,6 +927,7 @@ export function LiveAppPreview({
           justifyContent: el.style.justifyContent || css.justifyContent || "flex-start",
           alignItems: el.style.alignItems || css.alignItems || "stretch",
           gap: el.style.gap || css.gap || "",
+          gridTemplateColumns: el.style.gridTemplateColumns || css.gridTemplateColumns || "",
           position: el.style.position || css.position || "static",
           zIndex: el.style.zIndex || css.zIndex || "auto",
           overflow: el.style.overflow || css.overflow || "visible",
@@ -863,15 +959,25 @@ export function LiveAppPreview({
         const inheritableVectorStyles = new Set(["fill", "stroke", "strokeWidth", "color"]);
         Object.entries(styles || {}).forEach(([key, value]) => {
           if (typeof value !== "string") return;
-          if (key in el.style) el.style[key] = value;
+          const cssKey = key.replace(/[A-Z]/g, (m) => "-" + m.toLowerCase());
+          if (value.trim() === "") {
+            el.style.removeProperty(cssKey);
+          } else {
+            el.style.setProperty(cssKey, value, "important");
+          }
           if (isSvgRoot && inheritableVectorStyles.has(key)) {
-            applyTo.slice(1).forEach((node) => { if (key in node.style) node.style[key] = value; });
+            applyTo.slice(1).forEach((node) => {
+              if (value.trim() === "") node.style.removeProperty(cssKey);
+              else node.style.setProperty(cssKey, value, "important");
+            });
           }
         });
       };
       const applyText = (el, value) => {
-        const node = Array.from(el.childNodes).find((child) => child.nodeType === 3 && (child.textContent || "").trim());
-        if (node) node.textContent = String(value);
+        const textNodes = Array.from(el.childNodes).filter((child) => child.nodeType === 3);
+        const nonEmpty = textNodes.find((child) => (child.nodeValue || "").trim());
+        if (nonEmpty) nonEmpty.nodeValue = String(value);
+        else if (textNodes[0]) textNodes[0].nodeValue = String(value);
         else if (!el.children.length) el.textContent = String(value);
         el.dataset.codingStudioTextApplied = String(value);
       };
@@ -930,22 +1036,42 @@ export function LiveAppPreview({
       };
       const applyEdit = (selector, edit) => {
         if (!selector || selector.startsWith("__studio_")) return;
+        if (edit?.pageRoute) {
+          const currentPath = location.pathname.replace(/\/+$/, "") || "/";
+          const targetRoute = String(edit.pageRoute).split("?")[0].replace(/\/+$/, "") || "/";
+          if (targetRoute !== currentPath) return;
+        }
         const el = find(selector);
         if (!el || !edit || isProtected(el)) return;
+        if (
+          el.hasAttribute("hidden") ||
+          el.getAttribute("data-state") === "inactive" ||
+          el.getAttribute("role") === "tabpanel"
+        ) {
+          return;
+        }
         if (containsProtected(el) && hidesProtected(edit)) return;
         rememberOriginal(selector, el);
         if (edit.text !== undefined && el.dataset.codingStudioTextApplied !== String(edit.text)) applyText(el, edit.text);
         if (edit.styles && typeof edit.styles === "object") applyStyles(el, edit.styles);
         if (edit.animation) applyAnimation(el, edit.animation);
-        if (edit.ariaLabel) el.setAttribute("aria-label", edit.ariaLabel);
-        if (edit.role) el.setAttribute("role", edit.role);
+        if (edit.ariaLabel) {
+          try { el.setAttribute("aria-label", edit.ariaLabel); } catch (_) {}
+        }
+        if (edit.role) {
+          try { el.setAttribute("role", edit.role); } catch (_) {}
+        }
         if (edit.attributes && typeof edit.attributes === "object") {
           Object.entries(edit.attributes).forEach(([k, v]) => {
-            if (typeof v === "string" && v) el.setAttribute(k, v);
+            if (typeof v === "string" && v) {
+              try { el.setAttribute(k, v); } catch (_) {}
+            }
           });
         }
-        if (edit.deleted || edit.hiddenOn?.desktop) el.style.display = "none";
+        if (edit.deleted || edit.hiddenOn?.desktop) el.style.setProperty("display", "none", "important");
         if (typeof edit.order === "number" && el.parentElement) {
+          const orig = originalStates.get(selector);
+          if (orig) orig.wasReordered = true;
           const siblings = Array.from(el.parentElement.children).filter((item) =>
             item !== el && item.getAttribute("data-coding-studio-clone-of") !== selector &&
             item.getAttribute("data-studio-clone-of") !== selector);
@@ -975,6 +1101,7 @@ export function LiveAppPreview({
       let snapGrid = true;
       let dragState = null;
       let activeEditsCache = {};
+      const svgShapeTags = new Set(["path", "circle", "rect", "line", "polyline", "polygon", "ellipse"]);
       const editableSelector = "button,a,input,textarea,select,label,h1,h2,h3,h4,h5,h6,p,span,div,section,article,li,td,th,img,svg,path,circle,rect,line,polyline,polygon";
       const selectElement = (el, shiftKey = false) => {
         if (!shiftKey && selected) selected.removeAttribute("data-coding-studio-selected");
@@ -988,66 +1115,17 @@ export function LiveAppPreview({
         send("STUDIO_SELECTED", { element: describe(selected), shiftKey: !!shiftKey });
       };
       document.body.dataset.codingStudio = "on";
-      document.addEventListener("pointerdown", (event) => {
-        if (!enabled || document.body.dataset.codingStudio !== "on" || event.button !== 0) return;
-        const target = event.target instanceof Element ? event.target : null;
-        if (!target) return;
-        let el = target.closest(editableSelector);
-        if (!el || el === document.body || el === document.documentElement) return;
-        if (["PATH", "CIRCLE", "RECT", "LINE", "POLYLINE", "POLYGON"].includes(el.tagName)) el = el.closest("svg") || el;
-        if (isProtected(el)) return;
-        const sel = selectorFor(el);
-        if (activeEditsCache[sel]?.locked) {
-          selectElement(el, event.shiftKey);
-          return;
-        }
-        event.preventDefault();
-        event.stopPropagation();
-        event.stopImmediatePropagation();
-        selectElement(el, event.shiftKey);
-        rememberOriginal(sel, el);
-        const existingTranslate = getComputedStyle(el).translate || "none";
-        const values = existingTranslate === "none" ? [] : existingTranslate.match(/-?\d+(?:\.\d+)?/g) || [];
-        const baseX = Number(values[0] || 0);
-        const baseY = Number(values[1] || 0);
-        dragState = { el, selector: sel, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, baseX, baseY, x: baseX, y: baseY, moved: false };
-        try { el.setPointerCapture(event.pointerId); } catch {}
-      }, true);
-      document.addEventListener("pointermove", (event) => {
-        if (!enabled || !dragState) return;
-        const dx = event.clientX - dragState.startX;
-        const dy = event.clientY - dragState.startY;
-        if (!dragState.moved && Math.abs(dx) + Math.abs(dy) < 4) return;
-        dragState.moved = true;
-        const step = snapGrid ? 4 : 1;
-        dragState.x = Math.round((dragState.baseX + dx) / step) * step;
-        dragState.y = Math.round((dragState.baseY + dy) / step) * step;
-        dragState.el.style.translate = dragState.x + "px " + dragState.y + "px";
-        dragState.el.dataset.codingStudioDragging = "true";
-        event.preventDefault();
-      }, true);
-      document.addEventListener("pointerup", () => {
-        if (!dragState) return;
-        const finished = dragState;
-        dragState = null;
-        delete finished.el.dataset.codingStudioDragging;
-        if (finished.moved) {
-          finished.el.style.zIndex = String(Math.max(10, parseInt(getComputedStyle(finished.el).zIndex, 10) || 0));
-          send("STUDIO_CHANGE", {
-            selector: finished.selector,
-            patch: { styles: { translate: finished.x + "px " + finished.y + "px", zIndex: finished.el.style.zIndex } }
-          });
-          send("STUDIO_SELECTED", { element: describe(finished.el) });
-        }
-      }, true);
       document.addEventListener("click", (event) => {
         if (!enabled || document.body.dataset.codingStudio !== "on") return;
         const target = event.target instanceof Element ? event.target : null;
         if (!target) return;
         let el = target.closest(editableSelector);
         if (!el || el === document.body || el === document.documentElement) return;
-        if (["PATH", "CIRCLE", "RECT", "LINE", "POLYLINE", "POLYGON"].includes(el.tagName)) el = el.closest("svg") || el;
-        if (isProtected(el)) return;
+        if (svgShapeTags.has(el.tagName.toLowerCase())) el = el.closest("svg") || el;
+        if (isProtected(el)) {
+          send("STUDIO_PROTECTED_ELEMENT", { message: "البار العلوي وأدوات النظام محمية للحفاظ على وظائفها وتنسيقها الأصلي." });
+          return;
+        }
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
@@ -1059,6 +1137,7 @@ export function LiveAppPreview({
         if (!target) return;
         let el = target.closest(editableSelector);
         if (!el || el === document.body || el === document.documentElement || isProtected(el)) return;
+        if (svgShapeTags.has(el.tagName.toLowerCase())) el = el.closest("svg") || el;
         event.preventDefault();
         event.stopPropagation();
         selectElement(el, false);
@@ -1084,12 +1163,11 @@ export function LiveAppPreview({
           resetPreviewEdits();
           rebuildResponsiveSheet(activeEditsCache, data.designSystem);
           Object.entries(activeEditsCache).forEach(([selector, edit]) => applyEdit(selector, edit));
-          if (selected && selected.isConnected) send("STUDIO_SELECTED", { element: describe(selected) });
           return;
         }
-        const el = data.action === "select" && data.selector
+        const el = data.selector
           ? find(data.selector)
-          : (selected || (data.selector ? find(data.selector) : null));
+          : selected;
         if (!el) return;
         if (data.action === "select") {
           selectElement(el, false);
@@ -1105,7 +1183,11 @@ export function LiveAppPreview({
         }
         const selector = selectorFor(el);
         rememberOriginal(selector, el);
-        const notify = (patch) => send("STUDIO_CHANGE", { selector, patch });
+        const notify = (patch) => {
+          if (!data.silent) {
+            send("STUDIO_CHANGE", { selector, patch });
+          }
+        };
         if (data.action === "style") {
           applyStyles(el, data.styles || {});
           notify({ styles: data.styles || {} });
@@ -1114,17 +1196,19 @@ export function LiveAppPreview({
           notify({ text: data.text });
         } else if (data.action === "attributes") {
           Object.entries(data.attributes || {}).forEach(([k, v]) => {
-            if (typeof v === "string") el.setAttribute(k, v);
+            if (typeof v === "string") {
+              try { el.setAttribute(k, v); } catch (_) {}
+            }
           });
           notify({ attributes: data.attributes || {} });
         } else if (data.action === "animation") {
           applyAnimation(el, data.animation);
           notify({ animation: data.animation });
         } else if (data.action === "delete") {
-          el.style.display = "none";
+          el.style.setProperty("display", "none", "important");
           notify({ deleted: true });
         } else if (data.action === "show") {
-          el.style.display = "";
+          el.style.removeProperty("display");
           notify({ deleted: false });
         } else if (data.action === "duplicate") {
           const parent = el.parentElement;
@@ -1139,6 +1223,8 @@ export function LiveAppPreview({
             notify({ duplicateCount: count });
           }
         } else if ((data.action === "moveUp" || data.action === "moveDown") && el.parentElement) {
+          const orig = originalStates.get(selector);
+          if (orig) orig.wasReordered = true;
           const siblings = Array.from(el.parentElement.children).filter((item) =>
             item.getAttribute("data-coding-studio-clone-of") !== selector &&
             item.getAttribute("data-studio-clone-of") !== selector);
@@ -1223,7 +1309,8 @@ export function LiveAppPreview({
     for (const sel of targetSelectors) {
       if (editsRef.current[sel]?.locked) continue;
       if (responsiveEditTarget === "desktop") {
-        send({ action: "style", selector: sel, styles });
+        commitEdits(sel, { styles });
+        send({ action: "style", selector: sel, styles, silent: true });
       } else {
         commitEdits(sel, {
           responsiveStyles: {
@@ -1241,14 +1328,148 @@ export function LiveAppPreview({
     setTextValue(value);
     if (!selected || previewSource === "published") return;
     if (editsRef.current[selected.selector]?.locked) return;
-    send({ action: "text", selector: selected.selector, text: value });
+    commitEdits(selected.selector, { text: value });
+    send({ action: "text", selector: selected.selector, text: value, silent: true });
   };
 
   const action = (name: string, patch?: StudioDomEdit) => {
     if (!selected || previewSource === "published") return;
     if (editsRef.current[selected.selector]?.locked && name !== "unlock") return;
-    send({ action: name, selector: selected.selector });
     if (patch) commitEdits(selected.selector, patch);
+    send({ action: name, selector: selected.selector, silent: Boolean(patch) });
+  };
+
+  const resetSelectedElementEdits = () => {
+    if (!selected || previewSource === "published") return;
+    const next = { ...editsRef.current };
+    delete next[selected.selector];
+    editsRef.current = next;
+    lastCommittedEditsRef.current = next;
+    selfCommittedSetRef.current.add(next);
+    setEdits(next);
+    changeCallbackRef.current(next);
+    send({ action: "restore", edits: next, designSystem });
+  };
+
+  const parentAncestor = useMemo(() => {
+    if (!selected?.ancestors || selected.ancestors.length < 2) return null;
+    const parent = selected.ancestors[selected.ancestors.length - 2];
+    if (!parent || parent.selector === "body") return null;
+    return parent;
+  }, [selected]);
+
+  const applyContentLayoutPreset = (
+    preset: "grid" | "list" | "row" | "block",
+    colsOverride?: string,
+  ) => {
+    if (!selected || previewSource === "published") return;
+    const targetSelector =
+      layoutTargetMode === "parent" && parentAncestor
+        ? parentAncestor.selector
+        : selected.selector;
+    if (editsRef.current[targetSelector]?.locked) return;
+
+    const cols = colsOverride || gridColumnsCount || "3";
+    const activeGap = gapValue || "16px";
+    let styles: Record<string, string> = {};
+
+    if (preset === "grid") {
+      const template =
+        cols === "auto"
+          ? "repeat(auto-fill, minmax(220px, 1fr))"
+          : `repeat(${cols}, minmax(0, 1fr))`;
+      styles = {
+        display: "grid",
+        gridTemplateColumns: template,
+        flexDirection: "",
+        flexWrap: "",
+        gap: activeGap,
+      };
+      if (targetSelector === selected.selector) {
+        setDisplayMode("grid");
+        setGapValue(activeGap);
+      }
+      setGridColumnsCount(cols);
+    } else if (preset === "list") {
+      styles = {
+        display: "flex",
+        flexDirection: "column",
+        flexWrap: "nowrap",
+        gridTemplateColumns: "none",
+        alignItems: "stretch",
+        gap: gapValue || "12px",
+      };
+      if (targetSelector === selected.selector) {
+        setDisplayMode("flex");
+        setFlexDirection("column");
+        setAlignItems("stretch");
+        setGapValue(gapValue || "12px");
+      }
+    } else if (preset === "row") {
+      styles = {
+        display: "flex",
+        flexDirection: "row",
+        flexWrap: "wrap",
+        gridTemplateColumns: "none",
+        alignItems: "center",
+        gap: activeGap,
+      };
+      if (targetSelector === selected.selector) {
+        setDisplayMode("flex");
+        setFlexDirection("row");
+        setGapValue(activeGap);
+      }
+    } else {
+      styles = {
+        display: "block",
+        gridTemplateColumns: "none",
+        flexDirection: "",
+        flexWrap: "",
+      };
+      if (targetSelector === selected.selector) {
+        setDisplayMode("block");
+      }
+    }
+
+    if (responsiveEditTarget === "desktop") {
+      commitEdits(targetSelector, { styles });
+      send({ action: "style", selector: targetSelector, styles, silent: true });
+    } else {
+      commitEdits(targetSelector, {
+        responsiveStyles: {
+          [responsiveEditTarget]: styles,
+        },
+      });
+      send({ action: "restore", edits: editsRef.current, designSystem });
+    }
+    setStatus(
+      `تم تغيير أسلوب العرض إلى (${
+        preset === "grid"
+          ? `شبكة Grid — ${cols === "auto" ? "تلقائي" : cols + " أعمدة"}`
+          : preset === "list"
+            ? "قائمة رأسية List"
+            : preset === "row"
+              ? "صف أفقي مرن Row"
+              : "كتلة عادية Block"
+      })`,
+    );
+  };
+
+  const deleteOrRestoreSelectedElement = () => {
+    if (!selected || previewSource === "published") return;
+    if (editsRef.current[selected.selector]?.locked) return;
+    const nextDeleted = !Boolean(editsRef.current[selected.selector]?.deleted);
+    commitEdits(selected.selector, { deleted: nextDeleted });
+    send({
+      action: nextDeleted ? "delete" : "show",
+      selector: selected.selector,
+      silent: true,
+    });
+    setStatus(
+      nextDeleted
+        ? `تم حذف/إخفاء العنصر <${selected.tag}> من الصفحة — يمكنك استعادته في أي وقت.`
+        : `تمت استعادة العنصر <${selected.tag}> بنجاح.`,
+    );
   };
 
   const frameWidth =
@@ -1411,30 +1632,64 @@ export function LiveAppPreview({
       onClick={() => contextMenu && setContextMenu(null)}
     >
       {/* ========================================================= */}
-      {/* SECONDARY STUDIO CANVAS TOOLBAR                           */}
+      {/* COMPACT CANVAS BAR (1 CANONICAL TOGGLE PER DRAWER/TOOL)   */}
       {/* ========================================================= */}
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-card px-3 py-1.5">
-        {/* Right side: Left Sidebar Toggle + Route + Version Indicator */}
-        <div className="flex min-w-0 items-center gap-2">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b bg-card px-2.5 py-1 overflow-x-auto no-scrollbar">
+        {/* Right side: Canonical Structure Drawer Toggle + Canonical Inspector Toggle */}
+        <div className="flex min-w-0 items-center gap-1.5 shrink-0">
           <Button
             type="button"
             size="sm"
             variant={showLeftPanel ? "default" : "outline"}
-            className="h-7 gap-1 px-2 text-xs cursor-pointer"
-            onClick={() => setShowLeftPanel((v) => !v)}
-            title="إظهار أو إخفاء لوحة الصفحات والطبقات والمكونات"
+            className="h-7 gap-1 px-2 text-[11px] cursor-pointer"
+            onClick={() => {
+              const next = !showLeftPanel;
+              if (next) onOpenDrawer?.();
+              setShowLeftPanel(next);
+            }}
+            title="فتح أو إغلاق درج الصفحات وشجرة الطبقات ومكتبة المكونات"
           >
             <Layers size={13} />
-            <span>{showLeftPanel ? "الطبقات والمكونات" : "إظهار الطبقات"}</span>
+            <span>الصفحات والطبقات والمكونات</span>
+            <Badge variant="secondary" className="text-[9px] px-1 py-0 h-4 font-mono">
+              {pages[activePageId]?.name || safeRoute}
+            </Badge>
           </Button>
 
+          <Button
+            type="button"
+            size="sm"
+            variant={showRightPanel ? "default" : "outline"}
+            className="h-7 gap-1 px-2 text-[11px] cursor-pointer"
+            onClick={() => {
+              const next = !showRightPanel;
+              if (next) onOpenDrawer?.();
+              setShowRightPanel(next);
+            }}
+            title="فتح أو إغلاق مفتش الخصائص والتنسيقات المتقدم"
+          >
+            <Settings2 size={13} />
+            <span>مفتش الخصائص</span>
+            {selected && (
+              <Badge
+                variant={showRightPanel ? "secondary" : "default"}
+                className="text-[9px] px-1 py-0 h-4 font-mono"
+              >
+                &lt;{selected.tag}&gt;
+              </Badge>
+            )}
+          </Button>
+        </div>
+
+        {/* Center: Draft/Published Source, Edit/Interactive Mode, Viewport Breakpoints & Zoom */}
+        <div className="flex items-center gap-1.5 shrink-0">
           {/* Draft vs Published Preview Toggle */}
-          <div className="flex items-center rounded-lg border bg-muted/60 p-0.5 text-[11px]">
+          <div className="flex items-center rounded-lg border bg-muted/60 p-0.5 text-[10px]">
             <button
               type="button"
               onClick={() => setPreviewSource("draft")}
               className={
-                "px-2.5 py-1 rounded-md font-bold transition cursor-pointer flex items-center gap-1 " +
+                "px-2 py-0.5 rounded-md font-bold transition cursor-pointer flex items-center gap-1 " +
                 (previewSource === "draft"
                   ? "bg-primary text-primary-foreground shadow-2xs"
                   : "text-muted-foreground hover:text-foreground")
@@ -1442,13 +1697,13 @@ export function LiveAppPreview({
               title="عرض المسودة الحية قيد التحرير"
             >
               <Sparkles size={11} />
-              <span>معاينة المسودة (Draft)</span>
+              <span>المسودة</span>
             </button>
             <button
               type="button"
               onClick={() => setPreviewSource("published")}
               className={
-                "px-2.5 py-1 rounded-md font-bold transition cursor-pointer flex items-center gap-1 " +
+                "px-2 py-0.5 rounded-md font-bold transition cursor-pointer flex items-center gap-1 " +
                 (previewSource === "published"
                   ? "bg-emerald-600 text-white shadow-2xs"
                   : "text-muted-foreground hover:text-foreground")
@@ -1456,68 +1711,70 @@ export function LiveAppPreview({
               title="عرض النسخة المنشورة المعتمدة على الخادم حالياً"
             >
               <Check size={11} />
-              <span>المنشور الحي (#{publishedRevision})</span>
+              <span>المنشور #{publishedRevision}</span>
             </button>
           </div>
 
-          <span
-            className="hidden lg:inline-block truncate max-w-[220px] text-[11px] font-mono text-muted-foreground"
-            title={safeRoute}
+          {/* Edit vs Interactive Mode */}
+          <Button
+            type="button"
+            size="sm"
+            variant={editMode && previewSource === "draft" ? "default" : "outline"}
+            className="h-7 gap-1 px-2 text-[11px] cursor-pointer"
+            onClick={() => setEditMode((v) => !v)}
+            disabled={previewSource === "published"}
+            title="التبديل بين وضع تحديد وتحرير العناصر ووضع التفاعل الحي مع التطبيق"
           >
-            {safeRoute}
-          </span>
-        </div>
+            {editMode ? <EyeOff size={12} /> : <Eye size={12} />}
+            <span>{editMode ? "وضع التحرير" : "تفاعل حي"}</span>
+          </Button>
 
-        {/* Center: Viewport Breakpoints, Width Slider, Zoom, Grid & X-Ray */}
-        <div className="flex flex-wrap items-center gap-1.5">
+          {/* Viewport Breakpoints */}
           <div className="flex rounded-lg border bg-background p-0.5">
             <Button
               type="button"
               size="sm"
               variant={previewSize === "desktop" ? "default" : "ghost"}
-              className="h-6 px-2 text-[11px] gap-1"
+              className="h-6 px-1.5 text-[10px] gap-1"
               onClick={() => {
                 setPreviewSize("desktop");
                 setResponsiveEditTarget("desktop");
                 setCustomViewportWidth(1280);
               }}
-              title="سطح المكتب (Desktop)"
+              title="سطح المكتب (ملء المساحة)"
             >
-              <Monitor size={13} />
-              <span className="hidden xl:inline">سطح المكتب</span>
+              <Monitor size={12} />
             </Button>
             <Button
               type="button"
               size="sm"
               variant={previewSize === "tablet" ? "default" : "ghost"}
-              className="h-6 px-2 text-[11px] gap-1"
+              className="h-6 px-1.5 text-[10px] gap-1"
               onClick={() => {
                 setPreviewSize("tablet");
                 setResponsiveEditTarget("tablet");
               }}
               title="جهاز لوحي (Tablet 820px)"
             >
-              <Tablet size={13} />
-              <span className="hidden xl:inline">تابلت</span>
+              <Tablet size={12} />
             </Button>
             <Button
               type="button"
               size="sm"
               variant={previewSize === "mobile" ? "default" : "ghost"}
-              className="h-6 px-2 text-[11px] gap-1"
+              className="h-6 px-1.5 text-[10px] gap-1"
               onClick={() => {
                 setPreviewSize("mobile");
                 setResponsiveEditTarget("mobile");
               }}
               title="هاتف (Mobile 390px)"
             >
-              <Smartphone size={13} />
-              <span className="hidden xl:inline">هاتف</span>
+              <Smartphone size={12} />
             </Button>
           </div>
 
           {/* Zoom Controls */}
-          <div className="flex items-center gap-1 rounded-lg border bg-background px-1.5 py-0.5 text-[11px] font-mono">
+          <div className="flex items-center gap-0.5 rounded-lg border bg-background px-1.5 py-0.5 text-[10px] font-mono">
             <button
               type="button"
               onClick={() => setZoom((z) => Math.max(50, z - 10))}
@@ -1543,28 +1800,17 @@ export function LiveAppPreview({
               +
             </button>
           </div>
+        </div>
 
-          {/* Edit vs Interactive Mode */}
+        {/* Left side: Grid, X-Ray, Refresh, External Tab, Fullscreen */}
+        <div className="flex items-center gap-1 shrink-0">
           <Button
             type="button"
             size="sm"
-            variant={editMode && previewSource === "draft" ? "default" : "outline"}
-            className="h-7 gap-1 px-2 text-xs cursor-pointer"
-            onClick={() => setEditMode((v) => !v)}
-            disabled={previewSource === "published"}
-          >
-            {editMode ? <EyeOff size={13} /> : <Eye size={13} />}
-            <span>{editMode ? "وضع التحرير" : "وضع التفاعل الحي"}</span>
-          </Button>
-
-          {/* Grid & X-Ray Toggles */}
-          <Button
-            type="button"
-            size="sm"
-            variant={showGrid ? "default" : "outline"}
-            className="h-7 px-2 text-xs gap-1 cursor-pointer"
+            variant={showGrid ? "default" : "ghost"}
+            className="h-7 w-7 p-0 text-xs cursor-pointer"
             onClick={() => setShowGrid((v) => !v)}
-            title="إظهار شبكة المحاذاة الهندسية (Grid & Snap)"
+            title="شبكة المحاذاة الهندسية (Grid)"
           >
             <Grid size={13} />
           </Button>
@@ -1572,76 +1818,74 @@ export function LiveAppPreview({
           <Button
             type="button"
             size="sm"
-            variant={xRayMode ? "default" : "outline"}
-            className="h-7 px-2 text-xs gap-1 cursor-pointer"
+            variant={xRayMode ? "default" : "ghost"}
+            className="h-7 w-7 p-0 text-xs cursor-pointer"
             onClick={() => setXRayMode((v) => !v)}
-            title="وضع الأشعة السينية لإظهار حدود الحاويات (X-Ray Mode)"
+            title="إظهار حدود الحاويات (X-Ray Mode)"
           >
             <ScanEye size={13} />
           </Button>
-        </div>
 
-        {/* Left side: Refresh, Open in New Tab, Fullscreen, Right Inspector Toggle */}
-        <div className="flex items-center gap-1.5">
           <Button
             type="button"
             size="sm"
-            variant="outline"
-            className="h-7 gap-1 px-2 text-xs cursor-pointer"
+            variant="ghost"
+            className="h-7 w-7 p-0 text-xs cursor-pointer"
             onClick={() => setFrameKey((v) => v + 1)}
-            title="إعادة تحميل إطار المعاينة"
+            title="تحديث إطار المعاينة"
           >
             <RefreshCw size={13} />
-            <span className="hidden sm:inline">تحديث</span>
           </Button>
 
           <a
             href={safeRoute}
             target="_blank"
             rel="noreferrer noopener"
-            className="inline-flex h-7 items-center gap-1 rounded-md border border-input bg-background px-2 text-xs font-medium hover:bg-accent"
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-xs hover:bg-accent"
             title="فتح الصفحة في تبويب مستقل"
           >
             <ExternalLink size={13} />
-            <span className="hidden xl:inline">تبويب مستقل</span>
           </a>
 
           <Button
             type="button"
             size="sm"
-            variant="outline"
-            className="h-7 px-2 text-xs cursor-pointer"
+            variant={isFullScreen ? "default" : "ghost"}
+            className="h-7 w-7 p-0 text-xs cursor-pointer"
             onClick={() => setIsFullScreen((v) => !v)}
-            title={isFullScreen ? "إنهاء ملء الشاشة" : "وضع ملء الشاشة"}
+            title={isFullScreen ? "إنهاء ملء الشاشة" : "تكبير المعاينة لملء الشاشة بالكامل"}
           >
             {isFullScreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-          </Button>
-
-          <Button
-            type="button"
-            size="sm"
-            variant={showRightPanel ? "default" : "outline"}
-            className="h-7 gap-1 px-2 text-xs cursor-pointer"
-            onClick={() => setShowRightPanel((v) => !v)}
-            title="إظهار أو إخفاء مفتش الخصائص المتقدم"
-          >
-            <Settings2 size={13} />
-            <span>{showRightPanel ? "المفتش" : "إظهار المفتش"}</span>
           </Button>
         </div>
       </div>
 
       {/* ========================================================= */}
-      {/* THREE-PANEL WORKSPACE BODY                                */}
+      {/* FULL-BLEED PREVIEW WORKSPACE WITH OVERLAY DRAWERS         */}
       {/* ========================================================= */}
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         {/* --------------------------------------------------------- */}
-        {/* 1. LEFT SIDEBAR (RTL Right side): Pages, Layers, Comps    */}
+        {/* 1. LEFT OVERLAY DRAWER (RTL Right): Pages, Layers, Comps  */}
+        {/*    Hidden by default; overlays without shrinking preview   */}
         {/* --------------------------------------------------------- */}
         {showLeftPanel && (
-          <aside className="flex w-[260px] shrink-0 flex-col border-l bg-card overflow-hidden z-10">
-            {/* Collapsible Sub-tabs: Pages | Layers | Components */}
-            <div className="grid grid-cols-3 gap-1 border-b bg-muted/40 p-1.5 text-[11px] font-bold shrink-0">
+          <aside className="absolute top-0 right-0 bottom-0 flex w-[285px] flex-col border-l bg-card/98 backdrop-blur-md shadow-2xl overflow-hidden z-30">
+            <div className="flex items-center justify-between border-b bg-muted/40 px-2.5 py-1.5 shrink-0">
+              <span className="text-[11px] font-black text-foreground flex items-center gap-1.5">
+                <Layers size={13} className="text-primary" />
+                <span>الصفحات والطبقات والمكونات</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowLeftPanel(false)}
+                className="p-1 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground cursor-pointer"
+                title="إخفاء اللوحة"
+              >
+                <X size={14} />
+              </button>
+            </div>
+            {/* Sub-tabs: Pages | Layers | Components */}
+            <div className="grid grid-cols-3 gap-1 border-b bg-muted/30 p-1 text-[11px] font-bold shrink-0">
               <button
                 type="button"
                 onClick={() => setLeftTab("pages")}
@@ -1686,6 +1930,13 @@ export function LiveAppPreview({
             {/* LEFT TAB 1: PAGES */}
             {leftTab === "pages" && (
               <div className="flex-1 overflow-y-auto p-2.5 space-y-3 text-xs">
+                <StudioSectionSaveDiscardBar
+                  hasChanges={showContextualSaveDiscard}
+                  onSave={onSaveChanges}
+                  onDiscard={onDiscardChanges}
+                  isSaving={isSaving}
+                  sectionLabel="قسم الصفحات"
+                />
                 <div className="flex items-center justify-between gap-1">
                   <span className="font-black text-foreground">صفحات الاستوديو والتطبيق</span>
                   {onAddPage && (
@@ -1877,6 +2128,13 @@ export function LiveAppPreview({
             {/* LEFT TAB 2: LAYERS (DOM Tree + Studio Elements) */}
             {leftTab === "layers" && (
               <div className="flex flex-1 flex-col min-h-0 overflow-hidden p-2">
+                <StudioSectionSaveDiscardBar
+                  hasChanges={showContextualSaveDiscard}
+                  onSave={onSaveChanges}
+                  onDiscard={onDiscardChanges}
+                  isSaving={isSaving}
+                  sectionLabel="قسم الطبقات"
+                />
                 <div className="mb-2 flex items-center justify-between">
                   <span className="text-[11px] font-black">شجرة الطبقات والعناصر الحية</span>
                   <Badge variant="secondary" className="text-[9px]">
@@ -1911,6 +2169,13 @@ export function LiveAppPreview({
             {/* LEFT TAB 3: REUSABLE COMPONENTS & LIBRARY */}
             {leftTab === "components" && (
               <div className="flex-1 overflow-y-auto p-2.5 space-y-3 text-xs">
+                <StudioSectionSaveDiscardBar
+                  hasChanges={showContextualSaveDiscard}
+                  onSave={onSaveChanges}
+                  onDiscard={onDiscardChanges}
+                  isSaving={isSaving}
+                  sectionLabel="قسم المكونات"
+                />
                 {selected && onSaveReusableComponent && (
                   <div className="p-2.5 rounded-xl bg-primary/5 border border-primary/20 space-y-2">
                     <div className="font-bold text-[11px] text-foreground flex items-center gap-1">
@@ -1989,8 +2254,21 @@ export function LiveAppPreview({
                     <div
                       key={item.type + item.label}
                       draggable
-                      onDragEnd={() => onAddElement?.(item.type)}
-                      onClick={() => onAddElement?.(item.type)}
+                      onDragEnd={() => {
+                        if (selected) {
+                          applyStyle(item.defaultStyles);
+                        } else {
+                          onAddElement?.(item.type);
+                        }
+                      }}
+                      onClick={() => {
+                        if (selected) {
+                          applyStyle(item.defaultStyles);
+                          setStatus(`تم تطبيق تنسيق «${item.label}» على العنصر المحدد`);
+                        } else {
+                          onAddElement?.(item.type);
+                        }
+                      }}
                       className="p-2.5 rounded-xl border bg-background hover:bg-primary/5 hover:border-primary/40 transition cursor-pointer flex items-center justify-between gap-2"
                     >
                       <div className="min-w-0">
@@ -2051,9 +2329,14 @@ export function LiveAppPreview({
             </div>
           )}
 
-          {/* Iframe Container with Grid Overlay & Zoom */}
+          {/* Iframe Container — Edge-to-Edge in Desktop 100%, Framed in Tablet/Mobile */}
           <div
-            className="relative flex min-h-0 flex-1 items-stretch justify-center overflow-auto p-2 sm:p-3"
+            className={
+              "relative flex min-h-0 flex-1 items-stretch justify-center overflow-auto " +
+              (previewSize === "desktop" && customViewportWidth >= 1280 && zoom === 100
+                ? "p-0"
+                : "p-2 sm:p-3")
+            }
             style={
               showGrid
                 ? {
@@ -2065,7 +2348,12 @@ export function LiveAppPreview({
             }
           >
             <div
-              className="relative h-full min-h-0 overflow-hidden rounded-xl border bg-background shadow-xl transition-all duration-200"
+              className={
+                "relative h-full min-h-0 overflow-hidden bg-background transition-all duration-200 " +
+                (previewSize === "desktop" && customViewportWidth >= 1280 && zoom === 100
+                  ? "w-full border-0 rounded-none"
+                  : "rounded-xl border shadow-xl")
+              }
               style={{
                 width: frameWidth,
                 minWidth: previewSize === "desktop" && customViewportWidth >= 1280 ? 0 : frameWidth,
@@ -2090,16 +2378,26 @@ export function LiveAppPreview({
             {/* Right-Click Context Menu */}
             {contextMenu && selected && (
               <div
-                className="fixed z-50 w-52 rounded-xl border border-border bg-card p-1.5 shadow-2xl text-xs font-bold space-y-0.5"
+                className="fixed z-50 w-56 rounded-xl border border-border bg-card p-1.5 shadow-2xl text-xs font-bold space-y-0.5"
                 style={{
-                  top: Math.min(window.innerHeight - 280, Math.max(60, contextMenu.y)),
-                  left: Math.min(window.innerWidth - 220, Math.max(20, contextMenu.x)),
+                  top: Math.min(window.innerHeight - 310, Math.max(60, contextMenu.y)),
+                  left: Math.min(window.innerWidth - 235, Math.max(20, contextMenu.x)),
                 }}
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="px-2 py-1 text-[10px] font-mono text-muted-foreground border-b mb-1 truncate">
                   &lt;{contextMenu.tag}&gt; {contextMenu.selector}
                 </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRightPanel(true);
+                    setContextMenu(null);
+                  }}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 text-right cursor-pointer"
+                >
+                  <Settings2 size={13} /> فحص وتعديل الخصائص (المفتش)
+                </button>
                 <button
                   type="button"
                   onClick={() => {
@@ -2188,14 +2486,14 @@ export function LiveAppPreview({
             )}
           </div>
 
-          {/* Bottom Breadcrumb Navigation & Status Bar */}
-          <div className="flex shrink-0 items-center justify-between gap-2 border-t bg-card px-3 py-1 text-[11px]">
-            <div className="flex items-center gap-1 overflow-x-auto min-w-0">
-              <span className="text-muted-foreground font-bold shrink-0">المسار الهرمي:</span>
-              {selected?.ancestors?.length ? (
-                selected.ancestors.map((anc, i) => (
+          {/* Contextual Selection Breadcrumb Bar (Hidden when no element is selected to maximize preview) */}
+          {selected && (
+            <div className="flex shrink-0 items-center justify-between gap-2 border-t bg-card px-2.5 py-1 text-[10px]">
+              <div className="flex items-center gap-1 overflow-x-auto min-w-0">
+                <span className="text-muted-foreground font-bold shrink-0">المسار:</span>
+                {selected.ancestors?.map((anc, i) => (
                   <React.Fragment key={anc.selector + i}>
-                    {i > 0 && <ChevronLeft size={11} className="text-muted-foreground shrink-0" />}
+                    {i > 0 && <ChevronLeft size={10} className="text-muted-foreground shrink-0" />}
                     <button
                       type="button"
                       onClick={() => send({ action: "select", selector: anc.selector })}
@@ -2209,32 +2507,68 @@ export function LiveAppPreview({
                       {anc.label}
                     </button>
                   </React.Fragment>
-                ))
-              ) : (
-                <span className="text-muted-foreground">
-                  انقر على أي عنصر في المعاينة الحقيقية لعرض مساره وتخصيصه
-                </span>
-              )}
-            </div>
+                ))}
+              </div>
 
-            <div className="flex items-center gap-2 shrink-0 text-[10px] text-muted-foreground">
-              {multiSelectedSelectors.length > 1 && (
-                <Badge variant="secondary" className="text-[9px]">
-                  {multiSelectedSelectors.length} عناصر محددة
-                </Badge>
-              )}
-              <span className="truncate max-w-[240px]">{status}</span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {multiSelectedSelectors.length > 1 && (
+                  <Badge variant="secondary" className="text-[9px] h-4 px-1">
+                    {multiSelectedSelectors.length} عناصر
+                  </Badge>
+                )}
+                {!showRightPanel && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="default"
+                    onClick={() => {
+                      onOpenDrawer?.();
+                      setShowRightPanel(true);
+                    }}
+                    className="h-5 px-2 text-[10px] gap-1 cursor-pointer"
+                  >
+                    <Settings2 size={11} />
+                    <span>تعديل الخصائص</span>
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={deleteOrRestoreSelectedElement}
+                  disabled={isSelectedLocked || previewSource === "published"}
+                  className={
+                    "h-5 px-2 text-[10px] gap-1 cursor-pointer " +
+                    (isSelectedHidden
+                      ? "border-emerald-500/40 text-emerald-600 hover:bg-emerald-500/10"
+                      : "border-destructive/40 text-destructive hover:bg-destructive/10")
+                  }
+                  title={isSelectedHidden ? "استعادة العنصر المحذوف" : "حذف هذا العنصر من الصفحة"}
+                >
+                  <Trash2 size={10} />
+                  <span>{isSelectedHidden ? "استعادة العنصر" : "حذف العنصر"}</span>
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => setSelected(null)}
+                  className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground cursor-pointer"
+                  title="إلغاء التحديد"
+                >
+                  <X size={12} />
+                </button>
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* --------------------------------------------------------- */}
-        {/* 3. RIGHT SIDEBAR (RTL Left side): 5-Tab Inspector         */}
+        {/* 3. RIGHT OVERLAY DRAWER (RTL Left): 5-Tab Inspector       */}
+        {/*    Hidden by default; overlays without shrinking preview   */}
         {/* --------------------------------------------------------- */}
         {showRightPanel && (
-          <aside className="flex w-[300px] 2xl:w-[330px] shrink-0 flex-col border-r bg-card overflow-hidden z-10">
+          <aside className="absolute top-0 left-0 bottom-0 flex w-[320px] 2xl:w-[355px] flex-col border-r bg-card/98 backdrop-blur-md shadow-2xl overflow-hidden z-30">
             {/* Inspector Header */}
-            <div className="shrink-0 border-b p-2.5 bg-muted/30 flex items-center justify-between gap-2">
+            <div className="shrink-0 border-b px-2.5 py-2 bg-muted/30 flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <h3 className="text-xs font-black text-foreground flex items-center gap-1.5">
                   <Sliders size={13} className="text-primary" />
@@ -2246,50 +2580,62 @@ export function LiveAppPreview({
                     : "لم يتم تحديد عنصر بعد"}
                 </p>
               </div>
-              {selected && (
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => commitEdits(selected.selector, { locked: !isSelectedLocked })}
-                    className={
-                      "p-1 rounded border cursor-pointer " +
-                      (isSelectedLocked
-                        ? "bg-amber-500/15 text-amber-600 border-amber-500/30"
-                        : "text-muted-foreground")
-                    }
-                    title={isSelectedLocked ? "فك القفل" : "قفل العنصر"}
-                  >
-                    {isSelectedLocked ? <Lock size={12} /> : <Unlock size={12} />}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const nextDel = !isSelectedHidden;
-                      commitEdits(selected.selector, { deleted: nextDel });
-                      send({ action: nextDel ? "delete" : "show", selector: selected.selector });
-                    }}
-                    className="p-1 rounded border text-muted-foreground hover:text-foreground cursor-pointer"
-                    title={isSelectedHidden ? "إظهار" : "إخفاء"}
-                  >
-                    {isSelectedHidden ? <EyeOff size={12} /> : <Eye size={12} />}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      action("duplicate", {
-                        duplicateCount: Math.min(
-                          5,
-                          Number(edits[selected.selector]?.duplicateCount || 0) + 1,
-                        ),
-                      })
-                    }
-                    className="p-1 rounded border text-muted-foreground hover:text-foreground cursor-pointer"
-                    title="تكرار"
-                  >
-                    <Copy size={12} />
-                  </button>
-                </div>
-              )}
+              <div className="flex items-center gap-1 shrink-0">
+                {selected && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => commitEdits(selected.selector, { locked: !isSelectedLocked })}
+                      className={
+                        "p-1 rounded border cursor-pointer " +
+                        (isSelectedLocked
+                          ? "bg-amber-500/15 text-amber-600 border-amber-500/30"
+                          : "text-muted-foreground")
+                      }
+                      title={isSelectedLocked ? "فك القفل" : "قفل العنصر"}
+                    >
+                      {isSelectedLocked ? <Lock size={12} /> : <Unlock size={12} />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        action("duplicate", {
+                          duplicateCount: Math.min(
+                            5,
+                            Number(edits[selected.selector]?.duplicateCount || 0) + 1,
+                          ),
+                        })
+                      }
+                      className="p-1 rounded border text-muted-foreground hover:text-foreground cursor-pointer"
+                      title="تكرار العنصر"
+                    >
+                      <Copy size={12} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={deleteOrRestoreSelectedElement}
+                      disabled={isSelectedLocked}
+                      className={
+                        "p-1 rounded border cursor-pointer transition " +
+                        (isSelectedHidden
+                          ? "bg-emerald-500/15 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/25"
+                          : "bg-destructive/10 text-destructive border-destructive/30 hover:bg-destructive/20")
+                      }
+                      title={isSelectedHidden ? "استعادة العنصر المحذوف" : "حذف العنصر المحدد"}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowRightPanel(false)}
+                  className="p-1 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground cursor-pointer"
+                  title="إخفاء مفتش الخصائص"
+                >
+                  <X size={14} />
+                </button>
+              </div>
             </div>
 
             {/* 5 Inspector Tabs: Content | Style | Layout | Responsive | Advanced */}
@@ -2333,6 +2679,59 @@ export function LiveAppPreview({
               </div>
             ) : (
               <div className="flex-1 overflow-y-auto p-3 space-y-3.5 text-xs">
+                {/* Quick Element Actions Bar (Delete / Restore / Duplicate / Reset) */}
+                <div className="flex items-center justify-between gap-1.5 rounded-xl border bg-muted/30 p-1.5">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={isSelectedHidden ? "outline" : "destructive"}
+                    disabled={isSelectedLocked || previewSource === "published"}
+                    onClick={deleteOrRestoreSelectedElement}
+                    className="h-7 flex-1 gap-1 text-[11px] font-bold cursor-pointer"
+                  >
+                    <Trash2 size={12} />
+                    <span>{isSelectedHidden ? "استعادة العنصر المحذوف" : "حذف العنصر"}</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={isSelectedLocked || previewSource === "published"}
+                    onClick={() =>
+                      action("duplicate", {
+                        duplicateCount: Math.min(
+                          5,
+                          Number(edits[selected.selector]?.duplicateCount || 0) + 1,
+                        ),
+                      })
+                    }
+                    className="h-7 px-2 gap-1 text-[10px] cursor-pointer"
+                    title="تكرار العنصر"
+                  >
+                    <Copy size={11} />
+                    <span>تكرار</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    disabled={isSelectedLocked || previewSource === "published"}
+                    onClick={() => {
+                      const next = { ...editsRef.current };
+                      delete next[selected.selector];
+                      editsRef.current = next;
+                      lastCommittedEditsRef.current = next;
+                      setEdits(next);
+                      changeCallbackRef.current(next);
+                      send({ action: "restore", edits: next, designSystem });
+                    }}
+                    className="h-7 px-2 text-[10px] text-muted-foreground hover:text-foreground cursor-pointer"
+                    title="إعادة ضبط تعديلات هذا العنصر"
+                  >
+                    <RotateCcw size={11} />
+                  </Button>
+                </div>
+
                 {isSelectedLocked && (
                   <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-700 text-[11px] flex items-center justify-between">
                     <span>هذه الطبقة مقفلة ضد التعديل</span>
@@ -2349,6 +2748,14 @@ export function LiveAppPreview({
                 {/* TAB 1: CONTENT */}
                 {rightTab === "content" && (
                   <div className="space-y-3">
+                    <StudioSectionSaveDiscardBar
+                      hasChanges={showContextualSaveDiscard}
+                      onSave={onSaveChanges}
+                      onDiscard={onDiscardChanges}
+                      onResetElement={edits[selected.selector] ? resetSelectedElementEdits : undefined}
+                      isSaving={isSaving}
+                      sectionLabel="المحتوى"
+                    />
                     <div>
                       <label className="block font-bold mb-1">اسم الطبقة المخصص (Layer Name)</label>
                       <Input
@@ -2387,10 +2794,12 @@ export function LiveAppPreview({
                               onClick={() =>
                                 onOpenAssetPicker((url) => {
                                   setSrcVal(url);
+                                  commitEdits(selected.selector, { attributes: { src: url } });
                                   send({
                                     action: "attributes",
                                     selector: selected.selector,
                                     attributes: { src: url },
+                                    silent: true,
                                   });
                                 })
                               }
@@ -2403,10 +2812,12 @@ export function LiveAppPreview({
                           value={srcVal}
                           onChange={(e) => {
                             setSrcVal(e.target.value);
+                            commitEdits(selected.selector, { attributes: { src: e.target.value } });
                             send({
                               action: "attributes",
                               selector: selected.selector,
                               attributes: { src: e.target.value },
+                              silent: true,
                             });
                           }}
                           placeholder="https://..."
@@ -2416,10 +2827,12 @@ export function LiveAppPreview({
                           value={altVal}
                           onChange={(e) => {
                             setAltVal(e.target.value);
+                            commitEdits(selected.selector, { attributes: { alt: e.target.value } });
                             send({
                               action: "attributes",
                               selector: selected.selector,
                               attributes: { alt: e.target.value },
+                              silent: true,
                             });
                           }}
                           placeholder="النص البديل للصورة (alt)..."
@@ -2435,10 +2848,12 @@ export function LiveAppPreview({
                           value={hrefVal}
                           onChange={(e) => {
                             setHrefVal(e.target.value);
+                            commitEdits(selected.selector, { attributes: { href: e.target.value } });
                             send({
                               action: "attributes",
                               selector: selected.selector,
                               attributes: { href: e.target.value },
+                              silent: true,
                             });
                           }}
                           placeholder="/admin/reports أو https://..."
@@ -2452,6 +2867,117 @@ export function LiveAppPreview({
                 {/* TAB 2: STYLE (Colors, Gradients, Typography, Borders, SVG, Hover, Animations) */}
                 {rightTab === "style" && (
                   <div className="space-y-3.5">
+                    <StudioSectionSaveDiscardBar
+                      hasChanges={showContextualSaveDiscard}
+                      onSave={onSaveChanges}
+                      onDiscard={onDiscardChanges}
+                      onResetElement={edits[selected.selector] ? resetSelectedElementEdits : undefined}
+                      isSaving={isSaving}
+                      sectionLabel="التنسيق"
+                    />
+                    {/* Quick Content Display Mode Switcher (Grid / List / Row / Block) */}
+                    <div className="rounded-xl border border-primary/20 bg-primary/5 p-2.5 space-y-2">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="font-black text-[11px] text-foreground flex items-center gap-1">
+                          <Layout size={12} className="text-primary" />
+                          <span>أسلوب عرض المحتوى (Grid / List)</span>
+                        </span>
+                        {parentAncestor && (
+                          <div className="flex rounded-md border bg-background p-0.5 text-[9px] font-bold">
+                            <button
+                              type="button"
+                              onClick={() => setLayoutTargetMode("self")}
+                              className={
+                                "px-1.5 py-0.5 rounded cursor-pointer " +
+                                (layoutTargetMode === "self"
+                                  ? "bg-primary text-primary-foreground"
+                                  : "text-muted-foreground")
+                              }
+                              title={`تطبيق على العنصر المحدد <${selected.tag}>`}
+                            >
+                              العنصر
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setLayoutTargetMode("parent")}
+                              className={
+                                "px-1.5 py-0.5 rounded cursor-pointer " +
+                                (layoutTargetMode === "parent"
+                                  ? "bg-primary text-primary-foreground"
+                                  : "text-muted-foreground")
+                              }
+                              title={`تطبيق على الحاوية الأب <${parentAncestor.tag}>`}
+                            >
+                              الحاوية الأب
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-4 gap-1">
+                        {(
+                          [
+                            ["grid", "شبكة Grid"],
+                            ["list", "قائمة List"],
+                            ["row", "صف أفقي"],
+                            ["block", "كتلة Block"],
+                          ] as const
+                        ).map(([modeKey, modeLabel]) => {
+                          const isActive =
+                            (modeKey === "grid" && displayMode === "grid") ||
+                            (modeKey === "list" &&
+                              displayMode === "flex" &&
+                              flexDirection === "column") ||
+                            (modeKey === "row" &&
+                              displayMode === "flex" &&
+                              flexDirection !== "column") ||
+                            (modeKey === "block" && displayMode === "block");
+                          return (
+                            <button
+                              key={modeKey}
+                              type="button"
+                              onClick={() => applyContentLayoutPreset(modeKey)}
+                              className={
+                                "py-1.5 px-1 rounded-lg border text-[10px] font-bold transition cursor-pointer text-center " +
+                                (isActive
+                                  ? "bg-primary text-primary-foreground border-primary shadow-2xs"
+                                  : "bg-background text-foreground hover:bg-accent")
+                              }
+                            >
+                              {modeLabel}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {displayMode === "grid" && (
+                        <div className="grid grid-cols-4 gap-1 pt-0.5">
+                          {(
+                            [
+                              ["2", "عمودان (2)"],
+                              ["3", "3 أعمدة"],
+                              ["4", "4 أعمدة"],
+                              ["auto", "تلقائي"],
+                            ] as const
+                          ).map(([colVal, colLbl]) => (
+                            <button
+                              key={colVal}
+                              type="button"
+                              onClick={() => applyContentLayoutPreset("grid", colVal)}
+                              className={
+                                "py-1 rounded border text-[9px] font-bold cursor-pointer " +
+                                (gridColumnsCount === colVal
+                                  ? "bg-primary/15 text-primary border-primary/40"
+                                  : "bg-background text-muted-foreground hover:text-foreground")
+                              }
+                            >
+                              {colLbl}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
                     {/* Colors */}
                     <div className="grid grid-cols-2 gap-2">
                       {!selectedIsVector && (
@@ -2900,6 +3426,168 @@ export function LiveAppPreview({
                 {/* TAB 3: LAYOUT (Dimensions, Min/Max, Padding, Margin, Flex/Grid, Position) */}
                 {rightTab === "layout" && (
                   <div className="space-y-3">
+                    <StudioSectionSaveDiscardBar
+                      hasChanges={showContextualSaveDiscard}
+                      onSave={onSaveChanges}
+                      onDiscard={onDiscardChanges}
+                      onResetElement={edits[selected.selector] ? resetSelectedElementEdits : undefined}
+                      isSaving={isSaving}
+                      sectionLabel="التخطيط"
+                    />
+                    {/* Prominent Content Display Mode Switcher (Grid / List / Row / Block) */}
+                    <div className="rounded-xl border border-primary/25 bg-primary/5 p-2.5 space-y-2">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="font-black text-[11px] text-foreground flex items-center gap-1">
+                          <Grid size={12} className="text-primary" />
+                          <span>أسلوب عرض المحتوى (Grid / List / Row)</span>
+                        </span>
+                        {parentAncestor && (
+                          <div className="flex rounded-md border bg-background p-0.5 text-[9px] font-bold">
+                            <button
+                              type="button"
+                              onClick={() => setLayoutTargetMode("self")}
+                              className={
+                                "px-1.5 py-0.5 rounded cursor-pointer " +
+                                (layoutTargetMode === "self"
+                                  ? "bg-primary text-primary-foreground"
+                                  : "text-muted-foreground")
+                              }
+                            >
+                              العنصر ({selected.tag})
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setLayoutTargetMode("parent")}
+                              className={
+                                "px-1.5 py-0.5 rounded cursor-pointer " +
+                                (layoutTargetMode === "parent"
+                                  ? "bg-primary text-primary-foreground"
+                                  : "text-muted-foreground")
+                              }
+                            >
+                              الحاوية الأب ({parentAncestor.tag})
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => applyContentLayoutPreset("grid")}
+                          className={
+                            "py-1.5 px-2 rounded-lg border text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition " +
+                            (displayMode === "grid"
+                              ? "bg-primary text-primary-foreground border-primary shadow-2xs"
+                              : "bg-background hover:bg-accent")
+                          }
+                        >
+                          <Grid size={12} />
+                          <span>شبكة بطاقات (Grid)</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => applyContentLayoutPreset("list")}
+                          className={
+                            "py-1.5 px-2 rounded-lg border text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition " +
+                            (displayMode === "flex" && flexDirection === "column"
+                              ? "bg-primary text-primary-foreground border-primary shadow-2xs"
+                              : "bg-background hover:bg-accent")
+                          }
+                        >
+                          <Layers size={12} />
+                          <span>قائمة رأسية (List)</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => applyContentLayoutPreset("row")}
+                          className={
+                            "py-1.5 px-2 rounded-lg border text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition " +
+                            (displayMode === "flex" && flexDirection !== "column"
+                              ? "bg-primary text-primary-foreground border-primary shadow-2xs"
+                              : "bg-background hover:bg-accent")
+                          }
+                        >
+                          <Layout size={12} />
+                          <span>صف أفقي مرن (Row)</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => applyContentLayoutPreset("block")}
+                          className={
+                            "py-1.5 px-2 rounded-lg border text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition " +
+                            (displayMode === "block"
+                              ? "bg-primary text-primary-foreground border-primary shadow-2xs"
+                              : "bg-background hover:bg-accent")
+                          }
+                        >
+                          <span>كتلة عادية (Block)</span>
+                        </button>
+                      </div>
+
+                      {/* Grid Columns Selector */}
+                      <div className="space-y-1 pt-0.5">
+                        <span className="text-[10px] text-muted-foreground font-bold block">
+                          عدد الأعمدة عند العرض كشبكة (Grid Columns):
+                        </span>
+                        <div className="grid grid-cols-4 gap-1">
+                          {(
+                            [
+                              ["2", "عمودان (2)"],
+                              ["3", "3 أعمدة"],
+                              ["4", "4 أعمدة"],
+                              ["auto", "تلقائي متجاوب"],
+                            ] as const
+                          ).map(([colVal, colLbl]) => (
+                            <button
+                              key={colVal}
+                              type="button"
+                              onClick={() => applyContentLayoutPreset("grid", colVal)}
+                              className={
+                                "py-1 rounded border text-[10px] font-bold cursor-pointer " +
+                                (displayMode === "grid" && gridColumnsCount === colVal
+                                  ? "bg-primary text-primary-foreground border-primary"
+                                  : "bg-background text-muted-foreground hover:text-foreground")
+                              }
+                            >
+                              {colLbl}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Quick Gap Presets */}
+                      <div className="flex items-center justify-between gap-1 pt-0.5">
+                        <span className="text-[10px] text-muted-foreground font-bold">
+                          المسافة بين العناصر (Gap):
+                        </span>
+                        <div className="flex items-center gap-1">
+                          {["8px", "12px", "16px", "24px"].map((g) => (
+                            <button
+                              key={g}
+                              type="button"
+                              onClick={() => {
+                                setGapValue(g);
+                                const targetSel =
+                                  layoutTargetMode === "parent" && parentAncestor
+                                    ? parentAncestor.selector
+                                    : selected.selector;
+                                send({ action: "style", selector: targetSel, styles: { gap: g } });
+                              }}
+                              className={
+                                "px-1.5 py-0.5 rounded border text-[9px] font-mono cursor-pointer " +
+                                (gapValue === g
+                                  ? "bg-primary text-primary-foreground border-primary font-bold"
+                                  : "bg-background text-muted-foreground")
+                              }
+                            >
+                              {g}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
                     <div className="grid grid-cols-2 gap-2">
                       <label className="text-[11px] font-bold">
                         العرض (Width)
@@ -3172,6 +3860,14 @@ export function LiveAppPreview({
                 {/* TAB 4: RESPONSIVE OVERRIDES (Desktop, Tablet, Mobile) */}
                 {rightTab === "responsive" && (
                   <div className="space-y-3">
+                    <StudioSectionSaveDiscardBar
+                      hasChanges={showContextualSaveDiscard}
+                      onSave={onSaveChanges}
+                      onDiscard={onDiscardChanges}
+                      onResetElement={edits[selected.selector] ? resetSelectedElementEdits : undefined}
+                      isSaving={isSaving}
+                      sectionLabel="التجاوب"
+                    />
                     <div className="p-2.5 rounded-xl bg-primary/5 border border-primary/20 space-y-2">
                       <span className="font-black text-[11px] block">
                         نقطة التوقف النشطة للتخصيص (Breakpoint Target)
@@ -3280,6 +3976,14 @@ export function LiveAppPreview({
                 {/* TAB 5: ADVANCED (Element ID, Classes, ARIA, Safe Attributes, Reset) */}
                 {rightTab === "advanced" && (
                   <div className="space-y-3">
+                    <StudioSectionSaveDiscardBar
+                      hasChanges={showContextualSaveDiscard}
+                      onSave={onSaveChanges}
+                      onDiscard={onDiscardChanges}
+                      onResetElement={edits[selected.selector] ? resetSelectedElementEdits : undefined}
+                      isSaving={isSaving}
+                      sectionLabel="متقدم"
+                    />
                     <div>
                       <label className="block font-bold mb-1">معرّف العنصر (Element ID)</label>
                       <Input
@@ -3291,6 +3995,7 @@ export function LiveAppPreview({
                             action: "attributes",
                             selector: selected.selector,
                             attributes: { id: e.target.value },
+                            silent: true,
                           });
                         }}
                         placeholder="custom-section-id"
@@ -3355,23 +4060,42 @@ export function LiveAppPreview({
                       </div>
                     </div>
 
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        const next = { ...editsRef.current };
-                        delete next[selected.selector];
-                        editsRef.current = next;
-                        setEdits(next);
-                        changeCallbackRef.current(next);
-                        send({ action: "restore", edits: next, designSystem });
-                      }}
-                      className="w-full h-8 text-xs gap-1 text-destructive border-destructive/30 hover:bg-destructive/10"
-                    >
-                      <RotateCcw size={13} />
-                      <span>إعادة ضبط تعديلات هذا العنصر</span>
-                    </Button>
+                    <div className="space-y-2 pt-1">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={isSelectedHidden ? "outline" : "destructive"}
+                        disabled={isSelectedLocked || previewSource === "published"}
+                        onClick={deleteOrRestoreSelectedElement}
+                        className="w-full h-8 text-xs gap-1.5 font-bold cursor-pointer"
+                      >
+                        <Trash2 size={13} />
+                        <span>
+                          {isSelectedHidden
+                            ? "استعادة العنصر المحذوف إلى الصفحة"
+                            : "حذف هذا العنصر من الصفحة"}
+                        </span>
+                      </Button>
+
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          const next = { ...editsRef.current };
+                          delete next[selected.selector];
+                          editsRef.current = next;
+                          lastCommittedEditsRef.current = next;
+                          setEdits(next);
+                          changeCallbackRef.current(next);
+                          send({ action: "restore", edits: next, designSystem });
+                        }}
+                        className="w-full h-8 text-xs gap-1 text-destructive border-destructive/30 hover:bg-destructive/10 cursor-pointer"
+                      >
+                        <RotateCcw size={13} />
+                        <span>إعادة ضبط تعديلات هذا العنصر</span>
+                      </Button>
+                    </div>
                   </div>
                 )}
               </div>

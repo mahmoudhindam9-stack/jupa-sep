@@ -16,14 +16,6 @@ import {
   compareStudioSnapshots,
 } from "../models/studio.types";
 import { studioService } from "../services/studioService";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -38,8 +30,10 @@ import {
   BookmarkPlus,
   GitCompare,
   FileDown,
+  X,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { StudioSectionSaveDiscardBar } from "./StudioSectionSaveDiscardBar";
 
 interface HistoryRollbackModalProps {
   isOpen: boolean;
@@ -48,6 +42,9 @@ interface HistoryRollbackModalProps {
   draft?: StudioDraft;
   onRestoreToDraft?: (restoredDraft: StudioDraft, label: string) => void;
   onCreateCheckpoint?: (name: string, note: string) => void;
+  onSaveChanges?: () => void;
+  onDiscardChanges?: () => void;
+  isSaving?: boolean;
   onRollbackSuccess: (newRevision: number) => void;
 }
 
@@ -58,10 +55,14 @@ export function HistoryRollbackModal({
   draft,
   onRestoreToDraft,
   onCreateCheckpoint,
+  onSaveChanges,
+  onDiscardChanges,
+  isSaving = false,
   onRollbackSuccess,
 }: HistoryRollbackModalProps) {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<"revisions" | "checkpoints" | "compare">("revisions");
+  const hasUnsavedChanges = Boolean(draft?.hasUnsavedLocalChanges);
   const [history, setHistory] = useState<StudioHistoryRecord[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [targetRecord, setTargetRecord] = useState<StudioHistoryRecord | null>(null);
@@ -151,23 +152,35 @@ export function HistoryRollbackModal({
 
   const namedSnapshots: StudioNamedSnapshot[] = draft?.namedSnapshots || [];
 
+  if (!isOpen) return null;
+
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && !isRollingBack && onClose()}>
-      <DialogContent className="max-w-3xl text-right font-cairo sm:rounded-2xl max-h-[88vh] flex flex-col">
-        <DialogHeader className="shrink-0">
-          <div className="flex items-center gap-2 justify-end mb-1">
-            <Badge variant="outline" className="font-mono text-xs">
-              الإصدار النشط: #{currentRevision}
-            </Badge>
-            <DialogTitle className="text-lg font-black text-foreground">
-              سجل الإصدارات ونقاط الحفظ والمقارنة (History & Checkpoints)
-            </DialogTitle>
-            <History className="w-5 h-5 text-primary shrink-0" />
+    <aside
+      data-testid="studio-history-drawer"
+      className="absolute top-0 left-0 bottom-0 z-40 flex w-[360px] sm:w-[440px] flex-col border-r border-border bg-card/98 backdrop-blur-md shadow-2xl overflow-hidden text-right font-cairo"
+    >
+      <div className="shrink-0 p-3 pb-2.5 border-b border-border flex items-center justify-between gap-2 bg-muted/20">
+        <div className="flex items-center gap-2 min-w-0">
+          <History className="w-4 h-4 text-primary shrink-0" />
+          <div className="min-w-0">
+            <h3 className="text-xs font-black text-foreground truncate">
+              سجل الإصدارات ونقاط الحفظ والمقارنة
+            </h3>
+            <p className="text-[10px] text-muted-foreground truncate">
+              الإصدار النشط: #{currentRevision} • مقارنة واستعادة آمنة للمسودة
+            </p>
           </div>
-          <DialogDescription className="text-xs text-muted-foreground">
-            استعرض الإصدارات المنشورة، أنشئ نقاط استعادة مسماة (Named Checkpoints)، قارن بين أي نسختين، أو استعد أي نسخة إلى المسودة دون حذف عملك الحالي.
-          </DialogDescription>
-        </DialogHeader>
+        </div>
+        <button
+          type="button"
+          onClick={() => !isRollingBack && onClose()}
+          className="h-7 w-7 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition cursor-pointer shrink-0"
+          title="إغلاق الدرج"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+      <div className="flex-1 flex flex-col min-h-0 p-3 space-y-2.5 overflow-hidden">
 
         {/* Sub-navigation Tabs */}
         <div className="grid grid-cols-3 gap-1 bg-muted p-1 rounded-xl text-xs font-bold shrink-0">
@@ -212,6 +225,13 @@ export function HistoryRollbackModal({
         {/* TAB 1: Published Revisions */}
         {activeTab === "revisions" && (
           <div className="flex-1 overflow-y-auto space-y-2.5 py-2">
+            <StudioSectionSaveDiscardBar
+              hasChanges={hasUnsavedChanges}
+              onSave={onSaveChanges}
+              onDiscard={onDiscardChanges}
+              isSaving={isSaving}
+              sectionLabel="الإصدارات المنشورة"
+            />
             {isLoading ? (
               <div className="py-12 flex flex-col items-center justify-center text-muted-foreground gap-2">
                 <Loader2 className="w-6 h-6 animate-spin text-primary" />
@@ -329,6 +349,13 @@ export function HistoryRollbackModal({
         {/* TAB 2: Named Checkpoints */}
         {activeTab === "checkpoints" && (
           <div className="flex-1 overflow-y-auto space-y-3 py-2">
+            <StudioSectionSaveDiscardBar
+              hasChanges={hasUnsavedChanges}
+              onSave={onSaveChanges}
+              onDiscard={onDiscardChanges}
+              isSaving={isSaving}
+              sectionLabel="نقاط الحفظ المسماة"
+            />
             {onCreateCheckpoint && (
               <form
                 onSubmit={handleAddCheckpoint}
@@ -421,6 +448,13 @@ export function HistoryRollbackModal({
         {/* TAB 3: Version Comparison */}
         {activeTab === "compare" && (
           <div className="flex-1 overflow-y-auto space-y-3 py-2 text-xs">
+            <StudioSectionSaveDiscardBar
+              hasChanges={hasUnsavedChanges}
+              onSave={onSaveChanges}
+              onDiscard={onDiscardChanges}
+              isSaving={isSaving}
+              sectionLabel="مقارنة النسخ"
+            />
             {!compareTarget ? (
               <div className="py-12 text-center text-muted-foreground border border-dashed rounded-xl">
                 اختر أي إصدار منشور أو لقطة مسماة واضغط «مقارنة» لعرض الفروقات التفصيلية مع مسودتك الحالية.
@@ -532,18 +566,18 @@ export function HistoryRollbackModal({
           </div>
         )}
 
-        <DialogFooter className="shrink-0 border-t pt-3 border-border/60">
+        <div className="shrink-0 border-t pt-2.5 border-border/60 flex justify-end">
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={onClose}
-            className="text-xs cursor-pointer"
+            className="text-xs h-7 cursor-pointer"
           >
-            إغلاق
+            إغلاق الدرج
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+      </div>
+    </aside>
   );
 }

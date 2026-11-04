@@ -67,7 +67,28 @@ function createSupabaseFetch(supabaseKey: string): typeof fetch {
 
     headers.set("apikey", supabaseKey);
 
-    return await fetch(input, { ...init, headers });
+    // Prevent any Supabase request from hanging indefinitely when offline or unreachable
+    const TIMEOUT_MS = 8_000;
+    const controller = new AbortController();
+    const existingSignal = init?.signal;
+    if (existingSignal) {
+      if (existingSignal.aborted) {
+        controller.abort(existingSignal.reason);
+      } else {
+        existingSignal.addEventListener("abort", () => controller.abort(existingSignal.reason), {
+          once: true,
+        });
+      }
+    }
+    const timer = globalThis.setTimeout(() => {
+      controller.abort(new Error("Supabase request timed out after 8000ms"));
+    }, TIMEOUT_MS);
+
+    try {
+      return await fetch(input, { ...init, headers, signal: controller.signal });
+    } finally {
+      globalThis.clearTimeout(timer);
+    }
   };
 }
 

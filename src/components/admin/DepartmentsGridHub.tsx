@@ -56,8 +56,6 @@ import {
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { useStudioPublishedPage } from "@/features/developer-studio/hooks/useStudio";
-import { StudioElementRenderer } from "@/features/developer-studio/components/StudioElementRenderer";
 import { erpStore } from "@/shared/services/erpStore";
 import { useSettings } from "@/hooks/use-settings";
 import {
@@ -767,7 +765,6 @@ export function DepartmentsGridHub({
   const navigate = useNavigate();
   const { lang } = useSettings();
   const isEn = lang === "en";
-  const { elements, allElements } = useStudioPublishedPage("/admin");
   const [searchQuery, setSearchQuery] = useState("");
   const [activePermissions, setActivePermissions] = useState<Record<string, boolean>>(() =>
     propPermissions && Object.keys(propPermissions).length > 0
@@ -831,23 +828,12 @@ export function DepartmentsGridHub({
   const ActionArrow = isEn ? ArrowRight : ArrowLeft;
 
   return (
-    <div className="space-y-6 pt-4" dir={isEn ? "ltr" : "rtl"}>
-      {/* Live Published Elements from Developer Studio Pro */}
-      {elements && elements.length > 0 && (
-        <div className="space-y-4">
-          {elements.map((el) => (
-            <StudioElementRenderer
-              key={el.id}
-              element={el}
-              allElements={allElements}
-              isEditorMode={false}
-            />
-          ))}
-        </div>
-      )}
-
+    <div className="space-y-6 pt-4" dir={isEn ? "ltr" : "rtl"} data-studio-id="admin-departments-hub-root">
       {/* 4K Executive Workspace Command Header */}
-      <div className="relative overflow-hidden rounded-2xl border border-border bg-card p-6 sm:p-7 shadow-xs">
+      <div
+        data-studio-id="admin-welcome-banner"
+        className="relative overflow-hidden rounded-2xl border border-border bg-card p-6 sm:p-7 shadow-xs"
+      >
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
           <div className="space-y-1.5">
             <div className="inline-flex items-center gap-2 text-xs font-bold text-primary bg-primary/10 border border-primary/20 px-3 py-1 rounded-lg">
@@ -902,13 +888,17 @@ export function DepartmentsGridHub({
       </div>
 
       {/* 4K Grid of Department Cards — Spacious, High-Contrast, Zero Clutter */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div
+        data-studio-id="admin-departments-grid"
+        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+      >
         {visibleDepartments.map((dept) => {
           const Icon = dept.icon;
           const previewSubs = dept.subSections.slice(0, 4);
           return (
             <Card
               key={dept.id}
+              data-studio-id={`admin-department-card-${dept.id}`}
               onClick={() => navigate({ to: dept.to, search: dept.search })}
               className={cn(
                 "group relative flex flex-col justify-between overflow-hidden rounded-2xl border bg-card p-6 transition-all duration-200 cursor-pointer hover:-translate-y-1 hover:shadow-xl",

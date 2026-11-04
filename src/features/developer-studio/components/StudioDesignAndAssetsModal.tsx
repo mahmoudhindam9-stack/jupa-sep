@@ -6,23 +6,15 @@
  *    Usage tracking via `findAssetUsages`, and Deletion Protection for in-use assets).
  */
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   StudioDraft,
   StudioDesignSystem,
   StudioAssetItem,
-  DEFAULT_STUDIO_DESIGN_SYSTEM,
+  normalizeStudioDesignSystem,
   findAssetUsages,
   createStudioId,
 } from "../models/studio.types";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -42,8 +34,10 @@ import {
   Moon,
   Type,
   Box,
+  X,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { StudioSectionSaveDiscardBar } from "./StudioSectionSaveDiscardBar";
 
 interface StudioDesignAndAssetsModalProps {
   isOpen: boolean;
@@ -52,6 +46,9 @@ interface StudioDesignAndAssetsModalProps {
   draft: StudioDraft;
   onUpdateDraft: (updatedDraft: StudioDraft, description?: string) => void;
   onApplyAssetToSelection?: (asset: StudioAssetItem) => void;
+  onSaveChanges?: () => void;
+  onDiscardChanges?: () => void;
+  isSaving?: boolean;
 }
 
 const THEME_PRESETS: Record<
@@ -156,15 +153,28 @@ export function StudioDesignAndAssetsModal({
   draft,
   onUpdateDraft,
   onApplyAssetToSelection,
+  onSaveChanges,
+  onDiscardChanges,
+  isSaving = false,
 }: StudioDesignAndAssetsModalProps) {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<"design" | "assets">(initialTab);
+  const hasUnsavedChanges = Boolean(draft?.hasUnsavedLocalChanges);
 
-  // Design System state
-  const ds: StudioDesignSystem = draft.designSystem || DEFAULT_STUDIO_DESIGN_SYSTEM;
+  useEffect(() => {
+    if (isOpen && initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [isOpen, initialTab]);
+
+  // Normalized Design System state (guarantees colors, typography, spacing, radius, shadows exist)
+  const ds: StudioDesignSystem = useMemo(
+    () => normalizeStudioDesignSystem(draft?.designSystem),
+    [draft?.designSystem],
+  );
 
   // Asset Manager state
-  const assets: StudioAssetItem[] = draft.assets || [];
+  const assets: StudioAssetItem[] = Array.isArray(draft?.assets) ? draft.assets : [];
   const [assetSearch, setAssetSearch] = useState("");
   const [selectedFolder, setSelectedFolder] = useState<string>("الكل");
   const [selectedType, setSelectedType] = useState<"all" | "image" | "svg">("all");
@@ -414,51 +424,74 @@ export function StudioDesignAndAssetsModal({
     });
   }, [assets, selectedFolder, selectedType, assetSearch]);
 
-  return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-4xl text-right font-cairo sm:rounded-2xl max-h-[88vh] flex flex-col">
-        <DialogHeader className="shrink-0">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5 bg-muted p-1 rounded-xl text-xs font-bold">
-              <button
-                type="button"
-                onClick={() => setActiveTab("design")}
-                className={`px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
-                  activeTab === "design"
-                    ? "bg-card text-foreground shadow-2xs border border-border"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <Palette className="w-3.5 h-3.5 text-primary" />
-                <span>نظام التصميم والهوية (Design System)</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab("assets")}
-                className={`px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
-                  activeTab === "assets"
-                    ? "bg-card text-foreground shadow-2xs border border-border"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <ImageIcon className="w-3.5 h-3.5 text-primary" />
-                <span>مدير الأصول والوسائط ({assets.length})</span>
-              </button>
-            </div>
-            <DialogTitle className="text-base font-black text-foreground">
-              إدارة الهوية البصرية والأصول
-            </DialogTitle>
-          </div>
-          <DialogDescription className="text-xs text-muted-foreground">
-            تحكم في لوحات الألوان العالمية، السمات الجاهزة، مقاييس الخطوط والمسافات، ومكتبة الصور والأيقونات.
-          </DialogDescription>
-        </DialogHeader>
+  if (!isOpen) return null;
 
-        {/* ========================================================= */}
-        {/* TAB 1: DESIGN SYSTEM MANAGER                              */}
-        {/* ========================================================= */}
-        {activeTab === "design" && (
-          <div className="flex-1 overflow-y-auto space-y-4 py-2 pr-1 text-xs">
+  return (
+    <aside
+      dir="rtl"
+      className="absolute top-0 left-0 bottom-0 z-40 flex w-[360px] sm:w-[430px] flex-col border-r border-border bg-card/98 backdrop-blur-md shadow-2xl overflow-hidden text-right font-cairo"
+    >
+      {/* Side Drawer Header (Matches Property Inspector & Pages/Layers Drawers) */}
+      <div className="shrink-0 border-b px-3 py-2 bg-muted/30 flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h3 className="text-xs font-black text-foreground flex items-center gap-1.5">
+            <Palette className="w-3.5 h-3.5 text-primary shrink-0" />
+            <span>التصميم والهوية والوسائط</span>
+          </h3>
+          <p className="truncate text-[10px] text-muted-foreground mt-0.5">
+            لوحات الألوان العالمية، الخطوط، ومكتبة الصور والأيقونات
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="p-1 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground cursor-pointer"
+          title="إغلاق درج التصميم والوسائط"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* 2 Drawer Tabs: Design System | Assets */}
+      <div className="grid grid-cols-2 gap-1 border-b bg-muted/50 p-1 text-[11px] font-bold shrink-0">
+        <button
+          type="button"
+          onClick={() => setActiveTab("design")}
+          className={`py-1.5 px-2 rounded-md transition cursor-pointer flex items-center justify-center gap-1.5 ${
+            activeTab === "design"
+              ? "bg-card text-primary shadow-2xs border font-black"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Palette className="w-3.5 h-3.5" />
+          <span>نظام التصميم والهوية</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("assets")}
+          className={`py-1.5 px-2 rounded-md transition cursor-pointer flex items-center justify-center gap-1.5 ${
+            activeTab === "assets"
+              ? "bg-card text-primary shadow-2xs border font-black"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <ImageIcon className="w-3.5 h-3.5" />
+          <span>مدير الوسائط ({assets.length})</span>
+        </button>
+      </div>
+
+      {/* ========================================================= */}
+      {/* TAB 1: DESIGN SYSTEM MANAGER                              */}
+      {/* ========================================================= */}
+      {activeTab === "design" && (
+        <div className="flex-1 overflow-y-auto space-y-3.5 p-3 text-xs">
+            <StudioSectionSaveDiscardBar
+              hasChanges={hasUnsavedChanges}
+              onSave={onSaveChanges}
+              onDiscard={onDiscardChanges}
+              isSaving={isSaving}
+              sectionLabel="نظام التصميم والهوية"
+            />
             {/* Global Token Impact Preview Banner */}
             <div className="p-3 rounded-xl bg-primary/5 border border-primary/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="space-y-0.5">
@@ -510,7 +543,7 @@ export function StudioDesignAndAssetsModal({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 {(Object.keys(THEME_PRESETS) as Array<StudioDesignSystem["themePreset"]>).map(
                   (key) => {
                     const preset = THEME_PRESETS[key];
@@ -520,7 +553,7 @@ export function StudioDesignAndAssetsModal({
                         key={key}
                         type="button"
                         onClick={() => handleApplyPreset(key)}
-                        className={`p-2.5 rounded-xl border text-right transition cursor-pointer space-y-2 ${
+                        className={`p-2 rounded-xl border text-right transition cursor-pointer space-y-1.5 ${
                           isSelected
                             ? "border-primary bg-primary/5 ring-1 ring-primary/30"
                             : "border-border hover:bg-muted/50"
@@ -537,7 +570,7 @@ export function StudioDesignAndAssetsModal({
                           ].map((c, i) => (
                             <span
                               key={i}
-                              className="w-4 h-4 rounded-full border border-black/15"
+                              className="w-3.5 h-3.5 rounded-full border border-black/15"
                               style={{ backgroundColor: c }}
                             />
                           ))}
@@ -550,38 +583,42 @@ export function StudioDesignAndAssetsModal({
             </div>
 
             {/* Color Tokens Grid */}
-            <div className="p-3.5 rounded-xl border border-border bg-card space-y-3">
-              <h4 className="font-black text-sm text-foreground">رموز الألوان العالمية (Color Tokens)</h4>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            <div className="p-3 rounded-xl border border-border bg-card space-y-2.5">
+              <h4 className="font-black text-xs text-foreground">رموز الألوان العالمية (Color Tokens)</h4>
+              <div className="grid grid-cols-2 gap-2.5">
                 {(
                   [
-                    ["primary", "اللون الأساسي (Primary)"],
-                    ["secondary", "اللون الثانوي (Secondary)"],
-                    ["accent", "لون التمييز (Accent)"],
-                    ["background", "خلفية الصفحة (Background)"],
-                    ["surface", "خلفية البطاقات (Surface)"],
-                    ["textPrimary", "النص الأساسي (Text Primary)"],
-                    ["textSecondary", "النص الفرعي (Text Secondary)"],
-                    ["border", "لون الحدود (Border)"],
-                    ["success", "حالة النجاح (Success)"],
-                    ["warning", "حالة التنبيه (Warning)"],
-                    ["danger", "حالة الخطر (Danger)"],
+                    ["primary", "اللون الأساسي"],
+                    ["secondary", "اللون الثانوي"],
+                    ["accent", "لون التمييز"],
+                    ["background", "خلفية الصفحة"],
+                    ["surface", "خلفية البطاقات"],
+                    ["textPrimary", "النص الأساسي"],
+                    ["textSecondary", "النص الفرعي"],
+                    ["border", "لون الحدود"],
+                    ["success", "حالة النجاح"],
+                    ["warning", "حالة التنبيه"],
+                    ["danger", "حالة الخطر"],
                   ] as const
                 ).map(([colorKey, label]) => (
                   <div key={colorKey} className="space-y-1">
-                    <label className="text-[11px] font-bold text-muted-foreground block">
+                    <label className="text-[10px] font-bold text-muted-foreground block">
                       {label}
                     </label>
                     <div className="flex items-center gap-1.5">
                       <input
                         type="color"
-                        value={ds.colors[colorKey] || "#000000"}
+                        value={
+                          /^#[0-9a-f]{6}$/i.test(ds.colors[colorKey] || "")
+                            ? ds.colors[colorKey]
+                            : "#000000"
+                        }
                         onChange={(e) =>
                           updateDesignSystem({
                             colors: { ...ds.colors, [colorKey]: e.target.value },
                           })
                         }
-                        className="w-8 h-8 rounded border border-border p-0.5 cursor-pointer shrink-0 bg-background"
+                        className="w-7 h-7 rounded border border-border p-0.5 cursor-pointer shrink-0 bg-background"
                       />
                       <Input
                         value={ds.colors[colorKey] || ""}
@@ -590,7 +627,7 @@ export function StudioDesignAndAssetsModal({
                             colors: { ...ds.colors, [colorKey]: e.target.value },
                           })
                         }
-                        className="h-8 text-xs font-mono"
+                        className="h-7 text-[11px] font-mono"
                       />
                     </div>
                   </div>
@@ -599,7 +636,7 @@ export function StudioDesignAndAssetsModal({
             </div>
 
             {/* Typography & Spacing/Radius Tokens */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="space-y-3">
               <div className="p-3.5 rounded-xl border border-border bg-card space-y-3">
                 <h4 className="font-black text-sm text-foreground flex items-center gap-1.5">
                   <Type className="w-4 h-4 text-primary" />
@@ -734,7 +771,14 @@ export function StudioDesignAndAssetsModal({
         {/* TAB 2: ASSET MANAGER                                      */}
         {/* ========================================================= */}
         {activeTab === "assets" && (
-          <div className="flex-1 overflow-y-auto space-y-4 py-2 pr-1 text-xs">
+          <div className="flex-1 overflow-y-auto space-y-3.5 p-3 text-xs">
+            <StudioSectionSaveDiscardBar
+              hasChanges={hasUnsavedChanges}
+              onSave={onSaveChanges}
+              onDiscard={onDiscardChanges}
+              isSaving={isSaving}
+              sectionLabel="مدير الوسائط والأصول"
+            />
             {/* Upload & Add Bar */}
             <div className="p-3.5 rounded-xl border border-border bg-muted/30 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -828,11 +872,11 @@ export function StudioDesignAndAssetsModal({
 
             {/* Assets Grid */}
             {filteredAssets.length === 0 ? (
-              <div className="py-12 text-center text-muted-foreground border border-dashed rounded-xl">
+              <div className="py-10 text-center text-muted-foreground border border-dashed rounded-xl">
                 لا توجد أصول مطابقة في هذا المجلد. ارفع صورة أو ملف SVG أعلاه للبدء.
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {filteredAssets.map((asset) => {
                   const usages = findAssetUsages(asset, draft);
                   const inUse = usages.length > 0;
@@ -1029,19 +1073,6 @@ export function StudioDesignAndAssetsModal({
             )}
           </div>
         )}
-
-        <DialogFooter className="shrink-0 border-t pt-3 border-border/60">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={onClose}
-            className="text-xs cursor-pointer"
-          >
-            إغلاق
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    </aside>
   );
 }

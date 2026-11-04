@@ -13,6 +13,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { translator } from "../shared/services/translationService";
 import { createAppSync } from "../shared/services/appSync";
 import { studioService } from "@/features/developer-studio/services/studioService";
+import { sanitizeStudioDomEditsMap } from "@/features/developer-studio/models/studio.types";
 import appCss from "../styles.css?url";
 
 function NotFoundComponent() {
@@ -250,6 +251,7 @@ function RootComponent() {
       directTextNodes: Array<{ node: ChildNode; text: string | null }>;
       parent: Node | null;
       nextSibling: Node | null;
+      wasReordered: boolean;
     };
     const studioSnapshots = new Map<string, StudioRuntimeSnapshot>();
     const publishedStudioClones = new Set<HTMLElement>();
@@ -257,7 +259,7 @@ function RootComponent() {
     let activeLegacyStudioEdits: Record<string, any> = {};
     let studioObserver: MutationObserver | null = null;
 
-    const preservedStudioSelector = '[data-studio-preserve="currency-switcher-tools"], [data-studio-preserve="currency-switcher"]';
+    const preservedStudioSelector = '[data-studio-preserve], [data-studio-ui-root="true"]';
     const isStudioPreserved = (element: Element) => !!element.closest(preservedStudioSelector);
     const containsStudioPreserved = (element: Element) => !!element.querySelector(preservedStudioSelector);
     const hidesPreservedStudioUi = (edit: any) => {
@@ -279,11 +281,12 @@ function RootComponent() {
         element,
         styleAttribute: element.getAttribute("style"),
         leafTextContent: element.children.length === 0 ? element.textContent ?? "" : null,
-        directTextNodes: element.children.length === 0 ? [] : Array.from(element.childNodes)
+        directTextNodes: Array.from(element.childNodes)
           .filter((node) => node.nodeType === Node.TEXT_NODE)
-          .map((node) => ({ node, text: node.textContent })),
+          .map((node) => ({ node, text: node.nodeValue })),
         parent: element.parentNode,
         nextSibling: element.nextSibling,
+        wasReordered: false,
       });
     };
 
@@ -294,17 +297,19 @@ function RootComponent() {
       for (const snapshot of Array.from(studioSnapshots.values()).reverse()) {
         const element = snapshot.element;
         if (!element.isConnected) continue;
-        if (snapshot.leafTextContent !== null) {
-          element.textContent = snapshot.leafTextContent;
-        } else {
+        if (snapshot.directTextNodes.length > 0) {
           for (const entry of snapshot.directTextNodes) {
-            if (entry.node.parentNode === element) entry.node.textContent = entry.text;
+            if (entry.node.parentNode === element) entry.node.nodeValue = entry.text;
           }
+        } else if (snapshot.leafTextContent !== null && element.children.length === 0) {
+          const textNode = Array.from(element.childNodes).find((n) => n.nodeType === Node.TEXT_NODE);
+          if (textNode) textNode.nodeValue = snapshot.leafTextContent;
+          else element.textContent = snapshot.leafTextContent;
         }
         delete element.dataset.studioTextApplied;
         if (snapshot.styleAttribute === null) element.removeAttribute("style");
         else element.setAttribute("style", snapshot.styleAttribute);
-        if (snapshot.parent && element.parentNode === snapshot.parent) {
+        if (snapshot.wasReordered && snapshot.parent && element.parentNode === snapshot.parent) {
           const next = snapshot.nextSibling;
           if (next && next.parentNode === snapshot.parent) snapshot.parent.insertBefore(element, next);
           else snapshot.parent.appendChild(element);
@@ -314,20 +319,42 @@ function RootComponent() {
     };
 
     const applyStudioEdits = (edits: Record<string, any>) => {
-      for (const [selector, edit] of Object.entries(edits || {}) as Array<[string, any]>) {
+      // Never apply published/legacy DOM edits to the Developer Studio workspace itself
+      const currentPath = window.location.pathname.replace(/\/+$/, "") || "/";
+      if (currentPath.startsWith("/admin/studio")) {
+        resetPublishedStudioEdits();
+        return;
+      }
+
+      const safeEdits = sanitizeStudioDomEditsMap(edits);
+      for (const [selector, edit] of Object.entries(safeEdits) as Array<[string, any]>) {
         if (selector.startsWith("__studio_")) continue;
         if (!edit || typeof edit !== "object") continue;
+        if (edit.pageRoute) {
+          const targetRoute = String(edit.pageRoute).split("?")[0].replace(/\/+$/, "") || "/";
+          if (targetRoute !== currentPath) continue;
+        }
         let element: Element | null = null;
         try { element = document.querySelector(selector); } catch { continue; }
         if (!element || isStudioPreserved(element)) continue;
+        if (
+          element.hasAttribute("hidden") ||
+          element.getAttribute("data-state") === "inactive" ||
+          element.getAttribute("role") === "tabpanel"
+        ) {
+          continue;
+        }
         if (containsStudioPreserved(element) && hidesPreservedStudioUi(edit)) continue;
 
         const html = element as HTMLElement;
         rememberStudioOriginal(selector, html);
+        const snap = studioSnapshots.get(selector);
         if (edit.text !== undefined && html.dataset.studioTextApplied !== String(edit.text)) {
-          const node = Array.from(html.childNodes).find((child) => child.nodeType === Node.TEXT_NODE && child.textContent?.trim());
-          if (node) node.textContent = String(edit.text);
-          else if (!html.children.length) html.textContent = String(edit.text);
+          const node =
+            Array.from(html.childNodes).find((child) => child.nodeType === Node.TEXT_NODE && child.nodeValue?.trim()) ||
+            Array.from(html.childNodes).find((child) => child.nodeType === Node.TEXT_NODE);
+          if (node) node.nodeValue = String(edit.text);
+          else if (!html.children.length) html.appendChild(document.createTextNode(String(edit.text)));
           html.dataset.studioTextApplied = String(edit.text);
         }
         if (edit.ariaLabel) html.setAttribute("aria-label", String(edit.ariaLabel));
@@ -341,15 +368,22 @@ function RootComponent() {
         }
         if (edit.styles && typeof edit.styles === "object") for (const [key, value] of Object.entries(edit.styles)) {
           if (typeof value !== "string") continue;
-          if (key in html.style) (html.style as any)[key] = value;
+          const cssProp = key.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
+          if (value === "") {
+            html.style.removeProperty(cssProp);
+          } else {
+            html.style.setProperty(cssProp, value, "important");
+          }
           if (html.tagName.toLowerCase() === "svg" && ["fill", "stroke", "strokeWidth", "color"].includes(key)) {
             html.querySelectorAll("path,circle,rect,line,polyline,polygon,ellipse").forEach((node) => {
-              if (key in (node as HTMLElement).style) ((node as HTMLElement).style as any)[key] = value;
+              if (value === "") (node as HTMLElement).style.removeProperty(cssProp);
+              else (node as HTMLElement).style.setProperty(cssProp, value, "important");
             });
           }
         }
-        if (edit.deleted) html.style.display = "none";
+        if (edit.deleted) html.style.setProperty("display", "none", "important");
         if (typeof edit.order === "number" && html.parentElement) {
+          if (snap) snap.wasReordered = true;
           const siblings = Array.from(html.parentElement.children).filter((item) =>
             item !== html && !(item as HTMLElement).dataset.studioCloneOf);
           const currentIndex = Array.from(html.parentElement.children).indexOf(html);
@@ -377,7 +411,7 @@ function RootComponent() {
     const refreshLegacyStudioEdits = () => {
       try {
         const stored = JSON.parse(localStorage.getItem("custom_text_map") || "{}");
-        activeLegacyStudioEdits = stored && typeof stored === "object" ? stored : {};
+        activeLegacyStudioEdits = sanitizeStudioDomEditsMap(stored);
       } catch {
         activeLegacyStudioEdits = {};
       }
@@ -390,7 +424,7 @@ function RootComponent() {
     };
     const applyPublishedStudioEdits = (config: any) => {
       const remoteEdits = config?.domEdits;
-      activePublishedStudioEdits = remoteEdits && typeof remoteEdits === "object" ? remoteEdits : {};
+      activePublishedStudioEdits = sanitizeStudioDomEditsMap(remoteEdits);
       rebuildRuntimeStudioEdits();
     };
     const publishedHandler = (event: Event) => applyPublishedStudioEdits((event as CustomEvent).detail);

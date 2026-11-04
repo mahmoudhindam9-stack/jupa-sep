@@ -303,6 +303,7 @@ export function AppMainNavbar({
 
   return (
     <header
+      data-studio-preserve="top-navigation-bar"
       className={cn(
         "sticky top-0 z-40 shrink-0 bg-card/90 backdrop-blur-xl border-b border-border/90 px-3 sm:px-6 h-14 flex items-center justify-between gap-2 sm:gap-3 shadow-2xs",
         className,

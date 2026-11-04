@@ -6,7 +6,7 @@
  */
 
 import { createFileRoute } from "@tanstack/react-router";
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import {
   StudioDraft,
   StudioPublishedConfig,
@@ -28,16 +28,64 @@ import {
 } from "@/features/developer-studio/models/studio.types";
 import { studioService, DEFAULT_STUDIO_PUBLISHED_CONFIG } from "@/features/developer-studio/services/studioService";
 import { supabase } from "@/integrations/supabase/client";
+import type { StudioToolTab } from "@/features/developer-studio/components/StudioAdvancedToolsModal";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/hooks/use-toast";
+
 import { PublishModal } from "@/features/developer-studio/components/PublishModal";
 import { ConflictResolutionModal } from "@/features/developer-studio/components/ConflictResolutionModal";
 import { HistoryRollbackModal } from "@/features/developer-studio/components/HistoryRollbackModal";
 import { LiveAppPreview } from "@/features/developer-studio/components/LiveAppPreview";
 import { StudioDesignAndAssetsModal } from "@/features/developer-studio/components/StudioDesignAndAssetsModal";
-import { StudioAdvancedToolsModal, StudioToolTab } from "@/features/developer-studio/components/StudioAdvancedToolsModal";
-import { IndependentCodeWorkspace } from "@/features/developer-studio/components/IndependentCodeWorkspace";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { useToast } from "@/hooks/use-toast";
+import { StudioAdvancedToolsModal } from "@/features/developer-studio/components/StudioAdvancedToolsModal";
+
+const IndependentCodeWorkspace = React.lazy(() =>
+  import("@/features/developer-studio/components/IndependentCodeWorkspace").then((m) => ({
+    default: m.IndependentCodeWorkspace,
+  })),
+);
+
+class StudioToolErrorBoundary extends React.Component<
+  { children: React.ReactNode; onReset?: () => void },
+  { hasError: boolean; errorMessage: string }
+> {
+  constructor(props: { children: React.ReactNode; onReset?: () => void }) {
+    super(props);
+    this.state = { hasError: false, errorMessage: "" };
+  }
+
+  static getDerivedStateFromError(error: any) {
+    return {
+      hasError: true,
+      errorMessage: String(error?.message || error || "حدث خطأ غير متوقع في الأداة"),
+    };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <aside className="absolute top-0 left-0 bottom-0 z-40 flex w-[360px] flex-col border-r border-border bg-card p-4 shadow-2xl text-right font-cairo justify-center items-center gap-3">
+          <p className="text-xs font-bold text-destructive">تعذر فتح الأداة مؤقتاً</p>
+          <p className="text-[11px] text-muted-foreground text-center">{this.state.errorMessage}</p>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              this.setState({ hasError: false, errorMessage: "" });
+              this.props.onReset?.();
+            }}
+            className="text-xs cursor-pointer"
+          >
+            إعادة المحاولة
+          </Button>
+        </aside>
+      );
+    }
+    return this.props.children;
+  }
+}
 import {
   Sparkles,
   Save,
@@ -50,15 +98,9 @@ import {
   AlertCircle,
   Loader2,
   Palette,
-  Image as ImageIcon,
   Command,
-  ShieldCheck,
-  GitCompare,
-  Download,
-  Keyboard,
   WifiOff,
   RefreshCw,
-  BookmarkPlus,
   Code2,
 } from "lucide-react";
 
@@ -74,14 +116,39 @@ export const Route = createFileRoute("/admin/studio")({
 
 function DeveloperStudioProPage() {
   const { toast } = useToast();
-  const [activeWorkspace, setActiveWorkspace] = useState<"visual" | "code">("visual");
+  const [activeWorkspace, setActiveWorkspace] = useState<"visual" | "code">(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("workspace") === "code") return "code";
+    }
+    return "visual";
+  });
+  const [hasOpenedCodeWorkspace, setHasOpenedCodeWorkspace] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("workspace") === "code") return true;
+    }
+    return false;
+  });
 
-  // Core Draft & Published State
-  const [draft, setDraft] = useState<StudioDraft | null>(null);
-  const draftRef = useRef<StudioDraft | null>(null);
+  useEffect(() => {
+    if (activeWorkspace === "code") {
+      setHasOpenedCodeWorkspace(true);
+    }
+  }, [activeWorkspace]);
+
+  // Synchronous Local-First Draft & Published State (0ms immediate startup, never blocks UI)
+  const [draft, setDraft] = useState<StudioDraft>(() => {
+    const initial = studioService.getImmediateLocalOrDefaultDraft("admin");
+    const normalized = normalizeStudioDraftPageReferences(initial);
+    return normalized.draft;
+  });
+  const draftRef = useRef<StudioDraft | null>(draft);
   draftRef.current = draft;
 
-  const [publishedConfig, setPublishedConfig] = useState<StudioPublishedConfig>(DEFAULT_STUDIO_PUBLISHED_CONFIG);
+  const [publishedConfig, setPublishedConfig] = useState<StudioPublishedConfig>(() =>
+    studioService.getImmediateLocalOrDefaultPublishedConfig(),
+  );
   const [serverSavedDraft, setServerSavedDraft] = useState<StudioDraft | null>(null);
 
   const savingToCloudRef = useRef(false);
@@ -92,32 +159,45 @@ function DeveloperStudioProPage() {
   const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
   const [remoteChangesDetected, setRemoteChangesDetected] = useState(false);
   const latestRealtimePublishedRevisionRef = useRef(0);
-  const [activePageId, setActivePageId] = useState<string>("page_dashboard");
+  const [activePageId, setActivePageId] = useState<string>(
+    () => Object.keys(draft.pages || {})[0] || "page_dashboard",
+  );
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [selectedSelector, setSelectedSelector] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isMounted, setIsMounted] = useState(false);
+
+  // Non-blocking background sync state & sequence guards
+  const [isBgSyncing, setIsBgSyncing] = useState<boolean>(true);
+  const [bgSyncError, setBgSyncError] = useState<string | null>(null);
+  const bgSyncSeqRef = useRef(0);
+  const bgSyncInFlightRef = useRef(false);
 
   // Recovery banner when browser holds a newer local draft than server
-  const [hasNewerLocalDraftBanner, setHasNewerLocalDraftBanner] = useState(false);
-
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
+  const [hasNewerLocalDraftBanner, setHasNewerLocalDraftBanner] = useState<boolean>(
+    () => Boolean(draft.hasUnsavedLocalChanges),
+  );
 
   // Save & Sync Status State (saved | saving | unsaved | offline | conflict | error)
-  const [saveStatus, setSaveStatus] = useState<StudioSaveState>("saved");
-  const [lastSavedAt, setLastSavedAt] = useState<string>("");
+  const [saveStatus, setSaveStatus] = useState<StudioSaveState>(() => {
+    if (typeof navigator !== "undefined" && !navigator.onLine && draft.hasUnsavedLocalChanges) {
+      return "offline";
+    }
+    return draft.hasUnsavedLocalChanges ? "unsaved" : "saved";
+  });
+  const [lastSavedAt, setLastSavedAt] = useState<string>(() =>
+    draft.hasUnsavedLocalChanges ? "" : draft.updatedAt,
+  );
   const [saveError, setSaveError] = useState<string | null>(null);
   const saveErrorRef = useRef<string | null>(null);
   const draftVersionRef = useRef(0);
   const saveQueueRef = useRef<Promise<unknown>>(Promise.resolve());
 
   // Undo / Redo Bounded History Stack (max 35 snapshots)
-  const [historyStack, setHistoryStack] = useState<StudioDraft[]>([]);
-  const [historyPointer, setHistoryPointer] = useState<number>(-1);
+  const [historyStack, setHistoryStack] = useState<StudioDraft[]>(() => [
+    JSON.parse(JSON.stringify(draft)),
+  ]);
+  const [historyPointer, setHistoryPointer] = useState<number>(0);
 
-  // Modals
+  // Side Drawers & Modals
   const [showPublishModal, setShowPublishModal] = useState(false);
   const [showConflictModal, setShowConflictModal] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
@@ -126,24 +206,65 @@ function DeveloperStudioProPage() {
   const [assetPickerCallback, setAssetPickerCallback] = useState<((url: string) => void) | undefined>(undefined);
   const [showAdvancedToolsModal, setShowAdvancedToolsModal] = useState(false);
   const [advancedToolsTab, setAdvancedToolsTab] = useState<StudioToolTab>("command");
+  const [closePreviewDrawersSignal, setClosePreviewDrawersSignal] = useState(0);
 
   const [detectedConflicts, setDetectedConflicts] = useState<ConflictDetail[]>([]);
   const [conflictServerRevision, setConflictServerRevision] = useState<number>(1);
 
-  // Initialize: Load Draft & Published Config from service
-  useEffect(() => {
-    let mounted = true;
+  // Non-blocking Background Synchronization with Supabase (Protected against race conditions & timeouts)
+  const runBackgroundServerSync = useCallback(
+    async (options?: { manualRetry?: boolean }) => {
+      if (bgSyncInFlightRef.current && !options?.manualRetry) {
+        return;
+      }
+      bgSyncInFlightRef.current = true;
+      const syncSeq = ++bgSyncSeqRef.current;
+      const startDraftVersion = draftVersionRef.current;
+      setIsBgSyncing(true);
+      setBgSyncError(null);
 
-    async function init() {
       try {
-        setIsLoading(true);
-        const [serverOrLocalDraft, pubCfg, remoteDraft] = await Promise.all([
-          studioService.getDraft("admin"),
-          studioService.getPublishedConfig(),
-          studioService.getServerSavedDraft("admin"),
-        ]);
+        const result = await studioService.syncWithServerInBackground("admin", 5000);
+        if (syncSeq !== bgSyncSeqRef.current) {
+          return;
+        }
 
-        const normalized = normalizeStudioDraftPageReferences(serverOrLocalDraft);
+        setPublishedConfig(result.publishedConfig);
+        if (result.serverSavedDraft) {
+          setServerSavedDraft(result.serverSavedDraft);
+        }
+
+        if (result.error) {
+          setBgSyncError(result.error);
+          if (result.offline && draftRef.current?.hasUnsavedLocalChanges) {
+            setSaveStatus("offline");
+          }
+          if (options?.manualRetry) {
+            toast({
+              title: "تعذرت المزامنة مع السحابة",
+              description: result.error,
+              variant: "destructive",
+            });
+          }
+          return;
+        }
+
+        // Never overwrite local edits that occurred while background sync was in flight
+        const userEditedDuringSync =
+          draftVersionRef.current !== startDraftVersion ||
+          Boolean(draftRef.current?.hasUnsavedLocalChanges);
+
+        if (userEditedDuringSync || result.preservedNewerLocalChanges) {
+          setHasNewerLocalDraftBanner(true);
+          if (typeof navigator !== "undefined" && !navigator.onLine) {
+            setSaveStatus("offline");
+          } else {
+            setSaveStatus("unsaved");
+          }
+          return;
+        }
+
+        const normalized = normalizeStudioDraftPageReferences(result.draft);
         const loadedDraft: StudioDraft = normalized.changed
           ? {
               ...normalized.draft,
@@ -157,45 +278,39 @@ function DeveloperStudioProPage() {
           studioService.saveLocalDraft(loadedDraft);
         }
 
-        if (mounted) {
-          setPublishedConfig(pubCfg);
-          setServerSavedDraft(remoteDraft);
-          setDraft(loadedDraft);
-          const firstPageId = Object.keys(loadedDraft.pages || {})[0] || "page_dashboard";
-          setActivePageId(firstPageId);
-          setHistoryStack([JSON.parse(JSON.stringify(loadedDraft))]);
-          setHistoryPointer(0);
-          setLastSavedAt(loadedDraft.hasUnsavedLocalChanges ? "" : loadedDraft.updatedAt);
+        setDraft(loadedDraft);
+        setActivePageId((prev) =>
+          loadedDraft.pages[prev] ? prev : Object.keys(loadedDraft.pages || {})[0] || "page_dashboard",
+        );
+        setHistoryStack([JSON.parse(JSON.stringify(loadedDraft))]);
+        setHistoryPointer(0);
+        setLastSavedAt(loadedDraft.hasUnsavedLocalChanges ? "" : loadedDraft.updatedAt);
+        setSaveStatus(loadedDraft.hasUnsavedLocalChanges ? "unsaved" : "saved");
+        setHasNewerLocalDraftBanner(Boolean(loadedDraft.hasUnsavedLocalChanges));
 
-          if (!navigator.onLine && loadedDraft.hasUnsavedLocalChanges) {
-            setSaveStatus("offline");
-          } else {
-            setSaveStatus(loadedDraft.hasUnsavedLocalChanges ? "unsaved" : "saved");
-          }
-
-          if (loadedDraft.hasUnsavedLocalChanges) {
-            setHasNewerLocalDraftBanner(true);
-          }
-
-          if (normalized.changed) {
-            toast({
-              title: "تم تنظيف مراجع العناصر المكررة",
-              description: "أزلنا التكرار في قوائم العناصر دون حذف أي عنصر مستقل. اضغط «حفظ المسودة» لتأكيد الإصلاح على الخادم.",
-            });
-          }
+        if (options?.manualRetry) {
+          toast({
+            title: "تمت المزامنة مع السحابة بنجاح",
+            description: `الإصدار الحي #${result.publishedConfig.revision}`,
+          });
         }
       } catch (err: any) {
-        toast({
-          title: "خطأ في تحميل المسودة",
-          description: err.message,
-          variant: "destructive",
-        });
+        if (syncSeq === bgSyncSeqRef.current) {
+          setBgSyncError(err?.message || "تعذر الاتصال بـ Supabase؛ يعمل المحرر بالنسخة المحلية.");
+        }
       } finally {
-        if (mounted) setIsLoading(false);
+        if (syncSeq === bgSyncSeqRef.current) {
+          setIsBgSyncing(false);
+          bgSyncInFlightRef.current = false;
+        }
       }
-    }
+    },
+    [toast],
+  );
 
-    init();
+  // Trigger non-blocking background sync once on mount
+  useEffect(() => {
+    void runBackgroundServerSync();
 
     const handlePubUpdate = (e: Event) => {
       const detail = (e as CustomEvent).detail;
@@ -204,10 +319,10 @@ function DeveloperStudioProPage() {
     window.addEventListener("studio_published_updated", handlePubUpdate);
 
     return () => {
-      mounted = false;
+      bgSyncSeqRef.current += 1;
       window.removeEventListener("studio_published_updated", handlePubUpdate);
     };
-  }, [toast]);
+  }, [runBackgroundServerSync]);
 
   // Monitor browser online/offline state for accurate save status
   useEffect(() => {
@@ -693,8 +808,11 @@ function DeveloperStudioProPage() {
         void handleSaveDraft();
       } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
+        setShowDesignAndAssetsModal(false);
+        setShowHistoryModal(false);
+        setClosePreviewDrawersSignal((s) => s + 1);
         setAdvancedToolsTab("command");
-        setShowAdvancedToolsModal(true);
+        setShowAdvancedToolsModal((prev) => !prev);
       }
     };
 
@@ -879,23 +997,78 @@ function DeveloperStudioProPage() {
     [draft, commitDraftChange, toast],
   );
 
-  const handleCreateQuickCheckpoint = useCallback(() => {
-    if (!draft) return;
-    const label = `نقطة استرجاع سريعة #${(draft.namedSnapshots?.length || 0) + 1}`;
-    const { draft: updated } = studioService.createNamedSnapshot(draft, label);
-    commitDraftChange(updated);
-    toast({ title: "تم حفظ نقطة استرجاع (Checkpoint)", description: label });
-  }, [draft, commitDraftChange, toast]);
+  const [xRayMode, setXRayMode] = useState(false);
 
-  // Discard unsaved local draft changes (restore last server-confirmed draft)
-  const handleDiscardDraft = async () => {
+  const handleAddElement = useCallback(
+    (type: ElementType, parentId: string | null = null) => {
+      if (!draft) return;
+      const targetPageId = activePageId || Object.keys(draft.pages)[0] || "page_dashboard";
+      const page = draft.pages[targetPageId];
+      if (!page) return;
+
+      const newId = createStudioId(`elem_${type}`, Object.keys(draft.elements || {}));
+      const newElement: ElementModel = {
+        id: newId,
+        pageId: targetPageId,
+        parentId,
+        type,
+        content:
+          type === "heading"
+            ? { text: "عنوان جديد", level: "h2" }
+            : type === "button"
+              ? { label: "زر إجراء", variant: "primary" }
+              : type === "card"
+                ? { title: "بطاقة جديدة", description: "وصف البطاقة" }
+                : { text: "عنصر مضاف" },
+        styles: {
+          padding: "12px",
+          borderRadius: "10px",
+        },
+        layout: {
+          position: "static",
+          order: (page.elementIds?.length || 0) + 1,
+          visibility: true,
+        },
+        attributes: {},
+        locked: false,
+        schemaVersion: CURRENT_SCHEMA_VERSION,
+        revision: draft.baseRevision,
+        updatedAt: new Date().toISOString(),
+        updatedBy: "admin",
+      };
+
+      const nextElementIds = uniquePageElementIds([...(page.elementIds || []), newId]);
+      commitDraftChange({
+        ...draft,
+        pages: {
+          ...draft.pages,
+          [targetPageId]: {
+            ...page,
+            elementIds: nextElementIds,
+            updatedAt: new Date().toISOString(),
+          },
+        },
+        elements: {
+          ...(draft.elements || {}),
+          [newId]: newElement,
+        },
+        hasUnpublishedChanges: true,
+      });
+      setSelectedElementId(newId);
+      toast({
+        title: "تمت إضافة المكون إلى المسودة",
+        description: `أضيف مكون (${type}) إلى صفحة «${page.name}».`,
+      });
+    },
+    [draft, activePageId, commitDraftChange, toast],
+  );
+
+  // Discard unsaved local draft changes (restore last saved draft)
+  const handleDiscardDraft = useCallback(async () => {
     if (!draft?.hasUnsavedLocalChanges) return;
-    if (!window.confirm("سيتم تجاهل التعديلات التي لم تحفظها يدويًا واسترجاع آخر مسودة أكد Supabase حفظها. هل تريد المتابعة؟")) {
-      return;
-    }
 
     try {
-      setIsLoading(true);
+      setIsBgSyncing(true);
       const fresh = await studioService.discardDraft("admin");
       draftVersionRef.current += 1;
       setDraft(fresh);
@@ -908,13 +1081,13 @@ function DeveloperStudioProPage() {
       saveErrorRef.current = null;
       setHasNewerLocalDraftBanner(false);
       setLastSavedAt(fresh.updatedAt);
-      toast({ title: "تم استرجاع آخر مسودة محفوظة", description: "التعديلات غير المحفوظة تم تجاهلها." });
+      toast({ title: "تم تجاهل التعديلات واسترجاع آخر نسخة محفوظة", description: "التعديلات غير المحفوظة تم تجاهلها بنجاح." });
     } catch (e: any) {
       toast({ title: "تعذر إلغاء التعديلات", description: e.message, variant: "destructive" });
     } finally {
-      setIsLoading(false);
+      setIsBgSyncing(false);
     }
-  };
+  }, [draft?.hasUnsavedLocalChanges, toast]);
 
   // Trigger Publish Modal (PublishModal itself also saves & verifies dirty drafts before publishing)
   const handleTriggerPublish = async () => {
@@ -934,28 +1107,22 @@ function DeveloperStudioProPage() {
     setShowPublishModal(true);
   };
 
-  if (!isMounted || isLoading || !draft) {
-    return (
-      <div className="h-[80vh] flex flex-col items-center justify-center gap-3 text-muted-foreground font-cairo">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        <span className="text-sm font-bold">جاري تحميل استوديو المطور Pro والمسودات...</span>
-      </div>
-    );
-  }
-
   const activePage = draft.pages[activePageId] || Object.values(draft.pages)[0];
 
   return (
-    <div className="h-[calc(100dvh-88px)] min-h-[560px] flex flex-col overflow-hidden bg-background font-cairo text-right select-none">
+    <div
+      data-studio-ui-root="true"
+      className="h-full flex-1 min-h-0 w-full flex flex-col overflow-hidden bg-background font-cairo text-right select-none"
+    >
       {/* ========================================================= */}
       {/* RECOVERY BANNER WHEN BROWSER HAS NEWER LOCAL DRAFT        */}
       {/* ========================================================= */}
       {hasNewerLocalDraftBanner && draft.hasUnsavedLocalChanges && (
-        <div className="shrink-0 bg-amber-500/15 border-b border-amber-500/30 px-4 py-1.5 flex items-center justify-between gap-2 text-xs text-amber-800 dark:text-amber-300">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
-            <span className="font-bold">
-              يحتوي المتصفح على مسودة محلية أحدث من الخادم (تمت استعادتها تلقائيًا). يمكنك مزامنتها الآن مع Supabase أو استرجاع نسخة الخادم.
+        <div className="shrink-0 bg-amber-500/15 border-b border-amber-500/30 px-3 py-1 flex items-center justify-between gap-2 text-[11px] text-amber-800 dark:text-amber-300">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+            <span className="font-bold truncate">
+              يحتوي المتصفح على مسودة محلية أحدث من الخادم. يمكنك مزامنتها مع Supabase أو استرجاع نسخة الخادم.
             </span>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
@@ -965,23 +1132,23 @@ function DeveloperStudioProPage() {
               variant="default"
               onClick={() => void handleSaveDraft()}
               disabled={saveStatus === "saving"}
-              className="h-6 px-2.5 text-[11px] font-bold bg-amber-600 hover:bg-amber-700 text-white cursor-pointer"
+              className="h-6 px-2 text-[10px] font-bold bg-amber-600 hover:bg-amber-700 text-white cursor-pointer"
             >
-              حفظ ومزامنة مع الخادم
+              مزامنة الآن
             </Button>
             <Button
               type="button"
               size="sm"
               variant="outline"
               onClick={() => void handleDiscardDraft()}
-              className="h-6 px-2 text-[11px] cursor-pointer"
+              className="h-6 px-2 text-[10px] cursor-pointer"
             >
-              استرجاع نسخة الخادم
+              استرجاع الخادم
             </Button>
             <button
               type="button"
               onClick={() => setHasNewerLocalDraftBanner(false)}
-              className="text-[11px] underline px-1 hover:opacity-80 cursor-pointer"
+              className="text-[10px] underline px-1 hover:opacity-80 cursor-pointer"
             >
               إخفاء
             </button>
@@ -990,208 +1157,194 @@ function DeveloperStudioProPage() {
       )}
 
       {/* ========================================================= */}
-      {/* TOP WORKSPACE NAVIGATION & CONTROL BAR                    */}
+      {/* UNIFIED COMPACT STUDIO BAR (1 CANONICAL BUTTON PER TOOL)  */}
       {/* ========================================================= */}
-      <header className="shrink-0 z-30 bg-card border-b border-border px-3 sm:px-4 py-2 flex items-center justify-between gap-2 shadow-2xs flex-wrap">
-        {/* Right side (RTL): Brand, Page Selector, Save Status */}
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary border border-primary/20 flex items-center justify-center shrink-0">
-              <Sparkles className="w-4 h-4" />
-            </span>
-            <div className="hidden sm:block">
-              <h1 className="text-xs font-black text-foreground leading-tight flex items-center gap-1.5">
-                <span>استوديو المطور Pro</span>
-                <Badge variant="outline" className="text-[9px] font-mono px-1.5 py-0">
-                  v{draft.baseRevision}
-                </Badge>
-              </h1>
-              <p className="text-[10px] text-muted-foreground">
-                المنشور الحي #{publishedConfig.revision}
-              </p>
-            </div>
-          </div>
-
-          <div className="h-5 w-px bg-border/80 hidden sm:block" />
-
-          {/* Page Selector dropdown */}
+      <header className="shrink-0 z-30 bg-card border-b border-border px-2.5 py-1 flex items-center justify-between gap-2 overflow-x-auto no-scrollbar">
+        {/* Right side (RTL): Studio Identity & Unified Save/Sync Status */}
+        <div className="flex items-center gap-2 shrink-0">
           <div className="flex items-center gap-1.5">
-            <select
-              value={activePageId}
-              onChange={(e) => {
-                setActivePageId(e.target.value);
-                setSelectedElementId(null);
-              }}
-              aria-label="اختيار الصفحة الحالية"
-              className="text-xs font-bold bg-muted/80 hover:bg-muted border border-border/80 rounded-lg px-2.5 py-1.5 cursor-pointer max-w-[165px] truncate"
-            >
-              {Object.values(draft.pages || {}).map((p) => (
-                <option key={p.id} value={p.id}>
-                  📄 {p.name} ({p.route})
-                </option>
-              ))}
-            </select>
+            <span className="w-6 h-6 rounded-lg bg-primary/10 text-primary border border-primary/20 flex items-center justify-center shrink-0">
+              <Sparkles className="w-3.5 h-3.5" />
+            </span>
+            <span className="text-xs font-black text-foreground whitespace-nowrap">
+              استوديو المطور Pro
+            </span>
+            <Badge variant="outline" className="text-[9px] font-mono px-1.5 py-0 h-4">
+              v{draft.baseRevision}
+            </Badge>
           </div>
 
-          {/* Explicit Save States: Saved, Saving, Unsaved, Offline, Conflict, Save Failed + Retry */}
-          <div className="items-center gap-1.5 hidden md:flex">
+          <div className="h-4 w-px bg-border/80" />
+
+          {/* Unified Save & Connection Status */}
+          <div className="flex items-center gap-1">
             {saveStatus === "saving" && (
-              <Badge variant="outline" className="gap-1 text-[10px] bg-amber-500/10 text-amber-700 border-amber-500/30">
-                <Loader2 className="w-3 h-3 animate-spin" />
-                <span>جاري الحفظ (Saving)...</span>
+              <Badge variant="outline" className="gap-1 text-[10px] h-5 bg-amber-500/10 text-amber-700 border-amber-500/30">
+                <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                <span>جاري الحفظ...</span>
               </Badge>
             )}
             {saveStatus === "saved" && (
-              <Badge variant="outline" className="gap-1 text-[10px] bg-emerald-500/10 text-emerald-700 border-emerald-500/30">
-                <CheckCircle2 className="w-3 h-3" />
-                <span>محفوظ على السحابة (Saved)</span>
+              <Badge variant="outline" className="gap-1 text-[10px] h-5 bg-emerald-500/10 text-emerald-700 border-emerald-500/30">
+                <CheckCircle2 className="w-2.5 h-2.5" />
+                <span>محفوظ سحابيًا</span>
               </Badge>
             )}
             {saveStatus === "unsaved" && (
-              <Badge variant="outline" className="gap-1 text-[10px] bg-blue-500/10 text-blue-700 border-blue-500/30">
-                <span>غير محفوظ سحابيًا (Unsaved)</span>
+              <Badge variant="outline" className="gap-1 text-[10px] h-5 bg-blue-500/10 text-blue-700 border-blue-500/30">
+                <span>تعديلات محلية غير محفوظة</span>
               </Badge>
             )}
             {saveStatus === "offline" && (
-              <Badge variant="outline" className="gap-1 text-[10px] bg-amber-500/15 text-amber-800 border-amber-500/40">
-                <WifiOff className="w-3 h-3" />
-                <span>وضع عدم الاتصال (Offline — محفوظ محليًا)</span>
+              <Badge variant="outline" className="gap-1 text-[10px] h-5 bg-amber-500/15 text-amber-800 border-amber-500/40">
+                <WifiOff className="w-2.5 h-2.5" />
+                <span>محلي (غير متصل)</span>
               </Badge>
             )}
             {saveStatus === "conflict" && (
               <Badge
                 variant="outline"
                 onClick={() => setShowConflictModal(true)}
-                className="gap-1 text-[10px] bg-amber-500/15 text-amber-800 border-amber-500/40 cursor-pointer hover:bg-amber-500/25"
+                className="gap-1 text-[10px] h-5 bg-amber-500/15 text-amber-800 border-amber-500/40 cursor-pointer hover:bg-amber-500/25"
               >
-                <AlertCircle className="w-3 h-3" />
-                <span>تعارض إصدارات (Conflict) — اضغط للحل</span>
+                <AlertCircle className="w-2.5 h-2.5" />
+                <span>حل التعارض</span>
               </Badge>
             )}
             {saveStatus === "error" && (
               <div className="flex items-center gap-1">
-                <Badge variant="outline" className="gap-1 text-[10px] bg-destructive/10 text-destructive border-destructive/30">
-                  <AlertCircle className="w-3 h-3" />
-                  <span title={saveError || "فشل الحفظ السحابي؛ النسخة المحلية محفوظة"}>فشل الحفظ (Save Failed)</span>
+                <Badge variant="outline" className="gap-1 text-[10px] h-5 bg-destructive/10 text-destructive border-destructive/30">
+                  <AlertCircle className="w-2.5 h-2.5" />
+                  <span title={saveError || "فشل الحفظ السحابي"}>تعذر الحفظ</span>
                 </Badge>
                 <Button
                   type="button"
                   size="sm"
                   variant="outline"
                   onClick={() => void handleSaveDraft()}
-                  className="h-6 px-2 text-[10px] gap-1 border-destructive/40 text-destructive hover:bg-destructive/10 cursor-pointer"
+                  className="h-5 px-1.5 text-[10px] gap-1 border-destructive/40 text-destructive hover:bg-destructive/10 cursor-pointer"
                 >
                   <RefreshCw className="w-2.5 h-2.5" />
-                  إعادة المحاولة
+                  إعادة
                 </Button>
               </div>
             )}
 
-            <Badge
-              variant="outline"
-              className={
-                "gap-1 text-[10px] " +
-                (isRealtimeConnected
-                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700"
-                  : "border-amber-500/30 bg-amber-500/10 text-amber-700")
-              }
-              title="اتصال Supabase Realtime"
-            >
-              <span className={"h-1.5 w-1.5 rounded-full " + (isRealtimeConnected ? "bg-emerald-500" : "bg-amber-500")} />
-              {isRealtimeConnected ? "متصل" : "محلي"}
-            </Badge>
+            {isBgSyncing && (
+              <Badge
+                variant="outline"
+                className="gap-1 text-[10px] h-5 border-primary/30 bg-primary/5 text-primary"
+                title="جاري المزامنة الخلفية مع Supabase"
+              >
+                <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                <span className="hidden xl:inline">مزامنة...</span>
+              </Badge>
+            )}
+
+            {!isBgSyncing && bgSyncError && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => void runBackgroundServerSync({ manualRetry: true })}
+                className="h-5 px-1.5 text-[10px] gap-1 border-amber-500/40 text-amber-800 hover:bg-amber-500/15 cursor-pointer"
+                title={bgSyncError}
+              >
+                <RefreshCw className="w-2.5 h-2.5" />
+                <span>مزامنة السحابة</span>
+              </Button>
+            )}
+
+            <span
+              className={"h-2 w-2 rounded-full shrink-0 " + (isRealtimeConnected ? "bg-emerald-500" : "bg-amber-500")}
+              title={isRealtimeConnected ? "متصل بـ Supabase Realtime" : "وضع محلي"}
+            />
           </div>
         </div>
 
-        {/* Center: Design System, Assets, Command Palette, Audits, Undo/Redo, Save Draft */}
-        <div className="flex items-center gap-1 flex-wrap">
+        {/* Center: Canonical Single-Entry Studio Tools (Open as non-blocking side drawers) */}
+        <div className="flex items-center gap-1 shrink-0">
+          {/* 1. Design System & Media Assets Side Drawer */}
           <Button
             type="button"
-            variant="outline"
+            variant={showDesignAndAssetsModal ? "default" : "outline"}
             size="sm"
             onClick={() => {
+              setShowAdvancedToolsModal(false);
+              setShowHistoryModal(false);
+              setClosePreviewDrawersSignal((s) => s + 1);
               setDesignAndAssetsTab("design");
               setAssetPickerCallback(undefined);
-              setShowDesignAndAssetsModal(true);
+              setShowDesignAndAssetsModal((prev) => !prev);
             }}
-            className="h-8 px-2 text-xs gap-1 cursor-pointer"
-            title="نظام التصميم والألوان والخطوط (Design System)"
+            className="h-7 px-2 text-[11px] gap-1 cursor-pointer"
+            title="نظام التصميم، الألوان، الخطوط، ومدير الوسائط والصور (يفتح كدرج جانبي)"
           >
-            <Palette className="w-3.5 h-3.5 text-primary" />
-            <span className="hidden xl:inline">نظام التصميم</span>
+            <Palette className="w-3.5 h-3.5" />
+            <span>التصميم والوسائط</span>
           </Button>
 
+          {/* 2. Smart Tools Hub Side Drawer: Command Palette, Find/Replace, Audits, Diff, Export/Import, AI, Shortcuts */}
           <Button
             type="button"
-            variant="outline"
+            variant={showAdvancedToolsModal ? "default" : "outline"}
             size="sm"
             onClick={() => {
-              setDesignAndAssetsTab("assets");
-              setAssetPickerCallback(undefined);
-              setShowDesignAndAssetsModal(true);
-            }}
-            className="h-8 px-2 text-xs gap-1 cursor-pointer"
-            title="مدير الوسائط والصور والأيقونات (Asset Manager)"
-          >
-            <ImageIcon className="w-3.5 h-3.5 text-emerald-600" />
-            <span className="hidden xl:inline">الوسائط</span>
-          </Button>
-
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setAdvancedToolsTab("audits");
-              setShowAdvancedToolsModal(true);
-            }}
-            className="h-8 px-2 text-xs gap-1 cursor-pointer"
-            title="فحص الوصول والتجاوب وتناسق التصميم (Audits)"
-          >
-            <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
-            <span className="hidden xl:inline">الفحص الذكي</span>
-          </Button>
-
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setAdvancedToolsTab("diff");
-              setShowAdvancedToolsModal(true);
-            }}
-            className="h-8 px-2 text-xs gap-1 cursor-pointer"
-            title="مقارنة التغييرات (Draft vs Saved vs Published)"
-          >
-            <GitCompare className="w-3.5 h-3.5 text-blue-600" />
-            <span className="hidden 2xl:inline">المقارنة</span>
-          </Button>
-
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => {
+              setShowDesignAndAssetsModal(false);
+              setShowHistoryModal(false);
+              setClosePreviewDrawersSignal((s) => s + 1);
               setAdvancedToolsTab("command");
-              setShowAdvancedToolsModal(true);
+              setShowAdvancedToolsModal((prev) => !prev);
             }}
-            className="h-8 px-2 text-xs gap-1 cursor-pointer"
-            title="لوحة الأوامر السريعة والبحث والاستبدال (Ctrl+K)"
+            className="h-7 px-2 text-[11px] gap-1 cursor-pointer"
+            title="مركز الأدوات الذكية: الأوامر، البحث والاستبدال، الفحص الذكي، المقارنة، التصدير، والمساعد الذكي (Ctrl+K)"
           >
             <Command className="w-3.5 h-3.5" />
-            <span className="hidden lg:inline">الأوامر</span>
-            <kbd className="hidden sm:inline text-[9px] font-mono bg-muted px-1 rounded">Ctrl+K</kbd>
+            <span>الأدوات الذكية</span>
+            <kbd className="hidden md:inline text-[9px] font-mono bg-muted/60 text-foreground px-1 rounded">Ctrl+K</kbd>
           </Button>
 
-          <div className="h-4 w-px bg-border mx-0.5" />
-
+          {/* 3. History, Checkpoints & Rollback Side Drawer */}
           <Button
             type="button"
-            variant="outline"
+            variant={showHistoryModal ? "default" : "outline"}
+            size="sm"
+            onClick={() => {
+              setShowDesignAndAssetsModal(false);
+              setShowAdvancedToolsModal(false);
+              setClosePreviewDrawersSignal((s) => s + 1);
+              setShowHistoryModal((prev) => !prev);
+            }}
+            className="h-7 px-2 text-[11px] gap-1 cursor-pointer"
+            title="سجل الإصدارات، نقاط الاسترجاع (Checkpoints)، والمقارنة (يفتح كدرج جانبي)"
+          >
+            <History className="w-3.5 h-3.5" />
+            <span>السجل والاسترجاع</span>
+          </Button>
+
+          {/* 4. Independent Code Workspace Switcher */}
+          <Button
+            type="button"
+            variant={activeWorkspace === "code" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setActiveWorkspace((value) => (value === "visual" ? "code" : "visual"))}
+            className="h-7 px-2 text-[11px] gap-1 cursor-pointer"
+            title="التبديل بين المحرر البصري وبيئة الكود المستقلة"
+          >
+            <Code2 className="w-3.5 h-3.5" />
+            <span>{activeWorkspace === "code" ? "المحرر البصري" : "بيئة الكود"}</span>
+          </Button>
+        </div>
+
+        {/* Left side (RTL): Undo/Redo, Discard, Save Draft, Publish */}
+        <div className="flex items-center gap-1 shrink-0">
+          <Button
+            type="button"
+            variant="ghost"
             size="sm"
             onClick={handleUndo}
             disabled={historyPointer <= 0}
-            className="h-8 px-2 text-xs gap-1 cursor-pointer"
+            className="h-7 w-7 p-0 text-xs cursor-pointer"
             title="تراجع (Ctrl+Z)"
           >
             <Undo2 className="w-3.5 h-3.5" />
@@ -1199,26 +1352,30 @@ function DeveloperStudioProPage() {
 
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             size="sm"
             onClick={handleRedo}
             disabled={historyPointer >= historyStack.length - 1}
-            className="h-8 px-2 text-xs gap-1 cursor-pointer"
+            className="h-7 w-7 p-0 text-xs cursor-pointer"
             title="إعادة (Ctrl+Y)"
           >
             <Redo2 className="w-3.5 h-3.5" />
           </Button>
 
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleCreateQuickCheckpoint}
-            className="h-8 px-2 text-xs gap-1 cursor-pointer"
-            title="حفظ نقطة استرجاع مسماة (Checkpoint)"
-          >
-            <BookmarkPlus className="w-3.5 h-3.5 text-primary" />
-          </Button>
+          {draft.hasUnsavedLocalChanges && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleDiscardDraft}
+              className="h-7 w-7 p-0 text-xs text-muted-foreground hover:text-destructive cursor-pointer"
+              title="تجاهل التعديلات غير المحفوظة"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </Button>
+          )}
+
+          <div className="h-4 w-px bg-border mx-0.5" />
 
           <Button
             type="button"
@@ -1226,77 +1383,11 @@ function DeveloperStudioProPage() {
             size="sm"
             onClick={() => void handleSaveDraft()}
             disabled={saveStatus === "saving" || isSyncWorkflowInProgress || !draft.hasUnsavedLocalChanges}
-            className="h-8 px-2.5 text-xs gap-1.5 cursor-pointer font-bold border-primary/30 hover:bg-primary/5"
+            className="h-7 px-2.5 text-[11px] gap-1 cursor-pointer font-bold border-primary/30 hover:bg-primary/5"
             title={saveError || "حفظ المسودة على Supabase دون تغيير النسخة المنشورة الحية (Ctrl+S)"}
           >
-            {saveStatus === "saving" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-            <span>{saveStatus === "saving" ? "جاري الحفظ..." : "حفظ المسودة"}</span>
-          </Button>
-        </div>
-
-        {/* Left side (RTL): Workspace Switcher, History, Shortcuts, Discard, Publish Action */}
-        <div className="flex items-center gap-1.5">
-          <Button
-            type="button"
-            variant={activeWorkspace === "code" ? "default" : "outline"}
-            size="sm"
-            onClick={() => setActiveWorkspace((value) => value === "visual" ? "code" : "visual")}
-            className="h-8 px-2.5 text-xs gap-1.5 cursor-pointer"
-            title="فتح بيئة التطوير المدمجة داخل جوبا"
-          >
-            <Code2 className="w-3.5 h-3.5" />
-            <span>{activeWorkspace === "code" ? "المحرر البصري" : "بيئة التطوير"}</span>
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowHistoryModal(true)}
-            className="h-8 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground cursor-pointer"
-            title="سجل الإصدارات ونقاط الاسترجاع والمقارنة"
-          >
-            <History className="w-3.5 h-3.5" />
-            <span className="hidden xl:inline">السجل</span>
-          </Button>
-
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setAdvancedToolsTab("export");
-              setShowAdvancedToolsModal(true);
-            }}
-            className="h-8 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground cursor-pointer"
-            title="تصدير واستيراد المشروع (JSON)"
-          >
-            <Download className="w-3.5 h-3.5" />
-          </Button>
-
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setAdvancedToolsTab("shortcuts");
-              setShowAdvancedToolsModal(true);
-            }}
-            className="h-8 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground cursor-pointer"
-            title="اختصارات لوحة المفاتيح"
-          >
-            <Keyboard className="w-3.5 h-3.5" />
-          </Button>
-
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={handleDiscardDraft}
-            disabled={!draft.hasUnsavedLocalChanges}
-            className="h-8 px-2 text-xs gap-1 text-muted-foreground hover:text-destructive cursor-pointer disabled:opacity-40"
-            title="إلغاء التعديلات غير المحفوظة"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
+            {saveStatus === "saving" ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+            <span>{saveStatus === "saving" ? "يحفظ..." : "حفظ المسودة"}</span>
           </Button>
 
           <Button
@@ -1304,12 +1395,12 @@ function DeveloperStudioProPage() {
             variant="default"
             size="sm"
             onClick={handleTriggerPublish}
-            className="h-8 px-3 text-xs font-black gap-1.5 cursor-pointer bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
+            className="h-7 px-2.5 text-[11px] font-black gap-1 cursor-pointer bg-primary text-primary-foreground hover:bg-primary/90 shadow-xs"
             title="حفظ وتأكيد المسودة ثم نشرها للتطبيق الفعلي"
           >
             <UploadCloud className="w-3.5 h-3.5" />
-            <span>نشر التغييرات</span>
-            <span className="font-mono text-[10px] bg-primary-foreground/20 px-1 py-0.2 rounded">
+            <span>نشر</span>
+            <span className="font-mono text-[9px] bg-primary-foreground/20 px-1 rounded">
               #{publishedConfig.revision + 1}
             </span>
           </Button>
@@ -1317,51 +1408,200 @@ function DeveloperStudioProPage() {
       </header>
 
       {/* ========================================================= */}
-      {/* MAIN 3-PANEL STUDIO WORKSPACE                             */}
+      {/* MAIN ISOLATED STUDIO WORKSPACES (VISUAL & CODE)           */}
+      {/* State is preserved across workspace switches              */}
       {/* ========================================================= */}
-      <div className="min-h-0 flex-1 overflow-hidden">
-        {activeWorkspace === "visual" ? (
-        <LiveAppPreview
-          route={activePage?.route || "/admin"}
-          initialEdits={draft.domEdits || {}}
-          publishedEdits={publishedConfig.domEdits || {}}
-          publishedRevision={publishedConfig.revision}
-          pages={draft.pages}
-          activePageId={activePageId}
-          reusableComponents={draft.reusableComponents || []}
-          designSystem={draft.designSystem || DEFAULT_STUDIO_DESIGN_SYSTEM}
-          onSelectPage={(pageId) => {
-            setActivePageId(pageId);
-            setSelectedElementId(null);
-          }}
-          onAddPage={handleAddPage}
-          onDuplicatePage={handleDuplicatePage}
-          onDeletePage={handleDeletePage}
-          onUpdatePageMeta={handleUpdatePageMeta}
-          onSaveReusableComponent={handleSaveReusableComponent}
-          onOpenAssetPicker={(cb) => {
-            setAssetPickerCallback(() => cb);
-            setDesignAndAssetsTab("assets");
-            setShowDesignAndAssetsModal(true);
-          }}
-          onSelectedDomChange={(sel) => {
-            setSelectedSelector(sel);
-          }}
-          onEditsChange={(domEdits) => {
-            if (!draft) return;
-            commitDraftChange({ ...draft, domEdits, hasUnpublishedChanges: true });
-          }}
-        />
-        ) : (
-          <IndependentCodeWorkspace onBackToVisual={() => setActiveWorkspace("visual")} />
+      <div className="min-h-0 flex-1 overflow-hidden relative">
+        <div
+          className={
+            activeWorkspace === "visual"
+              ? "h-full w-full flex flex-col relative"
+              : "hidden"
+          }
+          data-testid="studio-visual-workspace-container"
+        >
+          <LiveAppPreview
+            route={activePage?.route || "/admin"}
+            initialEdits={draft.domEdits || {}}
+            publishedEdits={publishedConfig.domEdits || {}}
+            publishedRevision={publishedConfig.revision}
+            pages={draft.pages}
+            activePageId={activePageId}
+            elements={draft.elements}
+            reusableComponents={draft.reusableComponents || []}
+            designSystem={draft.designSystem || DEFAULT_STUDIO_DESIGN_SYSTEM}
+            externalXRayMode={xRayMode}
+            closeDrawersSignal={closePreviewDrawersSignal}
+            hasUnsavedChanges={Boolean(draft.hasUnsavedLocalChanges)}
+            isSaving={saveStatus === "saving" || isSyncWorkflowInProgress}
+            onSaveChanges={() => void handleSaveDraft()}
+            onDiscardChanges={() => void handleDiscardDraft()}
+            onOpenDrawer={() => {
+              setShowDesignAndAssetsModal(false);
+              setShowAdvancedToolsModal(false);
+              setShowHistoryModal(false);
+            }}
+            onSelectPage={(pageId) => {
+              setActivePageId(pageId);
+              setSelectedElementId(null);
+            }}
+            onAddPage={handleAddPage}
+            onDuplicatePage={handleDuplicatePage}
+            onDeletePage={handleDeletePage}
+            onUpdatePageMeta={handleUpdatePageMeta}
+            onAddElement={handleAddElement}
+            onSaveReusableComponent={handleSaveReusableComponent}
+            onOpenAssetPicker={(cb) => {
+              setShowAdvancedToolsModal(false);
+              setShowHistoryModal(false);
+              setAssetPickerCallback(() => cb);
+              setDesignAndAssetsTab("assets");
+              setShowDesignAndAssetsModal(true);
+            }}
+            onSelectedDomChange={(sel) => {
+              setSelectedSelector(sel);
+            }}
+            onEditsChange={(domEdits) => {
+              if (!draft) return;
+              commitDraftChange({ ...draft, domEdits, hasUnpublishedChanges: true });
+            }}
+          />
+
+          {/* Non-blocking Docked Side Drawers (Open over left side of preview like Inspector & Pages/Layers) */}
+          <StudioToolErrorBoundary
+            onReset={() => {
+              setShowDesignAndAssetsModal(false);
+              setShowAdvancedToolsModal(false);
+              setShowHistoryModal(false);
+            }}
+          >
+            {showDesignAndAssetsModal && (
+              <StudioDesignAndAssetsModal
+                isOpen={showDesignAndAssetsModal}
+                onClose={() => {
+                  setShowDesignAndAssetsModal(false);
+                  setAssetPickerCallback(undefined);
+                }}
+                initialTab={designAndAssetsTab}
+                draft={draft}
+                onUpdateDraft={(updatedDraft) => {
+                  commitDraftChange(updatedDraft);
+                }}
+                onSaveChanges={() => void handleSaveDraft()}
+                onDiscardChanges={() => void handleDiscardDraft()}
+                isSaving={saveStatus === "saving" || isSyncWorkflowInProgress}
+                onApplyAssetToSelection={(asset) => {
+                  if (assetPickerCallback) {
+                    assetPickerCallback(asset.url);
+                    setAssetPickerCallback(undefined);
+                    setShowDesignAndAssetsModal(false);
+                  }
+                }}
+              />
+            )}
+
+            {showAdvancedToolsModal && (
+              <StudioAdvancedToolsModal
+                isOpen={showAdvancedToolsModal}
+                onClose={() => setShowAdvancedToolsModal(false)}
+                initialTab={advancedToolsTab}
+                draft={draft}
+                activePageId={activePageId}
+                selectedElementId={selectedElementId}
+                selectedDomSelector={selectedSelector}
+                onUpdateDraft={(updatedDraft) => {
+                  commitDraftChange(updatedDraft);
+                }}
+                onSelectPage={(pageId) => {
+                  setActivePageId(pageId);
+                  setSelectedElementId(null);
+                }}
+                onSelectElement={(elementId) => {
+                  setSelectedElementId(elementId);
+                }}
+                onTriggerSave={() => void handleSaveDraft()}
+                onDiscardChanges={() => void handleDiscardDraft()}
+                isSaving={saveStatus === "saving" || isSyncWorkflowInProgress}
+                onTriggerPublish={() => void handleTriggerPublish()}
+                onToggleXRay={() => {
+                  setXRayMode((prev) => !prev);
+                }}
+                onOpenDesignSystem={() => {
+                  setShowAdvancedToolsModal(false);
+                  setDesignAndAssetsTab("design");
+                  setShowDesignAndAssetsModal(true);
+                }}
+                onOpenAssets={() => {
+                  setShowAdvancedToolsModal(false);
+                  setDesignAndAssetsTab("assets");
+                  setShowDesignAndAssetsModal(true);
+                }}
+              />
+            )}
+
+            {showHistoryModal && (
+              <HistoryRollbackModal
+                isOpen={showHistoryModal}
+                onClose={() => setShowHistoryModal(false)}
+                currentRevision={publishedConfig.revision || draft.baseRevision}
+                draft={draft}
+                onCreateCheckpoint={(name, note) => {
+                  const { draft: updated } = studioService.createNamedSnapshot(draft, name, note);
+                  commitDraftChange(updated);
+                }}
+                onRestoreToDraft={(restoredDraft) => {
+                  commitDraftChange(restoredDraft);
+                }}
+                onSaveChanges={() => void handleSaveDraft()}
+                onDiscardChanges={() => void handleDiscardDraft()}
+                isSaving={saveStatus === "saving" || isSyncWorkflowInProgress}
+                onRollbackSuccess={async (newRevision) => {
+                  const [fresh, pubCfg] = await Promise.all([
+                    studioService.getDraft("admin"),
+                    studioService.getPublishedConfig(),
+                  ]);
+                  setDraft(fresh);
+                  setServerSavedDraft(fresh);
+                  setPublishedConfig(pubCfg);
+                  setHistoryStack([JSON.parse(JSON.stringify(fresh))]);
+                  setHistoryPointer(0);
+                  setSaveStatus("saved");
+                  latestRealtimePublishedRevisionRef.current = Math.max(
+                    latestRealtimePublishedRevisionRef.current,
+                    newRevision,
+                  );
+                }}
+              />
+            )}
+          </StudioToolErrorBoundary>
+        </div>
+
+        {(hasOpenedCodeWorkspace || activeWorkspace === "code") && (
+          <div
+            className={
+              activeWorkspace === "code"
+                ? "h-full w-full flex flex-col"
+                : "hidden"
+            }
+            data-testid="studio-code-workspace-container"
+          >
+            <Suspense
+              fallback={
+                <div className="h-full flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                  <span>جاري فتح بيئة التطوير المستقلة...</span>
+                </div>
+              }
+            >
+              <IndependentCodeWorkspace onBackToVisual={() => setActiveWorkspace("visual")} />
+            </Suspense>
+          </div>
         )}
       </div>
 
       {/* ========================================================= */}
-      {/* WORKFLOW & PROFESSIONAL TOOL MODALS                       */}
+      {/* CONFIRMATION DIALOGS (PUBLISH & CONFLICT RESOLUTION)      */}
       {/* ========================================================= */}
-
-      {/* 1. Strict Server-Confirmed Publish Modal */}
       {showPublishModal && (
         <PublishModal
           isOpen={showPublishModal}
@@ -1385,7 +1625,10 @@ function DeveloperStudioProPage() {
             setSaveStatus("saved");
             setSaveError(null);
             setHasNewerLocalDraftBanner(false);
-            latestRealtimePublishedRevisionRef.current = Math.max(latestRealtimePublishedRevisionRef.current, newRevision);
+            latestRealtimePublishedRevisionRef.current = Math.max(
+              latestRealtimePublishedRevisionRef.current,
+              newRevision,
+            );
             setRemoteChangesDetected(false);
             remoteConflictWarnedRef.current = false;
             studioService.getPublishedConfig().then(setPublishedConfig);
@@ -1400,7 +1643,6 @@ function DeveloperStudioProPage() {
         />
       )}
 
-      {/* 2. Concurrency Conflict Modal */}
       {showConflictModal && (
         <ConflictResolutionModal
           isOpen={showConflictModal}
@@ -1425,97 +1667,6 @@ function DeveloperStudioProPage() {
             setSaveError(null);
             setRemoteChangesDetected(false);
             remoteConflictWarnedRef.current = false;
-          }}
-        />
-      )}
-
-      {/* 3. History, Checkpoints & Version Comparison Modal */}
-      {showHistoryModal && (
-        <HistoryRollbackModal
-          isOpen={showHistoryModal}
-          onClose={() => setShowHistoryModal(false)}
-          currentRevision={publishedConfig.revision || draft.baseRevision}
-          draft={draft}
-          onCreateCheckpoint={(name, note) => {
-            const { draft: updated } = studioService.createNamedSnapshot(draft, name, note);
-            commitDraftChange(updated);
-          }}
-          onRestoreToDraft={(restoredDraft) => {
-            commitDraftChange(restoredDraft);
-          }}
-          onRollbackSuccess={async (newRevision) => {
-            const [fresh, pubCfg] = await Promise.all([
-              studioService.getDraft("admin"),
-              studioService.getPublishedConfig(),
-            ]);
-            setDraft(fresh);
-            setServerSavedDraft(fresh);
-            setPublishedConfig(pubCfg);
-            setHistoryStack([JSON.parse(JSON.stringify(fresh))]);
-            setHistoryPointer(0);
-            setSaveStatus("saved");
-            latestRealtimePublishedRevisionRef.current = Math.max(latestRealtimePublishedRevisionRef.current, newRevision);
-          }}
-        />
-      )}
-
-      {/* 4. Design System & Asset Manager Modal */}
-      {showDesignAndAssetsModal && (
-        <StudioDesignAndAssetsModal
-          isOpen={showDesignAndAssetsModal}
-          onClose={() => {
-            setShowDesignAndAssetsModal(false);
-            setAssetPickerCallback(undefined);
-          }}
-          initialTab={designAndAssetsTab}
-          draft={draft}
-          onUpdateDraft={(updatedDraft) => {
-            commitDraftChange(updatedDraft);
-          }}
-          onApplyAssetToSelection={(asset) => {
-            if (assetPickerCallback) {
-              assetPickerCallback(asset.url);
-              setAssetPickerCallback(undefined);
-              setShowDesignAndAssetsModal(false);
-            }
-          }}
-        />
-      )}
-
-      {/* 5. Advanced Tools Suite Modal (Command Palette, Find & Replace, Audits, Diff, Export/Import, Code, AI, Shortcuts) */}
-      {showAdvancedToolsModal && (
-        <StudioAdvancedToolsModal
-          isOpen={showAdvancedToolsModal}
-          onClose={() => setShowAdvancedToolsModal(false)}
-          initialTab={advancedToolsTab}
-          draft={draft}
-          activePageId={activePageId}
-          selectedElementId={selectedElementId}
-          selectedDomSelector={selectedSelector}
-          onUpdateDraft={(updatedDraft) => {
-            commitDraftChange(updatedDraft);
-          }}
-          onSelectPage={(pageId) => {
-            setActivePageId(pageId);
-            setSelectedElementId(null);
-          }}
-          onSelectElement={(elementId) => {
-            setSelectedElementId(elementId);
-          }}
-          onTriggerSave={() => void handleSaveDraft()}
-          onTriggerPublish={() => void handleTriggerPublish()}
-          onToggleXRay={() => {
-            toast({ title: "وضع الأشعة (X-Ray)", description: "يمكنك تبديل وضع X-Ray مباشرة من شريط المعاينة." });
-          }}
-          onOpenDesignSystem={() => {
-            setShowAdvancedToolsModal(false);
-            setDesignAndAssetsTab("design");
-            setShowDesignAndAssetsModal(true);
-          }}
-          onOpenAssets={() => {
-            setShowAdvancedToolsModal(false);
-            setDesignAndAssetsTab("assets");
-            setShowDesignAndAssetsModal(true);
           }}
         />
       )}

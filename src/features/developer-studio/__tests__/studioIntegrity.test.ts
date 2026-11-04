@@ -33,7 +33,7 @@ vi.mock("@/integrations/supabase/client", () => ({
   },
 }));
 
-import { studioService } from "../services/studioService";
+import { studioService, withStudioTimeout } from "../services/studioService";
 
 function makePage(id: string, route: string, elementIds: string[] = []): PageModel {
   return {
@@ -517,5 +517,71 @@ describe("Developer Studio — Design System, Assets, Audits, Snapshots & Export
 
     const invalidImport = studioService.importProjectJson("{bad json", draft);
     expect(invalidImport.success).toBe(false);
+  });
+
+  it("terminates hung requests via withStudioTimeout instead of hanging indefinitely", async () => {
+    const neverResolvingPromise = new Promise<string>(() => {
+      // Simulates a hung network request
+    });
+
+    await expect(
+      withStudioTimeout(neverResolvingPromise, 40, "اختبار مهلة الاتصال"),
+    ).rejects.toThrow("اختبار مهلة الاتصال timed out after 40ms");
+  });
+
+  it("initializes local draft and published config synchronously in 0ms without calling Supabase", () => {
+    mockFrom.mockClear();
+    mockRpc.mockClear();
+
+    const localDraft = makeDraft(
+      { page_dashboard: makePage("page_dashboard", "/admin", []) },
+      {},
+      {
+        domEdits: { ".instant-load": { text: "محمل فوراً" } },
+        hasUnsavedLocalChanges: true,
+      },
+    );
+    studioService.saveLocalDraft(localDraft);
+
+    const loaded = studioService.getImmediateLocalOrDefaultDraft("admin");
+    const pubCfg = studioService.getImmediateLocalOrDefaultPublishedConfig();
+
+    expect(loaded.domEdits?.[".instant-load"]?.text).toBe("محمل فوراً");
+    expect(loaded.hasUnsavedLocalChanges).toBe(true);
+    expect(pubCfg.revision).toBeGreaterThanOrEqual(1);
+    expect(mockFrom).not.toHaveBeenCalled();
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it("completes syncWithServerInBackground when Supabase hangs and never overwrites newer local unsaved edits", async () => {
+    const localDraft = makeDraft(
+      { page_dashboard: makePage("page_dashboard", "/admin", []) },
+      {},
+      {
+        baseRevision: 4,
+        domEdits: { ".local-unsaved": { text: "تعديل محلي غير محفوظ" } },
+        hasUnsavedLocalChanges: true,
+        hasUnpublishedChanges: true,
+      },
+    );
+    studioService.saveLocalDraft(localDraft);
+
+    // Simulate a hanging Supabase request that exceeds timeoutMs
+    mockFrom.mockImplementation(() => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: () =>
+            new Promise(() => {
+              // hangs forever
+            }),
+        }),
+      }),
+    }));
+
+    const result = await studioService.syncWithServerInBackground("admin", 50);
+
+    expect(result.draft.domEdits?.[".local-unsaved"]?.text).toBe("تعديل محلي غير محفوظ");
+    expect(result.draft.hasUnsavedLocalChanges).toBe(true);
+    expect(result.preservedNewerLocalChanges).toBe(true);
   });
 });
