@@ -34,6 +34,7 @@ import { HistoryRollbackModal } from "@/features/developer-studio/components/His
 import { LiveAppPreview } from "@/features/developer-studio/components/LiveAppPreview";
 import { StudioDesignAndAssetsModal } from "@/features/developer-studio/components/StudioDesignAndAssetsModal";
 import { StudioAdvancedToolsModal, StudioToolTab } from "@/features/developer-studio/components/StudioAdvancedToolsModal";
+import { IndependentCodeWorkspace } from "@/features/developer-studio/components/IndependentCodeWorkspace";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
@@ -58,6 +59,7 @@ import {
   WifiOff,
   RefreshCw,
   BookmarkPlus,
+  Code2,
 } from "lucide-react";
 
 export const Route = createFileRoute("/admin/studio")({
@@ -72,6 +74,7 @@ export const Route = createFileRoute("/admin/studio")({
 
 function DeveloperStudioProPage() {
   const { toast } = useToast();
+  const [activeWorkspace, setActiveWorkspace] = useState<"visual" | "code">("visual");
 
   // Core Draft & Published State
   const [draft, setDraft] = useState<StudioDraft | null>(null);
@@ -1231,8 +1234,19 @@ function DeveloperStudioProPage() {
           </Button>
         </div>
 
-        {/* Left side (RTL): History, Shortcuts, Discard, Publish Action */}
+        {/* Left side (RTL): Workspace Switcher, History, Shortcuts, Discard, Publish Action */}
         <div className="flex items-center gap-1.5">
+          <Button
+            type="button"
+            variant={activeWorkspace === "code" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setActiveWorkspace((value) => value === "visual" ? "code" : "visual")}
+            className="h-8 px-2.5 text-xs gap-1.5 cursor-pointer"
+            title="فتح بيئة التطوير المدمجة داخل جوبا"
+          >
+            <Code2 className="w-3.5 h-3.5" />
+            <span>{activeWorkspace === "code" ? "المحرر البصري" : "بيئة التطوير"}</span>
+          </Button>
           <Button
             type="button"
             variant="ghost"
@@ -1306,6 +1320,7 @@ function DeveloperStudioProPage() {
       {/* MAIN 3-PANEL STUDIO WORKSPACE                             */}
       {/* ========================================================= */}
       <div className="min-h-0 flex-1 overflow-hidden">
+        {activeWorkspace === "visual" ? (
         <LiveAppPreview
           route={activePage?.route || "/admin"}
           initialEdits={draft.domEdits || {}}
@@ -1337,6 +1352,9 @@ function DeveloperStudioProPage() {
             commitDraftChange({ ...draft, domEdits, hasUnpublishedChanges: true });
           }}
         />
+        ) : (
+          <IndependentCodeWorkspace onBackToVisual={() => setActiveWorkspace("visual")} />
+        )}
       </div>
 
       {/* ========================================================= */}
