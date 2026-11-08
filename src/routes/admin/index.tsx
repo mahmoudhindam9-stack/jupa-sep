@@ -1218,37 +1218,32 @@ function AdminDashboard() {
         {activeTab === "treasury" && (
           <div data-tab-panel="treasury" className="space-y-6 mt-4">
           {/* Top Quick Print & Reports Shortcut Bar */}
-          <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-4 rounded-3xl border border-indigo-500/30 shadow-lg flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="bg-card border border-border p-4 rounded-2xl shadow-xs flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-3 text-right">
-              <div className="w-12 h-12 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shrink-0 shadow-inner">
-                <Printer size={24} />
+              <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                <Printer size={20} />
               </div>
-              <div className="space-y-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="font-black text-base text-white">
-                    مركز طباعة وتقارير وسندات حركة الخزائن والمحاسبة
-                  </h3>
-                  <Badge className="bg-indigo-500/30 text-indigo-200 border-indigo-400/30 text-[10px] font-black">
-                    سندات رسمية & Excel
-                  </Badge>
-                </div>
-                <p className="text-xs text-slate-300 font-semibold">
-                  توليد وطباعة سندات الحركة الرسمية، كشوفات القيود المحاسبية، الجداول التحليلية
-                  للفترات والورديات، وتصدير إكسل
-                </p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="font-bold text-sm text-foreground">
+                  تقارير وطباعة الخزائن والمحاسبة
+                </h3>
+                <Badge variant="outline" className="text-[10px] font-bold">
+                  سندات & Excel
+                </Badge>
               </div>
             </div>
 
-            <div className="flex items-center gap-2.5 flex-wrap shrink-0 w-full md:w-auto">
+            <div className="flex items-center gap-2 flex-wrap shrink-0 w-full md:w-auto">
               <Button
                 onClick={() => {
                   setReportInitialTreasuryId("all");
                   setReportInitialType("combined" as any);
                   setIsTreasuryReportModalOpen(true);
                 }}
-                className="flex-1 md:flex-none bg-cyan-600 hover:bg-cyan-700 text-white font-black text-xs h-10 px-4 rounded-2xl flex items-center justify-center gap-2 shadow-md active:scale-95 transition"
+                variant="outline"
+                className="flex-1 md:flex-none font-bold text-xs h-9 px-4 rounded-xl flex items-center justify-center gap-2"
               >
-                <Printer size={16} />
+                <Printer size={15} />
                 <span>تقرير مجمع للخزائن</span>
               </Button>
               <Button
@@ -1257,10 +1252,10 @@ function AdminDashboard() {
                   setReportInitialType("document");
                   setIsTreasuryReportModalOpen(true);
                 }}
-                className="flex-1 md:flex-none bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-600 hover:to-blue-700 text-white font-black text-xs h-10 px-5 rounded-2xl flex items-center justify-center gap-2 shadow-md hover:shadow-indigo-500/20 active:scale-95 transition"
+                className="flex-1 md:flex-none bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs h-9 px-4 rounded-xl flex items-center justify-center gap-2 shadow-xs"
               >
-                <Printer size={16} />
-                <span>طباعة وتقارير الخزائن (منفرد / قيود / فترة)</span>
+                <Printer size={15} />
+                <span>طباعة وتقارير الخزائن</span>
               </Button>
             </div>
           </div>

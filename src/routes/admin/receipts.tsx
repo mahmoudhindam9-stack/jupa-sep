@@ -130,72 +130,66 @@ function ReceiptDesignerPage() {
 
   return (
     <div className="space-y-6 pb-16">
-      {/* Top Banner Header */}
-      <div className="bg-gradient-to-r from-slate-900 via-emerald-950 to-slate-900 text-white rounded-3xl p-6 sm:p-8 shadow-xl border border-emerald-500/20 relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl -ml-20 -mt-20 pointer-events-none" />
-        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-          <div className="space-y-2">
+      {/* Top Header */}
+      <div className="bg-card border border-border rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+            <Receipt className="w-5 h-5" />
+          </div>
+          <div>
             <div className="flex items-center gap-2">
-              <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30 px-3 py-1 rounded-lg text-xs font-bold">
-                <Sparkles size={13} className="ml-1 inline" /> نظام القوالب والطباعة الذكية الموحدة
-              </Badge>
-              <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/30 px-2.5 py-0.5 rounded-lg text-[11px] font-mono">
-                ZATCA Compliant 2026
+              <h1 className="text-lg sm:text-xl font-black text-foreground">
+                إدارة وتصميم الإيصالات والسندات المالية
+              </h1>
+              <Badge variant="outline" className="text-[10px] font-mono">
+                ZATCA 2026
               </Badge>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white flex items-center gap-3">
-              <Receipt className="text-emerald-400 w-8 h-8" />
-              إدارة وتصميم الإيصالات والسندات المالية
-            </h1>
-            <p className="text-sm text-slate-300 max-w-2xl leading-relaxed">
-              تحكم كامل في مظهر ومحتوى إيصالات الكاشير الحرارية، سندات القبض والصرف، الفواتير
-              الضريبية الرسمية A4، وأذون المرتجعات والمخازن مع معاينة حية ومباشرة.
-            </p>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex flex-wrap items-center gap-3 shrink-0">
-            <Button
-              onClick={handleConnectPrinter}
-              variant="outline"
-              className={`rounded-xl font-bold gap-2 text-xs transition-colors ${
-                isPrinterConnected
-                  ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
-                  : "bg-slate-800/80 text-slate-300 border-slate-700 hover:bg-slate-800"
-              }`}
-            >
-              <Printer size={15} />
-              {isPrinterConnected ? "الطابعة الحرارية متصلة 🟢" : "ربط طابعة حرارية (USB/Serial)"}
-            </Button>
-            <Button
-              onClick={handleReset}
-              variant="outline"
-              className="bg-slate-800/80 hover:bg-slate-800 text-slate-200 border-slate-700 rounded-xl font-bold gap-2 text-xs"
-            >
-              <RotateCcw size={15} />
-              افتراضي
-            </Button>
-            <Button
-              onClick={handlePrintPreview}
-              variant="outline"
-              className="bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-200 border-emerald-600/40 rounded-xl font-bold gap-2 text-xs"
-            >
-              <Printer size={15} />
-              طباعة تجريبية
-            </Button>
-            <Button
-              onClick={handleSave}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold gap-2 px-6 shadow-lg shadow-emerald-900/30 text-sm"
-            >
-              <Save size={16} />
-              تطبيق وحفظ التصميم فوراً
-            </Button>
           </div>
         </div>
 
+        {/* Action Buttons */}
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <Button
+            onClick={handleConnectPrinter}
+            variant="outline"
+            className={`rounded-xl font-bold gap-2 text-xs transition-colors ${
+              isPrinterConnected
+                ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
+                : ""
+            }`}
+          >
+            <Printer size={15} />
+            {isPrinterConnected ? "الطابعة متصلة 🟢" : "ربط طابعة حرارية"}
+          </Button>
+          <Button
+            onClick={handleReset}
+            variant="outline"
+            className="rounded-xl font-bold gap-2 text-xs"
+          >
+            <RotateCcw size={15} />
+            افتراضي
+          </Button>
+          <Button
+            onClick={handlePrintPreview}
+            variant="outline"
+            className="rounded-xl font-bold gap-2 text-xs"
+          >
+            <Printer size={15} />
+            طباعة تجريبية
+          </Button>
+          <Button
+            onClick={handleSave}
+            className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl font-bold gap-2 px-5 text-xs shadow-xs"
+          >
+            <Save size={15} />
+            تطبيق وحفظ التصميم
+          </Button>
+        </div>
+
         {savedSuccess && (
-          <div className="mt-4 p-3 bg-emerald-500/20 border border-emerald-500/40 rounded-2xl text-emerald-200 text-xs font-bold flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
-            <CheckCircle2 size={16} className="text-emerald-400" />
+          <div className="w-full mt-2 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-800 dark:text-emerald-300 text-xs font-bold flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+            <CheckCircle2 size={16} className="text-emerald-600 dark:text-emerald-400" />
             تم حفظ إعدادات التصميم بنجاح وتحديث كافة إيصالات وسندات النظام المباشرة!
           </div>
         )}

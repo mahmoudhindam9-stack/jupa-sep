@@ -5,7 +5,7 @@
  * Asset Manager, Audits Suite, Command Palette, Diff Comparison, and Real App Central Canvas.
  */
 
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import React, { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import {
   StudioDraft,
@@ -32,6 +32,14 @@ import type { StudioToolTab } from "@/features/developer-studio/components/Studi
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 import { PublishModal } from "@/features/developer-studio/components/PublishModal";
 import { ConflictResolutionModal } from "@/features/developer-studio/components/ConflictResolutionModal";
@@ -102,6 +110,7 @@ import {
   WifiOff,
   RefreshCw,
   Code2,
+  X,
 } from "lucide-react";
 
 export const Route = createFileRoute("/admin/studio")({
@@ -115,7 +124,9 @@ export const Route = createFileRoute("/admin/studio")({
 });
 
 function DeveloperStudioProPage() {
+  const navigate = useNavigate();
   const { toast } = useToast();
+  const [showExitConfirmDialog, setShowExitConfirmDialog] = useState(false);
   const [activeWorkspace, setActiveWorkspace] = useState<"visual" | "code">(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
@@ -1109,6 +1120,30 @@ function DeveloperStudioProPage() {
 
   const activePage = draft.pages[activePageId] || Object.values(draft.pages)[0];
 
+  const handleRequestExitStudio = () => {
+    if (draft.hasUnsavedLocalChanges) {
+      setShowExitConfirmDialog(true);
+    } else {
+      navigate({ to: "/admin" });
+    }
+  };
+
+  const handleConfirmExitSave = async () => {
+    try {
+      await handleSaveDraft();
+    } catch {
+      // Proceed even if background save has issue
+    }
+    setShowExitConfirmDialog(false);
+    navigate({ to: "/admin" });
+  };
+
+  const handleConfirmExitDiscard = () => {
+    handleDiscardDraft();
+    setShowExitConfirmDialog(false);
+    navigate({ to: "/admin" });
+  };
+
   return (
     <div
       data-studio-ui-root="true"
@@ -1404,6 +1439,20 @@ function DeveloperStudioProPage() {
               #{publishedConfig.revision + 1}
             </span>
           </Button>
+
+          <div className="h-4 w-px bg-border mx-1" />
+
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={handleRequestExitStudio}
+            className="h-7 px-2.5 text-[11px] font-bold gap-1 cursor-pointer text-muted-foreground hover:text-destructive hover:bg-destructive/10 border border-border/60 rounded-md"
+            title="إغلاق استوديو المطور والعودة إلى لوحة التحكم الرئيسية (/admin)"
+          >
+            <X className="w-3.5 h-3.5 text-destructive" />
+            <span>خروج من الاستوديو</span>
+          </Button>
         </div>
       </header>
 
@@ -1670,6 +1719,49 @@ function DeveloperStudioProPage() {
           }}
         />
       )}
+
+      {/* Studio Exit Confirmation Dialog */}
+      <Dialog open={showExitConfirmDialog} onOpenChange={setShowExitConfirmDialog}>
+        <DialogContent className="max-w-md rounded-2xl text-right p-6" dir="rtl">
+          <DialogHeader className="text-right">
+            <DialogTitle className="text-base font-bold text-foreground flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-amber-600" />
+              تعديلات غير محفوظة في الاستوديو
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground pt-1">
+              يوجد لديك تعديلات مرئية في المسودة لم يتم حفظها بعد على السحابة. ماذا تريد أن تفعل قبل الخروج؟
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-col sm:flex-row gap-2 pt-4">
+            <Button
+              type="button"
+              variant="default"
+              onClick={() => void handleConfirmExitSave()}
+              disabled={saveStatus === "saving"}
+              className="rounded-xl font-bold text-xs bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              <Save className="w-3.5 h-3.5 mr-1" />
+              حفظ المسودة والخروج
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleConfirmExitDiscard}
+              className="rounded-xl font-bold text-xs"
+            >
+              تجاهل التعديلات والخروج
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowExitConfirmDialog(false)}
+              className="rounded-xl text-xs font-semibold"
+            >
+              البقاء في الاستوديو
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

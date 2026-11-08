@@ -51,6 +51,7 @@ import {
   Printer,
   Scale,
   Trash2,
+  X,
 } from "lucide-react";
 
 export const ACCOUNT_TYPE_LABELS: Record<Account["type"], string> = {
@@ -593,10 +594,18 @@ export function LedgerBottomDialogs({
                         : `غير متزن — فرق ${editEntryTotals.difference.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`}
                     </Badge>
                   </div>
-                  <DialogDescription className="text-[11px] sm:text-xs text-muted-foreground mt-1 text-right">
-                    عدّل بيانات السند وأسطر القيد داخل الجدول الموحد مع التحقق الفوري من التوازن.
-                  </DialogDescription>
                 </div>
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setIsEditExitConfirmOpen(true)}
+                  className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted shrink-0 self-end sm:self-auto"
+                  title="إغلاق النافذة"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
               </div>
             </DialogHeader>
 

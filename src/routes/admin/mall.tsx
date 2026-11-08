@@ -1538,48 +1538,6 @@ function MallManagementPage() {
             </div>
             <h1 className="text-lg sm:text-xl font-black text-foreground">إدارة المول</h1>
           </div>
-
-          <div className="inline-flex items-center gap-1 rounded-xl bg-muted/60 p-1 border border-border/70">
-            <button
-              type="button"
-              data-testid="mall-tab-definitions"
-              onClick={() => setActiveTab("definitions")}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-black text-xs transition cursor-pointer ${
-                activeTab === "definitions"
-                  ? "bg-primary text-primary-foreground shadow-2xs"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Store size={14} />
-              <span>التعريفات</span>
-            </button>
-            <button
-              type="button"
-              data-testid="mall-tab-operations"
-              onClick={() => setActiveTab("operations")}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-black text-xs transition cursor-pointer ${
-                activeTab === "operations"
-                  ? "bg-primary text-primary-foreground shadow-2xs"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <FileText size={14} />
-              <span>العمليات</span>
-            </button>
-            <button
-              type="button"
-              data-testid="mall-tab-reports"
-              onClick={() => setActiveTab("reports")}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-black text-xs transition cursor-pointer ${
-                activeTab === "reports"
-                  ? "bg-primary text-primary-foreground shadow-2xs"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <TrendingUp size={14} />
-              <span>التقارير</span>
-            </button>
-          </div>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">

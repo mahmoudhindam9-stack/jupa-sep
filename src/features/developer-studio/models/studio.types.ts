@@ -336,23 +336,21 @@ export function sanitizeStudioDomEditsMap(
     if (!selector || selector.startsWith("__studio_")) continue;
     if (!edit || typeof edit !== "object") continue;
     const trimmed = selector.trim();
-    // Drop legacy unscoped positional paths starting from `body >` that lacked a pageRoute
-    // or targeted top-level layout wrappers (`body > div`, `header`, `aside`, `[role="tabpanel"]`)
-    if (trimmed.startsWith("body >") && !edit.pageRoute) {
-      continue;
-    }
-    if (
+    // For positional paths starting with body > that lacked a pageRoute, preserve them with fallback
+    const effectivePageRoute = edit.pageRoute || "/admin";
+    const isRootProtectedContainer =
       trimmed === "body" ||
       trimmed === "main" ||
       trimmed === "header" ||
       trimmed === "aside" ||
+      trimmed === '[role="tabpanel"]' ||
+      trimmed === 'div[role="tabpanel"]' ||
       trimmed.includes('[data-studio-ui-root') ||
-      trimmed.includes('[data-studio-preserve') ||
-      trimmed.includes('[role="tabpanel"]')
-    ) {
+      trimmed.includes('[data-studio-preserve');
+    if (isRootProtectedContainer) {
       continue;
     }
-    const nextEdit: StudioDomEdit = { ...edit };
+    const nextEdit: StudioDomEdit = { ...edit, pageRoute: effectivePageRoute };
     if (nextEdit.styles && typeof nextEdit.styles === "object") {
       const nextStyles = { ...nextEdit.styles };
       if (nextStyles.translate && !nextEdit.freePosition?.enabled) {

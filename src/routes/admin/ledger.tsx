@@ -35,7 +35,6 @@ import { AccountSearchSelect } from "@/components/AccountSearchSelect";
 import { VouchersLedgerSection } from "@/components/admin/VouchersLedgerSection";
 import { ComprehensiveFinancialPositionCard } from "@/components/admin/ComprehensiveFinancialPositionCard";
 import { AccountsPage } from "@/components/admin/AccountsPageView";
-import { ReportsPage } from "@/components/admin/ReportsPageView";
 import { TreasuryManagementView } from "@/components/admin/TreasuryManagementView";
 import { AdvancedFinancialReportsSuite } from "@/components/admin/AdvancedFinancialReportsSuite";
 import { ViewModeToggle, useViewMode } from "@/components/ui/view-mode-toggle";
@@ -92,6 +91,7 @@ import {
   Store,
   BarChart3,
   Receipt,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -326,7 +326,7 @@ function LedgerPage() {
 
   useEffect(() => {
     const tabParam = extractTabParam(location.search, (location as any).searchStr);
-    if (tabParam === "definitions" || tabParam === "operations") {
+    if (tabParam === "definitions" || tabParam === "operations" || tabParam === "reports") {
       setHubSectionFilter(tabParam);
     } else if (!tabParam || tabParam === "hub") {
       setHubSectionFilter("all");
@@ -1902,44 +1902,54 @@ function LedgerPage() {
                               : `غير متزن — فرق ${newEntryTotals.difference.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`}
                         </Badge>
                       </div>
-                      <DialogDescription className="text-[11px] sm:text-xs text-muted-foreground mt-1 text-right">
-                        جميع الأسطر أدناه تنتمي لنفس سند القيد الموحد داخل جدول واحد مترابط.
-                      </DialogDescription>
                     </div>
 
-                    {/* Saved Drafts Quick Bar */}
-                    {journalDrafts.length > 0 && (
-                      <div className="flex items-center gap-1.5 flex-wrap bg-amber-500/10 border border-amber-500/30 rounded-xl px-2.5 py-1.5 self-start lg:self-auto max-w-full">
-                        <span className="text-[11px] font-bold text-amber-700 dark:text-amber-300 shrink-0">
-                          مسودات ({journalDrafts.length}):
-                        </span>
-                        <div className="flex items-center gap-1 overflow-x-auto max-w-full">
-                          {journalDrafts.slice(0, 3).map((draft) => (
-                            <div
-                              key={draft.id}
-                              className="inline-flex items-center gap-1 bg-background border border-amber-500/30 rounded-lg px-2 py-0.5 text-[11px] shrink-0"
-                            >
-                              <button
-                                type="button"
-                                onClick={() => handleLoadJournalDraft(draft)}
-                                className="font-mono font-bold text-primary hover:underline truncate max-w-[90px]"
-                                title={draft.newEntryDesc}
+                    <div className="flex items-center gap-2 self-end lg:self-auto shrink-0">
+                      {/* Saved Drafts Quick Bar */}
+                      {journalDrafts.length > 0 && (
+                        <div className="flex items-center gap-1.5 flex-wrap bg-amber-500/10 border border-amber-500/30 rounded-xl px-2.5 py-1.5 max-w-full">
+                          <span className="text-[11px] font-bold text-amber-700 dark:text-amber-300 shrink-0">
+                            مسودات ({journalDrafts.length}):
+                          </span>
+                          <div className="flex items-center gap-1 overflow-x-auto max-w-full">
+                            {journalDrafts.slice(0, 3).map((draft) => (
+                              <div
+                                key={draft.id}
+                                className="inline-flex items-center gap-1 bg-background border border-amber-500/30 rounded-lg px-2 py-0.5 text-[11px] shrink-0"
                               >
-                                {draft.newEntryRef || "مسودة"}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => handleDeleteJournalDraft(draft.id, e)}
-                                className="text-rose-500 hover:text-rose-700 font-bold px-0.5"
-                                title="حذف المسودة"
-                              >
-                                ×
-                              </button>
-                            </div>
-                          ))}
+                                <button
+                                  type="button"
+                                  onClick={() => handleLoadJournalDraft(draft)}
+                                  className="font-mono font-bold text-primary hover:underline truncate max-w-[90px]"
+                                  title={draft.newEntryDesc}
+                                >
+                                  {draft.newEntryRef || "مسودة"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleDeleteJournalDraft(draft.id, e)}
+                                  className="text-rose-500 hover:text-rose-700 font-bold px-0.5"
+                                  title="حذف المسودة"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )}
+
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={handleRequestCloseNewEntry}
+                        className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted shrink-0"
+                        title="إغلاق النافذة"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 </DialogHeader>
 
@@ -3049,6 +3059,20 @@ function LedgerPage() {
                 borderClass: "border-emerald-500/30 bg-emerald-500/5 hover:border-emerald-500",
                 onClick: () => {
                   setSelectedTab("vouchers");
+                  setAutoOpenVoucherModal(true);
+                },
+              },
+              {
+                id: "new_entry",
+                section: "operations" as const,
+                sectionLabel: "العمليات",
+                title: "إضافة قيد يومي جديد",
+                badge: "قيد فوري",
+                icon: Plus,
+                colorClass: "text-primary dark:text-primary bg-primary/15",
+                borderClass: "border-primary/30 bg-primary/5 hover:border-primary",
+                onClick: () => {
+                  handleOpenNewEntry();
                 },
               },
               {
@@ -3096,48 +3120,26 @@ function LedgerPage() {
                 onClick: () => setSelectedTab("financial_position"),
               },
               {
+                id: "reports",
+                section: "reports" as const,
+                sectionLabel: "التقارير",
+                title: "منظومة التقارير والقوائم المالية الشاملة",
+                badge: "ميزان • دخل • مركز مالي",
+                icon: BarChart3,
+                colorClass: "text-emerald-600 dark:text-emerald-400 bg-emerald-500/15",
+                borderClass: "border-border/80 bg-card hover:border-emerald-500/50",
+                onClick: () => setSelectedTab("reports"),
+              },
+              {
                 id: "ledger",
                 section: "reports" as const,
                 sectionLabel: "التقارير",
-                title: "حساب الأستاذ العام",
+                title: "كشف حساب الأستاذ العام",
                 badge: `${accounts.length} حساب`,
                 icon: BookOpen,
                 colorClass: "text-blue-600 dark:text-blue-400 bg-blue-500/15",
                 borderClass: "border-border/80 bg-card hover:border-primary/50",
                 onClick: () => setSelectedTab("ledger"),
-              },
-              {
-                id: "trial",
-                section: "reports" as const,
-                sectionLabel: "التقارير",
-                title: "ميزان المراجعة العام والمختصر",
-                badge: "عام ومختصر",
-                icon: Scale,
-                colorClass: "text-purple-600 dark:text-purple-400 bg-purple-500/15",
-                borderClass: "border-border/80 bg-card hover:border-purple-500/50",
-                onClick: () => setSelectedTab("trial"),
-              },
-              {
-                id: "statements",
-                section: "reports" as const,
-                sectionLabel: "التقارير",
-                title: "القوائم المالية الختامية",
-                badge: "الدخل والميزانية",
-                icon: FileSpreadsheet,
-                colorClass: "text-cyan-600 dark:text-cyan-400 bg-cyan-500/15",
-                borderClass: "border-border/80 bg-card hover:border-cyan-500/50",
-                onClick: () => setSelectedTab("statements"),
-              },
-              {
-                id: "reports",
-                section: "reports" as const,
-                sectionLabel: "التقارير",
-                title: "التقارير المالية التحليلية",
-                badge: "التقارير",
-                icon: BarChart3,
-                colorClass: "text-emerald-600 dark:text-emerald-400 bg-emerald-500/15",
-                borderClass: "border-border/80 bg-card hover:border-emerald-500/50",
-                onClick: () => setSelectedTab("reports"),
               },
             ];
 
@@ -3343,9 +3345,6 @@ function LedgerPage() {
                   <CardTitle className="text-sm font-bold text-muted-foreground uppercase tracking-wider">
                     اختيار الحساب المحاسبي
                   </CardTitle>
-                  <CardDescription>
-                    عرض كشف التحليلي ودفتر الأستاذ الخاص بالحساب المختار
-                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
@@ -3458,9 +3457,6 @@ function LedgerPage() {
                       <CardTitle className="text-base font-bold">
                         الحركات القييدية المفصلة (دفتر حساب الأستاذ)
                       </CardTitle>
-                      <CardDescription>
-                        الحركات والقيود التي تمت على هذا الحساب بالتسلسل الزمني
-                      </CardDescription>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <Button
@@ -3607,9 +3603,6 @@ function LedgerPage() {
                   <CardTitle className="text-base font-bold">
                     دفتر اليومية العامة (General Journal)
                   </CardTitle>
-                  <CardDescription>
-                    سجل كامل لجميع القيود المحاسبية المزدوجة التي تمت في النظام
-                  </CardDescription>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 max-w-full">
                   <Button
@@ -4141,408 +4134,11 @@ function LedgerPage() {
           {/* Tab 3: Trial Balance (General + Summary + Account Comparisons) */}
           <TabsContent value="trial" className="space-y-6">
             <AdvancedFinancialReportsSuite initialSection="general_trial" />
-
-            <Card className="rounded-2xl">
-              <CardHeader className="flex flex-row items-center justify-between pb-3">
-                <div>
-                  <CardTitle className="text-base font-bold">
-                    ميزان المراجعة بالأرصدة (Trial Balance Sheet)
-                  </CardTitle>
-                  <CardDescription>
-                    عرض لجميع أرصدة الحسابات للتأكد من صحة وتوازن الجانبين الدائن والمدين للدفاتر
-                  </CardDescription>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    onClick={() =>
-                      printAccountingDocument({
-                        title: "ميزان المراجعة بالأرصدة والحركات",
-                        subtitle: `عدد الحسابات: ${trialBalance.rows.length} | الحالة: ${trialBalance.isBalanced ? "متوازن" : "غير متوازن"}`,
-                        columns: [
-                          { key: "code", label: "كود الحساب" },
-                          { key: "name", label: "اسم الحساب" },
-                          { key: "type", label: "نوع الحساب" },
-                          { key: "debitSum", label: "الحركات المدينة (Dr)" },
-                          { key: "creditSum", label: "الحركات الدائنة (Cr)" },
-                          { key: "endDr", label: "رصيد نهائي (مدين)" },
-                          { key: "endCr", label: "رصيد نهائي (دائن)" },
-                        ],
-                        rows: trialBalance.rows.map((row) => ({
-                          code: row.code,
-                          name: row.name,
-                          type: ACCOUNT_TYPE_LABELS[row.type],
-                          debitSum:
-                            row.debitSum > 0 ? formatCurrency(row.debitSum, row.currency) : "-",
-                          creditSum:
-                            row.creditSum > 0 ? formatCurrency(row.creditSum, row.currency) : "-",
-                          endDr:
-                            row.balanceType === "Dr" && row.endingBalance > 0
-                              ? formatCurrency(row.endingBalance, row.currency)
-                              : "-",
-                          endCr:
-                            row.balanceType === "Cr" && row.endingBalance > 0
-                              ? formatCurrency(row.endingBalance, row.currency)
-                              : "-",
-                        })),
-                        totals: [
-                          {
-                            label: "إجمالي الأرصدة المدينة",
-                            value: formatCurrency(trialBalance.totalDebits, "USD"),
-                          },
-                          {
-                            label: "إجمالي الأرصدة الدائنة",
-                            value: formatCurrency(trialBalance.totalCredits, "USD"),
-                          },
-                        ],
-                      })
-                    }
-                    className="gap-1.5 rounded-xl bg-primary text-primary-foreground font-bold"
-                  >
-                    <Printer className="h-4 w-4" />
-                    طباعة ميزان المراجعة
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleExportTrialBalance}
-                    className="gap-1.5 rounded-xl"
-                  >
-                    <FileSpreadsheet className="h-4 w-4" />
-                    تصدير ميزان المراجعة
-                  </Button>
-                </div>
-              </CardHeader>
-
-              <CardContent className="space-y-6">
-                {/* Trial Balance Table */}
-                <div className="overflow-x-auto rounded-xl border">
-                  <table className="w-full text-sm text-right">
-                    <thead className="bg-muted/50 text-muted-foreground text-xs font-semibold border-b">
-                      <tr>
-                        <th className="p-4">كود الحساب</th>
-                        <th className="p-4">اسم الحساب</th>
-                        <th className="p-4">نوع الحساب</th>
-                        <th className="p-4 text-emerald-600 dark:text-emerald-400">
-                          الحركات المدينة (Dr)
-                        </th>
-                        <th className="p-4 text-rose-600 dark:text-rose-400">
-                          الحركات الدائنة (Cr)
-                        </th>
-                        <th className="p-4 text-primary">الرصيد النهائي (مدين)</th>
-                        <th className="p-4 text-primary">الرصيد النهائي (دائن)</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {trialBalance.rows.map((row) => (
-                        <tr key={row.code} className="hover:bg-muted/20 transition">
-                          <td className="p-4 font-mono text-xs">{row.code}</td>
-                          <td className="p-4 font-bold">{row.name}</td>
-                          <td className="p-4 text-xs text-muted-foreground">
-                            {ACCOUNT_TYPE_LABELS[row.type]}
-                          </td>
-                          <td className="p-4 font-mono text-muted-foreground">
-                            {row.debitSum > 0 ? formatCurrency(row.debitSum, row.currency) : "-"}
-                          </td>
-                          <td className="p-4 font-mono text-muted-foreground">
-                            {row.creditSum > 0 ? formatCurrency(row.creditSum, row.currency) : "-"}
-                          </td>
-                          <td className="p-4 font-mono text-emerald-600 dark:text-emerald-400 font-semibold">
-                            {row.balanceType === "Dr" && row.endingBalance > 0
-                              ? formatCurrency(row.endingBalance, row.currency)
-                              : "-"}
-                          </td>
-                          <td className="p-4 font-mono text-rose-600 dark:text-rose-400 font-semibold">
-                            {row.balanceType === "Cr" && row.endingBalance > 0
-                              ? formatCurrency(row.endingBalance, row.currency)
-                              : "-"}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot className="bg-muted/60 font-bold border-t">
-                      <tr>
-                        <td colSpan={3} className="p-4 text-left">
-                          إجمالي ميزان المراجعة بالأرصدة النهائية
-                        </td>
-                        <td className="p-4 font-mono text-xs text-muted-foreground"></td>
-                        <td className="p-4 font-mono text-xs text-muted-foreground"></td>
-                        <td className="p-4 font-mono text-emerald-600 dark:text-emerald-400 text-base">
-                          {formatCurrency(trialBalance.totalDebits, "USD")}
-                        </td>
-                        <td className="p-4 font-mono text-emerald-600 dark:text-emerald-400 text-base">
-                          {formatCurrency(trialBalance.totalCredits, "USD")}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-
-                {/* Balancing Alert block */}
-                {trialBalance.isBalanced ? (
-                  <div className="p-4 rounded-xl border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20 dark:border-emerald-800/60 flex items-center gap-3">
-                    <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                    <div>
-                      <span className="font-bold text-sm text-emerald-800 dark:text-emerald-300">
-                        ميزان المراجعة متوازن تماماً
-                      </span>
-                      <p className="text-xs text-emerald-700/80 dark:text-emerald-400/80 mt-0.5">
-                        مجموع أرصدة الحسابات المدينة مساوي تماماً لأرصدة الحسابات الدائنة (
-                        {formatCurrency(trialBalance.totalDebits, "USD")}). الدفاتر المالية صحيحة
-                        دفترياً.
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="p-4 rounded-xl border border-rose-200 bg-rose-50 dark:bg-rose-950/20 dark:border-rose-800/60 flex items-center gap-3">
-                    <XCircle className="h-5 w-5 text-rose-600 dark:text-rose-400 shrink-0" />
-                    <div>
-                      <span className="font-bold text-sm text-rose-800 dark:text-rose-300">
-                        انتبه! ميزان المراجعة غير متوازن
-                      </span>
-                      <p className="text-xs text-rose-700/80 dark:text-rose-400/80 mt-0.5">
-                        هناك فرق بين إجمالي الأرصدة المدينة والدائنة بقيمة{" "}
-                        {formatCurrency(
-                          Math.abs(trialBalance.totalDebits - trialBalance.totalCredits),
-                          "USD",
-                        )}
-                        . يرجى مراجعة توازن القيود السابقة.
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
           </TabsContent>
 
           {/* Tab 4: Financial Statements */}
           <TabsContent value="statements" className="space-y-6">
             <AdvancedFinancialReportsSuite initialSection="statements" />
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Income Statement (قائمة الدخل) */}
-              <Card className="rounded-2xl">
-                <CardHeader className="pb-3 border-b">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <TrendingUp className="h-5 w-5 text-primary" />
-                      <CardTitle className="text-base font-bold">
-                        قائمة الدخل التقديرية (Income Statement)
-                      </CardTitle>
-                    </div>
-                    <Badge variant="outline" className="font-mono">
-                      سنة 2026
-                    </Badge>
-                  </div>
-                  <CardDescription>
-                    الملخص المالي للإيرادات والتكاليف وصافي الأرباح أو الخسائر
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="pt-4 space-y-4">
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
-                      <span>1. الإيرادات والمبيعات (Revenues)</span>
-                    </h4>
-                    <div className="bg-muted/40 p-3 rounded-lg divide-y text-sm">
-                      {financialStatements.revenueAccounts.map((r) => (
-                        <div key={r.code} className="flex justify-between py-2">
-                          <span className="text-muted-foreground">{r.name}</span>
-                          <span className="font-mono font-semibold">
-                            {formatCurrency(r.endingBalance, r.currency)}
-                          </span>
-                        </div>
-                      ))}
-                      {financialStatements.revenueAccounts.length === 0 && (
-                        <p className="py-2 text-xs text-center text-muted-foreground">
-                          لا توجد حسابات مبيعات نشطة حالياً
-                        </p>
-                      )}
-                      <div className="flex justify-between py-2 font-bold text-foreground pt-3">
-                        <span>إجمالي الإيرادات والتشغيل</span>
-                        <span className="font-mono text-emerald-600 dark:text-emerald-400">
-                          {formatCurrency(financialStatements.totalRevenue, "USD")}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-semibold text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
-                      <span>2. المصروفات التشغيلية والعمومية (Expenses)</span>
-                    </h4>
-                    <div className="bg-muted/40 p-3 rounded-lg divide-y text-sm max-h-[300px] overflow-y-auto">
-                      {financialStatements.expenseAccounts.map((e) => (
-                        <div key={e.code} className="flex justify-between py-2">
-                          <span className="text-muted-foreground">{e.name}</span>
-                          <span className="font-mono font-semibold">
-                            {formatCurrency(e.endingBalance, e.currency)}
-                          </span>
-                        </div>
-                      ))}
-                      {financialStatements.expenseAccounts.length === 0 && (
-                        <p className="py-2 text-xs text-center text-muted-foreground">
-                          لا توجد حسابات مصروفات مسجلة حالياً
-                        </p>
-                      )}
-                      <div className="flex justify-between py-2 font-bold text-foreground pt-3">
-                        <span>إجمالي المصروفات التشغيلية</span>
-                        <span className="font-mono text-rose-600 dark:text-rose-400">
-                          {formatCurrency(financialStatements.totalExpense, "USD")}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="pt-4 border-t flex items-center justify-between">
-                    <span className="font-extrabold text-base">
-                      صافي الأرباح / الخسائر (Net Income)
-                    </span>
-                    <span
-                      className={`text-xl font-black font-mono ${financialStatements.netIncome >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}
-                    >
-                      {formatCurrency(financialStatements.netIncome, "USD")}
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Balance Sheet Summary (الميزانية العمومية) */}
-              <Card className="rounded-2xl">
-                <CardHeader className="pb-3 border-b">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Scale className="h-5 w-5 text-primary" />
-                      <CardTitle className="text-base font-bold">
-                        الميزانية العمومية (Balance Sheet)
-                      </CardTitle>
-                    </div>
-                    <Badge variant="outline" className="font-mono">
-                      المركز المالي
-                    </Badge>
-                  </div>
-                  <CardDescription>
-                    عرض لموجودات الشركة (الأصول) ومطالباتها (الخصوم وحقوق الملكية)
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="pt-4 space-y-4">
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-semibold text-primary flex items-center gap-1.5">
-                      <span>1. الأصول والموجودات (Assets)</span>
-                    </h4>
-                    <div className="bg-muted/40 p-3 rounded-lg divide-y text-sm max-h-[160px] overflow-y-auto">
-                      {financialStatements.assetAccounts.map((a) => (
-                        <div key={a.code} className="flex justify-between py-2">
-                          <span className="text-muted-foreground">{a.name}</span>
-                          <span className="font-mono font-semibold">
-                            {formatCurrency(a.endingBalance, a.currency)}
-                          </span>
-                        </div>
-                      ))}
-                      <div className="flex justify-between py-2 font-bold text-foreground pt-3">
-                        <span>إجمالي الأصول</span>
-                        <span className="font-mono text-primary">
-                          {formatCurrency(financialStatements.totalAssets, "USD")}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2 col-span-1">
-                      <h4 className="text-sm font-semibold text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
-                        <span>2. الالتزامات (Liabilities)</span>
-                      </h4>
-                      <div className="bg-muted/40 p-3 rounded-lg divide-y text-sm h-[130px] overflow-y-auto">
-                        {financialStatements.liabilityAccounts.map((l) => (
-                          <div key={l.code} className="flex justify-between py-1 text-xs">
-                            <span className="text-muted-foreground truncate">{l.name}</span>
-                            <span className="font-mono font-semibold">
-                              {formatCurrency(l.endingBalance, l.currency)}
-                            </span>
-                          </div>
-                        ))}
-                        {financialStatements.liabilityAccounts.length === 0 && (
-                          <p className="py-1 text-xs text-center text-muted-foreground">
-                            لا توجد التزامات
-                          </p>
-                        )}
-                        <div className="flex justify-between py-1 font-bold text-foreground text-xs pt-2">
-                          <span>إجمالي الالتزامات</span>
-                          <span className="font-mono">
-                            {formatCurrency(financialStatements.totalLiabilities, "USD")}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2 col-span-1">
-                      <h4 className="text-sm font-semibold text-blue-600 dark:text-blue-400 flex items-center gap-1.5">
-                        <span>3. حقوق الملكية (Equity)</span>
-                      </h4>
-                      <div className="bg-muted/40 p-3 rounded-lg divide-y text-sm h-[130px] overflow-y-auto">
-                        {financialStatements.equityAccounts.map((eq) => (
-                          <div key={eq.code} className="flex justify-between py-1 text-xs">
-                            <span className="text-muted-foreground truncate">
-                              {eq.name} ({eq.balanceType})
-                            </span>
-                            <span className="font-mono font-semibold">
-                              {formatCurrency(eq.endingBalance, eq.currency)}
-                            </span>
-                          </div>
-                        ))}
-                        <div className="flex justify-between py-1 text-xs text-emerald-600 dark:text-emerald-400">
-                          <span>صافي أرباح الفترة الحالية</span>
-                          <span className="font-mono font-semibold">
-                            {formatCurrency(financialStatements.netIncome, "USD")}
-                          </span>
-                        </div>
-                        <div className="flex justify-between py-1 font-bold text-foreground text-xs pt-2">
-                          <span>إجمالي حقوق الملكية</span>
-                          <span className="font-mono">
-                            {formatCurrency(
-                              financialStatements.totalEquity + financialStatements.netIncome,
-                              "USD",
-                            )}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="pt-4 border-t flex flex-col md:flex-row items-center justify-between gap-4">
-                    <div className="flex flex-col">
-                      <span className="font-extrabold text-sm">مجموع الالتزامات وحقوق الملكية</span>
-                      <span className="text-xs text-muted-foreground">
-                        الخصوم + رأس المال + الأرباح
-                      </span>
-                    </div>
-                    <span className="text-lg font-bold font-mono text-foreground">
-                      {formatCurrency(
-                        financialStatements.totalLiabilities +
-                          financialStatements.totalEquity +
-                          financialStatements.netIncome,
-                        "USD",
-                      )}
-                    </span>
-                  </div>
-
-                  {/* Equation Verification Check */}
-                  <div className="p-3.5 rounded-xl border flex items-center gap-2 text-xs bg-muted/60">
-                    <Percent className="h-4 w-4 text-primary shrink-0" />
-                    <span className="font-medium text-muted-foreground">
-                      معادلة الميزانية (المركز المالي): الأصول (
-                      {formatCurrency(financialStatements.totalAssets, "USD")}) = الخصوم والملكية (
-                      {formatCurrency(
-                        financialStatements.totalLiabilities +
-                          financialStatements.totalEquity +
-                          financialStatements.netIncome,
-                        "USD",
-                      )}
-                      )
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
           </TabsContent>
 
           {/* Tab 6: Chart of Accounts (دليل وشجرة الحسابات) */}
@@ -4562,9 +4158,6 @@ function LedgerPage() {
           {/* Tab 8: Financial Reports (التقارير المالية) */}
           <TabsContent value="reports" className="space-y-6">
             <AdvancedFinancialReportsSuite initialSection="account_status" />
-            <div className="bg-card rounded-2xl border border-border p-2 sm:p-4">
-              <ReportsPage />
-            </div>
           </TabsContent>
         </Tabs>
       )}
@@ -4642,6 +4235,16 @@ function LedgerPage() {
               )}
             </div>
           </div>
+          <DialogFooter className="pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsAttachmentOpen(false)}
+              className="rounded-xl font-bold text-xs"
+            >
+              إغلاق
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -4984,12 +4587,8 @@ function LedgerPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-indigo-700 dark:text-indigo-400">
               <ClipboardPaste className="h-6 w-6" />
-              لصق ومعالجة بيانات القيود نصياً (معالجة ذكية وسريعة)
+              لصق ومعالجة بيانات القيود نصياً
             </DialogTitle>
-            <DialogDescription>
-              يمكنك نسخ جدول البيانات من ملف Excel أو أوراكل أو المحادثة ولصقه هنا مباشرة. سيقوم
-              النظام بتحليله، والتعرف على التواريخ والعملات، وتجميع الأسطر إلى قيود متوازنة بدقة.
-            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
@@ -5309,6 +4908,48 @@ function LedgerPage() {
         editEntryTotals={editEntryTotals}
         handleSaveEditEntry={handleSaveEditEntry}
       />
+
+      {/* Unsaved Exit Dialog */}
+      <AlertDialog open={isUnsavedExitDialogOpen} onOpenChange={setIsUnsavedExitDialogOpen}>
+        <AlertDialogContent className="rounded-2xl max-w-md text-right" dir="rtl">
+          <AlertDialogHeader className="text-right">
+            <AlertDialogTitle className="text-right flex items-center gap-2 text-amber-700 dark:text-amber-400 font-bold">
+              <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
+              تنبيه: قيود محاسبية غير محفوظة
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-right text-xs text-muted-foreground pt-1.5 leading-relaxed">
+              يوجد لديك قيود محاسبية مسجلة لم يتم تثبيتها في قاعدة البيانات بعد ({unsavedEntries.length} قيد). ماذا تريد أن تفعل قبل المغادرة؟
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col sm:flex-row gap-2 pt-3">
+            <Button
+              type="button"
+              variant="default"
+              onClick={handleSaveAndExit}
+              disabled={isSavingToDb}
+              className="rounded-xl font-bold text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              حفظ القيود والخروج
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleDiscardAndExit}
+              className="rounded-xl font-bold text-xs"
+            >
+              تجاهل والخروج
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleReturnToEntries}
+              className="rounded-xl text-xs font-semibold"
+            >
+              البقاء في الصفحة
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

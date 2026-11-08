@@ -472,10 +472,49 @@ function RootComponent() {
         activeLegacyStudioEdits = {};
       }
     };
+
+    const syncStudioInstantCss = (edits: Record<string, any>) => {
+      if (typeof document === "undefined") return;
+      let styleEl = document.getElementById("studio-instant-hidden-css") as HTMLStyleElement | null;
+      if (!styleEl) {
+        styleEl = document.createElement("style");
+        styleEl.id = "studio-instant-hidden-css";
+        document.head.appendChild(styleEl);
+      }
+      const currentPath = window.location.pathname.replace(/\/+$/, "") || "/";
+      if (currentPath.startsWith("/admin/studio")) {
+        styleEl.textContent = "";
+        return;
+      }
+      const deletedSelectors: string[] = [];
+      const safeEdits = sanitizeStudioDomEditsMap(edits);
+      for (const [selector, edit] of Object.entries(safeEdits)) {
+        if (!selector || selector.startsWith("__studio_") || !edit) continue;
+        if (edit.pageRoute) {
+          const targetRoute = String(edit.pageRoute).split("?")[0].replace(/\/+$/, "") || "/";
+          if (targetRoute !== currentPath) continue;
+        }
+        if (
+          edit.deleted === true ||
+          edit.hiddenOn?.desktop === true ||
+          edit.styles?.display === "none"
+        ) {
+          deletedSelectors.push(selector);
+        }
+      }
+      if (deletedSelectors.length > 0) {
+        styleEl.textContent = `${deletedSelectors.join(",\n")} {\n  display: none !important;\n}`;
+      } else {
+        styleEl.textContent = "";
+      }
+    };
+
     const rebuildRuntimeStudioEdits = () => {
       studioObserver?.disconnect();
       resetPublishedStudioEdits();
-      applyStudioEdits({ ...activeLegacyStudioEdits, ...activePublishedStudioEdits });
+      const combined = { ...activeLegacyStudioEdits, ...activePublishedStudioEdits };
+      syncStudioInstantCss(combined);
+      applyStudioEdits(combined);
       studioObserver?.observe(document.body, { childList: true, subtree: true });
     };
     const applyPublishedStudioEdits = (config: any) => {
@@ -491,25 +530,23 @@ function RootComponent() {
     const storageHandler = (event: StorageEvent) => {
       if (event.key === "custom_text_map") legacyEditsUpdatedHandler();
     };
+    const routeChangeHandler = () => {
+      rebuildRuntimeStudioEdits();
+    };
 
-    const initTimer = window.setTimeout(() => {
-      try {
-        translator.start();
-      } catch (e) {
-        console.error("Failed to start translator:", e);
+    // Synchronously apply instant CSS and runtime edits from local cache immediately (0ms, before paint)
+    try {
+      const initialLocalConfig = studioService.getImmediateLocalOrDefaultPublishedConfig();
+      if (initialLocalConfig?.domEdits) {
+        activePublishedStudioEdits = sanitizeStudioDomEditsMap(initialLocalConfig.domEdits);
+        syncStudioInstantCss(activePublishedStudioEdits);
       }
       refreshLegacyStudioEdits();
       rebuildRuntimeStudioEdits();
-      void studioService
-        .getPublishedConfig()
-        .then(applyPublishedStudioEdits)
-        .catch((error) => console.warn("Published Studio config could not be loaded:", error));
-      studioObserverInstance.observe(document.body, { childList: true, subtree: true });
-    }, 80);
-
-    window.addEventListener("studio_published_updated", publishedHandler);
-    window.addEventListener("studio_legacy_edits_updated", legacyEditsUpdatedHandler);
-    window.addEventListener("storage", storageHandler);
+      translator.start();
+    } catch (e) {
+      console.error("Studio instant initialization notice:", e);
+    }
 
     const studioObserverInstance = new MutationObserver(() => {
       studioObserverInstance.disconnect();
@@ -517,13 +554,28 @@ function RootComponent() {
       studioObserverInstance.observe(document.body, { childList: true, subtree: true });
     });
     studioObserver = studioObserverInstance;
+    if (typeof document !== "undefined" && document.body) {
+      studioObserverInstance.observe(document.body, { childList: true, subtree: true });
+    }
+
+    // Refresh from remote published configuration in background
+    void studioService
+      .getPublishedConfig()
+      .then(applyPublishedStudioEdits)
+      .catch((error) => console.warn("Published Studio config could not be loaded:", error));
+
+    window.addEventListener("studio_published_updated", publishedHandler);
+    window.addEventListener("studio_legacy_edits_updated", legacyEditsUpdatedHandler);
+    window.addEventListener("storage", storageHandler);
+    window.addEventListener("popstate", routeChangeHandler);
+
     const stopAppSync = createAppSync(queryClient);
     return () => {
-      window.clearTimeout(initTimer);
       studioObserver?.disconnect();
       window.removeEventListener("studio_published_updated", publishedHandler);
       window.removeEventListener("studio_legacy_edits_updated", legacyEditsUpdatedHandler);
       window.removeEventListener("storage", storageHandler);
+      window.removeEventListener("popstate", routeChangeHandler);
       stopAppSync?.();
     };
   }, [queryClient]);

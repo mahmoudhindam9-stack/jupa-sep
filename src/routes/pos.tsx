@@ -1473,10 +1473,10 @@ function Index() {
                   الذهاب للوحة الإدارة ⚙️
                 </Link>
                 <Link
-                  to="/setup"
+                  to="/login"
                   className="w-full sm:w-auto px-6 py-3 bg-muted text-muted-foreground font-semibold rounded-2xl hover:bg-muted/80 transition"
                 >
-                  إعداد حساب المدير الأول 👤
+                  تسجيل الدخول / الحسابات 👤
                 </Link>
               </div>
             </div>

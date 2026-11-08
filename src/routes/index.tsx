@@ -1,5 +1,4 @@
-import { useEffect } from "react";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -25,21 +24,14 @@ export const Route = createFileRoute("/")({
       },
     ],
   }),
-  component: IndexRouteComponent,
-});
-
-function IndexRouteComponent() {
-  const navigate = useNavigate();
-  const search = Route.useSearch();
-
-  useEffect(() => {
+  beforeLoad: ({ search }) => {
     const isMenuQrRedirect =
       search.page === "menu" ||
       search.selfOrder === "1" ||
       Boolean(search.tableId || search.table_id || search.table);
 
     if (isMenuQrRedirect) {
-      void navigate({
+      throw redirect({
         to: "/menu",
         search: {
           table: search.table,
@@ -52,23 +44,19 @@ function IndexRouteComponent() {
           allowLangSwitch: search.allowLangSwitch,
           welcome: search.welcome,
         },
-        replace: true,
       });
-    } else {
-      const hasStoredUser = Boolean(
+    }
+
+    const hasStoredUser =
+      typeof localStorage !== "undefined" &&
+      Boolean(
         localStorage.getItem("restocash_auth_user") ||
           sessionStorage.getItem("restocash_auth_user"),
       );
-      void navigate({ to: hasStoredUser ? "/admin" : "/login", replace: true });
-    }
-  }, [navigate, search]);
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-6">
-      <div className="w-full max-w-sm rounded-2xl border border-border/90 bg-card p-7 text-center shadow-lg space-y-4">
-        <div className="mx-auto h-2 w-12 rounded-full bg-primary/40 animate-pulse" />
-        <p className="text-sm font-bold text-foreground">جاري تحويلك إلى النظام…</p>
-      </div>
-    </div>
-  );
-}
+    throw redirect({
+      to: hasStoredUser ? "/admin" : "/login",
+    });
+  },
+  component: () => null,
+});

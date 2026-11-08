@@ -1218,6 +1218,9 @@ export function LiveAppPreview({
           .join(" ");
         for (const [sel, edit] of Object.entries(editsMap || {})) {
           if (!edit || sel.startsWith("__studio_")) continue;
+          if (edit.deleted || edit.hiddenOn?.desktop || edit.styles?.display === "none") {
+            rules.push(sel + " { display: none !important; }");
+          }
           if (edit.hoverStyles && Object.keys(edit.hoverStyles).length) {
             rules.push(sel + ":hover { " + toCssDecls(edit.hoverStyles) + " }");
           }
