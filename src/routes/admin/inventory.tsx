@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { createFileRoute, Link, useLocation } from "@tanstack/react-router";
+import { createFileRoute, Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { extractTabParam, useSyncedSubTab } from "@/components/navigation/navigationRegistry";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as XLSX from "xlsx";
@@ -133,11 +133,30 @@ function InventoryPage() {
     },
   });
   const location = useLocation();
+  const navigate = useNavigate();
   const tabParam = extractTabParam(location.search, (location as any).searchStr);
-  const [activeTab, setActiveTab] = useState(() => tabParam || "grid");
+  const [invSectionFilter, setInvSectionFilter] = useState<
+    "all" | "definitions" | "operations" | "reports"
+  >(() =>
+    tabParam === "definitions" || tabParam === "operations"
+      ? tabParam
+      : "all",
+  );
+  const [activeTab, setActiveTab] = useState(() => {
+    if (!tabParam || tabParam === "definitions" || tabParam === "operations") return "grid";
+    return tabParam;
+  });
 
   useEffect(() => {
-    setActiveTab(tabParam || "grid");
+    if (!tabParam || tabParam === "grid") {
+      setInvSectionFilter("all");
+      setActiveTab("grid");
+    } else if (tabParam === "definitions" || tabParam === "operations") {
+      setInvSectionFilter(tabParam);
+      setActiveTab("grid");
+    } else {
+      setActiveTab(tabParam);
+    }
   }, [tabParam]);
 
   useSyncedSubTab("/admin/inventory", activeTab, setActiveTab, "grid");
@@ -1494,29 +1513,69 @@ function InventoryPage() {
 
           {/* Inventory Modules (Grid or List) */}
           <section aria-labelledby="inventory-modules-heading" className="space-y-3">
-            <div className="flex items-center justify-between gap-4">
-              <h2
-                id="inventory-modules-heading"
-                className="flex items-center gap-2 text-base font-black text-foreground"
-              >
-                <Building2 size={18} className="text-primary" aria-hidden="true" />
-                أقسام إدارة المخازن والتوريد
-              </h2>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2
+                  id="inventory-modules-heading"
+                  className="flex items-center gap-2 text-base font-black text-foreground ml-2"
+                >
+                  <Building2 size={18} className="text-primary" aria-hidden="true" />
+                  أقسام إدارة المخازن والتوريد
+                </h2>
+                <div className="inline-flex items-center rounded-xl bg-muted p-1 border border-border/60 gap-1">
+                  {(
+                    [
+                      { id: "all", label: "الكل" },
+                      { id: "definitions", label: "التعريفات" },
+                      { id: "operations", label: "العمليات" },
+                      { id: "reports", label: "التقارير" },
+                    ] as const
+                  ).map((sec) => (
+                    <button
+                      key={sec.id}
+                      type="button"
+                      onClick={() => {
+                        if (sec.id === "reports") {
+                          setActiveTab("reports");
+                          navigate({ to: "/admin/inventory", search: { tab: "reports" } });
+                        } else {
+                          setInvSectionFilter(sec.id);
+                          setActiveTab("grid");
+                          navigate({
+                            to: "/admin/inventory",
+                            search: sec.id === "all" ? {} : { tab: sec.id },
+                          });
+                        }
+                      }}
+                      className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                        invSectionFilter === sec.id
+                          ? "bg-primary text-primary-foreground shadow-xs"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {sec.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <ViewModeToggle mode={hubViewMode} onChange={setHubViewMode} />
             </div>
 
             {(() => {
-              const modules = [
+              const allModules = [
+                // 1. التعريفات (Definitions)
                 {
                   id: "warehouses",
+                  section: "definitions",
                   title: "إدارة المخازن والفروع",
-                  badge: "المستودعات",
+                  badge: "التعريفات",
                   icon: Building2,
                   colorClass: "text-blue-600 dark:text-blue-400 bg-blue-500/15",
                   onClick: () => setActiveTab("warehouses"),
                 },
                 {
                   id: "stock",
+                  section: "definitions",
                   title: "الأصناف المخزنية والباركود",
                   badge: `${stats.totalItems} صنف`,
                   icon: Layers3,
@@ -1524,54 +1583,107 @@ function InventoryPage() {
                   onClick: () => setActiveTab("stock"),
                 },
                 {
-                  id: "transfers",
-                  title: "التحويلات بين المخازن",
-                  badge: "التحويلات",
-                  icon: Truck,
-                  colorClass: "text-amber-600 dark:text-amber-400 bg-amber-500/15",
-                  onClick: () => setActiveTab("transfers"),
-                },
-                {
-                  id: "purchases",
-                  title: "فواتير وأوامر الشراء",
-                  badge: "المشتريات",
-                  icon: FileText,
-                  colorClass: "text-emerald-600 dark:text-emerald-400 bg-emerald-500/15",
-                  onClick: () => setActiveTab("purchases"),
-                },
-                {
                   id: "suppliers",
+                  section: "definitions",
                   title: "إدارة الشركات والموردين",
-                  badge: "الموردين",
+                  badge: "التعريفات",
                   icon: Users2,
                   colorClass: "text-purple-600 dark:text-purple-400 bg-purple-500/15",
                   onClick: () => setActiveTab("suppliers"),
                 },
                 {
-                  id: "transactions",
-                  title: "سجل حركات المخزن",
-                  badge: "الحركات",
-                  icon: Calendar,
-                  colorClass: "text-teal-600 dark:text-teal-400 bg-teal-500/15",
-                  onClick: () => setActiveTab("transactions"),
-                },
-                {
-                  id: "waste",
-                  title: "الهالك والفاقد والتسويات",
-                  badge: "الهالك",
-                  icon: AlertTriangle,
-                  colorClass: "text-rose-600 dark:text-rose-400 bg-rose-500/15",
-                  onClick: () => setActiveTab("waste"),
+                  id: "settings",
+                  section: "definitions",
+                  title: "إعدادات المخزن والربط",
+                  badge: "التعريفات",
+                  icon: Settings,
+                  colorClass: "text-slate-600 dark:text-slate-400 bg-slate-500/15",
+                  onClick: () => setActiveTab("settings"),
                 },
                 {
                   id: "new_item",
+                  section: "definitions",
                   title: "إضافة صنف مخزني جديد",
                   badge: "صنف جديد",
                   icon: Plus,
                   colorClass: "bg-primary text-primary-foreground",
                   onClick: openAddInventoryModal,
                 },
+                // 2. العمليات (Operations)
+                {
+                  id: "unified_purchases_voucher",
+                  section: "operations",
+                  title: "مستندات الشراء الموحدة (صرف للموردين)",
+                  badge: "الإدارة المالية",
+                  icon: DollarSign,
+                  colorClass: "text-emerald-600 dark:text-emerald-400 bg-emerald-500/15",
+                  onClick: () =>
+                    navigate({
+                      to: "/admin/ledger",
+                      search: { tab: "vouchers", dept: "restaurant" },
+                    }),
+                },
+                {
+                  id: "purchases",
+                  section: "operations",
+                  title: "فواتير وأوامر التوريد المخزني",
+                  badge: "العمليات",
+                  icon: FileText,
+                  colorClass: "text-emerald-600 dark:text-emerald-400 bg-emerald-500/15",
+                  onClick: () => setActiveTab("purchases"),
+                },
+                {
+                  id: "transfers",
+                  section: "operations",
+                  title: "التحويلات بين المخازن",
+                  badge: "العمليات",
+                  icon: Truck,
+                  colorClass: "text-amber-600 dark:text-amber-400 bg-amber-500/15",
+                  onClick: () => setActiveTab("transfers"),
+                },
+                {
+                  id: "transactions",
+                  section: "operations",
+                  title: "سجل حركات المخزن والتسويات",
+                  badge: "العمليات",
+                  icon: RefreshCw,
+                  colorClass: "text-teal-600 dark:text-teal-400 bg-teal-500/15",
+                  onClick: () => setActiveTab("transactions"),
+                },
+                {
+                  id: "expiry",
+                  section: "operations",
+                  title: "صلاحية وتتبع الدفعات",
+                  badge: "العمليات",
+                  icon: Calendar,
+                  colorClass: "text-cyan-600 dark:text-cyan-400 bg-cyan-500/15",
+                  onClick: () => setActiveTab("expiry"),
+                },
+                {
+                  id: "waste",
+                  section: "operations",
+                  title: "الهالك والفاقد والتسويات",
+                  badge: "العمليات",
+                  icon: AlertTriangle,
+                  colorClass: "text-rose-600 dark:text-rose-400 bg-rose-500/15",
+                  onClick: () => setActiveTab("waste"),
+                },
+                // 3. التقارير (Reports)
+                {
+                  id: "reports",
+                  section: "reports",
+                  title: "تقارير المخزون والجرد الذكي",
+                  badge: "التقارير",
+                  icon: FileText,
+                  colorClass: "text-violet-600 dark:text-violet-400 bg-violet-500/15",
+                  onClick: () => setActiveTab("reports"),
+                },
               ];
+
+              const modules =
+                invSectionFilter === "all"
+                  ? allModules
+                  : allModules.filter((m) => m.section === invSectionFilter);
 
               if (hubViewMode === "list") {
                 return (

@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { createFileRoute, useLocation, Link } from "@tanstack/react-router";
+import { createFileRoute, useLocation, useNavigate, Link } from "@tanstack/react-router";
 import { extractTabParam, useSyncedSubTab } from "@/components/navigation/navigationRegistry";
 import { useState, useEffect, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -132,21 +132,45 @@ function HRPage() {
 
   // Active Tab state
   const location = useLocation();
+  const navigate = useNavigate();
   const tabParam = extractTabParam(location.search, (location as any).searchStr);
-  const [activeTab, setActiveTab] = useState(tabParam || "grid");
+  const [hrSectionFilter, setHrSectionFilter] = useState<
+    "all" | "definitions" | "operations" | "reports"
+  >(() =>
+    tabParam === "definitions" || tabParam === "operations" || tabParam === "reports"
+      ? tabParam
+      : "all",
+  );
+  const [activeTab, setActiveTab] = useState(() => {
+    if (
+      !tabParam ||
+      tabParam === "definitions" ||
+      tabParam === "operations" ||
+      tabParam === "reports"
+    ) {
+      return "grid";
+    }
+    return tabParam;
+  });
   const [hubViewMode, setHubViewMode] = useViewMode("hr-hub", "grid");
 
   useEffect(() => {
-    if (tabParam) {
-      if (tabParam === "employees" && !canViewEmployees) setActiveTab("grid");
-      else if (tabParam === "attendance" && !canViewAttendance) setActiveTab("grid");
-      else if (tabParam === "payroll" && !canViewPayroll) setActiveTab("grid");
-      else if (tabParam === "loans" && !canViewLoans) setActiveTab("grid");
-      else if (tabParam === "users" && !canViewUsers) setActiveTab("grid");
-      else setActiveTab(tabParam);
-    } else {
+    if (!tabParam || tabParam === "grid") {
+      setHrSectionFilter("all");
       setActiveTab("grid");
-    }
+    } else if (
+      tabParam === "definitions" ||
+      tabParam === "operations" ||
+      tabParam === "reports"
+    ) {
+      setHrSectionFilter(tabParam);
+      setActiveTab("grid");
+    } else if (tabParam === "employees" && !canViewEmployees) setActiveTab("grid");
+    else if (tabParam === "attendance" && !canViewAttendance) setActiveTab("grid");
+    else if (tabParam === "payroll" && !canViewPayroll) setActiveTab("grid");
+    else if (tabParam === "loans" && !canViewLoans) setActiveTab("grid");
+    else if (tabParam === "users" && !canViewUsers) setActiveTab("grid");
+    else setActiveTab(tabParam);
   }, [tabParam, canViewEmployees, canViewAttendance, canViewPayroll, canViewLoans, canViewUsers]);
 
   useSyncedSubTab("/admin/hr", activeTab, setActiveTab, "grid");
@@ -1576,29 +1600,83 @@ function HRPage() {
 
           {/* HR Modules (Grid or List) */}
           <section aria-labelledby="hr-modules-heading" className="space-y-3">
-            <div className="flex items-center justify-between gap-4">
-              <h2
-                id="hr-modules-heading"
-                className="flex items-center gap-2 text-base font-black text-foreground"
-              >
-                <Users size={18} className="text-primary" aria-hidden="true" />
-                أقسام الموارد البشرية وشؤون الموظفين
-              </h2>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2
+                  id="hr-modules-heading"
+                  className="flex items-center gap-2 text-base font-black text-foreground ml-2"
+                >
+                  <Users size={18} className="text-primary" aria-hidden="true" />
+                  أقسام الموارد البشرية وشؤون الموظفين
+                </h2>
+                <div className="inline-flex items-center rounded-xl bg-muted p-1 border border-border/60 gap-1">
+                  {(
+                    [
+                      { id: "all", label: "الكل" },
+                      { id: "definitions", label: "التعريفات" },
+                      { id: "operations", label: "العمليات" },
+                      { id: "reports", label: "التقارير" },
+                    ] as const
+                  ).map((sec) => (
+                    <button
+                      key={sec.id}
+                      type="button"
+                      onClick={() => {
+                        setHrSectionFilter(sec.id);
+                        setActiveTab("grid");
+                        navigate({
+                          to: "/admin/hr",
+                          search: sec.id === "all" ? {} : { tab: sec.id },
+                        });
+                      }}
+                      className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                        hrSectionFilter === sec.id
+                          ? "bg-primary text-primary-foreground shadow-xs"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {sec.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <ViewModeToggle mode={hubViewMode} onChange={setHubViewMode} />
             </div>
 
             {(() => {
-              const hrItems = [
+              const allHrItems = [
+                // 1. التعريفات (Definitions)
                 canViewEmployees && {
                   id: "employees",
+                  section: "definitions",
                   title: "دليل الكادر الوظيفي",
                   badge: `${employees.length} موظف`,
                   icon: Users,
                   colorClass: "text-blue-600 dark:text-blue-400 bg-blue-500/15",
                   onClick: () => setActiveTab("employees"),
                 },
+                canViewUsers && {
+                  id: "users",
+                  section: "definitions",
+                  title: "المستخدمين والصلاحيات",
+                  badge: "التعريفات",
+                  icon: UserCheck,
+                  colorClass: "text-indigo-600 dark:text-indigo-400 bg-indigo-500/15",
+                  onClick: () => setActiveTab("users"),
+                },
+                canViewEmployees && {
+                  id: "new_employee",
+                  section: "definitions",
+                  title: "إضافة موظف جديد",
+                  badge: "موظف جديد",
+                  icon: UserPlus,
+                  colorClass: "bg-primary text-primary-foreground",
+                  onClick: openAddEmployeeDialog,
+                },
+                // 2. العمليات (Operations)
                 canViewAttendance && {
                   id: "attendance",
+                  section: "operations",
                   title: "حضور وانصراف الدوام",
                   badge: `${attendanceStatsForDate.present} حاضر`,
                   icon: CalendarDays,
@@ -1607,37 +1685,47 @@ function HRPage() {
                 },
                 canViewPayroll && {
                   id: "payroll",
+                  section: "operations",
                   title: "مسيرات الأجور والرواتب",
-                  badge: "الرواتب",
+                  badge: "العمليات",
                   icon: FileSpreadsheet,
                   colorClass: "text-amber-600 dark:text-amber-400 bg-amber-500/15",
                   onClick: () => setActiveTab("payroll"),
                 },
                 canViewLoans && {
                   id: "loans",
+                  section: "operations",
                   title: "القروض والسلف المالية",
-                  badge: "السلف",
+                  badge: "العمليات",
                   icon: Coins,
                   colorClass: "text-teal-600 dark:text-teal-400 bg-teal-500/15",
                   onClick: () => setActiveTab("loans"),
                 },
-                canViewUsers && {
-                  id: "users",
-                  title: "المستخدمين والصلاحيات",
-                  badge: "المستخدمين",
-                  icon: UserCheck,
-                  colorClass: "text-indigo-600 dark:text-indigo-400 bg-indigo-500/15",
-                  onClick: () => setActiveTab("users"),
+                // 3. التقارير (Reports)
+                canViewPayroll && {
+                  id: "payroll_reports",
+                  section: "reports",
+                  title: "كشوفات وتقارير الرواتب الشهرية",
+                  badge: "التقارير",
+                  icon: Printer,
+                  colorClass: "text-violet-600 dark:text-violet-400 bg-violet-500/15",
+                  onClick: () => setActiveTab("payroll"),
                 },
-                canViewEmployees && {
-                  id: "new_employee",
-                  title: "إضافة موظف جديد",
-                  badge: "موظف جديد",
-                  icon: UserPlus,
-                  colorClass: "bg-primary text-primary-foreground",
-                  onClick: openAddEmployeeDialog,
+                canViewAttendance && {
+                  id: "attendance_reports",
+                  section: "reports",
+                  title: "تقارير انضباط الحضور والدوام",
+                  badge: "التقارير",
+                  icon: Clock,
+                  colorClass: "text-cyan-600 dark:text-cyan-400 bg-cyan-500/15",
+                  onClick: () => setActiveTab("attendance"),
                 },
               ].filter(Boolean) as any[];
+
+              const hrItems =
+                hrSectionFilter === "all"
+                  ? allHrItems
+                  : allHrItems.filter((item) => item.section === hrSectionFilter);
 
               if (hubViewMode === "list") {
                 return (

@@ -157,11 +157,7 @@ function MallManagementPage() {
 
   useEffect(() => {
     if (tabParam === "payments" || tabParam === "expenses" || tabParam === "vouchers") {
-      navigate({ to: "/admin/ledger", search: { tab: "vouchers" } as any });
-      return;
-    }
-    if (tabParam === "vouchers") {
-      navigate({ to: "/admin/ledger", search: { tab: "vouchers" } as any });
+      navigate({ to: "/admin/ledger", search: { tab: "vouchers", dept: "mall" } as any });
       return;
     }
     if (tabParam === "garden") {
@@ -1605,7 +1601,9 @@ function MallManagementPage() {
           </Button>
           <Button
             variant="outline"
-            onClick={() => navigate({ to: "/admin/ledger", search: { tab: "vouchers" } as any })}
+            onClick={() =>
+              navigate({ to: "/admin/ledger", search: { tab: "vouchers", dept: "mall" } as any })
+            }
             className="font-bold text-xs h-8 px-3 rounded-xl gap-1.5 border-indigo-500/30 text-indigo-600 dark:text-indigo-400 cursor-pointer"
           >
             <Landmark size={14} />

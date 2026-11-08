@@ -233,7 +233,8 @@ export function VouchersLedgerSection({
   const [formNotes, setFormNotes] = useState("");
   const [formAttachment, setFormAttachment] = useState("");
 
-  // Inline New Category Creator
+  // Inline New Category Creator & Search
+  const [categorySearchQuery, setCategorySearchQuery] = useState("");
   const [isAddingCategory, setIsAddingCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newCategoryAccountCode, setNewCategoryAccountCode] = useState("");
@@ -301,6 +302,19 @@ export function VouchersLedgerSection({
   }, []);
 
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const deptParam = params.get("dept");
+      if (
+        deptParam === "mall" ||
+        deptParam === "park" ||
+        deptParam === "restaurant" ||
+        deptParam === "admin"
+      ) {
+        setDepartmentFilter(deptParam);
+        return;
+      }
+    }
     if (initialDepartmentFilter) {
       setDepartmentFilter(initialDepartmentFilter);
     }
@@ -1892,17 +1906,36 @@ export function VouchersLedgerSection({
                       {isAddingCategory ? "إلغاء" : "إضافة بند جديد"}
                     </button>
                   </div>
-                  <select
-                    value={formCategory}
-                    onChange={(e) => handleCategoryChange(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-800"
-                  >
-                    {availableCategories.map((c) => (
-                      <option key={c.name} value={c.name}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="space-y-1.5">
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        type="text"
+                        value={categorySearchQuery}
+                        onChange={(e) => setCategorySearchQuery(e.target.value)}
+                        placeholder="بحث سريع في البنود..."
+                        className="w-full pr-8 pl-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-[11px] font-bold text-slate-700"
+                      />
+                    </div>
+                    <select
+                      value={formCategory}
+                      onChange={(e) => handleCategoryChange(e.target.value)}
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-800"
+                    >
+                      {availableCategories
+                        .filter(
+                          (c) =>
+                            !categorySearchQuery.trim() ||
+                            c.name.toLowerCase().includes(categorySearchQuery.trim().toLowerCase()) ||
+                            c.name === formCategory,
+                        )
+                        .map((c) => (
+                          <option key={c.name} value={c.name}>
+                            {c.name}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
 
                   {isAddingCategory && (
                     <div className="mt-2 p-2.5 bg-white rounded-xl border border-indigo-200 space-y-2">

@@ -33,7 +33,6 @@ const getLineBaseValue = (
 };
 import { AccountSearchSelect } from "@/components/AccountSearchSelect";
 import { VouchersLedgerSection } from "@/components/admin/VouchersLedgerSection";
-import { MallFinanceSection } from "@/components/admin/MallFinanceSection";
 import { ComprehensiveFinancialPositionCard } from "@/components/admin/ComprehensiveFinancialPositionCard";
 import { AccountsPage } from "@/components/admin/AccountsPageView";
 import { ReportsPage } from "@/components/admin/ReportsPageView";
@@ -292,17 +291,22 @@ function LedgerPage() {
   // UI state
   const location = useLocation();
   const [hubViewMode, setHubViewMode] = useViewMode("ledger-hub", "grid");
+  const [hubSectionFilter, setHubSectionFilter] = useState<"all" | "definitions" | "operations" | "reports">("all");
+
   const normalizeLedgerTab = (tabParam?: string | null) => {
-    if (!tabParam) return "hub";
-    if (tabParam === "payments" || tabParam === "expenses") return "mall_finance";
+    if (!tabParam || tabParam === "hub") return "hub";
+    if (tabParam === "definitions" || tabParam === "operations") {
+      return "hub";
+    }
+    if (tabParam === "payments" || tabParam === "expenses" || tabParam === "mall_finance") {
+      return "vouchers";
+    }
     if (
       [
-        "hub",
         "financial_position",
         "ledger",
         "journal",
         "vouchers",
-        "mall_finance",
         "trial",
         "statements",
         "accounts",
@@ -322,6 +326,11 @@ function LedgerPage() {
 
   useEffect(() => {
     const tabParam = extractTabParam(location.search, (location as any).searchStr);
+    if (tabParam === "definitions" || tabParam === "operations") {
+      setHubSectionFilter(tabParam);
+    } else if (!tabParam || tabParam === "hub") {
+      setHubSectionFilter("all");
+    }
     setSelectedTab(normalizeLedgerTab(tabParam));
   }, [location.search]);
 
@@ -2980,9 +2989,9 @@ function LedgerPage() {
 
       {/* MAIN FINANCIAL HUB VIEW (When selectedTab === 'hub') */}
       {selectedTab === "hub" && (
-        <section aria-labelledby="financial-modules-heading" className="space-y-6">
+        <section aria-labelledby="financial-modules-heading" className="space-y-5">
           <div className="flex items-center justify-between gap-4 border-b border-border/60 pb-3 flex-wrap">
-            <div>
+            <div className="flex items-center gap-3 flex-wrap">
               <h2
                 id="financial-modules-heading"
                 className="flex items-center gap-2 text-lg font-black text-foreground"
@@ -2990,6 +2999,29 @@ function LedgerPage() {
                 <Landmark size={22} className="text-primary" aria-hidden="true" />
                 أقسام الإدارة المالية
               </h2>
+
+              {/* 3-Subsection Filter Pills (التعريفات / العمليات / التقارير) */}
+              <div className="inline-flex items-center gap-1 bg-muted/60 p-1 rounded-xl border border-border/70">
+                {[
+                  { id: "all", label: "الكل" },
+                  { id: "definitions", label: "التعريفات" },
+                  { id: "operations", label: "العمليات" },
+                  { id: "reports", label: "التقارير" },
+                ].map((sec) => (
+                  <button
+                    key={sec.id}
+                    type="button"
+                    onClick={() => setHubSectionFilter(sec.id as any)}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                      hubSectionFilter === sec.id
+                        ? "bg-primary text-primary-foreground shadow-2xs"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {sec.label}
+                  </button>
+                ))}
+              </div>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <ViewModeToggle mode={hubViewMode} onChange={setHubViewMode} />
@@ -3015,30 +3047,57 @@ function LedgerPage() {
 
           {/* Hub Items (Grid or List) */}
           {(() => {
-            const hubItems = [
+            const allHubItems = [
               {
                 id: "vouchers",
-                title: "سندات الصرف والقبض",
-                badge: "السندات",
+                section: "operations" as const,
+                sectionLabel: "العمليات",
+                title: "سندات الصرف والقبض الموحدة",
+                badge: "المول • الحديقة • المطعم",
                 icon: Receipt,
                 colorClass: "text-emerald-600 dark:text-emerald-400 bg-emerald-500/15",
                 borderClass: "border-emerald-500/30 bg-emerald-500/5 hover:border-emerald-500",
                 onClick: () => {
                   setSelectedTab("vouchers");
-                  setAutoOpenVoucherModal(true);
                 },
               },
               {
-                id: "mall_finance",
-                title: "تحصيلات ومصروفات المول والحديقة",
-                badge: "إيجارات ومصروفات",
-                icon: Building2,
+                id: "journal",
+                section: "operations" as const,
+                sectionLabel: "العمليات",
+                title: "دفتر اليومية والقيود المزدوجة",
+                badge: `${journalEntries.length} قيد`,
+                icon: FileText,
+                colorClass: "text-indigo-600 dark:text-indigo-400 bg-indigo-500/15",
+                borderClass: "border-border/80 bg-card hover:border-indigo-500/50",
+                onClick: () => setSelectedTab("journal"),
+              },
+              {
+                id: "accounts",
+                section: "definitions" as const,
+                sectionLabel: "التعريفات",
+                title: "دليل وشجرة الحسابات",
+                badge: "4 مستويات",
+                icon: Layers,
                 colorClass: "text-blue-600 dark:text-blue-400 bg-blue-500/15",
-                borderClass: "border-blue-500/30 bg-blue-500/5 hover:border-blue-500",
-                onClick: () => setSelectedTab("mall_finance"),
+                borderClass: "border-border/80 bg-card hover:border-blue-500/50",
+                onClick: () => setSelectedTab("accounts"),
+              },
+              {
+                id: "treasury",
+                section: "definitions" as const,
+                sectionLabel: "التعريفات",
+                title: "إدارة الخزائن النقدية",
+                badge: `${treasuries.length} خزائن`,
+                icon: Wallet,
+                colorClass: "text-amber-600 dark:text-amber-400 bg-amber-500/15",
+                borderClass: "border-border/80 bg-card hover:border-amber-500/50",
+                onClick: () => setSelectedTab("treasury"),
               },
               {
                 id: "financial_position",
+                section: "reports" as const,
+                sectionLabel: "التقارير",
                 title: "المركز المالي الشامل",
                 badge: "الميزانية ⭐",
                 icon: TrendingUp,
@@ -3048,6 +3107,8 @@ function LedgerPage() {
               },
               {
                 id: "ledger",
+                section: "reports" as const,
+                sectionLabel: "التقارير",
                 title: "حساب الأستاذ العام",
                 badge: `${accounts.length} حساب`,
                 icon: BookOpen,
@@ -3056,34 +3117,9 @@ function LedgerPage() {
                 onClick: () => setSelectedTab("ledger"),
               },
               {
-                id: "journal",
-                title: "دفتر اليومية والقيود المزدوجة",
-                badge: `${journalEntries.length} قيد`,
-                icon: FileText,
-                colorClass: "text-indigo-600 dark:text-indigo-400 bg-indigo-500/15",
-                borderClass: "border-border/80 bg-card hover:border-indigo-500/50",
-                onClick: () => setSelectedTab("journal"),
-              },
-              {
-                id: "treasury",
-                title: "إدارة الخزائن النقدية",
-                badge: `${treasuries.length} خزائن`,
-                icon: Wallet,
-                colorClass: "text-amber-600 dark:text-amber-400 bg-amber-500/15",
-                borderClass: "border-border/80 bg-card hover:border-amber-500/50",
-                onClick: () => setSelectedTab("treasury"),
-              },
-              {
-                id: "accounts",
-                title: "دليل وشجرة الحسابات",
-                badge: "4 مستويات",
-                icon: Layers,
-                colorClass: "text-blue-600 dark:text-blue-400 bg-blue-500/15",
-                borderClass: "border-border/80 bg-card hover:border-blue-500/50",
-                onClick: () => setSelectedTab("accounts"),
-              },
-              {
                 id: "trial",
+                section: "reports" as const,
+                sectionLabel: "التقارير",
                 title: "ميزان المراجعة العام والمختصر",
                 badge: "عام ومختصر",
                 icon: Scale,
@@ -3092,8 +3128,21 @@ function LedgerPage() {
                 onClick: () => setSelectedTab("trial"),
               },
               {
+                id: "statements",
+                section: "reports" as const,
+                sectionLabel: "التقارير",
+                title: "القوائم المالية الختامية",
+                badge: "الدخل والميزانية",
+                icon: FileSpreadsheet,
+                colorClass: "text-cyan-600 dark:text-cyan-400 bg-cyan-500/15",
+                borderClass: "border-border/80 bg-card hover:border-cyan-500/50",
+                onClick: () => setSelectedTab("statements"),
+              },
+              {
                 id: "reports",
-                title: "التقارير المالية والقوائم الختامية",
+                section: "reports" as const,
+                sectionLabel: "التقارير",
+                title: "التقارير المالية التحليلية",
                 badge: "التقارير",
                 icon: BarChart3,
                 colorClass: "text-emerald-600 dark:text-emerald-400 bg-emerald-500/15",
@@ -3101,6 +3150,11 @@ function LedgerPage() {
                 onClick: () => setSelectedTab("reports"),
               },
             ];
+
+            const hubItems =
+              hubSectionFilter === "all"
+                ? allHubItems
+                : allHubItems.filter((item) => item.section === hubSectionFilter);
 
             if (hubViewMode === "list") {
               return (
@@ -3120,6 +3174,9 @@ function LedgerPage() {
                           <h3 className="font-black text-sm text-foreground">{item.title}</h3>
                         </div>
                         <div className="flex items-center gap-2">
+                          <Badge variant="secondary" className="text-[10px] font-bold">
+                            {item.sectionLabel}
+                          </Badge>
                           <Badge variant="outline" className="text-[11px] font-bold">
                             {item.badge}
                           </Badge>
@@ -3147,7 +3204,12 @@ function LedgerPage() {
                           <div className={`rounded-xl p-2.5 shadow-xs ${item.colorClass}`}>
                             <IconComp size={22} />
                           </div>
-                          <h3 className="font-black text-sm text-foreground">{item.title}</h3>
+                          <div>
+                            <h3 className="font-black text-sm text-foreground">{item.title}</h3>
+                            <span className="text-[10px] font-bold text-muted-foreground">
+                              {item.sectionLabel}
+                            </span>
+                          </div>
                         </div>
                         <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground shrink-0">
                           {item.badge}

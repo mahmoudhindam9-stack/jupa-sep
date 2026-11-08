@@ -97,7 +97,7 @@ function ParkManagementPage() {
 
   useEffect(() => {
     if (tabParam === "vouchers" || tabParam === "expenses") {
-      navigate({ to: "/admin/ledger", search: { tab: "vouchers" } as any });
+      navigate({ to: "/admin/ledger", search: { tab: "vouchers", dept: "park" } as any });
       return;
     }
     setActiveTab(resolveParkTab(tabParam));
@@ -329,7 +329,9 @@ function ParkManagementPage() {
           )}
           <Button
             variant="outline"
-            onClick={() => navigate({ to: "/admin/ledger", search: { tab: "vouchers" } as any })}
+            onClick={() =>
+              navigate({ to: "/admin/ledger", search: { tab: "vouchers", dept: "park" } as any })
+            }
             className="font-bold text-xs h-8 px-3 rounded-xl gap-1.5 border-indigo-500/30 text-indigo-600 dark:text-indigo-400 cursor-pointer"
           >
             <Landmark size={14} />

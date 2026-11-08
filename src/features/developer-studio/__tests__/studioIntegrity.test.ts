@@ -584,4 +584,29 @@ describe("Developer Studio — Design System, Assets, Audits, Snapshots & Export
     expect(result.draft.hasUnsavedLocalChanges).toBe(true);
     expect(result.preservedNewerLocalChanges).toBe(true);
   });
+
+  it("creates a recoverable backup in localStorage before running any automatic cleanup or migration", () => {
+    window.localStorage.removeItem("restocash_studio_clean_v2");
+    window.localStorage.setItem("custom_text_map", JSON.stringify({ hero: "نص قديم" }));
+    window.localStorage.setItem(
+      "restocash_studio_draft_v1",
+      JSON.stringify(
+        makeDraft(
+          { page_dashboard: makePage("page_dashboard", "/admin", []) },
+          {},
+          { domEdits: { ".preserved-card": { text: "محتوى محفوظ" } } },
+        ),
+      ),
+    );
+
+    const draft = studioService.getImmediateLocalOrDefaultDraft("admin");
+    expect(draft.domEdits?.[".preserved-card"]?.text).toBe("محتوى محفوظ");
+
+    const backup = studioService.getLocalDraftBackup();
+    expect(backup).toBeTruthy();
+    expect(backup?.reason).toBe("pre_clean_v2_migration");
+    expect(backup?.entries?.custom_text_map).toContain("نص قديم");
+    expect(backup?.entries?.restocash_studio_draft_v1).toContain("محتوى محفوظ");
+  });
 });
+

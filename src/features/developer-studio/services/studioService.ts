@@ -300,11 +300,62 @@ class StudioService {
     this.hydrateFromLocal();
   }
 
+  public createLocalDraftBackup(reason = "manual_backup"): {
+    createdAt: string;
+    reason: string;
+    entries: Record<string, string>;
+  } | null {
+    if (typeof window === "undefined") return null;
+    try {
+      const keysToBackup = [
+        LOCAL_PUBLISHED_KEY,
+        LOCAL_DRAFT_KEY,
+        LOCAL_SAVED_DRAFT_KEY,
+        LOCAL_HISTORY_KEY,
+        "custom_text_map",
+        "restocash_studio_local_dom_edits_v1",
+      ];
+      const entries: Record<string, string> = {};
+      for (const k of keysToBackup) {
+        const val = localStorage.getItem(k);
+        if (val !== null) {
+          entries[k] = val;
+        }
+      }
+      const payload = {
+        createdAt: new Date().toISOString(),
+        reason,
+        entries,
+      };
+      localStorage.setItem("restocash_studio_backup_v1", JSON.stringify(payload));
+      return payload;
+    } catch {
+      return null;
+    }
+  }
+
+  public getLocalDraftBackup(): {
+    createdAt: string;
+    reason: string;
+    entries: Record<string, string>;
+  } | null {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = localStorage.getItem("restocash_studio_backup_v1");
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+
   private hydrateFromLocal() {
     if (typeof window === "undefined") return;
     try {
-      // One-time cleanup of corrupted unscoped `body > ...` selectors or accidental click-drag edits in browser storage
+      // One-time cleanup of corrupted unscoped `body > ...` selectors or accidental click-drag edits in browser storage.
+      // Always create a recoverable backup first before removing or sanitizing any stored keys.
       if (!localStorage.getItem("restocash_studio_clean_v2")) {
+        this.createLocalDraftBackup("pre_clean_v2_migration");
         localStorage.removeItem("custom_text_map");
         localStorage.removeItem("restocash_studio_local_dom_edits_v1");
         for (const key of [LOCAL_PUBLISHED_KEY, LOCAL_DRAFT_KEY, LOCAL_SAVED_DRAFT_KEY]) {

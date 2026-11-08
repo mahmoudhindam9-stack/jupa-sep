@@ -102,23 +102,27 @@ function SystemUpdatePage() {
 
   const tabParam = extractTabParam(location.search, (location as any).searchStr);
 
-  const [currentTab, setCurrentTab] = useState(tabParam || "system");
+  const normalizeSystemTab = (raw?: string | null) => {
+    if (!raw || raw === "operations" || raw === "system") return "system";
+    if (raw === "definitions" || raw === "access") return "access";
+    if (raw === "reports") return "reports";
+    return "system";
+  };
+
+  const [currentTab, setCurrentTab] = useState(() => normalizeSystemTab(tabParam));
 
   useEffect(() => {
-    if (tabParam) {
-      setCurrentTab(tabParam);
-    } else {
-      setCurrentTab("system");
-    }
+    setCurrentTab(normalizeSystemTab(tabParam));
   }, [tabParam]);
 
   useSyncedSubTab("/admin/system-update", currentTab, setCurrentTab, "system");
 
   const handleTabChange = (newTab: string) => {
-    setCurrentTab(newTab);
+    const normalized = normalizeSystemTab(newTab);
+    setCurrentTab(normalized);
     navigate({
       to: "/admin/system-update",
-      search: newTab === "system" ? {} : { tab: newTab },
+      search: normalized === "system" ? {} : { tab: normalized },
     });
   };
   const [isLiveSynced, setIsLiveSynced] = useState(true);
@@ -693,11 +697,18 @@ function SystemUpdatePage() {
 
   return (
     <div className="space-y-6 pb-12 text-right font-cairo px-2 sm:px-4 md:px-6">
-      {/* Page Navigation Tabs */}
+      {/* Page Navigation Tabs (Standardized 3 Subsections: التعريفات / العمليات / التقارير) */}
       <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full space-y-6">
-        <TabsList>
-          <TabsTrigger value="system">تحديث النظام</TabsTrigger>
-          <TabsTrigger value="access">حزمة أكسس</TabsTrigger>
+        <TabsList className="bg-muted p-1 rounded-xl flex flex-wrap gap-1 h-auto w-fit">
+          <TabsTrigger value="access" className="rounded-lg font-bold px-4 py-2 text-xs">
+            التعريفات (حزمة أكسس والبيانات)
+          </TabsTrigger>
+          <TabsTrigger value="system" className="rounded-lg font-bold px-4 py-2 text-xs">
+            العمليات (تحديث النظام والمزامنة)
+          </TabsTrigger>
+          <TabsTrigger value="reports" className="rounded-lg font-bold px-4 py-2 text-xs">
+            التقارير (حالة الجداول والإصدارات)
+          </TabsTrigger>
         </TabsList>
 
         {/* Top Header & Tab Controls */}
@@ -706,8 +717,10 @@ function SystemUpdatePage() {
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-foreground">
                 {currentTab === "access"
-                  ? "حزمة قاعدة بيانات أكسس (MS Access Package)"
-                  : "تحديث السيستم والنظام المباشر"}
+                  ? "التعريفات: حزمة قاعدة بيانات أكسس (MS Access Package)"
+                  : currentTab === "reports"
+                    ? "التقارير: حالة الجداول وسجل الإصدارات والمزامنة"
+                    : "العمليات: تحديث السيستم والنظام المباشر"}
               </h1>
               <Badge
                 variant="outline"
@@ -1860,6 +1873,91 @@ vercel --prod`}
                     من تبويب (External Data) حدد Text File واختر ملفات CSV مع ترميز UTF-8.
                   </p>
                 </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* TAB 3: REPORTS (حالة الجداول وسجل الإصدارات والمزامنة) */}
+        <TabsContent value="reports" className="space-y-6 mt-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Card className="border-border/80 rounded-2xl bg-card p-5">
+              <div className="text-xs font-bold text-muted-foreground">إصدار النظام الحالي</div>
+              <div className="text-2xl font-black text-purple-600 dark:text-purple-400 mt-1 font-mono">
+                v{CURRENT_VERSION}
+              </div>
+              <div className="text-[11px] text-muted-foreground mt-1">
+                مستودع: {updateSettings.repo} ({updateSettings.branch || "main"})
+              </div>
+            </Card>
+            <Card className="border-border/80 rounded-2xl bg-card p-5">
+              <div className="text-xs font-bold text-muted-foreground">إجمالي جداول النظام</div>
+              <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
+                {accessTablesSummary.length} جداول رئيسية
+              </div>
+              <div className="text-[11px] text-muted-foreground mt-1">
+                إجمالي السجلات:{" "}
+                {accessTablesSummary.reduce((sum, tbl) => sum + (tbl.count || 0), 0)} سجل
+              </div>
+            </Card>
+            <Card className="border-border/80 rounded-2xl bg-card p-5">
+              <div className="text-xs font-bold text-muted-foreground">حالة المزامنة الحية</div>
+              <div className="text-2xl font-black text-blue-600 dark:text-blue-400 mt-1">
+                {isLiveSynced ? "متصل ومتزامن" : "جاري المزامنة"}
+              </div>
+              <div className="text-[11px] text-muted-foreground mt-1">
+                آخر مزامنة: {lastSyncTime}
+              </div>
+            </Card>
+          </div>
+
+          <Card className="border-border/80 rounded-2xl bg-card overflow-hidden">
+            <CardHeader className="border-b border-border/50 p-4 sm:p-5 flex flex-row items-center justify-between">
+              <CardTitle className="text-base font-black text-foreground">
+                تقرير إحصائيات جداول النظام والسجلات المحاسبية والتشغيلية
+              </CardTitle>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowSchemaDialog(true)}
+                className="font-bold text-xs gap-1.5 rounded-xl"
+              >
+                <FileCode size={14} />
+                معاينة مخطط SQL
+              </Button>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="divide-y divide-border/60">
+                {accessTablesSummary.map((tbl) => (
+                  <div
+                    key={tbl.id}
+                    className="p-4 flex items-center justify-between gap-4 hover:bg-muted/30 transition"
+                  >
+                    <div className="space-y-0.5">
+                      <div className="font-black text-sm text-foreground flex items-center gap-2">
+                        <span>{tbl.label}</span>
+                        <span className="text-[11px] font-mono text-muted-foreground">
+                          ({tbl.name})
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{tbl.description}</p>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <Badge variant="outline" className="font-mono font-bold">
+                        {tbl.count} سجل
+                      </Badge>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => downloadAccessSingleTableCsv(tbl.id)}
+                        className="h-8 text-xs font-bold gap-1 rounded-xl"
+                      >
+                        <ArrowDownToLine size={13} />
+                        CSV
+                      </Button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </CardContent>
           </Card>
