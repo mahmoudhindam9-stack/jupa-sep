@@ -139,7 +139,7 @@ export default {
           }
           if (!process.env.GEMINI_API_KEY) {
             return responseJson({
-              error: "مساعد Gemini غير مهيأ على الخادم. أضف GEMINI_API_KEY إلى متغيرات بيئة تشغيل جوبا.",
+              error: "مساعد Gemini غير مهيأ على الخادم. أضف GEMINI_API_KEY إلى متغيرات بيئة تشغيل النظام.",
             }, 503);
           }
 

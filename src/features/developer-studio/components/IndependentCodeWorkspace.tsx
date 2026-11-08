@@ -205,7 +205,7 @@ export function IndependentCodeWorkspace({ onBackToVisual }: { onBackToVisual: (
       <header className="shrink-0 flex flex-wrap items-center justify-between gap-2 border-b bg-card px-3 py-2">
         <div className="flex items-center gap-2">
           <span className="grid h-8 w-8 place-items-center rounded-lg border bg-primary/10 text-primary"><Code2 className="h-4 w-4"/></span>
-          <div><div className="text-sm font-black">بيئة التطوير المستقلة</div><div className="text-[10px] text-muted-foreground">محرر ملفات + مساعد AI + Git + اختبارات وبناء</div></div>
+          <div><div className="text-sm font-black">بيئة التطوير المستقلة</div></div>
           {connected&&<span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] font-bold text-emerald-700">متصل بـ GitHub</span>}
         </div>
         <div className="flex items-center gap-1.5">
@@ -218,15 +218,14 @@ export function IndependentCodeWorkspace({ onBackToVisual }: { onBackToVisual: (
         <div className="min-h-0 flex-1 overflow-auto p-4 sm:p-8">
           <div className="mx-auto max-w-3xl space-y-4">
             <section className="rounded-2xl border bg-card p-5 shadow-sm">
-              <div className="mb-3 flex items-center gap-2"><FolderGit2 className="h-5 w-5 text-primary"/><h2 className="font-black">فتح مشروع برمجي داخل صفحة جوبا</h2></div>
-              <p className="text-xs leading-6 text-muted-foreground">هذه بيئة مدمجة داخل جوبا ولا تعتمد على برنامج سطح المكتب. اربط مستودع GitHub الذي تريد تعديله، ثم افتح الملفات وحررها واحفظ التغييرات على الفرع المحدد.</p>
+              <div className="mb-3 flex items-center gap-2"><FolderGit2 className="h-5 w-5 text-primary"/><h2 className="font-black">فتح مشروع برمجي</h2></div>
               <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <label className="space-y-1 text-xs font-bold">المستودع <Input dir="ltr" value={repo} onChange={e=>setRepo(e.target.value)} placeholder="owner/repository"/></label>
                 <label className="space-y-1 text-xs font-bold">الفرع <Input dir="ltr" value={branch} onChange={e=>setBranch(e.target.value)} placeholder="main"/></label>
                 <label className="space-y-1 text-xs font-bold sm:col-span-2">GitHub Personal Access Token <Input dir="ltr" type="password" autoComplete="off" value={token} onChange={e=>setToken(e.target.value)} placeholder="ghp_... (يبقى في ذاكرة الصفحة فقط)"/></label>
               </div>
               <Button type="button" disabled={isLoading||!token.trim()} onClick={()=>void connect()} className="mt-4 gap-2">{isLoading?<Loader2 className="h-4 w-4 animate-spin"/>:<GitBranch className="h-4 w-4"/>}اتصال وفتح الملفات</Button>
-              <p className="mt-3 flex items-start gap-2 text-[10px] leading-5 text-muted-foreground"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600"/>الرمز يبقى في ذاكرة هذه الصفحة ولا يُرسل إلى خادم جوبا. استخدم Fine-grained token لهذا المستودع فقط بصلاحية Contents، وأضف Actions للتشغيل والاطلاع على الاختبارات. لا تحفظه في المتصفح ولا تشاركه.</p>
+              <p className="mt-3 flex items-start gap-2 text-[10px] leading-5 text-muted-foreground"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600"/>الرمز يبقى في ذاكرة هذه الصفحة ولا يُرسل إلى الخادم. استخدم Fine-grained token لهذا المستودع فقط بصلاحية Contents، وأضف Actions للتشغيل والاطلاع على الاختبارات. لا تحفظه في المتصفح ولا تشاركه.</p>
             </section>
             <section className="rounded-2xl border bg-muted/30 p-5 text-xs leading-6 text-muted-foreground">
               **ماذا يوجد في هذه البيئة؟** محرر ملفات متعدد التبويبات، البحث في أسماء الملفات، تعديل وحفظ مجموعة ملفات في commit واحد، مساعد Gemini لمراجعة الملف الحالي واقتراح نسخة معدلة، وتشغيل Workflow الاختبارات والبناء على GitHub Actions. لا تحتاج إلى تثبيت Developer Studio Desktop.

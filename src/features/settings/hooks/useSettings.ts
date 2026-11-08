@@ -235,7 +235,7 @@ export function useSettings(overridePageKey?: string) {
 
 export const translations = {
   ar: {
-    title: "Juba Restaurant",
+    title: "Restocash Restaurant",
     subtitle: "نظام إدارة المطعم",
     pos: "نقطة البيع",
     admin: "الإدارة",
@@ -309,7 +309,7 @@ export const translations = {
     items: "الأصناف",
   },
   en: {
-    title: "Juba Restaurant",
+    title: "Restocash Restaurant",
     subtitle: "Restaurant Management System",
     pos: "Point of Sale",
     admin: "Admin Panel",

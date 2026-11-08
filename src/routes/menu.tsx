@@ -37,7 +37,7 @@ const EN_TRANSLATIONS: Record<string, string> = {
   "مقبلات": "Appetizers & Sides",
   "بيتزا": "Artisan Pizza",
   "سلطات": "Fresh Salads",
-  "برجر جوبا الخاص": "Juba Signature Burger",
+  "برجر المطعم الخاص": "Juba Signature Burger",
   "تشيز برجر دبل": "Double Cheeseburger",
   "مشاوي كباب وكفته": "Mixed Kebab & Kofta Grill",
   "فرخة مشوية عالفحم": "Charcoal Grilled Chicken",

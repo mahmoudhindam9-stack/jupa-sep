@@ -117,7 +117,7 @@ export function csvToObjects(csvString: string): Record<string, string>[] {
 // Generate MS Access SQL Schema definition
 export function generateAccessSqlSchema(): string {
   return `-- ==========================================
--- MS ACCESS COMPATIBLE DATABASE SCHEMA (Juba Package)
+-- MS ACCESS COMPATIBLE DATABASE SCHEMA (Restocash Package)
 -- RESTOCASH ERP SYSTEM DATA TABLES
 -- ==========================================
 
@@ -227,7 +227,7 @@ export function downloadAccessSqlSchemaFile(): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "Juba_Access_Schema.sql";
+  a.download = "Restocash_Access_Schema.sql";
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -235,7 +235,7 @@ export function downloadAccessSqlSchemaFile(): void {
 }
 
 /**
- * Downloads the complete Access database package as a single ZIP file named "Juba.zip"
+ * Downloads the complete Access database package as a single ZIP file named "Restocash.zip"
  */
 export async function downloadAccessPackageZip(): Promise<void> {
   const zip = new JSZip();
@@ -289,10 +289,10 @@ export async function downloadAccessPackageZip(): Promise<void> {
   zip.file("AppSettings.csv", objectsToCsv([state.inventorySettings || {}]));
 
   // 8. MS Access SQL Schema & Readme
-  zip.file("Juba_Access_Schema.sql", generateAccessSqlSchema());
+  zip.file("Restocash_Access_Schema.sql", generateAccessSqlSchema());
   zip.file(
-    "README_Juba_Access_Import.txt",
-    `حزمة بيانات أكسس الشاملة - Juba Access Database Package
+    "README_Restocash_Access_Import.txt",
+    `حزمة بيانات أكسس الشاملة - Restocash Access Database Package
 ======================================================
 تم استخراج هذه الحزمة بنجاح من نظام RestoCash ERP.
 
@@ -306,11 +306,11 @@ export async function downloadAccessPackageZip(): Promise<void> {
 - Employees.csv: الموظفين وشؤون العاملين
 - Treasuries.csv: الخزائن والبنوك
 - Branches.csv: الفروع
-- Juba_Access_Schema.sql: مخطط جداول MS Access
+- Restocash_Access_Schema.sql: مخطط جداول MS Access
 
 طريقة الاستيراد في MS Access:
 1. افتح برنامج Microsoft Access.
-2. انشئ قاعدة بيانات جديدة باسم Juba.accdb
+2. انشئ قاعدة بيانات جديدة باسم Restocash.accdb
 3. استخدم تبويب (External Data -> Text File) وقم باستيراد كل ملف CSV كجدول منفصل.
 `,
   );
@@ -318,11 +318,11 @@ export async function downloadAccessPackageZip(): Promise<void> {
   // Generate zip file
   const zipBlob = await zip.generateAsync({ type: "blob" });
 
-  // Trigger download as Juba.zip
+  // Trigger download as Restocash.zip
   const url = URL.createObjectURL(zipBlob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "Juba.zip";
+  a.download = "Restocash.zip";
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

@@ -35,7 +35,7 @@ export function MenuExportModal({ isOpen, onClose }: MenuExportModalProps) {
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [restaurantName, setRestaurantName] = useState(
-    lang === "ar" ? "مطعم وجبة - Juba Restaurant" : "Juba Restaurant",
+    lang === "ar" ? "مطعم وجبة - Restocash Restaurant" : "Restocash Restaurant",
   );
   const [restaurantSubtitle, setRestaurantSubtitle] = useState(
     lang === "ar"
@@ -490,7 +490,7 @@ export function MenuExportModal({ isOpen, onClose }: MenuExportModalProps) {
                 ? "جميع الأسعار تشمل ضريبة القيمة المضافة ومحدثة لحظياً"
                 : "All prices are subject to local tax & updated in real-time."}
             </p>
-            <p>© {new Date().getFullYear()} Restocash POS • Powered by Juba Management</p>
+            <p>© {new Date().getFullYear()} Restocash POS • Powered by Restocash ERP</p>
           </div>
         </div>
       </div>

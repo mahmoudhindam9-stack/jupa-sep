@@ -551,7 +551,7 @@ function SystemUpdatePage() {
       await downloadAccessPackageZip();
       toast({
         title: "تم التنزيل بنجاح 📦",
-        description: "تم تنزيل حزمة أكسس الشاملة لقاعدة البيانات في ملف مضغوط باسم Juba.zip",
+        description: "تم تنزيل حزمة أكسس الشاملة لقاعدة البيانات في ملف مضغوط باسم Restocash.zip",
         variant: "default",
       });
     } catch (err: any) {
@@ -728,7 +728,7 @@ function SystemUpdatePage() {
             <p className="text-xs sm:text-sm text-muted-foreground mt-1.5 flex items-center gap-2 flex-wrap">
               <span>
                 {currentTab === "access"
-                  ? "تصدير واستيراد قاعدة بيانات أكسس الشاملة Juba.zip مع دعم جداول CSV ومخطط SQL"
+                  ? "تصدير واستيراد قاعدة بيانات أكسس الشاملة Restocash.zip مع دعم جداول CSV ومخطط SQL"
                   : "إدارة وتحديث النظام في الوقت الفعلي مع النسخ الاحتياطي السحابي والمحلي"}
               </span>
               <span className="text-slate-400 hidden sm:inline">|</span>
@@ -1615,7 +1615,7 @@ vercel --prod`}
                     </div>
                     <div>
                       <h2 className="text-xl sm:text-2xl font-black text-white">
-                        حزمة قاعدة بيانات أكسس الشاملة (Juba Package)
+                        حزمة قاعدة بيانات أكسس الشاملة (Restocash Package)
                       </h2>
                       <p className="text-xs sm:text-sm text-emerald-200/80 font-medium mt-0.5">
                         استخراج وتجهيز كافة جداول النظام بصيغة CSV عالية التوافق مع Microsoft Access
@@ -1627,7 +1627,7 @@ vercel --prod`}
 
                 <div className="flex items-center gap-2 flex-wrap shrink-0">
                   <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40 font-mono text-xs px-3 py-1">
-                    Juba.zip
+                    Restocash.zip
                   </Badge>
                   <Badge className="bg-blue-500/20 text-blue-300 border-blue-500/40 font-mono text-xs px-3 py-1">
                     UTF-8 BOM CSV
@@ -1650,7 +1650,7 @@ vercel --prod`}
                   ) : (
                     <Archive size={20} />
                   )}
-                  تنزيل حزمة Juba.zip الشاملة
+                  تنزيل حزمة Restocash.zip الشاملة
                 </Button>
 
                 <Button
@@ -1793,7 +1793,7 @@ vercel --prod`}
                 استيراد حزمة أكسس مجمعة أو جداول مفردة
               </h4>
               <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto">
-                قم بسحب وإسقاط ملف Juba.zip أو ملفات CSV المخصصة هنا للرفع والمزامنة التلقائية مع
+                قم بسحب وإسقاط ملف Restocash.zip أو ملفات CSV المخصصة هنا للرفع والمزامنة التلقائية مع
                 السيستم
               </p>
             </div>
@@ -1807,7 +1807,7 @@ vercel --prod`}
               ) : (
                 <Upload size={16} />
               )}
-              اختر ملف Juba.zip أو CSV
+              اختر ملف Restocash.zip أو CSV
             </Button>
           </Card>
 
@@ -1825,9 +1825,9 @@ vercel --prod`}
                   <span className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs font-black mb-2">
                     1
                   </span>
-                  <div className="text-foreground">تنزيل حزمة Juba.zip</div>
+                  <div className="text-foreground">تنزيل حزمة Restocash.zip</div>
                   <p className="text-muted-foreground font-normal text-[11px]">
-                    اضغط زر تنزيل حزمة Juba.zip الشاملة وقم بفك الضغط في مجلد خاص.
+                    اضغط زر تنزيل حزمة Restocash.zip الشاملة وقم بفك الضغط في مجلد خاص.
                   </p>
                 </div>
 
@@ -1837,7 +1837,7 @@ vercel --prod`}
                   </span>
                   <div className="text-foreground">إنشاء قاعدة البيانات</div>
                   <p className="text-muted-foreground font-normal text-[11px]">
-                    افتح برنامج Microsoft Access وانشئ قاعدة بيانات خالية باسم Juba.accdb.
+                    افتح برنامج Microsoft Access وانشئ قاعدة بيانات خالية باسم Restocash.accdb.
                   </p>
                 </div>
 
@@ -1847,7 +1847,7 @@ vercel --prod`}
                   </span>
                   <div className="text-foreground">استيراد مخطط SQL (اختياري)</div>
                   <p className="text-muted-foreground font-normal text-[11px]">
-                    قم بتشغيل ملف Juba_Access_Schema.sql لتحديد الهياكل والمفاتيح تلقائياً.
+                    قم بتشغيل ملف Restocash_Access_Schema.sql لتحديد الهياكل والمفاتيح تلقائياً.
                   </p>
                 </div>
 
@@ -1913,11 +1913,11 @@ vercel --prod`}
           <AlertDialogHeader className="text-right">
             <AlertDialogTitle className="text-lg font-black text-foreground flex items-center gap-2">
               <FileSpreadsheet className="text-emerald-600 dark:text-emerald-400" size={22} />
-              تأكيد تنزيل حزمة أكسس الشاملة (Juba.zip)
+              تأكيد تنزيل حزمة أكسس الشاملة (Restocash.zip)
             </AlertDialogTitle>
             <AlertDialogDescription className="text-xs sm:text-sm text-muted-foreground mt-2 leading-relaxed">
               هل أنت أصلًا برغبة في تنزيل كافة بيانات وجداول النظام (الحسابات، المخزون، قائمة
-              الطعام، المبيعات، الموظفين والخزائن) في ملف مضغوط بحزمة أكسس Juba.zip؟
+              الطعام، المبيعات، الموظفين والخزائن) في ملف مضغوط بحزمة أكسس Restocash.zip؟
               <br />
               <span className="font-bold text-emerald-600 dark:text-emerald-400 mt-1 block">
                 سيتم إنشاء وتجميع كافة ملفات CSV ومخطط SQL الجاهز للفتح المباشر في برنامج Microsoft
