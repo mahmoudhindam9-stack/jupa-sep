@@ -147,6 +147,11 @@ export default defineConfig(({ command }) => ({
       "react-dom/client",
       "react/jsx-runtime",
       "react/jsx-dev-runtime",
+      "@tanstack/react-router",
+      "@tanstack/router-core",
+      "@tanstack/react-start",
+      "@tanstack/react-start-client",
+      "@tanstack/start-client-core",
     ],
     tsconfigPaths: true,
     alias: {

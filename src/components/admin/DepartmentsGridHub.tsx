@@ -769,7 +769,7 @@ export function DepartmentsGridHub({
   const [activePermissions, setActivePermissions] = useState<Record<string, boolean>>(() =>
     propPermissions && Object.keys(propPermissions).length > 0
       ? propPermissions
-      : { super_admin_full_access: true },
+      : getActiveUserPermissionsSync(),
   );
 
   useEffect(() => {

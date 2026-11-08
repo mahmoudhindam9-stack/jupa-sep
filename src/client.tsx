@@ -5,9 +5,7 @@ import { getRouter } from "./router";
 
 if (typeof window !== "undefined" && !(window as any).$_TSR) {
   const router = getRouter();
-  void router.load().finally(() => {
-    createRoot(document).render(<RouterProvider router={router} />);
-  });
+  createRoot(document).render(<RouterProvider router={router} />);
 } else {
   hydrateRoot(document, <StartClient />);
 }
