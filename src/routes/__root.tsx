@@ -381,6 +381,28 @@ function RootComponent() {
             });
           }
         }
+        if (edit.freePosition?.enabled) {
+          const posMode = edit.freePosition.mode || "relative";
+          html.style.setProperty("position", posMode, "important");
+          html.style.setProperty("left", `${Number(edit.freePosition.x) || 0}px`, "important");
+          html.style.setProperty("top", `${Number(edit.freePosition.y) || 0}px`, "important");
+          if (edit.freePosition.width) {
+            html.style.setProperty("width", `${Number(edit.freePosition.width)}px`, "important");
+          }
+          if (edit.freePosition.height) {
+            html.style.setProperty("height", `${Number(edit.freePosition.height)}px`, "important");
+          }
+          if (edit.freePosition.zIndex !== undefined) {
+            html.style.setProperty("z-index", String(edit.freePosition.zIndex), "important");
+          }
+        }
+        if (edit.actionBinding?.actionId) {
+          html.dataset.studioActionId = edit.actionBinding.actionId;
+          html.dataset.studioActionType = edit.actionBinding.actionType;
+          if (edit.actionBinding.targetRoute) {
+            html.dataset.studioTargetRoute = edit.actionBinding.targetRoute;
+          }
+        }
         if (edit.deleted) html.style.setProperty("display", "none", "important");
         if (typeof edit.order === "number" && html.parentElement) {
           if (snap) snap.wasReordered = true;
@@ -403,6 +425,40 @@ function RootComponent() {
             clone.dataset.studioCloneOf = selector;
             publishedStudioClones.add(clone);
             parent.insertBefore(clone, html.nextSibling);
+          }
+          if (Array.isArray(edit.pastedNodes) && edit.pastedNodes.length > 0) {
+            for (const pasted of edit.pastedNodes) {
+              if (!pasted?.id) continue;
+              const existingPasted = document.querySelector(`[data-studio-pasted-id="${pasted.id}"]`);
+              if (existingPasted) continue;
+              const created = document.createElement(pasted.tag || "div");
+              created.dataset.studioPastedId = pasted.id;
+              created.dataset.studioCloneOf = selector;
+              if (pasted.text) created.textContent = pasted.text;
+              if (pasted.attributes && typeof pasted.attributes === "object") {
+                for (const [ak, av] of Object.entries(pasted.attributes)) {
+                  if (typeof av === "string" && av && !ak.toLowerCase().startsWith("on") && ak !== "id") {
+                    try { created.setAttribute(ak, av); } catch {}
+                  }
+                }
+              }
+              if (pasted.styles && typeof pasted.styles === "object") {
+                for (const [sk, sv] of Object.entries(pasted.styles)) {
+                  if (typeof sv === "string" && sv) {
+                    const cssProp = sk.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
+                    created.style.setProperty(cssProp, sv, "important");
+                  }
+                }
+              }
+              publishedStudioClones.add(created);
+              if (pasted.placement === "inside") {
+                html.appendChild(created);
+              } else if (pasted.placement === "before") {
+                parent.insertBefore(created, html);
+              } else {
+                parent.insertBefore(created, html.nextSibling);
+              }
+            }
           }
         }
       }

@@ -264,6 +264,32 @@ export interface PageModel {
  * Direct visual edits made on real application DOM elements in the live preview.
  * Keyed by deterministic CSS selector inside StudioDraft.domEdits.
  */
+export interface StudioFreePositionConfig {
+  enabled: boolean;
+  mode?: "relative" | "absolute";
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+  zIndex?: number;
+  gridSize?: number;
+}
+
+export interface StudioPastedNode {
+  id: string;
+  sourceSelector?: string;
+  tag: string;
+  text?: string;
+  htmlSnapshot?: string;
+  styles?: Record<string, string>;
+  attributes?: Record<string, string>;
+  animation?: ElementAnimationConfig;
+  actionBinding?: import("../services/studioActionRegistry").StudioElementActionBinding;
+  freePosition?: StudioFreePositionConfig;
+  placement: "after" | "inside" | "before";
+  createdAt: string;
+}
+
 export interface StudioDomEdit {
   text?: string;
   styles?: Record<string, string>;
@@ -292,6 +318,9 @@ export interface StudioDomEdit {
   order?: number;
   label?: string;
   pageRoute?: string;
+  freePosition?: StudioFreePositionConfig;
+  actionBinding?: import("../services/studioActionRegistry").StudioElementActionBinding;
+  pastedNodes?: StudioPastedNode[];
 }
 
 /**
@@ -323,11 +352,10 @@ export function sanitizeStudioDomEditsMap(
     ) {
       continue;
     }
-    // Strip accidental pointer-drag translate styles on non-positioned elements
     const nextEdit: StudioDomEdit = { ...edit };
     if (nextEdit.styles && typeof nextEdit.styles === "object") {
       const nextStyles = { ...nextEdit.styles };
-      if (nextStyles.translate) {
+      if (nextStyles.translate && !nextEdit.freePosition?.enabled) {
         delete nextStyles.translate;
         if (nextStyles.zIndex === "10") {
           delete nextStyles.zIndex;
@@ -345,6 +373,9 @@ export function sanitizeStudioDomEditsMap(
         !nextEdit.hoverStyles &&
         !nextEdit.animation &&
         !nextEdit.hiddenOn &&
+        !nextEdit.freePosition &&
+        !nextEdit.actionBinding &&
+        (!nextEdit.pastedNodes || nextEdit.pastedNodes.length === 0) &&
         nextEdit.duplicateCount === undefined &&
         nextEdit.order === undefined
       ) {

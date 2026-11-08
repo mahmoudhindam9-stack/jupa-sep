@@ -1887,17 +1887,17 @@ vercel --prod`}
                 v{CURRENT_VERSION}
               </div>
               <div className="text-[11px] text-muted-foreground mt-1">
-                مستودع: {updateSettings.repo} ({updateSettings.branch || "main"})
+                مستودع: {updateSettings.repo} (main)
               </div>
             </Card>
             <Card className="border-border/80 rounded-2xl bg-card p-5">
               <div className="text-xs font-bold text-muted-foreground">إجمالي جداول النظام</div>
               <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
-                {accessTablesSummary.length} جداول رئيسية
+                {accessTablesList.length} جداول رئيسية
               </div>
               <div className="text-[11px] text-muted-foreground mt-1">
                 إجمالي السجلات:{" "}
-                {accessTablesSummary.reduce((sum, tbl) => sum + (tbl.count || 0), 0)} سجل
+                {accessTablesList.reduce((sum, tbl) => sum + (tbl.count || 0), 0)} سجل
               </div>
             </Card>
             <Card className="border-border/80 rounded-2xl bg-card p-5">
@@ -1928,7 +1928,7 @@ vercel --prod`}
             </CardHeader>
             <CardContent className="p-0">
               <div className="divide-y divide-border/60">
-                {accessTablesSummary.map((tbl) => (
+                {accessTablesList.map((tbl) => (
                   <div
                     key={tbl.id}
                     className="p-4 flex items-center justify-between gap-4 hover:bg-muted/30 transition"

@@ -30,6 +30,8 @@ import {
   BookmarkPlus,
   Wand2,
   Clipboard,
+  ClipboardPaste,
+  CheckSquare,
   Scissors,
   RotateCcw,
   Image as ImageIcon,
@@ -38,6 +40,9 @@ import {
   Layout,
   Sliders,
   Play,
+  Move,
+  Zap,
+  ShieldCheck,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -45,6 +50,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import type {
   StudioDomEdit,
+  StudioFreePositionConfig,
+  StudioPastedNode,
   PageModel,
   ElementModel,
   ElementType,
@@ -52,7 +59,15 @@ import type {
   StudioReusableComponent,
   ViewportBreakpoint,
 } from "../models/studio.types";
-import { DEFAULT_STUDIO_DESIGN_SYSTEM } from "../models/studio.types";
+import { DEFAULT_STUDIO_DESIGN_SYSTEM, createStudioId } from "../models/studio.types";
+import {
+  STUDIO_ACTION_REGISTRY,
+  STUDIO_REGISTERED_PAGES,
+  detectElementAssignedAction,
+  validateActionBindingSecurity,
+  type StudioElementActionBinding,
+  type StudioActionType,
+} from "../services/studioActionRegistry";
 import { StudioSectionSaveDiscardBar } from "./StudioSectionSaveDiscardBar";
 
 export type SelectedDomElement = {
@@ -327,15 +342,41 @@ export function LiveAppPreview({
   const [selected, setSelected] = useState<SelectedDomElement | null>(null);
   const [multiSelectedSelectors, setMultiSelectedSelectors] = useState<string[]>([]);
   const [copiedStyleClipboard, setCopiedStyleClipboard] = useState<Record<string, string> | null>(null);
+  const [elementClipboard, setElementClipboard] = useState<{
+    mode: "copy" | "cut";
+    items: Array<{
+      selector: string;
+      tag: string;
+      text: string;
+      styles: Record<string, string>;
+      attributes: Record<string, string>;
+      animation?: StudioDomEdit["animation"];
+      actionBinding?: StudioElementActionBinding;
+      freePosition?: StudioFreePositionConfig;
+    }>;
+    sourcePageRoute: string;
+    copiedAt: string;
+  } | null>(null);
+  const [pastePlacement, setPastePlacement] = useState<"after" | "inside" | "before">("after");
+  const [pendingDeleteConfirm, setPendingDeleteConfirm] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
 
   // Workspace Panels & Modes (Hidden by default; only shown when explicitly opened)
   const [showLeftPanel, setShowLeftPanel] = useState(false);
   const [leftTab, setLeftTab] = useState<"pages" | "layers" | "components">("layers");
   const [showRightPanel, setShowRightPanel] = useState(false);
-  const [rightTab, setRightTab] = useState<"content" | "style" | "layout" | "responsive" | "advanced">("style");
+  const [rightTab, setRightTab] = useState<"content" | "action" | "style" | "layout" | "responsive" | "advanced">("style");
   const [layoutTargetMode, setLayoutTargetMode] = useState<"self" | "parent">("self");
   const [gridColumnsCount, setGridColumnsCount] = useState<string>("3");
+
+  // Free Positioning & Action Inspector States
+  const [gridSizePx, setGridSizePx] = useState<number>(8);
+  const [freePosEnabled, setFreePosEnabled] = useState<boolean>(false);
+  const [freePosMode, setFreePosMode] = useState<"relative" | "absolute">("relative");
+  const [freePosX, setFreePosX] = useState<number>(0);
+  const [freePosY, setFreePosY] = useState<number>(0);
+  const [actionSearchQuery, setActionSearchQuery] = useState<string>("");
+  const [pageDestSearchQuery, setPageDestSearchQuery] = useState<string>("");
 
   // Preview Controls
   const [previewSize, setPreviewSize] = useState<PreviewSize>("desktop");
@@ -587,7 +628,48 @@ export function LiveAppPreview({
     setHrefVal(existingEdit.attributes?.href || item.hrefAttr || "");
     setSrcVal(existingEdit.attributes?.src || item.srcAttr || "");
     setAltVal(existingEdit.attributes?.alt || item.altAttr || "");
+    setFreePosEnabled(Boolean(existingEdit.freePosition?.enabled));
+    setFreePosMode(existingEdit.freePosition?.mode || "relative");
+    setFreePosX(Number(existingEdit.freePosition?.x || 0));
+    setFreePosY(Number(existingEdit.freePosition?.y || 0));
+    setPendingDeleteConfirm(false);
   }, [onSelectedDomChange]);
+
+  const commitBatchEdits = useCallback(
+    (patchesBySelector: Record<string, StudioDomEdit>) => {
+      const activePageRoute = (safeRoute.split("?")[0] || "/admin").replace(/\/+$/, "") || "/";
+      const next = { ...editsRef.current };
+      for (const [selector, patch] of Object.entries(patchesBySelector)) {
+        if (!selector || selector.startsWith("__studio_")) continue;
+        const previous = next[selector] || {};
+        next[selector] = {
+          ...previous,
+          ...patch,
+          pageRoute: patch.pageRoute || previous.pageRoute || activePageRoute,
+          ...(patch.styles ? { styles: { ...(previous.styles || {}), ...patch.styles } } : {}),
+          ...(patch.attributes
+            ? { attributes: { ...(previous.attributes || {}), ...patch.attributes } }
+            : {}),
+        };
+      }
+      editsRef.current = next;
+      lastCommittedEditsRef.current = next;
+      selfCommittedSetRef.current.add(next);
+      setHasLocalEditSinceSave(true);
+      setEdits(next);
+      changeCallbackRef.current(next);
+    },
+    [safeRoute],
+  );
+
+  const clearSelection = useCallback(() => {
+    setSelected(null);
+    setMultiSelectedSelectors([]);
+    setContextMenu(null);
+    setPendingDeleteConfirm(false);
+    onSelectedDomChange?.(null);
+    send({ action: "clearSelection" });
+  }, [onSelectedDomChange, send]);
 
   const onMessage = useCallback(
     (event: MessageEvent) => {
@@ -616,27 +698,98 @@ export function LiveAppPreview({
               }))
           : [];
         setPageLinks(routes);
+      } else if (event.data.type === "STUDIO_CLEAR_SELECTION") {
+        clearSelection();
+        setStatus("تم إلغاء تحديد العناصر.");
       } else if (event.data.type === "STUDIO_SELECTED") {
         const item = event.data.element as SelectedDomElement;
         populateInspectorFromElement(item);
-        if (event.data.shiftKey) {
-          setMultiSelectedSelectors((prev) =>
-            prev.includes(item.selector) ? prev : [...prev, item.selector],
-          );
-        } else {
-          setMultiSelectedSelectors([item.selector]);
-        }
+        const isToggle = Boolean(event.data.ctrlKey || event.data.metaKey);
+        const isAdditive = Boolean(event.data.shiftKey);
+        setMultiSelectedSelectors((prev) => {
+          let nextList: string[];
+          if (isToggle) {
+            if (prev.includes(item.selector)) {
+              nextList = prev.length > 1 ? prev.filter((s) => s !== item.selector) : [];
+            } else {
+              nextList = [...prev, item.selector];
+            }
+          } else if (isAdditive) {
+            nextList = prev.includes(item.selector) ? prev : [...prev, item.selector];
+          } else {
+            nextList = [item.selector];
+          }
+          send({ action: "setMultiSelection", selectors: nextList });
+          return nextList;
+        });
         setContextMenu(null);
-        setStatus("تم تحديد العنصر: <" + item.tag + ">");
+        setStatus(
+          isToggle || isAdditive
+            ? `تحديد متعدد النشط: <${item.tag}>`
+            : `تم تحديد العنصر: <${item.tag}>`,
+        );
       } else if (event.data.type === "STUDIO_CONTEXT_MENU") {
         const item = event.data.element as SelectedDomElement;
         populateInspectorFromElement(item);
+        setMultiSelectedSelectors((prev) =>
+          prev.includes(item.selector) ? prev : [item.selector],
+        );
         setContextMenu({
           x: Number(event.data.x || 120),
           y: Number(event.data.y || 120),
           selector: item.selector,
           tag: item.tag,
         });
+      } else if (event.data.type === "STUDIO_FREE_POSITION_COMMIT") {
+        if (previewSource === "published") return;
+        const items = Array.isArray(event.data.items) ? event.data.items : [];
+        if (items.length > 0) {
+          const patches: Record<string, StudioDomEdit> = {};
+          for (const moved of items) {
+            const sel = String(moved.selector || "");
+            if (!sel || editsRef.current[sel]?.locked) continue;
+            const prevFp = editsRef.current[sel]?.freePosition;
+            const nextX = Number(moved.x || 0);
+            const nextY = Number(moved.y || 0);
+            const nextW = moved.width ? Number(moved.width) : prevFp?.width;
+            const nextH = moved.height ? Number(moved.height) : prevFp?.height;
+            const mode = prevFp?.mode || "relative";
+            patches[sel] = {
+              freePosition: {
+                enabled: true,
+                mode,
+                x: nextX,
+                y: nextY,
+                width: nextW,
+                height: nextH,
+                zIndex: prevFp?.zIndex ?? 20,
+                gridSize: gridSizePx,
+              },
+              styles: {
+                position: mode,
+                left: `${nextX}px`,
+                top: `${nextY}px`,
+                ...(nextW ? { width: `${nextW}px` } : {}),
+                ...(nextH ? { height: `${nextH}px` } : {}),
+                zIndex: String(prevFp?.zIndex ?? 20),
+              },
+            };
+            if (selected && sel === selected.selector) {
+              setFreePosEnabled(true);
+              setFreePosMode(mode);
+              setFreePosX(nextX);
+              setFreePosY(nextY);
+              if (nextW) setWidth(`${nextW}px`);
+              if (nextH) setHeight(`${nextH}px`);
+            }
+          }
+          commitBatchEdits(patches);
+          setStatus(
+            items.length > 1
+              ? `تم تحريك المجموعة (${items.length} عناصر) وحفظ الإحداثيات الحرة.`
+              : `تم تحديث موضع العنصر الحر (X: ${items[0].x}px, Y: ${items[0].y}px).`,
+          );
+        }
       } else if (event.data.type === "STUDIO_CHANGE") {
         if (previewSource === "published") {
           setStatus("أنت في وضع عرض النسخة المنشورة؛ انتقل إلى وضع المسودة للتعديل.");
@@ -660,6 +813,7 @@ export function LiveAppPreview({
           enabled: editMode && previewSource === "draft",
           xRay: xRayMode,
           snapToGrid,
+          gridSize: gridSizePx,
         });
         send({
           action: "restore",
@@ -672,9 +826,13 @@ export function LiveAppPreview({
       populateInspectorFromElement,
       previewSource,
       commitEdits,
+      commitBatchEdits,
+      clearSelection,
       editMode,
       xRayMode,
       snapToGrid,
+      gridSizePx,
+      selected,
       send,
     ],
   );
@@ -763,6 +921,50 @@ export function LiveAppPreview({
           outline-offset: 2px !important;
           box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.16) !important;
         }
+        [data-coding-studio-multi-selected="true"] {
+          outline: 2px dashed #0ea5e9 !important;
+          outline-offset: 2px !important;
+          box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.18) !important;
+        }
+        #coding-studio-handles-box {
+          position: fixed;
+          pointer-events: none;
+          z-index: 99998;
+          border: 1.5px solid #4f46e5;
+          display: none;
+        }
+        #coding-studio-handles-box .studio-resize-handle {
+          position: absolute;
+          width: 9px;
+          height: 9px;
+          background: #ffffff;
+          border: 2px solid #4f46e5;
+          border-radius: 2px;
+          pointer-events: auto;
+        }
+        #coding-studio-handles-box .studio-drag-badge {
+          position: absolute;
+          top: -22px;
+          right: 0;
+          background: #4f46e5;
+          color: #ffffff;
+          font-size: 10px;
+          font-weight: 700;
+          padding: 1px 6px;
+          border-radius: 4px;
+          cursor: grab;
+          pointer-events: auto;
+          white-space: nowrap;
+        }
+        #coding-studio-align-guide-x, #coding-studio-align-guide-y {
+          position: fixed;
+          pointer-events: none;
+          z-index: 99997;
+          display: none;
+          background: #ec4899;
+        }
+        #coding-studio-align-guide-x { height: 1px; left: 0; right: 0; }
+        #coding-studio-align-guide-y { width: 1px; top: 0; bottom: 0; }
         @keyframes studioFadeIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes studioSlideUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes studioSlideRight { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: translateX(0); } }
@@ -770,7 +972,7 @@ export function LiveAppPreview({
       `;
       doc.head.appendChild(style);
     }
-      if (doc.getElementById("coding-studio-bridge")) {
+    if (doc.getElementById("coding-studio-bridge")) {
       readyRef.current = true;
       setReady(true);
       setBridgeTimedOut(false);
@@ -779,6 +981,7 @@ export function LiveAppPreview({
         enabled: editMode && previewSource === "draft",
         xRay: xRayMode,
         snapToGrid,
+        gridSize: gridSizePx,
       });
       send({
         action: "restore",
@@ -795,6 +998,8 @@ export function LiveAppPreview({
         if (!node || node.nodeType !== 1) return null;
         const sid = node.getAttribute("data-studio-id");
         if (sid) return '[data-studio-id="' + CSS.escape(sid) + '"]';
+        const pid = node.getAttribute("data-studio-pasted-id");
+        if (pid) return '[data-studio-pasted-id="' + CSS.escape(pid) + '"]';
         if (node.id && !node.id.startsWith("radix-")) return "#" + CSS.escape(node.id);
         const tid = node.getAttribute("data-testid");
         if (tid) return '[data-testid="' + CSS.escape(tid) + '"]';
@@ -857,7 +1062,7 @@ export function LiveAppPreview({
         });
       };
       const resetPreviewEdits = () => {
-        document.querySelectorAll("[data-coding-studio-clone-of], [data-studio-clone-of]").forEach((el) => el.remove());
+        document.querySelectorAll("[data-coding-studio-clone-of], [data-studio-clone-of], [data-studio-pasted-id]").forEach((el) => el.remove());
         const respStyle = document.getElementById("coding-studio-responsive-css");
         if (respStyle) respStyle.textContent = "";
         for (const state of Array.from(originalStates.values()).reverse()) {
@@ -1054,6 +1259,20 @@ export function LiveAppPreview({
         rememberOriginal(selector, el);
         if (edit.text !== undefined && el.dataset.codingStudioTextApplied !== String(edit.text)) applyText(el, edit.text);
         if (edit.styles && typeof edit.styles === "object") applyStyles(el, edit.styles);
+        if (edit.freePosition?.enabled) {
+          const posMode = edit.freePosition.mode || "relative";
+          el.style.setProperty("position", posMode, "important");
+          el.style.setProperty("left", (Number(edit.freePosition.x) || 0) + "px", "important");
+          el.style.setProperty("top", (Number(edit.freePosition.y) || 0) + "px", "important");
+          if (edit.freePosition.width) el.style.setProperty("width", Number(edit.freePosition.width) + "px", "important");
+          if (edit.freePosition.height) el.style.setProperty("height", Number(edit.freePosition.height) + "px", "important");
+          if (edit.freePosition.zIndex !== undefined) el.style.setProperty("z-index", String(edit.freePosition.zIndex), "important");
+        }
+        if (edit.actionBinding?.actionId) {
+          el.dataset.studioActionId = edit.actionBinding.actionId;
+          el.dataset.studioActionType = edit.actionBinding.actionType;
+          if (edit.actionBinding.targetRoute) el.dataset.studioTargetRoute = edit.actionBinding.targetRoute;
+        }
         if (edit.animation) applyAnimation(el, edit.animation);
         if (edit.ariaLabel) {
           try { el.setAttribute("aria-label", edit.ariaLabel); } catch (_) {}
@@ -1091,34 +1310,263 @@ export function LiveAppPreview({
             const clone = el.cloneNode(true);
             clone.removeAttribute("id");
             clone.removeAttribute("data-coding-studio-selected");
+            clone.removeAttribute("data-coding-studio-multi-selected");
             clone.setAttribute("data-coding-studio-clone-of", selector);
             parent.insertBefore(clone, el.nextSibling);
           }
+          if (Array.isArray(edit.pastedNodes) && edit.pastedNodes.length > 0) {
+            for (const pasted of edit.pastedNodes) {
+              if (!pasted?.id) continue;
+              if (document.querySelector('[data-studio-pasted-id="' + CSS.escape(pasted.id) + '"]')) continue;
+              const created = document.createElement(pasted.tag || "div");
+              created.setAttribute("data-studio-pasted-id", pasted.id);
+              created.setAttribute("data-coding-studio-clone-of", selector);
+              if (pasted.text) created.textContent = pasted.text;
+              if (pasted.attributes && typeof pasted.attributes === "object") {
+                Object.entries(pasted.attributes).forEach(([ak, av]) => {
+                  if (typeof av === "string" && av && ak !== "id") {
+                    try { created.setAttribute(ak, av); } catch (_) {}
+                  }
+                });
+              }
+              if (pasted.styles && typeof pasted.styles === "object") applyStyles(created, pasted.styles);
+              if (pasted.placement === "inside") el.appendChild(created);
+              else if (pasted.placement === "before") parent.insertBefore(created, el);
+              else parent.insertBefore(created, el.nextSibling);
+            }
+          }
         }
       };
+
       let selected = null;
+      let multiSelectedSet = new Set();
       let enabled = true;
       let snapGrid = true;
+      let gridStep = 8;
       let dragState = null;
+      let justDragged = false;
       let activeEditsCache = {};
       const svgShapeTags = new Set(["path", "circle", "rect", "line", "polyline", "polygon", "ellipse"]);
       const editableSelector = "button,a,input,textarea,select,label,h1,h2,h3,h4,h5,h6,p,span,div,section,article,li,td,th,img,svg,path,circle,rect,line,polyline,polygon";
-      const selectElement = (el, shiftKey = false) => {
-        if (!shiftKey && selected) selected.removeAttribute("data-coding-studio-selected");
-        selected = null;
+
+      // Create interactive resize & drag handles overlay box + alignment guides
+      let handlesBox = document.getElementById("coding-studio-handles-box");
+      if (!handlesBox) {
+        handlesBox = document.createElement("div");
+        handlesBox.id = "coding-studio-handles-box";
+        handlesBox.setAttribute("data-studio-preserve", "true");
+        handlesBox.innerHTML =
+          '<div class="studio-drag-badge" data-studio-handle="move">✥ اسحب للتحريك</div>' +
+          '<div class="studio-resize-handle" data-studio-handle="se" style="bottom:-5px;right:-5px;cursor:nwse-resize"></div>' +
+          '<div class="studio-resize-handle" data-studio-handle="sw" style="bottom:-5px;left:-5px;cursor:nesw-resize"></div>' +
+          '<div class="studio-resize-handle" data-studio-handle="e" style="top:calc(50% - 4px);right:-5px;cursor:ew-resize"></div>' +
+          '<div class="studio-resize-handle" data-studio-handle="s" style="bottom:-5px;left:calc(50% - 4px);cursor:ns-resize"></div>';
+        document.body.appendChild(handlesBox);
+      }
+      let guideX = document.getElementById("coding-studio-align-guide-x");
+      if (!guideX) {
+        guideX = document.createElement("div");
+        guideX.id = "coding-studio-align-guide-x";
+        guideX.setAttribute("data-studio-preserve", "true");
+        document.body.appendChild(guideX);
+      }
+      let guideY = document.getElementById("coding-studio-align-guide-y");
+      if (!guideY) {
+        guideY = document.createElement("div");
+        guideY.id = "coding-studio-align-guide-y";
+        guideY.setAttribute("data-studio-preserve", "true");
+        document.body.appendChild(guideY);
+      }
+
+      const syncHandlesOverlay = () => {
+        if (!enabled || !selected || !selected.isConnected) {
+          if (handlesBox) handlesBox.style.display = "none";
+          return;
+        }
+        const r = selected.getBoundingClientRect();
+        if (r.width <= 0 && r.height <= 0) {
+          handlesBox.style.display = "none";
+          return;
+        }
+        handlesBox.style.display = "block";
+        handlesBox.style.top = r.top + "px";
+        handlesBox.style.left = r.left + "px";
+        handlesBox.style.width = r.width + "px";
+        handlesBox.style.height = r.height + "px";
+      };
+
+      window.addEventListener("scroll", syncHandlesOverlay, true);
+      window.addEventListener("resize", syncHandlesOverlay);
+
+      const syncMultiSelectionAttributes = () => {
+        document.querySelectorAll("[data-coding-studio-multi-selected]").forEach((node) => {
+          node.removeAttribute("data-coding-studio-multi-selected");
+        });
+        multiSelectedSet.forEach((sel) => {
+          const node = find(sel);
+          if (node) node.setAttribute("data-coding-studio-multi-selected", "true");
+        });
+      };
+
+      const selectElement = (el, shiftKey = false, ctrlKey = false) => {
+        if (!shiftKey && !ctrlKey && selected) {
+          selected.removeAttribute("data-coding-studio-selected");
+        }
         if (isProtected(el)) {
-          send("STUDIO_PROTECTED_ELEMENT", { message: "مربع تغيير العملات محمي للحفاظ على وظائفه الأصلية." });
+          send("STUDIO_PROTECTED_ELEMENT", { message: "البار العلوي وأدوات النظام محمية للحفاظ على وظائفها الأصلية." });
           return;
         }
         selected = el;
         selected.setAttribute("data-coding-studio-selected", "true");
-        send("STUDIO_SELECTED", { element: describe(selected), shiftKey: !!shiftKey });
+        syncHandlesOverlay();
+        send("STUDIO_SELECTED", {
+          element: describe(selected),
+          shiftKey: !!shiftKey,
+          ctrlKey: !!ctrlKey,
+        });
       };
+
+      // Pointer down on Move badge, Resize handles, or Alt+Drag on selected element
+      document.addEventListener("pointerdown", (event) => {
+        if (!enabled || document.body.dataset.codingStudio !== "on" || !selected) return;
+        const target = event.target instanceof Element ? event.target : null;
+        if (!target) return;
+        const handleEl = target.closest("[data-studio-handle]");
+        const handleType = handleEl ? handleEl.getAttribute("data-studio-handle") : (event.altKey && selected.contains(target) ? "move" : null);
+        if (!handleType) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const targetSelectors = multiSelectedSet.size > 1 && handleType === "move"
+          ? Array.from(multiSelectedSet)
+          : [selectorFor(selected)];
+
+        const items = targetSelectors.map((sel) => {
+          const node = find(sel);
+          if (!node) return null;
+          rememberOriginal(sel, node);
+          const rect = node.getBoundingClientRect();
+          const startX = parseFloat(node.style.left) || 0;
+          const startY = parseFloat(node.style.top) || 0;
+          node.setAttribute("data-coding-studio-dragging", "true");
+          return {
+            selector: sel,
+            node,
+            startX,
+            startY,
+            startW: Math.round(rect.width),
+            startH: Math.round(rect.height),
+            x: startX,
+            y: startY,
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+          };
+        }).filter(Boolean);
+
+        if (!items.length) return;
+        dragState = {
+          handleType,
+          clientX0: event.clientX,
+          clientY0: event.clientY,
+          items,
+          moved: false,
+        };
+      }, true);
+
+      document.addEventListener("pointermove", (event) => {
+        if (!dragState) return;
+        const rawDx = event.clientX - dragState.clientX0;
+        const rawDy = event.clientY - dragState.clientY0;
+        if (Math.abs(rawDx) > 2 || Math.abs(rawDy) > 2) dragState.moved = true;
+        const step = snapGrid ? Math.max(1, gridStep) : 1;
+        const dx = Math.round(rawDx / step) * step;
+        const dy = Math.round(rawDy / step) * step;
+
+        for (const item of dragState.items) {
+          if (dragState.handleType === "move") {
+            item.x = item.startX + dx;
+            item.y = item.startY + dy;
+            const currentPos = getComputedStyle(item.node).position;
+            if (currentPos === "static") item.node.style.setProperty("position", "relative", "important");
+            item.node.style.setProperty("left", item.x + "px", "important");
+            item.node.style.setProperty("top", item.y + "px", "important");
+          } else {
+            if (dragState.handleType.includes("e")) {
+              item.width = Math.max(24, item.startW + dx);
+              item.node.style.setProperty("width", item.width + "px", "important");
+            }
+            if (dragState.handleType.includes("s")) {
+              item.height = Math.max(20, item.startH + dy);
+              item.node.style.setProperty("height", item.height + "px", "important");
+            }
+          }
+        }
+
+        // Alignment guides against parent center
+        if (selected && selected.parentElement) {
+          const pr = selected.parentElement.getBoundingClientRect();
+          const sr = selected.getBoundingClientRect();
+          const cxDiff = Math.abs((sr.left + sr.width / 2) - (pr.left + pr.width / 2));
+          const cyDiff = Math.abs((sr.top + sr.height / 2) - (pr.top + pr.height / 2));
+          if (cxDiff < 6 && guideY) {
+            guideY.style.display = "block";
+            guideY.style.left = Math.round(pr.left + pr.width / 2) + "px";
+          } else if (guideY) {
+            guideY.style.display = "none";
+          }
+          if (cyDiff < 6 && guideX) {
+            guideX.style.display = "block";
+            guideX.style.top = Math.round(pr.top + pr.height / 2) + "px";
+          } else if (guideX) {
+            guideX.style.display = "none";
+          }
+        }
+        syncHandlesOverlay();
+      }, true);
+
+      document.addEventListener("pointerup", () => {
+        if (!dragState) return;
+        const finished = dragState;
+        dragState = null;
+        if (guideX) guideX.style.display = "none";
+        if (guideY) guideY.style.display = "none";
+        finished.items.forEach((it) => it.node.removeAttribute("data-coding-studio-dragging"));
+        if (finished.moved) {
+          justDragged = true;
+          setTimeout(() => { justDragged = false; }, 120);
+          send("STUDIO_FREE_POSITION_COMMIT", {
+            items: finished.items.map((it) => ({
+              selector: it.selector,
+              x: it.x,
+              y: it.y,
+              width: finished.handleType !== "move" ? it.width : undefined,
+              height: finished.handleType !== "move" ? it.height : undefined,
+            })),
+          });
+        }
+        syncHandlesOverlay();
+      }, true);
+
       document.body.dataset.codingStudio = "on";
       document.addEventListener("click", (event) => {
         if (!enabled || document.body.dataset.codingStudio !== "on") return;
+        if (justDragged) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
         const target = event.target instanceof Element ? event.target : null;
-        if (!target) return;
+        if (!target || target.closest("#coding-studio-handles-box")) return;
+        if (target === document.body || target === document.documentElement || target.tagName.toLowerCase() === "main") {
+          if (selected) selected.removeAttribute("data-coding-studio-selected");
+          selected = null;
+          multiSelectedSet.clear();
+          syncMultiSelectionAttributes();
+          syncHandlesOverlay();
+          send("STUDIO_CLEAR_SELECTION", {});
+          return;
+        }
         let el = target.closest(editableSelector);
         if (!el || el === document.body || el === document.documentElement) return;
         if (svgShapeTags.has(el.tagName.toLowerCase())) el = el.closest("svg") || el;
@@ -1129,7 +1577,7 @@ export function LiveAppPreview({
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
-        selectElement(el, event.shiftKey);
+        selectElement(el, event.shiftKey, event.ctrlKey || event.metaKey);
       }, true);
       document.addEventListener("contextmenu", (event) => {
         if (!enabled || document.body.dataset.codingStudio !== "on") return;
@@ -1140,7 +1588,7 @@ export function LiveAppPreview({
         if (svgShapeTags.has(el.tagName.toLowerCase())) el = el.closest("svg") || el;
         event.preventDefault();
         event.stopPropagation();
-        selectElement(el, false);
+        selectElement(el, false, false);
         send("STUDIO_CONTEXT_MENU", {
           element: describe(el),
           x: event.clientX,
@@ -1153,9 +1601,24 @@ export function LiveAppPreview({
         if (data.action === "setMode") {
           enabled = !!data.enabled;
           snapGrid = data.snapToGrid !== false;
+          if (data.gridSize) gridStep = Number(data.gridSize) || 8;
           document.body.dataset.codingStudio = enabled ? "on" : "off";
           document.body.dataset.codingStudioXray = data.xRay ? "on" : "off";
           if (!enabled && selected) selected.removeAttribute("data-coding-studio-selected");
+          syncHandlesOverlay();
+          return;
+        }
+        if (data.action === "clearSelection") {
+          if (selected) selected.removeAttribute("data-coding-studio-selected");
+          selected = null;
+          multiSelectedSet.clear();
+          syncMultiSelectionAttributes();
+          syncHandlesOverlay();
+          return;
+        }
+        if (data.action === "setMultiSelection") {
+          multiSelectedSet = new Set(Array.isArray(data.selectors) ? data.selectors : []);
+          syncMultiSelectionAttributes();
           return;
         }
         if (data.action === "restore") {
@@ -1163,6 +1626,8 @@ export function LiveAppPreview({
           resetPreviewEdits();
           rebuildResponsiveSheet(activeEditsCache, data.designSystem);
           Object.entries(activeEditsCache).forEach(([selector, edit]) => applyEdit(selector, edit));
+          syncMultiSelectionAttributes();
+          syncHandlesOverlay();
           return;
         }
         const el = data.selector
@@ -1170,7 +1635,7 @@ export function LiveAppPreview({
           : selected;
         if (!el) return;
         if (data.action === "select") {
-          selectElement(el, false);
+          selectElement(el, !!data.shiftKey, !!data.ctrlKey);
           el.scrollIntoView({ block: "nearest", behavior: "smooth" });
           return;
         }
@@ -1178,7 +1643,7 @@ export function LiveAppPreview({
           data.action === "delete" ||
           (data.action === "style" && hidesProtected({ styles: data.styles || {} }))
         ))) {
-          send("STUDIO_PROTECTED_ELEMENT", { message: "مربع تغيير العملات محمي للحفاظ على وظائفه الأصلية." });
+          send("STUDIO_PROTECTED_ELEMENT", { message: "البار العلوي وأدوات النظام محمية للحفاظ على وظائفها الأصلية." });
           return;
         }
         const selector = selectorFor(el);
@@ -1190,9 +1655,11 @@ export function LiveAppPreview({
         };
         if (data.action === "style") {
           applyStyles(el, data.styles || {});
+          syncHandlesOverlay();
           notify({ styles: data.styles || {} });
         } else if (data.action === "text") {
           applyText(el, data.text);
+          syncHandlesOverlay();
           notify({ text: data.text });
         } else if (data.action === "attributes") {
           Object.entries(data.attributes || {}).forEach(([k, v]) => {
@@ -1206,9 +1673,11 @@ export function LiveAppPreview({
           notify({ animation: data.animation });
         } else if (data.action === "delete") {
           el.style.setProperty("display", "none", "important");
+          syncHandlesOverlay();
           notify({ deleted: true });
         } else if (data.action === "show") {
           el.style.removeProperty("display");
+          syncHandlesOverlay();
           notify({ deleted: false });
         } else if (data.action === "duplicate") {
           const parent = el.parentElement;
@@ -1216,6 +1685,7 @@ export function LiveAppPreview({
             const clone = el.cloneNode(true);
             clone.removeAttribute("id");
             clone.removeAttribute("data-coding-studio-selected");
+            clone.removeAttribute("data-coding-studio-multi-selected");
             clone.setAttribute("data-coding-studio-clone-of", selector);
             el.after(clone);
             const count = Array.from(parent.children).filter((item) =>
@@ -1236,6 +1706,7 @@ export function LiveAppPreview({
             const order = Array.from(el.parentElement.children).filter((item) =>
               item.getAttribute("data-coding-studio-clone-of") !== selector &&
               item.getAttribute("data-studio-clone-of") !== selector).indexOf(el);
+            syncHandlesOverlay();
             notify({ order });
           }
         }
@@ -1246,10 +1717,12 @@ export function LiveAppPreview({
         let count = 0;
         const buildNode = (element, depth) => {
           if (!(element instanceof Element) || count >= 220 || depth > 6) return null;
+          if (element.id?.startsWith("coding-studio-")) return null;
           const tag = element.tagName.toLowerCase();
           if (["script", "style", "link", "meta", "noscript", "iframe"].includes(tag)) return null;
           count += 1;
           const childElements = Array.from(element.children).filter((child) =>
+            !child.id?.startsWith("coding-studio-") &&
             !["script", "style", "link", "meta", "noscript", "iframe"].includes(child.tagName.toLowerCase()));
           const children = [];
           for (const child of childElements) {
@@ -1300,7 +1773,7 @@ export function LiveAppPreview({
       send("STUDIO_BRIDGE_READY", {});
     })();`;
     doc.body.appendChild(script);
-  }, [editMode, previewSource, xRayMode, snapToGrid, activeDisplayedEdits, designSystem, send]);
+  }, [editMode, previewSource, xRayMode, snapToGrid, gridSizePx, activeDisplayedEdits, designSystem, send]);
 
   const applyStyle = (styles: Record<string, string>) => {
     if (!selected || previewSource === "published") return;
@@ -1455,22 +1928,389 @@ export function LiveAppPreview({
     );
   };
 
-  const deleteOrRestoreSelectedElement = () => {
+  const deleteOrRestoreSelectedElement = useCallback(() => {
     if (!selected || previewSource === "published") return;
-    if (editsRef.current[selected.selector]?.locked) return;
+    const targets =
+      multiSelectedSelectors.length > 1 ? multiSelectedSelectors : [selected.selector];
     const nextDeleted = !Boolean(editsRef.current[selected.selector]?.deleted);
-    commitEdits(selected.selector, { deleted: nextDeleted });
-    send({
-      action: nextDeleted ? "delete" : "show",
-      selector: selected.selector,
-      silent: true,
-    });
+    const patches: Record<string, StudioDomEdit> = {};
+    for (const sel of targets) {
+      if (editsRef.current[sel]?.locked) continue;
+      patches[sel] = { deleted: nextDeleted };
+      send({
+        action: nextDeleted ? "delete" : "show",
+        selector: sel,
+        silent: true,
+      });
+    }
+    commitBatchEdits(patches);
+    setPendingDeleteConfirm(false);
     setStatus(
       nextDeleted
-        ? `تم حذف/إخفاء العنصر <${selected.tag}> من الصفحة — يمكنك استعادته في أي وقت.`
-        : `تمت استعادة العنصر <${selected.tag}> بنجاح.`,
+        ? `تم حذف/إخفاء (${targets.length}) عنصر من الصفحة — يمكنك التراجع (Ctrl+Z) أو استعادته في أي وقت.`
+        : `تمت استعادة (${targets.length}) عنصر بنجاح.`,
     );
-  };
+  }, [selected, previewSource, multiSelectedSelectors, commitBatchEdits, send]);
+
+  // 8.2 Copy, Cut, Paste, and Duplicate Handlers
+  const handleCopyElements = useCallback(() => {
+    if (!selected) return;
+    const targets =
+      multiSelectedSelectors.length > 1 ? multiSelectedSelectors : [selected.selector];
+    const activePageRoute = (safeRoute.split("?")[0] || "/admin").replace(/\/+$/, "") || "/";
+    const items = targets.map((sel) => {
+      const ed = editsRef.current[sel] || {};
+      const isPrimary = sel === selected.selector;
+      return {
+        selector: sel,
+        tag: isPrimary ? selected.tag : "div",
+        text: ed.text ?? (isPrimary ? selected.text : ""),
+        styles: {
+          ...(isPrimary
+            ? {
+                color: textColor,
+                backgroundColor,
+                fontSize: fontSize + "px",
+                fontWeight,
+                borderRadius,
+              }
+            : {}),
+          ...(ed.styles || {}),
+        },
+        attributes: { ...(ed.attributes || {}) },
+        animation: ed.animation,
+        actionBinding: ed.actionBinding,
+        freePosition: ed.freePosition,
+      };
+    });
+    setElementClipboard({
+      mode: "copy",
+      items,
+      sourcePageRoute: activePageRoute,
+      copiedAt: new Date().toISOString(),
+    });
+    setStatus(`تم نسخ (${items.length}) عنصر إلى حافظة الاستوديو (Ctrl+V للصق).`);
+  }, [
+    selected,
+    multiSelectedSelectors,
+    safeRoute,
+    textColor,
+    backgroundColor,
+    fontSize,
+    fontWeight,
+    borderRadius,
+  ]);
+
+  const handleCutElements = useCallback(() => {
+    if (!selected || previewSource === "published") return;
+    const targets =
+      multiSelectedSelectors.length > 1 ? multiSelectedSelectors : [selected.selector];
+    if (targets.some((s) => editsRef.current[s]?.locked)) {
+      setStatus("لا يمكن قص عنصر مقفل. قم بفك القفل أولاً.");
+      return;
+    }
+    const activePageRoute = (safeRoute.split("?")[0] || "/admin").replace(/\/+$/, "") || "/";
+    const items = targets.map((sel) => {
+      const ed = editsRef.current[sel] || {};
+      const isPrimary = sel === selected.selector;
+      return {
+        selector: sel,
+        tag: isPrimary ? selected.tag : "div",
+        text: ed.text ?? (isPrimary ? selected.text : ""),
+        styles: {
+          ...(isPrimary
+            ? {
+                color: textColor,
+                backgroundColor,
+                fontSize: fontSize + "px",
+                fontWeight,
+                borderRadius,
+              }
+            : {}),
+          ...(ed.styles || {}),
+        },
+        attributes: { ...(ed.attributes || {}) },
+        animation: ed.animation,
+        actionBinding: ed.actionBinding,
+        freePosition: ed.freePosition,
+      };
+    });
+    // Safe Cut rule: retain original until paste succeeds as one undoable operation
+    setElementClipboard({
+      mode: "cut",
+      items,
+      sourcePageRoute: activePageRoute,
+      copiedAt: new Date().toISOString(),
+    });
+    setStatus(
+      `تم تجهيز (${items.length}) عنصر للقص الآمن — سيُنقل العنصر الأصلي فور نجاح اللصق (Ctrl+V) كعملية واحدة قابلة للتراجع.`,
+    );
+  }, [
+    selected,
+    previewSource,
+    multiSelectedSelectors,
+    safeRoute,
+    textColor,
+    backgroundColor,
+    fontSize,
+    fontWeight,
+    borderRadius,
+  ]);
+
+  const handlePasteElements = useCallback(
+    (placementOverride?: "after" | "inside" | "before") => {
+      if (!elementClipboard || elementClipboard.items.length === 0 || previewSource === "published") {
+        return;
+      }
+      const targetSelector =
+        selected?.selector || treeNodes[0]?.selector || "main";
+      if (editsRef.current[targetSelector]?.locked) {
+        setStatus("الحاوية الهدف مقفلة؛ فك القفل أولاً قبل اللصق.");
+        return;
+      }
+      const targetPlacement = placementOverride || pastePlacement;
+      const existingPasted = editsRef.current[targetSelector]?.pastedNodes || [];
+      const reservedIds = existingPasted.map((n) => n.id);
+      const newNodes: StudioPastedNode[] = elementClipboard.items.map((clipItem) => {
+        const cleanAttrs = { ...(clipItem.attributes || {}) };
+        delete cleanAttrs.id;
+        const uniqueId = createStudioId("pasted", reservedIds);
+        reservedIds.push(uniqueId);
+        return {
+          id: uniqueId,
+          sourceSelector: clipItem.selector,
+          tag: clipItem.tag || "div",
+          text: clipItem.text,
+          styles: { ...(clipItem.styles || {}) },
+          attributes: cleanAttrs,
+          animation: clipItem.animation,
+          actionBinding: clipItem.actionBinding,
+          freePosition: clipItem.freePosition,
+          placement: targetPlacement,
+          createdAt: new Date().toISOString(),
+        };
+      });
+
+      const patches: Record<string, StudioDomEdit> = {
+        [targetSelector]: {
+          pastedNodes: [...existingPasted, ...newNodes],
+        },
+      };
+
+      // If Cut mode, mark original elements as moved/deleted atomically in the same undo step
+      if (elementClipboard.mode === "cut") {
+        for (const clipItem of elementClipboard.items) {
+          if (clipItem.selector && clipItem.selector !== targetSelector) {
+            patches[clipItem.selector] = {
+              deleted: true,
+              pageRoute: elementClipboard.sourcePageRoute,
+            };
+          }
+        }
+        setElementClipboard({ ...elementClipboard, mode: "copy" });
+      }
+
+      commitBatchEdits(patches);
+      send({ action: "restore", edits: editsRef.current, designSystem });
+      setStatus(
+        elementClipboard.mode === "cut"
+          ? `تم نقل ولصق (${newNodes.length}) عنصر بنجاح مع توليد معرفات فريدة.`
+          : `تم لصق (${newNodes.length}) عنصر (${targetPlacement === "inside" ? "داخل الحاوية" : targetPlacement === "before" ? "قبل العنصر" : "بعد العنصر"}) بمعرفات فريدة.`,
+      );
+    },
+    [elementClipboard, previewSource, selected, treeNodes, pastePlacement, commitBatchEdits, send, designSystem],
+  );
+
+  const handleDuplicateElements = useCallback(() => {
+    if (!selected || previewSource === "published") return;
+    const targets =
+      multiSelectedSelectors.length > 1 ? multiSelectedSelectors : [selected.selector];
+    const patches: Record<string, StudioDomEdit> = {};
+    for (const sel of targets) {
+      if (editsRef.current[sel]?.locked) continue;
+      const nextCount = Math.min(5, Number(editsRef.current[sel]?.duplicateCount || 0) + 1);
+      patches[sel] = { duplicateCount: nextCount };
+      send({ action: "duplicate", selector: sel, silent: true });
+    }
+    commitBatchEdits(patches);
+    setStatus(`تم تكرار (${targets.length}) عنصر بنجاح.`);
+  }, [selected, previewSource, multiSelectedSelectors, commitBatchEdits, send]);
+
+  // 8.3 Free Positioning & Keyboard Nudge Helpers
+  const applyFreePositionCoordinates = useCallback(
+    (nextX: number, nextY: number, modeOverride?: "relative" | "absolute") => {
+      if (!selected || previewSource === "published") return;
+      const mode = modeOverride || freePosMode || "relative";
+      const targets =
+        multiSelectedSelectors.length > 1 ? multiSelectedSelectors : [selected.selector];
+      const deltaX = nextX - freePosX;
+      const deltaY = nextY - freePosY;
+      const patches: Record<string, StudioDomEdit> = {};
+
+      for (const sel of targets) {
+        if (editsRef.current[sel]?.locked) continue;
+        const prevFp = editsRef.current[sel]?.freePosition;
+        const itemX = sel === selected.selector ? nextX : (prevFp?.x ?? 0) + deltaX;
+        const itemY = sel === selected.selector ? nextY : (prevFp?.y ?? 0) + deltaY;
+        const zVal = prevFp?.zIndex ?? (Number(zIndexValue) || 20);
+        patches[sel] = {
+          freePosition: {
+            enabled: true,
+            mode,
+            x: itemX,
+            y: itemY,
+            width: prevFp?.width,
+            height: prevFp?.height,
+            zIndex: zVal,
+            gridSize: gridSizePx,
+          },
+          styles: {
+            position: mode,
+            left: `${itemX}px`,
+            top: `${itemY}px`,
+            zIndex: String(zVal),
+          },
+        };
+        send({
+          action: "style",
+          selector: sel,
+          styles: {
+            position: mode,
+            left: `${itemX}px`,
+            top: `${itemY}px`,
+            zIndex: String(zVal),
+          },
+          silent: true,
+        });
+      }
+      setFreePosEnabled(true);
+      setFreePosMode(mode);
+      setFreePosX(nextX);
+      setFreePosY(nextY);
+      setPositionMode(mode);
+      commitBatchEdits(patches);
+    },
+    [
+      selected,
+      previewSource,
+      freePosMode,
+      multiSelectedSelectors,
+      freePosX,
+      freePosY,
+      zIndexValue,
+      gridSizePx,
+      commitBatchEdits,
+      send,
+    ],
+  );
+
+  const restoreNormalLayoutForSelection = useCallback(() => {
+    if (!selected || previewSource === "published") return;
+    const targets =
+      multiSelectedSelectors.length > 1 ? multiSelectedSelectors : [selected.selector];
+    const patches: Record<string, StudioDomEdit> = {};
+    for (const sel of targets) {
+      if (editsRef.current[sel]?.locked) continue;
+      patches[sel] = {
+        freePosition: {
+          enabled: false,
+          x: 0,
+          y: 0,
+        },
+        styles: {
+          position: "",
+          left: "",
+          top: "",
+          zIndex: "",
+        },
+      };
+      send({
+        action: "style",
+        selector: sel,
+        styles: { position: "", left: "", top: "", zIndex: "" },
+        silent: true,
+      });
+    }
+    setFreePosEnabled(false);
+    setFreePosX(0);
+    setFreePosY(0);
+    setPositionMode("static");
+    commitBatchEdits(patches);
+    setStatus("تمت استعادة التخطيط الطبيعي (Normal Flow) وإلغاء الإحداثيات الحرة.");
+  }, [selected, previewSource, multiSelectedSelectors, commitBatchEdits, send]);
+
+  // Keyboard shortcuts for Multi-Select, Copy, Cut, Paste, Duplicate, Delete, and Arrow Nudging
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!editMode || previewSource === "published" || !selected) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      if (e.key === "Escape") {
+        e.preventDefault();
+        clearSelection();
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c") {
+        e.preventDefault();
+        handleCopyElements();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "x") {
+        e.preventDefault();
+        handleCutElements();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") {
+        e.preventDefault();
+        handlePasteElements();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "d") {
+        e.preventDefault();
+        handleDuplicateElements();
+        return;
+      }
+      if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
+        deleteOrRestoreSelectedElement();
+        return;
+      }
+      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+        e.preventDefault();
+        const step = e.shiftKey ? 10 : snapToGrid ? Math.max(1, gridSizePx) : 1;
+        const dx = e.key === "ArrowRight" ? step : e.key === "ArrowLeft" ? -step : 0;
+        const dy = e.key === "ArrowDown" ? step : e.key === "ArrowUp" ? -step : 0;
+        applyFreePositionCoordinates(freePosX + dx, freePosY + dy);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    editMode,
+    previewSource,
+    selected,
+    snapToGrid,
+    gridSizePx,
+    freePosX,
+    freePosY,
+    clearSelection,
+    handleCopyElements,
+    handleCutElements,
+    handlePasteElements,
+    handleDuplicateElements,
+    deleteOrRestoreSelectedElement,
+    applyFreePositionCoordinates,
+  ]);
 
   const frameWidth =
     previewSize === "mobile"
@@ -1488,6 +2328,31 @@ export function LiveAppPreview({
   const selectedEdit = selected ? edits[selected.selector] || {} : {};
   const isSelectedLocked = Boolean(selectedEdit.locked);
   const isSelectedHidden = Boolean(selectedEdit.deleted);
+
+  // 8.4 Resolve Assigned Element Function / Action for the currently selected element
+  const resolvedElementAction = useMemo(() => {
+    if (!selected) return null;
+    return detectElementAssignedAction({
+      tag: selected.tag,
+      text: textValue || selected.text,
+      selector: selected.selector,
+      href: hrefVal || selected.hrefAttr,
+      attributes: {
+        role: roleVal || selected.roleAttr,
+        "aria-label": ariaLabelVal || selected.ariaLabel,
+        ...(selectedEdit.attributes || {}),
+      },
+      existingBinding: selectedEdit.actionBinding,
+    });
+  }, [
+    selected,
+    textValue,
+    hrefVal,
+    roleVal,
+    ariaLabelVal,
+    selectedEdit.attributes,
+    selectedEdit.actionBinding,
+  ]);
 
   const visibleTreeNodes = useMemo(() => {
     const query = treeFilter.trim().toLocaleLowerCase();
@@ -1532,8 +2397,15 @@ export function LiveAppPreview({
           >
             <button
               type="button"
-              title={node.selector}
-              onClick={() => send({ action: "select", selector: node.selector })}
+              title={`${node.selector} (Shift+Click أو Ctrl+Click للتحديد المتعدد)`}
+              onClick={(e) =>
+                send({
+                  action: "select",
+                  selector: node.selector,
+                  shiftKey: e.shiftKey,
+                  ctrlKey: e.ctrlKey || e.metaKey,
+                })
+              }
               className="flex min-w-0 flex-1 items-center gap-1.5 text-right cursor-pointer"
             >
               {hasChildren ? (
@@ -1546,6 +2418,22 @@ export function LiveAppPreview({
               ) : (
                 <span className="w-3" />
               )}
+              <input
+                type="checkbox"
+                checked={isNodeSelected}
+                onChange={() => {}}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  send({
+                    action: "select",
+                    selector: node.selector,
+                    shiftKey: false,
+                    ctrlKey: true,
+                  });
+                }}
+                title="إضافة أو إزالة من التحديد المتعدد"
+                className="h-3 w-3 rounded accent-primary cursor-pointer shrink-0"
+              />
               <span
                 className={
                   "shrink-0 rounded px-1 font-mono text-[9px] " +
@@ -2401,17 +3289,68 @@ export function LiveAppPreview({
                 <button
                   type="button"
                   onClick={() => {
-                    action("duplicate", {
-                      duplicateCount: Math.min(
-                        5,
-                        Number(edits[selected.selector]?.duplicateCount || 0) + 1,
-                      ),
-                    });
+                    handleCopyElements();
                     setContextMenu(null);
                   }}
-                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-accent text-right cursor-pointer"
+                  className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg hover:bg-accent text-right cursor-pointer"
                 >
-                  <Copy size={13} /> تكرار العنصر (Duplicate)
+                  <span className="flex items-center gap-2">
+                    <Copy size={13} /> نسخ العنصر (Copy)
+                  </span>
+                  <span className="font-mono text-[9px] text-muted-foreground">Ctrl+C</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleCutElements();
+                    setContextMenu(null);
+                  }}
+                  className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg hover:bg-accent text-right cursor-pointer"
+                >
+                  <span className="flex items-center gap-2">
+                    <Scissors size={13} /> قص العنصر (Cut)
+                  </span>
+                  <span className="font-mono text-[9px] text-muted-foreground">Ctrl+X</span>
+                </button>
+                {elementClipboard && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handlePasteElements("after");
+                        setContextMenu(null);
+                      }}
+                      className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20 text-right cursor-pointer"
+                    >
+                      <span className="flex items-center gap-2">
+                        <ClipboardPaste size={13} /> لصق بعد العنصر (Paste)
+                      </span>
+                      <span className="font-mono text-[9px]">Ctrl+V</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handlePasteElements("inside");
+                        setContextMenu(null);
+                      }}
+                      className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-accent text-right cursor-pointer"
+                    >
+                      <ClipboardPaste size={13} /> لصق داخل الحاوية (Paste Inside)
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleDuplicateElements();
+                    setContextMenu(null);
+                  }}
+                  className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg hover:bg-accent text-right cursor-pointer"
+                >
+                  <span className="flex items-center gap-2">
+                    <Copy size={13} /> تكرار فوري (Duplicate)
+                  </span>
+                  <span className="font-mono text-[9px] text-muted-foreground">Ctrl+D</span>
                 </button>
                 <button
                   type="button"
@@ -2638,11 +3577,12 @@ export function LiveAppPreview({
               </div>
             </div>
 
-            {/* 5 Inspector Tabs: Content | Style | Layout | Responsive | Advanced */}
-            <div className="grid grid-cols-5 gap-0.5 border-b bg-muted/50 p-1 text-[10px] font-bold shrink-0">
+            {/* 6 Inspector Tabs: Content | Action | Style | Layout | Responsive | Advanced */}
+            <div className="grid grid-cols-6 gap-0.5 border-b bg-muted/50 p-1 text-[10px] font-bold shrink-0">
               {(
                 [
                   ["content", "المحتوى"],
+                  ["action", "الوظيفة"],
                   ["style", "التنسيق"],
                   ["layout", "التخطيط"],
                   ["responsive", "التجاوب"],
@@ -2673,63 +3613,128 @@ export function LiveAppPreview({
                 <div className="space-y-1">
                   <p className="font-bold text-foreground">انقر على أي عنصر داخل معاينة التطبيق</p>
                   <p className="text-[11px] leading-relaxed">
-                    يمكنك تحديد أي زر، بطاقة، عنوان، جدول، أو أيقونة SVG في التطبيق الحقيقي لتعديل محتواها، ألوانها، أبعادها، وتجاوبها مع الشاشات.
+                    يمكنك تحديد أي زر، بطاقة، عنوان، جدول، أو أيقونة SVG في التطبيق الحقيقي لتعديل محتواها، وظيفتها، إحداثياتها الحرة، وألوانها وتجاوبها.
                   </p>
                 </div>
               </div>
             ) : (
               <div className="flex-1 overflow-y-auto p-3 space-y-3.5 text-xs">
-                {/* Quick Element Actions Bar (Delete / Restore / Duplicate / Reset) */}
-                <div className="flex items-center justify-between gap-1.5 rounded-xl border bg-muted/30 p-1.5">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={isSelectedHidden ? "outline" : "destructive"}
-                    disabled={isSelectedLocked || previewSource === "published"}
-                    onClick={deleteOrRestoreSelectedElement}
-                    className="h-7 flex-1 gap-1 text-[11px] font-bold cursor-pointer"
-                  >
-                    <Trash2 size={12} />
-                    <span>{isSelectedHidden ? "استعادة العنصر المحذوف" : "حذف العنصر"}</span>
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={isSelectedLocked || previewSource === "published"}
-                    onClick={() =>
-                      action("duplicate", {
-                        duplicateCount: Math.min(
-                          5,
-                          Number(edits[selected.selector]?.duplicateCount || 0) + 1,
-                        ),
-                      })
-                    }
-                    className="h-7 px-2 gap-1 text-[10px] cursor-pointer"
-                    title="تكرار العنصر"
-                  >
-                    <Copy size={11} />
-                    <span>تكرار</span>
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    disabled={isSelectedLocked || previewSource === "published"}
-                    onClick={() => {
-                      const next = { ...editsRef.current };
-                      delete next[selected.selector];
-                      editsRef.current = next;
-                      lastCommittedEditsRef.current = next;
-                      setEdits(next);
-                      changeCallbackRef.current(next);
-                      send({ action: "restore", edits: next, designSystem });
-                    }}
-                    className="h-7 px-2 text-[10px] text-muted-foreground hover:text-foreground cursor-pointer"
-                    title="إعادة ضبط تعديلات هذا العنصر"
-                  >
-                    <RotateCcw size={11} />
-                  </Button>
+                {/* Multi-Selection Active Banner */}
+                {multiSelectedSelectors.length > 1 && (
+                  <div className="flex items-center justify-between gap-2 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1.5 text-[11px]">
+                    <div className="flex items-center gap-1.5 font-black text-indigo-700 dark:text-indigo-300">
+                      <CheckSquare size={13} />
+                      <span>تحديد متعدد نشط ({multiSelectedSelectors.length} عناصر)</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setMultiSelectedSelectors(selected ? [selected.selector] : [])}
+                      className="text-[10px] underline font-bold text-indigo-700 dark:text-indigo-300 cursor-pointer"
+                    >
+                      إبقاء الرئيسي فقط
+                    </button>
+                  </div>
+                )}
+
+                {/* Quick Element Actions & Clipboard Bar (Copy / Cut / Paste / Duplicate / Delete / Reset) */}
+                <div className="space-y-1.5 rounded-xl border bg-muted/30 p-1.5">
+                  <div className="flex items-center justify-between gap-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={isSelectedLocked || previewSource === "published"}
+                      onClick={handleCopyElements}
+                      className="h-6 flex-1 px-1.5 gap-1 text-[10px] cursor-pointer"
+                      title="نسخ العنصر (Ctrl+C)"
+                    >
+                      <Copy size={10} />
+                      <span>نسخ</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={isSelectedLocked || previewSource === "published"}
+                      onClick={handleCutElements}
+                      className="h-6 flex-1 px-1.5 gap-1 text-[10px] cursor-pointer"
+                      title="قص العنصر بأمان (Ctrl+X)"
+                    >
+                      <Scissors size={10} />
+                      <span>قص</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={elementClipboard ? "default" : "outline"}
+                      disabled={!elementClipboard || isSelectedLocked || previewSource === "published"}
+                      onClick={() => handlePasteElements("after")}
+                      className="h-6 flex-1 px-1.5 gap-1 text-[10px] cursor-pointer"
+                      title="لصق بعد العنصر (Ctrl+V)"
+                    >
+                      <ClipboardPaste size={10} />
+                      <span>لصق</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={isSelectedLocked || previewSource === "published"}
+                      onClick={handleDuplicateElements}
+                      className="h-6 flex-1 px-1.5 gap-1 text-[10px] cursor-pointer"
+                      title="تكرار العنصر (Ctrl+D)"
+                    >
+                      <Copy size={10} />
+                      <span>تكرار</span>
+                    </Button>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-1.5">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={isSelectedHidden ? "outline" : "destructive"}
+                      disabled={isSelectedLocked || previewSource === "published"}
+                      onClick={deleteOrRestoreSelectedElement}
+                      className="h-7 flex-1 gap-1 text-[11px] font-bold cursor-pointer"
+                    >
+                      <Trash2 size={12} />
+                      <span>{isSelectedHidden ? "استعادة العنصر المحذوف" : "حذف العنصر"}</span>
+                    </Button>
+                    {elementClipboard && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={isSelectedLocked || previewSource === "published"}
+                        onClick={() => handlePasteElements("inside")}
+                        className="h-7 px-2 gap-1 text-[10px] cursor-pointer"
+                        title="لصق داخل الحاوية المحددة"
+                      >
+                        <ClipboardPaste size={11} />
+                        <span>لصق بالداخل</span>
+                      </Button>
+                    )}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      disabled={isSelectedLocked || previewSource === "published"}
+                      onClick={() => {
+                        const next = { ...editsRef.current };
+                        delete next[selected.selector];
+                        editsRef.current = next;
+                        lastCommittedEditsRef.current = next;
+                        setEdits(next);
+                        changeCallbackRef.current(next);
+                        send({ action: "restore", edits: next, designSystem });
+                      }}
+                      className="h-7 px-2 text-[10px] text-muted-foreground hover:text-foreground cursor-pointer"
+                      title="إعادة ضبط تعديلات هذا العنصر"
+                    >
+                      <RotateCcw size={11} />
+                    </Button>
+                  </div>
                 </div>
 
                 {isSelectedLocked && (
@@ -2861,6 +3866,359 @@ export function LiveAppPreview({
                         />
                       </div>
                     )}
+
+                    {/* Quick Shortcut to Dedicated Element Function Inspector */}
+                    {resolvedElementAction && (
+                      <div className="rounded-xl border border-primary/25 bg-primary/5 p-2.5 space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-black text-[11px] text-foreground flex items-center gap-1.5">
+                            <Zap size={12} className="text-primary" />
+                            <span>الوظيفة والإجراء (Element Function)</span>
+                          </span>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setRightTab("action")}
+                            className="h-6 px-2 text-[10px] font-bold cursor-pointer"
+                          >
+                            تحرير الوظيفة
+                          </Button>
+                        </div>
+                        <div className="text-[11px] text-muted-foreground space-y-0.5">
+                          <div>
+                            <span className="font-bold text-foreground">الوظيفة المسندة: </span>
+                            <span>{resolvedElementAction.detectedAction.titleAr}</span>
+                          </div>
+                          <div>
+                            <span className="font-bold text-foreground">الوجهة / المسار: </span>
+                            <span className="font-mono text-[10px]">
+                              {resolvedElementAction.binding.targetRoute ||
+                                resolvedElementAction.binding.targetModal ||
+                                resolvedElementAction.binding.targetWorkflow ||
+                                "/admin"}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* TAB 1.5: DEDICATED ELEMENT FUNCTION / ACTION INSPECTOR (الوظيفة والإجراء) */}
+                {rightTab === "action" && resolvedElementAction && (
+                  <div className="space-y-3">
+                    <StudioSectionSaveDiscardBar
+                      hasChanges={showContextualSaveDiscard}
+                      onSave={onSaveChanges}
+                      onDiscard={onDiscardChanges}
+                      onResetElement={edits[selected.selector] ? resetSelectedElementEdits : undefined}
+                      isSaving={isSaving}
+                      sectionLabel="الوظيفة والإجراء"
+                    />
+
+                    {/* Current Assigned Function Summary Card */}
+                    <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 space-y-2">
+                      <div className="flex items-center justify-between gap-2 border-b border-primary/15 pb-2">
+                        <div className="flex items-center gap-1.5 font-black text-xs text-primary">
+                          <Zap size={14} />
+                          <span>الوظيفة والإجراء (Element Function)</span>
+                        </div>
+                        <Badge variant="outline" className="text-[9px] font-mono">
+                          {resolvedElementAction.elementTypeLabel}
+                        </Badge>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-1.5 text-[11px]">
+                        <div className="flex items-center justify-between gap-2 bg-background/80 rounded-lg px-2 py-1 border">
+                          <span className="text-muted-foreground font-bold">التسمية الظاهرة:</span>
+                          <span className="font-black text-foreground truncate max-w-[175px]">
+                            {resolvedElementAction.displayLabel}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 bg-background/80 rounded-lg px-2 py-1 border">
+                          <span className="text-muted-foreground font-bold">الوظيفة المسندة فعليًا:</span>
+                          <span className="font-black text-primary truncate max-w-[175px]">
+                            {resolvedElementAction.detectedAction.titleAr}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 bg-background/80 rounded-lg px-2 py-1 border">
+                          <span className="text-muted-foreground font-bold">المشغّل (Trigger):</span>
+                          <span className="font-mono text-[10px] font-bold">
+                            عند النقر (On Click)
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 bg-background/80 rounded-lg px-2 py-1 border">
+                          <span className="text-muted-foreground font-bold">نوع الإجراء:</span>
+                          <span className="font-mono text-[10px] font-bold text-indigo-600 dark:text-indigo-400">
+                            {resolvedElementAction.binding.actionType}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 bg-background/80 rounded-lg px-2 py-1 border">
+                          <span className="text-muted-foreground font-bold">المسار / النافذة الهدف:</span>
+                          <span className="font-mono text-[10px] truncate max-w-[175px]">
+                            {resolvedElementAction.binding.targetRoute ||
+                              resolvedElementAction.binding.targetModal ||
+                              resolvedElementAction.binding.targetWorkflow ||
+                              "—"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Required Permissions & Roles */}
+                      <div className="pt-1 space-y-1">
+                        <div className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground">
+                          <ShieldCheck size={11} className="text-emerald-600" />
+                          <span>الصلاحيات والأدوار المطلوبة للتنفيذ:</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {resolvedElementAction.binding.requiredPermissions.length > 0 ? (
+                            resolvedElementAction.binding.requiredPermissions.map((perm) => (
+                              <Badge key={perm} variant="secondary" className="text-[9px] font-mono">
+                                {perm}
+                              </Badge>
+                            ))
+                          ) : (
+                            <Badge variant="outline" className="text-[9px]">
+                              متاح حسب صلاحية الصفحة
+                            </Badge>
+                          )}
+                          {resolvedElementAction.binding.allowedRoles.map((role) => (
+                            <Badge
+                              key={role}
+                              className="text-[9px] font-mono bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30"
+                            >
+                              دور: {role}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Editable Action Assignment (Registered Application Actions) */}
+                    <div className="rounded-xl border p-2.5 space-y-2.5 bg-background">
+                      <span className="font-black text-[11px] block">
+                        تعديل الوظيفة أو ربط إجراء مسجّل في النظام
+                      </span>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-muted-foreground mb-1">
+                          بحث في سجل إجراءات النظام المعتمدة ({STUDIO_ACTION_REGISTRY.length} إجراء)
+                        </label>
+                        <Input
+                          value={actionSearchQuery}
+                          onChange={(e) => setActionSearchQuery(e.target.value)}
+                          placeholder="ابحث (مثال: فتح وردية، سند، مخزون، كاشير)..."
+                          className="h-7 text-xs mb-1.5"
+                        />
+                        <select
+                          aria-label="إسناد إجراء مسجل"
+                          value={resolvedElementAction.binding.actionId}
+                          onChange={(e) => {
+                            const chosen = STUDIO_ACTION_REGISTRY.find((a) => a.id === e.target.value);
+                            if (!chosen) return;
+                            const nextBinding = {
+                              actionId: chosen.id,
+                              actionType: chosen.actionType,
+                              trigger: "onClick" as const,
+                              label: chosen.titleAr,
+                              targetRoute: chosen.defaultRoute,
+                              targetModal: chosen.defaultModal,
+                              targetWorkflow: chosen.defaultWorkflow,
+                              params: chosen.defaultParams,
+                              requiredPermissions: chosen.requiredPermissions,
+                              allowedRoles: chosen.allowedRoles,
+                              isMutationSafeSimulated: chosen.mutatesOperationalData,
+                            };
+                            const validation = validateActionBindingSecurity(nextBinding);
+                            if (!validation.valid) {
+                              setStatus(validation.reason || "إجراء غير صالح");
+                              return;
+                            }
+                            commitEdits(selected.selector, { actionBinding: nextBinding });
+                            send({
+                              action: "restore",
+                              edits: editsRef.current,
+                              designSystem,
+                            });
+                            setStatus(`تم ربط العنصر بالوظيفة «${chosen.titleAr}»`);
+                          }}
+                          className="h-8 w-full rounded-lg border bg-background px-2 text-xs font-bold"
+                        >
+                          <option value={resolvedElementAction.binding.actionId}>
+                            -- {resolvedElementAction.detectedAction.titleAr} --
+                          </option>
+                          {STUDIO_ACTION_REGISTRY.filter((item) => {
+                            const q = actionSearchQuery.trim().toLowerCase();
+                            if (!q) return true;
+                            return (
+                              item.titleAr.toLowerCase().includes(q) ||
+                              item.descriptionAr.toLowerCase().includes(q) ||
+                              item.id.toLowerCase().includes(q) ||
+                              (item.defaultRoute || "").toLowerCase().includes(q)
+                            );
+                          }).map((item) => (
+                            <option key={item.id} value={item.id}>
+                              [{item.categoryLabelAr}] {item.titleAr} ({item.defaultRoute || item.defaultWorkflow || item.id})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Action Type Selector */}
+                      <div>
+                        <label className="text-[10px] font-bold block">
+                          نوع الإجراء
+                          <select
+                            value={
+                              selectedEdit.actionBinding?.actionType ||
+                              resolvedElementAction.binding.actionType
+                            }
+                            onChange={(e) => {
+                              const nextType = e.target.value as StudioActionType;
+                              const nextBinding = {
+                                ...resolvedElementAction.binding,
+                                ...(selectedEdit.actionBinding || {}),
+                                actionType: nextType,
+                                trigger: "onClick" as const,
+                              };
+                              commitEdits(selected.selector, { actionBinding: nextBinding });
+                              send({ action: "restore", edits: editsRef.current, designSystem });
+                            }}
+                            className="mt-1 h-7 w-full rounded border bg-background px-1.5 text-[11px]"
+                          >
+                            <option value="navigate">انتقال لصفحة (Navigate)</option>
+                            <option value="open_modal">فتح نافذة منبثقة (Modal)</option>
+                            <option value="open_drawer">فتح درج جانبي (Drawer)</option>
+                            <option value="workflow">تشغيل سير عمل مسجّل (Workflow)</option>
+                            <option value="external_url">رابط خارجي (External URL)</option>
+                            <option value="submit">إرسال نموذج (Submit)</option>
+                            <option value="toggle_ui">تبديل حالة واجهة (Toggle UI)</option>
+                          </select>
+                        </label>
+                      </div>
+
+                      {/* Searchable Destination Page Selector */}
+                      <div>
+                        <label className="block text-[10px] font-bold text-muted-foreground mb-1">
+                          اختيار صفحة مسجّلة في التطبيق أو مسار مخصص
+                        </label>
+                        <select
+                          aria-label="صفحة الهدف المسجلة"
+                          value={
+                            selectedEdit.actionBinding?.targetRoute ||
+                            resolvedElementAction.binding.targetRoute ||
+                            "/admin"
+                          }
+                          onChange={(e) => {
+                            const dest = e.target.value;
+                            const nextBinding = {
+                              ...resolvedElementAction.binding,
+                              ...(selectedEdit.actionBinding || {}),
+                              targetRoute: dest,
+                              trigger: "onClick" as const,
+                            };
+                            const validation = validateActionBindingSecurity(nextBinding);
+                            if (!validation.valid) {
+                              setStatus(validation.reason || "وجهة غير صالحة");
+                              return;
+                            }
+                            commitEdits(selected.selector, { actionBinding: nextBinding });
+                            send({ action: "restore", edits: editsRef.current, designSystem });
+                          }}
+                          className="h-7 w-full rounded border bg-background px-2 text-[11px] mb-1.5"
+                        >
+                          <option
+                            value={
+                              resolvedElementAction.binding.targetRoute || "/admin"
+                            }
+                          >
+                            المسار الحالي: {resolvedElementAction.binding.targetRoute || "/admin"}
+                          </option>
+                          {STUDIO_REGISTERED_PAGES.map((pg) => (
+                            <option key={pg.route} value={pg.route}>
+                              {pg.titleAr} — {pg.route}
+                            </option>
+                          ))}
+                        </select>
+
+                        <Input
+                          value={
+                            selectedEdit.actionBinding?.targetRoute ??
+                            resolvedElementAction.binding.targetRoute ??
+                            ""
+                          }
+                          onChange={(e) => {
+                            const dest = e.target.value;
+                            const nextBinding = {
+                              ...resolvedElementAction.binding,
+                              ...(selectedEdit.actionBinding || {}),
+                              targetRoute: dest,
+                              trigger: "onClick" as const,
+                            };
+                            const validation = validateActionBindingSecurity(nextBinding);
+                            if (!validation.valid) {
+                              setStatus(validation.reason || "وجهة غير صالحة");
+                              return;
+                            }
+                            commitEdits(selected.selector, { actionBinding: nextBinding });
+                          }}
+                          placeholder="/admin/ledger?tab=vouchers أو /pos"
+                          className="h-7 text-xs font-mono text-left"
+                        />
+                      </div>
+
+                      {/* Safe Preview Action Test Button */}
+                      <div className="pt-1 flex items-center justify-between gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            const binding =
+                              selectedEdit.actionBinding || resolvedElementAction.binding;
+                            const check = validateActionBindingSecurity(binding);
+                            if (!check.valid) {
+                              setStatus(check.reason || "إجراء غير مسموح");
+                              return;
+                            }
+                            if (check.simulateOnlyInPreview) {
+                              setStatus(
+                                `معاينة آمنة: الإجراء «${resolvedElementAction.detectedAction.titleAr}» مرتبط بعملية تشغيلية/مالية؛ يتم محاكاته بأمان دون تنفيذ قيود فعلية أثناء وضع التحرير.`,
+                              );
+                              return;
+                            }
+                            if (binding.targetRoute && binding.targetRoute.startsWith("/")) {
+                              navigatePreview(binding.targetRoute);
+                              setStatus(`تم اختبار الانتقال إلى ${binding.targetRoute}`);
+                            } else {
+                              setStatus(
+                                `معاينة الإجراء: ${resolvedElementAction.detectedAction.titleAr} → ${binding.targetRoute || binding.targetModal || binding.targetWorkflow || ""}`,
+                              );
+                            }
+                          }}
+                          className="h-7 flex-1 text-[10px] font-bold gap-1 cursor-pointer"
+                        >
+                          <ExternalLink size={11} />
+                          <span>اختبار الإجراء بأمان في المعاينة</span>
+                        </Button>
+                        {selectedEdit.actionBinding && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              commitEdits(selected.selector, { actionBinding: undefined });
+                              send({ action: "restore", edits: editsRef.current, designSystem });
+                              setStatus("تم استعادة الوظيفة الأصلية للعنصر");
+                            }}
+                            className="h-7 px-2 text-[10px] text-muted-foreground hover:text-foreground cursor-pointer"
+                          >
+                            استعادة الأصلي
+                          </Button>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -3423,7 +4781,7 @@ export function LiveAppPreview({
                   </div>
                 )}
 
-                {/* TAB 3: LAYOUT (Dimensions, Min/Max, Padding, Margin, Flex/Grid, Position) */}
+                {/* TAB 3: LAYOUT (Free Positioning, Dimensions, Min/Max, Padding, Margin, Flex/Grid, Position) */}
                 {rightTab === "layout" && (
                   <div className="space-y-3">
                     <StudioSectionSaveDiscardBar
@@ -3434,6 +4792,154 @@ export function LiveAppPreview({
                       isSaving={isSaving}
                       sectionLabel="التخطيط"
                     />
+
+                    {/* Free Positioning & Drag-and-Drop Controls (Priority 8.3) */}
+                    <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/5 p-2.5 space-y-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-black text-[11px] text-foreground flex items-center gap-1.5">
+                          <Move size={13} className="text-indigo-600 dark:text-indigo-400" />
+                          <span>التحريك الحر والإحداثيات (Free Position)</span>
+                        </span>
+                        <div className="flex items-center gap-1">
+                          {freePosEnabled && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={restoreNormalLayoutForSelection}
+                              className="h-6 px-2 text-[10px] font-bold text-amber-700 dark:text-amber-300 border-amber-500/40 hover:bg-amber-500/10 cursor-pointer"
+                              title="إلغاء الإحداثيات الحرة واستعادة التخطيط الطبيعي المتدفق"
+                            >
+                              استعادة التخطيط الطبيعي
+                            </Button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (freePosEnabled) {
+                                restoreNormalLayoutForSelection();
+                              } else {
+                                applyFreePositionCoordinates(freePosX, freePosY, "relative");
+                                setStatus(
+                                  "تم تفعيل التحريك الحر — يمكنك سحب العنصر بالماوس أو تحريكه بالأسهم",
+                                );
+                              }
+                            }}
+                            className={
+                              "px-2 py-0.5 rounded-md text-[10px] font-black border cursor-pointer transition " +
+                              (freePosEnabled
+                                ? "bg-indigo-600 text-white border-indigo-600"
+                                : "bg-background text-muted-foreground hover:text-foreground")
+                            }
+                          >
+                            {freePosEnabled ? "مفعّل" : "تفعيل"}
+                          </button>
+                        </div>
+                      </div>
+
+                      <p className="text-[10px] text-muted-foreground leading-relaxed">
+                        اسحب العنصر مباشرة من مقبض التحريك العلوي داخل المعاينة، أو استخدم أسهم لوحة المفاتيح (<span className="font-mono">Arrows</span> / <span className="font-mono">Shift+Arrows</span>) والإحداثيات الرقمية الدقيقة.
+                      </p>
+
+                      {/* Exact X / Y Coordinate Inputs & Grid Size */}
+                      <div className="grid grid-cols-3 gap-1.5">
+                        <label className="text-[10px] font-bold">
+                          إحداثي أفقي (X px)
+                          <Input
+                            type="number"
+                            value={freePosX}
+                            onChange={(e) => {
+                              const nextX = Number(e.target.value) || 0;
+                              applyFreePositionCoordinates(nextX, freePosY);
+                            }}
+                            className="mt-1 h-7 text-xs font-mono text-center"
+                          />
+                        </label>
+                        <label className="text-[10px] font-bold">
+                          إحداثي رأسي (Y px)
+                          <Input
+                            type="number"
+                            value={freePosY}
+                            onChange={(e) => {
+                              const nextY = Number(e.target.value) || 0;
+                              applyFreePositionCoordinates(freePosX, nextY);
+                            }}
+                            className="mt-1 h-7 text-xs font-mono text-center"
+                          />
+                        </label>
+                        <label className="text-[10px] font-bold">
+                          شبكة المحاذاة (Snap)
+                          <select
+                            value={gridSizePx}
+                            onChange={(e) => setGridSizePx(Number(e.target.value) || 8)}
+                            className="mt-1 h-7 w-full rounded border bg-background px-1 text-[11px] font-mono"
+                          >
+                            <option value={1}>1px (حر)</option>
+                            <option value={4}>4px</option>
+                            <option value={8}>8px</option>
+                            <option value={16}>16px</option>
+                          </select>
+                        </label>
+                      </div>
+
+                      {/* Directional Nudge Pad */}
+                      <div className="flex items-center justify-between gap-1 pt-0.5">
+                        <span className="text-[10px] text-muted-foreground font-bold">
+                          تحريك دقيق ({gridSizePx}px):
+                        </span>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              applyFreePositionCoordinates(freePosX - gridSizePx, freePosY)
+                            }
+                            className="h-6 px-2 text-[10px] font-mono cursor-pointer"
+                            title="تحريك لليسار"
+                          >
+                            ← X-
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              applyFreePositionCoordinates(freePosX + gridSizePx, freePosY)
+                            }
+                            className="h-6 px-2 text-[10px] font-mono cursor-pointer"
+                            title="تحريك لليمين"
+                          >
+                            X+ →
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              applyFreePositionCoordinates(freePosX, freePosY - gridSizePx)
+                            }
+                            className="h-6 px-2 text-[10px] font-mono cursor-pointer"
+                            title="تحريك للأعلى"
+                          >
+                            ↑ Y-
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              applyFreePositionCoordinates(freePosX, freePosY + gridSizePx)
+                            }
+                            className="h-6 px-2 text-[10px] font-mono cursor-pointer"
+                            title="تحريك للأسفل"
+                          >
+                            Y+ ↓
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+
                     {/* Prominent Content Display Mode Switcher (Grid / List / Row / Block) */}
                     <div className="rounded-xl border border-primary/25 bg-primary/5 p-2.5 space-y-2">
                       <div className="flex items-center justify-between gap-1">

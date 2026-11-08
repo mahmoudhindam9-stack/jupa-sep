@@ -62,9 +62,8 @@ export function AppMainNavbar({
   onQrBadgeClick,
   extraActions,
 }: AppMainNavbarProps) {
-  const settings = useSettings();
-  const language = (settings as any)?.language || "ar";
-  const isAr = language === "ar";
+  const { lang } = useSettings();
+  const isAr = (lang || "ar") === "ar";
   const dir = isAr ? "rtl" : "ltr";
 
   const location = useLocation();
@@ -119,23 +118,19 @@ export function AppMainNavbar({
   return (
     <header
       dir={dir}
-      className="h-14 border-b border-border bg-card/95 backdrop-blur-md flex items-center justify-between px-3 sm:px-5 shrink-0 sticky top-0 z-40 shadow-xs print:hidden"
+      className="h-14 border-b border-border bg-card/95 backdrop-blur-md flex items-center justify-between gap-2 px-3 sm:px-5 shrink-0 sticky top-0 z-40 shadow-xs print:hidden"
     >
       {/* Start: Brand + Quick Departments Switcher */}
-      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0 shrink-0">
         <Link
           to="/admin"
-          className="flex items-center gap-2.5 group focus:outline-none shrink-0"
+          className="flex items-center gap-2 group focus:outline-none shrink-0"
           title={isAr ? "العودة إلى لوحة الأقسام الرئيسية" : "Return to Main Hub"}
         >
-          <RestocashLogo
-            size={30}
-            showSubtitle={true}
-            subtitle="Enterprise Edition"
-          />
+          <RestocashLogo size={24} />
         </Link>
 
-        <div className="h-5 w-px bg-border hidden sm:block" />
+        <div className="h-5 w-px bg-border hidden sm:block shrink-0" />
 
         {/* Quick Department Switcher Dropdown */}
         <DropdownMenu>
@@ -143,10 +138,10 @@ export function AppMainNavbar({
             <Button
               variant="outline"
               size="sm"
-              className="h-9 gap-1.5 px-2.5 sm:px-3 text-xs font-bold border-border/80 bg-background/70 hover:bg-muted/80"
+              className="h-8 gap-1.5 px-2.5 sm:px-3 text-xs font-bold border-border/80 bg-background/70 hover:bg-muted/80 rounded-lg shrink-0"
             >
               <Grid3X3 className="w-3.5 h-3.5 text-primary shrink-0" />
-              <span className="truncate max-w-[130px] sm:max-w-[180px]">
+              <span className="truncate max-w-[110px] sm:max-w-[170px]">
                 {activeDepartment
                   ? isAr
                     ? activeDepartment.labelAr
@@ -204,14 +199,14 @@ export function AppMainNavbar({
       </div>
 
       {/* End: Utilities, Notifications, Version, Profile, Logout */}
-      <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+      <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 shrink-0">
         {extraActions}
 
         {pendingQrCount > 0 && (
           <button
             type="button"
             onClick={onQrBadgeClick}
-            className="flex items-center gap-1.5 bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400 px-2.5 py-1 rounded-lg text-xs font-bold animate-pulse hover:bg-rose-500/20 transition-colors"
+            className="flex items-center gap-1.5 bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400 px-2.5 py-1 rounded-lg text-xs font-bold animate-pulse hover:bg-rose-500/20 transition-colors shrink-0"
             title={
               isAr ? "طلبات الطاولات الذاتية" : "Self-Service QR Orders"
             }
@@ -226,14 +221,14 @@ export function AppMainNavbar({
           </button>
         )}
 
-        <LanguageSwitcher />
-        <CurrencySwitcher />
+        <LanguageSwitcher compact />
+        <CurrencySwitcher compact />
         <ThemeToggle />
 
         {showSystemVersionLink && (
           <Link
             to="/admin/system-update"
-            className="hidden lg:flex items-center gap-1.5 text-[11px] font-bold bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20 px-2.5 py-1 rounded-lg transition-colors"
+            className="hidden lg:flex items-center gap-1.5 text-[11px] font-bold bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20 px-2.5 py-1 rounded-lg transition-colors shrink-0"
             title={
               isAr ? "تحديث النظام والنسخ الاحتياطي" : "System Update & Backup"
             }
@@ -244,14 +239,14 @@ export function AppMainNavbar({
         )}
 
         {(resolvedUserName || onSignOut) && (
-          <div className="flex items-center gap-1.5 ps-1.5 sm:ps-2 border-s border-border">
+          <div className="flex items-center gap-1.5 ps-1.5 sm:ps-2 border-s border-border shrink-0">
             {resolvedUserName && (
-              <div className="text-end hidden md:block leading-tight">
-                <p className="text-xs font-bold text-foreground truncate max-w-[120px]">
+              <div className="text-end hidden xl:block leading-tight">
+                <p className="text-xs font-bold text-foreground truncate max-w-[110px]">
                   {resolvedUserName}
                 </p>
                 {resolvedRoleLabel && (
-                  <p className="text-[10px] text-muted-foreground truncate max-w-[120px]">
+                  <p className="text-[10px] text-muted-foreground truncate max-w-[110px]">
                     {resolvedRoleLabel}
                   </p>
                 )}
@@ -260,7 +255,7 @@ export function AppMainNavbar({
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg"
+              className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg shrink-0"
               onClick={handleLogout}
               title={isAr ? "تسجيل الخروج" : "Sign Out"}
             >

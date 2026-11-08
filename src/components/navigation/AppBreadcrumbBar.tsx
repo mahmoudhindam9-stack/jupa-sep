@@ -54,9 +54,8 @@ export function AppBreadcrumbBar({
   onBack,
   backTo,
 }: AppBreadcrumbBarProps) {
-  const settings = useSettings();
-  const language = (settings as any)?.language || "ar";
-  const isAr = language === "ar";
+  const { lang } = useSettings();
+  const isAr = (lang || "ar") === "ar";
   const dir = isAr ? "rtl" : "ltr";
 
   const location = useLocation();
@@ -203,90 +202,63 @@ export function AppBreadcrumbBar({
           </>
         )}
 
-        {/* 3. Active Subsection / Tool Switcher (Unified 3-Subsection Switcher + Dropdown) */}
+        {/* 3. Active Subsection / Tool (with Dropdown Switcher) */}
         {activeDepartment && activeDepartment.children.length > 0 && (
           <>
             <SeparatorChevron className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
-
-            {/* Inline Quick Subsection Tabs (التعريفات / العمليات / التقارير) */}
-            <div className="hidden md:inline-flex items-center gap-1 bg-background/90 border border-border/70 p-0.5 rounded-lg">
-              {activeDepartment.children.map((sub) => {
-                const SubIcon = sub.icon;
-                const isSubCurrent = activeSubsection?.id === sub.id;
-                return (
-                  <button
-                    key={sub.id}
-                    type="button"
-                    onClick={() => handleSubNavigate(sub)}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs transition-all cursor-pointer ${
-                      isSubCurrent
-                        ? "bg-primary text-primary-foreground font-bold shadow-2xs"
-                        : "text-muted-foreground hover:text-foreground hover:bg-muted/60 font-semibold"
-                    }`}
-                  >
-                    {SubIcon && <SubIcon className="w-3.5 h-3.5 shrink-0" />}
-                    <span>{isAr ? sub.labelAr : sub.labelEn}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Mobile / Compact Subsection Dropdown */}
-            <div className="md:hidden">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-primary/10 border border-primary/25 hover:bg-primary/15 text-primary font-bold transition-colors"
-                  >
-                    {activeSubsection?.icon && (
-                      <activeSubsection.icon className="w-3.5 h-3.5 shrink-0" />
-                    )}
-                    <span className="truncate max-w-[150px] sm:max-w-[220px]">
-                      {activeSubsection
-                        ? isAr
-                          ? activeSubsection.labelAr
-                          : activeSubsection.labelEn
-                        : isAr
-                          ? "اختر القسم الفرعي"
-                          : "Select Subsection"}
-                    </span>
-                    <ChevronDown className="w-3 h-3 shrink-0" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  align={isAr ? "start" : "end"}
-                  className="w-64 max-h-[70vh] overflow-y-auto p-1.5"
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-primary/10 border border-primary/25 hover:bg-primary/15 text-primary font-bold transition-colors"
                 >
-                  <DropdownMenuLabel className="text-[11px] text-muted-foreground px-2 py-1">
-                    {isAr
-                      ? `أقسام ${activeDepartment.labelAr}`
-                      : `${activeDepartment.labelEn} Sections`}
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  {activeDepartment.children.map((sub) => {
-                    const SubIcon = sub.icon;
-                    const isSubCurrent = activeSubsection?.id === sub.id;
-                    return (
-                      <DropdownMenuItem
-                        key={sub.id}
-                        onClick={() => handleSubNavigate(sub)}
-                        className={`gap-2 py-2 cursor-pointer text-xs rounded-md ${
-                          isSubCurrent
-                            ? "bg-primary/10 text-primary font-bold"
-                            : "font-medium"
-                        }`}
-                      >
-                        {SubIcon && <SubIcon className="w-4 h-4 shrink-0" />}
-                        <span className="truncate">
-                          {isAr ? sub.labelAr : sub.labelEn}
-                        </span>
-                      </DropdownMenuItem>
-                    );
-                  })}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+                  {activeSubsection?.icon && (
+                    <activeSubsection.icon className="w-3.5 h-3.5 shrink-0" />
+                  )}
+                  <span className="truncate max-w-[150px] sm:max-w-[220px]">
+                    {activeSubsection
+                      ? isAr
+                        ? activeSubsection.labelAr
+                        : activeSubsection.labelEn
+                      : isAr
+                        ? "اختر القسم الفرعي"
+                        : "Select Subsection"}
+                  </span>
+                  <ChevronDown className="w-3 h-3 shrink-0" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align={isAr ? "start" : "end"}
+                className="w-64 max-h-[70vh] overflow-y-auto p-1.5"
+              >
+                <DropdownMenuLabel className="text-[11px] text-muted-foreground px-2 py-1">
+                  {isAr
+                    ? `أقسام ${activeDepartment.labelAr}`
+                    : `${activeDepartment.labelEn} Sections`}
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {activeDepartment.children.map((sub) => {
+                  const SubIcon = sub.icon;
+                  const isSubCurrent = activeSubsection?.id === sub.id;
+                  return (
+                    <DropdownMenuItem
+                      key={sub.id}
+                      onClick={() => handleSubNavigate(sub)}
+                      className={`gap-2 py-2 cursor-pointer text-xs rounded-md ${
+                        isSubCurrent
+                          ? "bg-primary/10 text-primary font-bold"
+                          : "font-medium"
+                      }`}
+                    >
+                      {SubIcon && <SubIcon className="w-4 h-4 shrink-0" />}
+                      <span className="truncate">
+                        {isAr ? sub.labelAr : sub.labelEn}
+                      </span>
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </>
         )}
 

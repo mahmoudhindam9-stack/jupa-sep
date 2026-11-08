@@ -11,11 +11,16 @@ import {
   validatePage,
   packDomEditsWithMeta,
   unpackDomEditsAndMeta,
+  sanitizeStudioDomEditsMap,
   findAssetUsages,
   calculateContrastRatio,
   runStudioAudits,
   compareStudioSnapshots,
 } from "../models/studio.types";
+import {
+  detectElementAssignedAction,
+  validateActionBindingSecurity,
+} from "../services/studioActionRegistry";
 
 const mockRpc = vi.fn();
 const mockFrom = vi.fn();
@@ -608,5 +613,100 @@ describe("Developer Studio — Design System, Assets, Audits, Snapshots & Export
     expect(backup?.entries?.custom_text_map).toContain("نص قديم");
     expect(backup?.entries?.restocash_studio_draft_v1).toContain("محتوى محفوظ");
   });
+
+  it("detects element function (e.g. فتح وردية) and enforces action security & permissions", () => {
+    const shiftBtnResolved = detectElementAssignedAction({
+      tag: "button",
+      text: "فتح وردية",
+      selector: "button.open-shift-btn",
+    });
+
+    expect(shiftBtnResolved.binding.actionId).toBe("open_restaurant_shift");
+    expect(shiftBtnResolved.detectedAction.titleAr).toContain("فتح وردية");
+    expect(shiftBtnResolved.binding.trigger).toBe("onClick");
+    expect(shiftBtnResolved.binding.requiredPermissions).toContain("shift.open");
+    expect(shiftBtnResolved.detectedAction.mutatesOperationalData).toBe(true);
+
+    // Security validation: operational mutation requires safe preview simulation and role enforcement
+    const adminCheck = validateActionBindingSecurity(shiftBtnResolved.binding, "admin");
+    expect(adminCheck.valid).toBe(true);
+    expect(adminCheck.simulateOnlyInPreview).toBe(true);
+
+    // Unsafe javascript: URL must be rejected
+    const unsafeCheck = validateActionBindingSecurity({
+      actionId: "navigate_app_page",
+      actionType: "external_url",
+      trigger: "onClick",
+      label: "رابط غير آمن",
+      targetRoute: "javascript:alert(1)",
+      requiredPermissions: [],
+      allowedRoles: ["admin"],
+    });
+    expect(unsafeCheck.valid).toBe(false);
+  });
+
+  it("preserves freePosition, actionBinding, and pastedNodes through sanitizeStudioDomEditsMap and pack/unpack", () => {
+    const rawEdits = {
+      "button.open-shift": {
+        text: "فتح وردية الكاشير",
+        freePosition: {
+          enabled: true,
+          mode: "relative" as const,
+          x: 24,
+          y: -12,
+          zIndex: 30,
+          gridSize: 8,
+        },
+        actionBinding: {
+          actionId: "open_restaurant_shift",
+          actionType: "workflow" as const,
+          trigger: "onClick" as const,
+          label: "فتح وردية الكاشير",
+          targetRoute: "/pos",
+          requiredPermissions: ["shift.open"],
+          allowedRoles: ["admin", "cashier"],
+        },
+        pastedNodes: [
+          {
+            id: "pasted_btn_1",
+            sourceSelector: "button.open-shift",
+            placement: "after" as const,
+            tag: "button",
+            text: "نسخة زر الوردية",
+            styles: { backgroundColor: "#1d4ed8" },
+            createdAt: "2026-11-08T00:00:00.000Z",
+          },
+        ],
+      },
+    };
+
+    const sanitized = sanitizeStudioDomEditsMap(rawEdits);
+    const entry = sanitized["button.open-shift"];
+    expect(entry).toBeDefined();
+    expect(entry.freePosition?.enabled).toBe(true);
+    expect(entry.freePosition?.x).toBe(24);
+    expect(entry.freePosition?.y).toBe(-12);
+    expect(entry.actionBinding?.actionId).toBe("open_restaurant_shift");
+    expect(entry.pastedNodes).toHaveLength(1);
+    expect(entry.pastedNodes?.[0].id).toBe("pasted_btn_1");
+
+    const packed = packDomEditsWithMeta({
+      domEdits: sanitized,
+      designSystem: DEFAULT_STUDIO_DESIGN_SYSTEM,
+      assets: [],
+      reusableComponents: [],
+      namedSnapshots: [],
+    });
+    const unpacked = unpackDomEditsAndMeta(packed);
+    expect(unpacked.domEdits["button.open-shift"].freePosition?.x).toBe(24);
+    expect(unpacked.domEdits["button.open-shift"].actionBinding?.actionId).toBe(
+      "open_restaurant_shift",
+    );
+    expect(unpacked.domEdits["button.open-shift"].pastedNodes?.[0].text).toBe(
+      "نسخة زر الوردية",
+    );
+  });
 });
+
+
 

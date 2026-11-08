@@ -3032,16 +3032,6 @@ function LedgerPage() {
                 <Plus size={15} />
                 <span>إضافة قيد يومي</span>
               </Button>
-              <Button
-                onClick={() => {
-                  setSelectedTab("vouchers");
-                  setAutoOpenVoucherModal(true);
-                }}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl gap-1.5 shadow-sm"
-              >
-                <Receipt size={15} />
-                <span>تسجيل سند مالي</span>
-              </Button>
             </div>
           </div>
 
@@ -3269,7 +3259,6 @@ function LedgerPage() {
               <div>
                 <h3 className="text-base font-black text-foreground flex items-center gap-2">
                   {selectedTab === "vouchers" && "💳 سندات الصرف والقبض الرسمية"}
-                  {selectedTab === "mall_finance" && "🏢 تحصيلات ومصروفات المول والحديقة"}
                   {selectedTab === "financial_position" && "⭐ المركز المالي الشامل"}
                   {selectedTab === "ledger" && "📖 كشف حساب الأستاذ العام"}
                   {selectedTab === "journal" && "📝 دفتر اليومية والقيود المزدوجة"}
@@ -3291,17 +3280,6 @@ function LedgerPage() {
               >
                 <Plus size={14} />
                 <span>إضافة قيد يومي</span>
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => {
-                  setSelectedTab("vouchers");
-                  setAutoOpenVoucherModal(true);
-                }}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl gap-1.5 shadow-xs"
-              >
-                <Receipt size={14} />
-                <span>تسجيل سند مالي جديد</span>
               </Button>
             </div>
           </div>
@@ -3342,19 +3320,6 @@ function LedgerPage() {
           {/* Tab Standalone: Comprehensive Financial Position */}
           <TabsContent value="financial_position" className="space-y-6">
             <ComprehensiveFinancialPositionCard />
-          </TabsContent>
-
-          {/* Tab Mall & Garden Finance (Consolidated into Unified Financial Workflow) */}
-          <TabsContent value="mall_finance" className="space-y-6">
-            <VouchersLedgerSection
-              initialDepartmentFilter="mall"
-              autoOpenNewModal={autoOpenVoucherModal}
-              onModalClosed={() => setAutoOpenVoucherModal(false)}
-              onNavigateToJournal={(ref) => {
-                if (ref) setJournalSearch(ref);
-                setSelectedTab("journal");
-              }}
-            />
           </TabsContent>
 
           {/* Tab 0: Vouchers Entry & Management */}
