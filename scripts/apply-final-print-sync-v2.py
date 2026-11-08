@@ -204,7 +204,7 @@ if 'getCanonicalAccountDefinition(code: string' not in s:
     const oracle = ORACLE_MIGRATION_ACCOUNTS.find((account: any) => String(account.code) === normalized);
     if (oracle) return { code: normalized, name_ar: oracle.name_ar, type: oracle.type, level: oracle.level || 4, currency: oracle.currency || "EGP" };
     const known: Record<string, {name_ar:string,type:Account["type"]}> = {
-      "101000": {name_ar:"الخزائن والنقدية الرئيسية",type:"asset"}, "101001": {name_ar:"خزائن ونقدية فرع جوبا",type:"asset"},
+      "101000": {name_ar:"الخزائن والنقدية الرئيسية",type:"asset"}, "101001": {name_ar:"خزائن ونقدية الفرع الثاني",type:"asset"},
       "102000": {name_ar:"البنوك والحسابات المصرفية",type:"asset"}, "103000": {name_ar:"المخزون",type:"asset"},
       "201000": {name_ar:"حسابات الموردين",type:"liability"}, "201100": {name_ar:"تأمينات مستأجري المحلات",type:"liability"},
       "201200": {name_ar:"دفعات مقدمة من المستأجرين",type:"liability"}, "202000": {name_ar:"ضرائب مستحقة",type:"liability"},

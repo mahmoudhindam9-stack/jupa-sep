@@ -113,7 +113,7 @@ export const menuService = {
       const defaultItems: MenuItem[] = [
         {
           id: "item-1",
-          name_ar: "برجر جوبا الخاص",
+          name_ar: "برجر المطعم الخاص",
           price: 180,
           category_id: "cat-1",
           is_available: true,
@@ -301,7 +301,7 @@ export const menuService = {
       items = [
         {
           id: "item-1",
-          name_ar: "برجر جوبا الخاص",
+          name_ar: "برجر المطعم الخاص",
           price: 180,
           category_id: "cat-1",
           is_available: true,

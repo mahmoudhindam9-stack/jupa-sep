@@ -644,7 +644,7 @@ export const WarehouseManagement: React.FC = () => {
               <Label className="text-xs font-bold">الموقع / الفرع</Label>
               <Input
                 className="mt-1"
-                placeholder="مثال: فرع جوبا - الطابق السفلي"
+                placeholder="مثال: الفرع الثاني - الطابق السفلي"
                 value={addForm.location}
                 onChange={(e) => setAddForm((s) => ({ ...s, location: e.target.value }))}
               />

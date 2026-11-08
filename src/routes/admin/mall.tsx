@@ -395,19 +395,19 @@ function MallManagementPage() {
 
     switch (type) {
       case "payment":
-        message = `Dear ${tenantName}, \n\nThis is a gentle reminder from Juba Mall Management regarding the rent payment for Shop #${shopNum}. Please ensure the payment is settled at your earliest convenience to avoid any late fees. \n\nThank you for your cooperation.`;
+        message = `Dear ${tenantName}, \n\nThis is a gentle reminder from Mall Management regarding the rent payment for Shop #${shopNum}. Please ensure the payment is settled at your earliest convenience to avoid any late fees. \n\nThank you for your cooperation.`;
         break;
       case "renewal":
-        message = `Dear ${tenantName}, \n\nWe hope this message finds you well. This is a reminder from Juba Mall Management that your lease contract for Shop #${shopNum} is approaching its expiration date. Please contact the management office to discuss renewal options. \n\nBest regards.`;
+        message = `Dear ${tenantName}, \n\nWe hope this message finds you well. This is a reminder from Mall Management that your lease contract for Shop #${shopNum} is approaching its expiration date. Please contact the management office to discuss renewal options. \n\nBest regards.`;
         break;
       case "welcome":
-        message = `Dear ${tenantName}, \n\nWelcome to Juba Mall! We are thrilled to have you as part of our business community at Shop #${shopNum}. If you need any assistance, please do not hesitate to contact the management office. \n\nBest of luck with your business!`;
+        message = `Dear ${tenantName}, \n\nWelcome to the Mall! We are thrilled to have you as part of our business community at Shop #${shopNum}. If you need any assistance, please do not hesitate to contact the management office. \n\nBest of luck with your business!`;
         break;
       case "violation":
-        message = `Dear ${tenantName}, \n\nThis is an official notice from Juba Mall Management regarding Shop #${shopNum}. We have observed a violation of the mall's rules and regulations. Please rectify the issue immediately to avoid further action. \n\nFor more details, please visit the management office.`;
+        message = `Dear ${tenantName}, \n\nThis is an official notice from Mall Management regarding Shop #${shopNum}. We have observed a violation of the mall's rules and regulations. Please rectify the issue immediately to avoid further action. \n\nFor more details, please visit the management office.`;
         break;
       default:
-        message = `Dear ${tenantName}, \n\nMessage from Juba Mall Management regarding Shop #${shopNum}.`;
+        message = `Dear ${tenantName}, \n\nMessage from Mall Management regarding Shop #${shopNum}.`;
     }
 
     const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
@@ -1159,7 +1159,7 @@ function MallManagementPage() {
         <tr>
           <td style="width: 50%; padding: 10px; vertical-align: top;">
             <strong>LANDLORD</strong><br><br>
-            Name: Juba Mall Management<br><br>
+            Name: Mall Management<br><br>
             Authorized Signatory: ........................<br><br>
             Signature: ...........................................<br><br>
             Date: ..................................................
@@ -1179,7 +1179,7 @@ function MallManagementPage() {
         <tr>
           <td style="width: 50%; padding: 10px; vertical-align: top;">
             <strong>المؤجر</strong><br><br>
-            إدارة جوبا مول<br><br>
+            إدارة المول<br><br>
             الممثل المفوض: ........................<br><br>
             التوقيع: ...........................................<br><br>
             التاريخ: ..................................................
@@ -1233,10 +1233,10 @@ function MallManagementPage() {
       html += `
         <div class="print-container contract-doc" style="direction: ltr; text-align: left; font-size: 13px; line-height: 1.6; max-width: 800px; margin: 0 auto; color: #000;">
           <h2 style="text-align: center; font-size: 18px; margin-bottom: 5px; text-transform: uppercase;">COMMERCIAL SHOP LEASE AGREEMENT</h2>
-          <h3 style="text-align: center; font-size: 14px; margin-top: 0; color: #444;">Juba Mall Management, Juba, Republic of South Sudan</h3>
+          <h3 style="text-align: center; font-size: 14px; margin-top: 0; color: #444;">Mall Management, the Republic of South Sudan</h3>
           
           <h4 style="font-size: 14px; margin-top: 20px; border-bottom: 1px solid #ccc; padding-bottom: 4px;">1. PARTIES</h4>
-          <p><strong>Landlord:</strong> Juba Mall Management, Juba, Republic of South Sudan.</p>
+          <p><strong>Landlord:</strong> Mall Management, the Republic of South Sudan.</p>
           <p><strong>Authorized Representative:</strong> ${form.authorized_representative || "........................................................................"}</p>
           <p><strong>Tenant:</strong> ${form.tenant_name || "........................................................................"}</p>
           <p><strong>ID/Registration No.:</strong> ${form.id_number || "........................................................................"}</p>
@@ -1306,7 +1306,7 @@ function MallManagementPage() {
           <p>All notices under this Agreement shall be in writing and delivered by hand, courier, registered mail, or an electronic means agreed by the Parties to the addresses stated in this Agreement, unless a Party has notified the other in writing of a change of address or contact method.</p>
 
           <h4 style="font-size: 14px; margin-top: 20px; border-bottom: 1px solid #ccc; padding-bottom: 4px;">17. GOVERNING LAW AND DISPUTE RESOLUTION</h4>
-          <p>This Agreement shall be governed by the laws of the Republic of South Sudan.<br>The Parties shall first attempt in good faith to resolve any dispute arising out of or in connection with this Agreement amicably.<br>If an amicable settlement cannot be reached, the dispute shall be submitted to the competent court or another legally agreed dispute-resolution forum in Juba, Republic of South Sudan.</p>
+          <p>This Agreement shall be governed by the laws of the Republic of South Sudan.<br>The Parties shall first attempt in good faith to resolve any dispute arising out of or in connection with this Agreement amicably.<br>If an amicable settlement cannot be reached, the dispute shall be submitted to the competent court or another legally agreed dispute-resolution forum in the Republic of South Sudan.</p>
 
           <h4 style="font-size: 14px; margin-top: 20px; border-bottom: 1px solid #ccc; padding-bottom: 4px;">18. ENTIRE AGREEMENT AND AMENDMENTS</h4>
           <p>This Agreement, the Commercial Schedule, and any signed annexes constitute the entire agreement between the Parties concerning the Premises.<br>No amendment, addition, or waiver shall be effective unless made in writing and signed by both Parties.</p>
@@ -1360,10 +1360,10 @@ function MallManagementPage() {
       html += `
         <div class="print-container contract-doc" style="direction: rtl; text-align: right; font-size: 13px; line-height: 1.6; max-width: 800px; margin: 0 auto; color: #000;">
           <h2 style="text-align: center; font-size: 18px; margin-bottom: 5px;">عقد إيجار محل تجاري</h2>
-          <h3 style="text-align: center; font-size: 14px; margin-top: 0; color: #444;">إدارة جوبا مول – Juba Mall Management</h3>
+          <h3 style="text-align: center; font-size: 14px; margin-top: 0; color: #444;">إدارة المول – Mall Management</h3>
           
           <h4 style="font-size: 14px; margin-top: 20px; border-bottom: 1px solid #ccc; padding-bottom: 4px;">1. أطراف العقد</h4>
-          <p><strong>المؤجر:</strong> إدارة جوبا مول – Juba Mall Management، جوبا، جمهورية جنوب السودان.</p>
+          <p><strong>المؤجر:</strong> إدارة المول – Mall Management، جمهورية جنوب السودان.</p>
           <p><strong>العنوان:</strong> ........................................................................</p>
           <p><strong>الممثل المفوض:</strong> ${form.authorized_representative || "........................................................................"}</p>
           <p><strong>المستأجر:</strong> ${form.tenant_name || "........................................................................"}</p>
@@ -1434,7 +1434,7 @@ function MallManagementPage() {
           <p>تكون جميع الإخطارات المتعلقة بهذا العقد مكتوبة، وتسلم باليد أو بواسطة البريد السريع أو البريد المسجل أو وسيلة إلكترونية يتفق عليها الطرفان، إلى العناوين المبينة في هذا العقد، ما لم يُخطر أحد الطرفين الطرف الآخر كتابيًا بتغيير عنوانه أو وسيلة الاتصال المعتمدة.</p>
 
           <h4 style="font-size: 14px; margin-top: 20px; border-bottom: 1px solid #ccc; padding-bottom: 4px;">17. القانون الواجب التطبيق وتسوية النزاعات</h4>
-          <p>يخضع هذا العقد لقوانين جمهورية جنوب السودان.<br>يسعى الطرفان أولًا وبحسن نية إلى تسوية أي نزاع أو خلاف ينشأ عن هذا العقد أو يتعلق به تسوية ودية.<br>وفي حال تعذر التوصل إلى تسوية ودية، يُحال النزاع إلى المحكمة المختصة أو إلى وسيلة أخرى لتسوية النزاعات يتفق عليها الطرفان بصورة قانونية في جوبا، جمهورية جنوب السودان.</p>
+          <p>يخضع هذا العقد لقوانين جمهورية جنوب السودان.<br>يسعى الطرفان أولًا وبحسن نية إلى تسوية أي نزاع أو خلاف ينشأ عن هذا العقد أو يتعلق به تسوية ودية.<br>وفي حال تعذر التوصل إلى تسوية ودية، يُحال النزاع إلى المحكمة المختصة أو إلى وسيلة أخرى لتسوية النزاعات يتفق عليها الطرفان بصورة قانونية في جمهورية جنوب السودان.</p>
 
           <h4 style="font-size: 14px; margin-top: 20px; border-bottom: 1px solid #ccc; padding-bottom: 4px;">18. كامل الاتفاق والتعديلات</h4>
           <p>يمثل هذا العقد وجدول البيانات التجارية وأي ملاحق موقعة من الطرفين كامل الاتفاق بينهما بشأن المحل.<br>ولا يكون أي تعديل أو إضافة أو تنازل عن أي حكم من أحكام العقد نافذًا إلا إذا كان مكتوبًا وموقعًا من الطرفين.</p>

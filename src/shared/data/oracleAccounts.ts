@@ -676,8 +676,8 @@ export const ORACLE_MIGRATION_ACCOUNTS = [
   },
   {
     code: "12030",
-    name_ar: "مشروعات دريم بارك جوبا",
-    name_en: "Projects - Dream Park, Juba",
+    name_ar: "مشروعات دريم بارك",
+    name_en: "Projects - Dream Park",
     type: "asset",
     level: 3,
     parent_code: "120",

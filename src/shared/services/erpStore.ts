@@ -4003,7 +4003,7 @@ export class ERPStore {
       };
     const known: Record<string, { name_ar: string; type: Account["type"] }> = {
       "101000": { name_ar: "الخزائن والنقدية الرئيسية", type: "asset" },
-      "101001": { name_ar: "خزائن ونقدية فرع جوبا", type: "asset" },
+      "101001": { name_ar: "خزائن ونقدية الفرع الثاني", type: "asset" },
       "102000": { name_ar: "البنوك والحسابات المصرفية", type: "asset" },
       "103000": { name_ar: "المخزون", type: "asset" },
       "201000": { name_ar: "حسابات الموردين", type: "liability" },
