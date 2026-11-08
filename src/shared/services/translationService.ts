@@ -31,7 +31,6 @@ export const AR_TO_EN_DICTIONARY: Record<string, string> = {
   "لوحة التحكم الرئيسية": "Main Control Panel",
   الرئيسية: "Home / Dashboard",
   "إدارة المطعم": "Restaurant",
-  "إدارة المول": "Mall Management",
   "إدارة الحديقة": "Park Management",
   "إدارة الخزائن": "Treasuries",
   "إدارة الحسابات": "Accounts",
