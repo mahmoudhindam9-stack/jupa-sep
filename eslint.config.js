@@ -36,7 +36,16 @@ export default tseslint.config(
       "@typescript-eslint/no-unused-vars": "off",
       "@typescript-eslint/no-explicit-any": "off",
       "@typescript-eslint/ban-ts-comment": "off",
+      "prefer-const": "warn",
+      "no-empty": "warn",
+      "no-extra-boolean-cast": "warn",
     },
   },
   eslintPluginPrettier,
+  {
+    rules: {
+      "prettier/prettier": "warn",
+    },
+  },
 );
+

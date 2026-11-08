@@ -1,6 +1,17 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { BellRing, ChevronDown, Grid3X3, LogOut, ShieldCheck } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  BellRing,
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Grid3X3,
+  LogOut,
+  ShieldCheck,
+} from "lucide-react";
 import { RestocashLogo } from "@/components/RestocashLogo";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { CurrencySwitcher } from "@/components/CurrencySwitcher";
@@ -10,6 +21,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -31,7 +43,9 @@ import {
   resolveNavigationState,
   isRestaurantScreenPath,
   dispatchSubTabCommand,
+  subscribeSubTabState,
   type NavDepartment,
+  type NavSubItem,
 } from "./navigationRegistry";
 import { cn } from "@/lib/utils";
 
@@ -66,6 +80,7 @@ export function AppMainNavbar({
   const [activePerms, setActivePerms] = useState<Record<string, boolean>>(
     () => getActiveUserPermissionsSync(),
   );
+  const [, setSubTabTick] = useState(0);
   const [pendingSelfOrdersCount, setPendingSelfOrdersCount] = useState<number>(0);
   const [hasUrgentTableCall, setHasUrgentTableCall] = useState<boolean>(false);
   const seenNavbarOrderIdsRef = useRef<Set<string>>(new Set());
@@ -196,12 +211,15 @@ export function AppMainNavbar({
   useEffect(() => {
     const refresh = () => {
       setActivePerms(getActiveUserPermissionsSync());
+      setSubTabTick((t) => t + 1);
     };
     refresh();
     const unsub = erpStore.subscribe(refresh);
+    const unsubSubTab = subscribeSubTabState(() => setSubTabTick((t) => t + 1));
     window.addEventListener(PERMISSIONS_UPDATED_EVENT, refresh);
     return () => {
       unsub();
+      unsubSubTab();
       window.removeEventListener(PERMISSIONS_UPDATED_EVENT, refresh);
     };
   }, []);
@@ -251,7 +269,11 @@ export function AppMainNavbar({
   }, [propUser]);
 
   const activeUser = propUser || fallbackUser;
-  const { isRootDashboard, department: activeDepartment } = resolveNavigationState(
+  const {
+    isRootDashboard,
+    department: activeDepartment,
+    subItem: activeSubItem,
+  } = resolveNavigationState(
     location.pathname,
     location.search,
     (location as { searchStr?: string }).searchStr,
@@ -261,6 +283,28 @@ export function AppMainNavbar({
     if (hasDepartmentPermission) return hasDepartmentPermission(dept);
     return isDepartmentPermitted(activePerms, dept);
   });
+
+  const handleNavigateSubItem = (target: NavSubItem) => {
+    const normCurrent =
+      location.pathname.length > 1 && location.pathname.endsWith("/")
+        ? location.pathname.slice(0, -1)
+        : location.pathname;
+    const normTarget =
+      target.to.length > 1 && target.to.endsWith("/") ? target.to.slice(0, -1) : target.to;
+
+    if (target.tabValue !== undefined) {
+      dispatchSubTabCommand(normTarget, target.tabValue);
+    }
+
+    if (normCurrent === normTarget && target.tabValue !== undefined && !target.search) {
+      return;
+    }
+
+    navigate({
+      to: target.to,
+      search: target.search ?? undefined,
+    });
+  };
 
   const handleLogout = async () => {
     if (onSignOut) {
@@ -301,6 +345,14 @@ export function AppMainNavbar({
                 : "شيف المطبخ"
               : activeUser?.role || (isEn ? "Supervisor" : "مشرف");
 
+  const SeparatorChevron = isEn ? ChevronRight : ChevronLeft;
+  const BackArrow = isEn ? ArrowLeft : ArrowRight;
+  const ActiveDeptIcon = activeDepartment?.icon;
+  const ActiveSubIcon = activeSubItem?.icon || ActiveDeptIcon;
+  const permittedSubItems = (activeDepartment?.children || []).filter((child) =>
+    isDepartmentPermitted(activePerms, child),
+  );
+
   return (
     <header
       data-studio-preserve="top-navigation-bar"
@@ -310,8 +362,8 @@ export function AppMainNavbar({
       )}
       dir={isEn ? "ltr" : "rtl"}
     >
-      {/* Brand Logo + Quick Departments Switcher */}
-      <div className="flex items-center gap-2 sm:gap-3.5 min-w-0">
+      {/* Brand Logo + Quick Departments Switcher + Active Module Sub-Navigation */}
+      <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 overflow-x-auto scrollbar-none">
         <Link
           to="/admin"
           onClick={() => dispatchSubTabCommand("/admin", "")}
@@ -331,17 +383,34 @@ export function AppMainNavbar({
               className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold bg-muted/70 hover:bg-muted text-foreground border border-border/80 transition-all cursor-pointer whitespace-nowrap shrink-0"
               title={isEn ? "Quick Switch Between Modules" : "الانتقال السريع بين أقسام النظام"}
             >
-              <Grid3X3 size={14} className="text-primary shrink-0" />
+              {ActiveDeptIcon && !isRootDashboard ? (
+                <ActiveDeptIcon size={14} className="text-primary shrink-0" />
+              ) : (
+                <Grid3X3 size={14} className="text-primary shrink-0" />
+              )}
               <span className="hidden md:inline">
-                {isEn ? "System Modules" : "الأقسام الرئيسية"}
+                {!isRootDashboard && activeDepartment
+                  ? activeDepartment.label
+                  : isEn
+                    ? "System Modules"
+                    : "الأقسام الرئيسية"}
               </span>
-              <span className="md:hidden">{isEn ? "Modules" : "الأقسام"}</span>
+              <span className="md:hidden">
+                {!isRootDashboard && activeDepartment
+                  ? activeDepartment.label
+                  : isEn
+                    ? "Modules"
+                    : "الأقسام"}
+              </span>
               <ChevronDown size={13} className="text-muted-foreground shrink-0" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent
             align="start"
-            className={cn("w-64 p-1.5 rounded-xl shadow-lg border-border", isEn ? "text-left" : "text-right")}
+            className={cn(
+              "w-64 p-1.5 rounded-xl shadow-lg border-border",
+              isEn ? "text-left" : "text-right",
+            )}
           >
             <DropdownMenuItem
               onClick={() => {
@@ -368,23 +437,126 @@ export function AppMainNavbar({
                     navigate({ to: dept.to, search: dept.search });
                   }}
                   className={cn(
-                    "flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold cursor-pointer",
+                    "flex items-center justify-between gap-2.5 px-3 py-2 rounded-lg text-xs font-bold cursor-pointer",
                     isActive && "bg-primary/10 text-primary font-extrabold",
                   )}
                 >
-                  <Icon
-                    size={15}
-                    className={cn(
-                      "shrink-0",
-                      isActive ? "text-primary" : "text-muted-foreground",
-                    )}
-                  />
-                  <span className="truncate">{dept.label}</span>
+                  <div className="flex items-center gap-2.5 truncate">
+                    <Icon
+                      size={15}
+                      className={cn(
+                        "shrink-0",
+                        isActive ? "text-primary" : "text-muted-foreground",
+                      )}
+                    />
+                    <span className="truncate">{dept.label}</span>
+                  </div>
+                  {isActive && <Check size={13} className="text-primary shrink-0" />}
                 </DropdownMenuItem>
               );
             })}
           </DropdownMenuContent>
         </DropdownMenu>
+
+        {/* Integrated Sub-Section Switcher inside the single top navbar */}
+        {!isRootDashboard && activeDepartment && permittedSubItems.length > 0 && (
+          <>
+            <SeparatorChevron size={14} className="text-muted-foreground/60 shrink-0" />
+            {permittedSubItems.length <= 3 && (
+              <div className="hidden lg:inline-flex items-center gap-1 rounded-xl bg-muted/60 p-0.5 border border-border/80 shrink-0">
+                {permittedSubItems.map((sub) => {
+                  const SubIcon = sub.icon;
+                  const isActiveSub = sub.id === activeSubItem?.id;
+                  return (
+                    <button
+                      key={sub.id}
+                      type="button"
+                      onClick={() => handleNavigateSubItem(sub)}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer whitespace-nowrap",
+                        isActiveSub
+                          ? "bg-primary text-primary-foreground shadow-2xs font-black"
+                          : "text-muted-foreground hover:text-foreground hover:bg-card/60",
+                      )}
+                    >
+                      <SubIcon size={13} className="shrink-0" />
+                      <span>{sub.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className={cn(
+                    "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-black text-primary bg-primary/10 hover:bg-primary/15 border border-primary/25 transition-colors cursor-pointer whitespace-nowrap shrink-0",
+                    permittedSubItems.length <= 3 && "lg:hidden",
+                  )}
+                  title={isEn ? "Switch Sub-section" : "تبديل القسم الفرعي"}
+                >
+                  {ActiveSubIcon && <ActiveSubIcon size={14} className="text-primary shrink-0" />}
+                  <span className="truncate max-w-[160px]">
+                    {activeSubItem?.label || activeDepartment.label}
+                  </span>
+                  <ChevronDown size={13} className="text-primary/80 shrink-0" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                className={cn(
+                  "w-60 p-1.5 rounded-xl shadow-lg border-border",
+                  isEn ? "text-left" : "text-right",
+                )}
+              >
+                <DropdownMenuLabel className="text-[11px] text-muted-foreground px-2 py-1">
+                  {activeDepartment.label}
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator className="my-1" />
+                {permittedSubItems.map((sub) => {
+                  const SubIcon = sub.icon;
+                  const isActiveSub = sub.id === activeSubItem?.id;
+                  return (
+                    <DropdownMenuItem
+                      key={sub.id}
+                      onClick={() => handleNavigateSubItem(sub)}
+                      className={cn(
+                        "flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-xs font-bold cursor-pointer",
+                        isActiveSub && "bg-primary/10 text-primary font-black",
+                      )}
+                    >
+                      <div className="flex items-center gap-2 truncate">
+                        <SubIcon
+                          size={14}
+                          className={cn(
+                            "shrink-0",
+                            isActiveSub ? "text-primary" : "text-muted-foreground",
+                          )}
+                        />
+                        <span className="truncate">{sub.label}</span>
+                      </div>
+                      {isActiveSub && <Check size={13} className="text-primary shrink-0" />}
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <button
+              type="button"
+              onClick={() => {
+                dispatchSubTabCommand("/admin", "");
+                navigate({ to: "/admin" });
+              }}
+              className="hidden xl:inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold text-muted-foreground hover:text-foreground bg-muted/40 hover:bg-muted border border-border/70 transition-colors cursor-pointer shrink-0"
+              title={isEn ? "Back to Main Hub" : "العودة للوحة الأقسام"}
+            >
+              <BackArrow size={13} className="shrink-0" />
+              <span>{isEn ? "Main Hub" : "الرئيسية"}</span>
+            </button>
+          </>
+        )}
       </div>
 
       {/* Controls Zone: QR Self-Order Alert, Language, Currency, Theme Toggle, Version & User Profile */}

@@ -145,18 +145,51 @@ export interface TreasuryTransaction {
   created_at: string;
 }
 
+export interface VoucherPurchaseItem {
+  inventory_id: string;
+  name_ar: string;
+  unit: string;
+  quantity: number;
+  unit_price: number;
+  total: number;
+}
+
+export interface VoucherAuditEntry {
+  id: string;
+  action: "created" | "updated" | "reverted" | "deleted";
+  timestamp: string;
+  user: string;
+  summary: string;
+  previous_values?: Record<string, any>;
+}
+
+export interface CustomVoucherCategory {
+  id: string;
+  type: "receipt" | "payment";
+  department: "mall" | "park" | "restaurant" | "admin" | "all";
+  name: string;
+  account_code: string;
+  created_at: string;
+}
+
 export interface Voucher {
   id: string;
+  reference_number?: string;
   branch_id: string;
   type: "receipt" | "payment" | "transfer";
+  department?: "mall" | "park" | "restaurant" | "admin";
   category: string;
   amount: number;
   currency: string;
   payment_method: string;
   treasury_id: string;
   description: string;
+  beneficiary?: string;
+  notes?: string;
   status: "pending" | "approved" | "rejected";
   created_at: string;
+  updated_at?: string;
+  updated_by?: string;
   cost_center?: string;
   attachment?: string;
   deleted?: boolean;
@@ -167,6 +200,11 @@ export interface Voucher {
   account_code?: string;
   custom_category?: string;
   custom_cost_center?: string;
+  supplier_id?: string;
+  supplier_name?: string;
+  supplier_account_code?: string;
+  purchase_items?: VoucherPurchaseItem[];
+  audit_history?: VoucherAuditEntry[];
   reverted?: boolean;
   reverted_at?: string;
   reverted_reason?: string;

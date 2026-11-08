@@ -255,87 +255,86 @@ function ParkManagementPage() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto w-full pb-12" dir="rtl">
-      {/* Unified Header + 3 Main Subsections Bar */}
-      <div className="rounded-2xl border border-border bg-card p-4 sm:p-5 shadow-xs space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/12 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25">
-              <Trees size={22} />
+      {/* Compact Single-Row Header */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3 shadow-xs">
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/12 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25">
+              <Trees size={18} />
             </div>
-            <h1 className="text-xl sm:text-2xl font-black text-foreground">إدارة الحديقة</h1>
+            <h1 className="text-lg sm:text-xl font-black text-foreground">إدارة الحديقة</h1>
           </div>
 
-          <div className="flex items-center gap-2.5 flex-wrap">
-            <ViewModeToggle mode={viewMode} onChange={setViewMode} />
-            <Button
-              onClick={() => setIsParkPosOpen(true)}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs h-9 px-4 rounded-xl gap-1.5 shadow-xs cursor-pointer"
+          <div className="inline-flex items-center gap-1 rounded-xl bg-muted/60 p-1 border border-border/70">
+            <button
+              type="button"
+              data-testid="park-tab-definitions"
+              onClick={() => handleTabChange("definitions")}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-black text-xs transition cursor-pointer ${
+                activeTab === "definitions"
+                  ? "bg-primary text-primary-foreground shadow-2xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
             >
-              <Ticket size={15} />
-              <span>نقطة بيع التذاكر (POS)</span>
-            </Button>
-            {(!isCashier || !cashierActiveShift) && (
-              <Button
-                onClick={() => setIsParkShiftLauncherOpen(true)}
-                variant="outline"
-                className="font-bold text-xs h-9 px-3.5 rounded-xl gap-1.5 cursor-pointer"
-              >
-                <Plus size={15} />
-                <span>فتح وردية جديدة</span>
-              </Button>
-            )}
-            <Button
-              variant="outline"
-              onClick={() => navigate({ to: "/admin/ledger", search: { tab: "vouchers" } as any })}
-              className="font-bold text-xs h-9 px-3.5 rounded-xl gap-1.5 border-indigo-500/30 text-indigo-600 dark:text-indigo-400 cursor-pointer"
+              <Settings size={14} />
+              <span>التعريفات</span>
+            </button>
+            <button
+              type="button"
+              data-testid="park-tab-operations"
+              onClick={() => handleTabChange("operations")}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-black text-xs transition cursor-pointer ${
+                activeTab === "operations"
+                  ? "bg-primary text-primary-foreground shadow-2xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
             >
-              <Landmark size={15} />
-              <span>الإدارة المالية</span>
-            </Button>
+              <Store size={14} />
+              <span>العمليات</span>
+            </button>
+            <button
+              type="button"
+              data-testid="park-tab-reports"
+              onClick={() => handleTabChange("reports")}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-black text-xs transition cursor-pointer ${
+                activeTab === "reports"
+                  ? "bg-primary text-primary-foreground shadow-2xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <FileBarChart size={14} />
+              <span>التقارير</span>
+            </button>
           </div>
         </div>
 
-        {/* Unified 3-Section Tabs: التعريفات | العمليات | التقارير */}
-        <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border/60">
-          <button
-            type="button"
-            data-testid="park-tab-definitions"
-            onClick={() => handleTabChange("definitions")}
-            className={`flex items-center justify-center gap-2 h-10 rounded-xl font-black text-xs sm:text-sm transition cursor-pointer ${
-              activeTab === "definitions"
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "bg-muted/50 text-muted-foreground hover:text-foreground hover:bg-muted"
-            }`}
+        <div className="flex items-center gap-2 flex-wrap">
+          <ViewModeToggle mode={viewMode} onChange={setViewMode} />
+          <Button
+            onClick={() => setIsParkPosOpen(true)}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs h-8 px-3.5 rounded-xl gap-1.5 shadow-xs cursor-pointer"
           >
-            <Settings size={16} />
-            <span>التعريفات</span>
-          </button>
-          <button
-            type="button"
-            data-testid="park-tab-operations"
-            onClick={() => handleTabChange("operations")}
-            className={`flex items-center justify-center gap-2 h-10 rounded-xl font-black text-xs sm:text-sm transition cursor-pointer ${
-              activeTab === "operations"
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "bg-muted/50 text-muted-foreground hover:text-foreground hover:bg-muted"
-            }`}
+            <Ticket size={14} />
+            <span>نقطة بيع التذاكر (POS)</span>
+          </Button>
+          {(!isCashier || !cashierActiveShift) && (
+            <Button
+              onClick={() => setIsParkShiftLauncherOpen(true)}
+              variant="outline"
+              className="font-bold text-xs h-8 px-3 rounded-xl gap-1.5 cursor-pointer"
+            >
+              <Plus size={14} />
+              <span>فتح وردية</span>
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            onClick={() => navigate({ to: "/admin/ledger", search: { tab: "vouchers" } as any })}
+            className="font-bold text-xs h-8 px-3 rounded-xl gap-1.5 border-indigo-500/30 text-indigo-600 dark:text-indigo-400 cursor-pointer"
           >
-            <Store size={16} />
-            <span>العمليات</span>
-          </button>
-          <button
-            type="button"
-            data-testid="park-tab-reports"
-            onClick={() => handleTabChange("reports")}
-            className={`flex items-center justify-center gap-2 h-10 rounded-xl font-black text-xs sm:text-sm transition cursor-pointer ${
-              activeTab === "reports"
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "bg-muted/50 text-muted-foreground hover:text-foreground hover:bg-muted"
-            }`}
-          >
-            <FileBarChart size={16} />
-            <span>التقارير</span>
-          </button>
+            <Landmark size={14} />
+            <span>الإدارة المالية</span>
+          </Button>
         </div>
       </div>
 

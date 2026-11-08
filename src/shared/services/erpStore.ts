@@ -5095,6 +5095,173 @@ export class ERPStore {
     );
     return true;
   }
+  getCustomVoucherCategories(
+    type?: "receipt" | "payment",
+    department?: "mall" | "park" | "restaurant" | "admin" | "all",
+  ) {
+    if (!Array.isArray(this.state.customVoucherCategories)) {
+      this.state.customVoucherCategories = [];
+    }
+    return this.state.customVoucherCategories.filter((cat: any) => {
+      if (type && cat.type !== type) return false;
+      if (
+        department &&
+        department !== "all" &&
+        cat.department !== "all" &&
+        cat.department !== department
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }
+
+  addCustomVoucherCategory(payload: {
+    type: "receipt" | "payment";
+    department?: "mall" | "park" | "restaurant" | "admin" | "all";
+    name: string;
+    account_code: string;
+  }) {
+    if (!Array.isArray(this.state.customVoucherCategories)) {
+      this.state.customVoucherCategories = [];
+    }
+    const cleanName = String(payload.name || "").trim();
+    if (!cleanName) {
+      throw new Error("يرجى إدخال اسم بند التصنيف المالي.");
+    }
+    const dept = payload.department || "all";
+    const existing = this.state.customVoucherCategories.find(
+      (c: any) =>
+        c.type === payload.type &&
+        c.name.trim() === cleanName &&
+        (c.department === dept || c.department === "all"),
+    );
+    if (existing) {
+      existing.account_code = payload.account_code || existing.account_code;
+      this.saveState();
+      this.notify();
+      return existing;
+    }
+    const created = {
+      id: "vcat-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
+      type: payload.type,
+      department: dept,
+      name: cleanName,
+      account_code:
+        payload.account_code || (payload.type === "payment" ? "31010160" : "41020100"),
+      created_at: new Date().toISOString(),
+    };
+    this.state.customVoucherCategories.push(created);
+    this.saveState();
+    this.logAction(
+      "ADMIN",
+      "إضافة بند تصنيف مالي جديد",
+      `تمت إضافة بند (${cleanName}) لنوع (${payload.type === "receipt" ? "سند قبض" : "سند صرف"}) وربطه بالحساب #${created.account_code}`,
+      "CREATE",
+    );
+    this.notify();
+    return created;
+  }
+
+  private resolveVoucherDefaultAccountCode(
+    type: "receipt" | "payment" | "transfer",
+    category: string,
+    accountCodeOverride?: string,
+  ): string {
+    if (accountCodeOverride && String(accountCodeOverride).trim()) {
+      return String(accountCodeOverride).trim();
+    }
+    const customMatch = (this.state.customVoucherCategories || []).find(
+      (c: any) => c.name === category && (!type || c.type === type),
+    );
+    if (customMatch?.account_code) {
+      return customMatch.account_code;
+    }
+    const map: Record<string, string> = {
+      "رواتب الموظفين": "31010110",
+      "رواتب وأجور الموظفين": "31010110",
+      "إيجار الفروع": "31010140",
+      "إيجار العقارات والفروع": "31010140",
+      "الكهرباء والمياه": "31010145",
+      "الكهرباء والمياه والطاقة": "31010145",
+      "كهرباء ومياه وطاقة": "31010145",
+      "التسويق والإعلانات": "31020310",
+      "الدعاية والتسويق": "31020310",
+      "دعاية، إعلانات وتسويق": "31020310",
+      "الهدر والمفقودات": "31010160",
+      "شراء مستلزمات هدر": "31010160",
+      "صيانة وتشغيل": "31010170",
+      "صيانة وتشغيل ومعدات": "31010170",
+      "مصروفات نثرية وإدارية": "31010160",
+      "ضيافة ونظافة": "31010160",
+      "شراء خامات ومواد": "31010100",
+      "شراء بضاعة": "31010100",
+      "شراء بضاعة / خامات ومواد": "31010100",
+      "إيراد إيجارات المول": "43010100",
+      "إيراد تذاكر وألعاب الحديقة": "43020100",
+      "إيراد مبيعات المطعم": "43010000",
+      "إيراد تشغيل حفلات": "43020300",
+      "إيرادات تشغيل بوفيهات وحفلات خارجية": "43020300",
+      "إيرادات تشغيل بوفيهات خارجية": "43020300",
+      "رأسمال إضافي": "41020100",
+      "حقوق ملكية ورأسمال مضاف": "41020100",
+      "بيع مخلفات المطبخ": "43020200",
+      "مبيعات فرعية وتدوير مخلفات": "43020200",
+      "إيرادات تدوير ومبيعات فرعية": "43020200",
+      "تسوية عهد وأمانات": "41010110",
+      "إيرادات استثمارية وتمويلية": "41010100",
+    };
+    return map[category] || (type === "payment" ? "31010110" : "41020100");
+  }
+
+  private syncVoucherPurchaseItemsStock(
+    voucherRef: string,
+    items: any[] | undefined,
+    direction: "in" | "out",
+    supplierName?: string,
+  ) {
+    if (!Array.isArray(items) || items.length === 0) return;
+    const currentInventory = localWarehouseStore.getInventory();
+    for (const rawItem of items) {
+      const invId = String(rawItem?.inventory_id || "").trim();
+      const qty = Number(rawItem?.quantity || 0);
+      const unitPrice = Number(rawItem?.unit_price || 0);
+      if (!invId || qty <= 0) continue;
+
+      const existing = currentInventory.find((i) => i.id === invId);
+      const warehouseId = existing?.warehouse_id || "wh-main-default";
+      const notePrefix =
+        direction === "in"
+          ? `توريد مشتريات مطعم (سند #${voucherRef})${supplierName ? ` - المورد: ${supplierName}` : ""}`
+          : `عكس توريد مشتريات مطعم (سند #${voucherRef})${supplierName ? ` - المورد: ${supplierName}` : ""}`;
+
+      if (direction === "in" && unitPrice > 0 && existing) {
+        localWarehouseStore.upsertInventoryItem(
+          {
+            name_ar: existing.name_ar,
+            unit: existing.unit,
+            quantity: existing.quantity,
+            min_quantity: existing.min_quantity,
+            cost: unitPrice,
+          },
+          existing.id,
+          warehouseId,
+        );
+      }
+
+      localWarehouseStore.addTransaction({
+        inventory_id: invId,
+        warehouse_id: warehouseId,
+        type: direction,
+        quantity: qty,
+        note: `${notePrefix} - السعر: ${unitPrice}`,
+      });
+    }
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("inventory_updated"));
+    }
+  }
+
   createVoucher(
     type: "receipt" | "payment" | "transfer",
     category: string,
@@ -5106,6 +5273,23 @@ export class ERPStore {
     currency?: string,
     exchangeRate?: number,
     accountCodeOverride?: string,
+    options?: {
+      department?: "mall" | "park" | "restaurant" | "admin";
+      beneficiary?: string;
+      notes?: string;
+      supplier_id?: string;
+      supplier_name?: string;
+      supplier_account_code?: string;
+      purchase_items?: Array<{
+        inventory_id: string;
+        name_ar: string;
+        unit: string;
+        quantity: number;
+        unit_price: number;
+        total?: number;
+      }>;
+      reference_number?: string;
+    },
   ) {
     const treasury = this.state.treasuries.find((t) => t.id === treasuryId);
     const chosenCurrency = (currency || treasury?.currency || "USD").toUpperCase();
@@ -5113,72 +5297,123 @@ export class ERPStore {
       exchangeRate && Number(exchangeRate) > 0
         ? Number(exchangeRate)
         : this.getExchangeRate(chosenCurrency);
-    const baseAmount = chosenCurrency === "USD" ? amount : amount / rate;
+
+    const normalizedPurchaseItems = Array.isArray(options?.purchase_items)
+      ? options!.purchase_items
+          .filter((it) => it && String(it.inventory_id || "").trim() && Number(it.quantity) > 0)
+          .map((it) => {
+            const qty = Number(it.quantity) || 0;
+            const unitPrice = Number(it.unit_price) || 0;
+            return {
+              inventory_id: String(it.inventory_id).trim(),
+              name_ar: String(it.name_ar || "صنف مخزني").trim(),
+              unit: String(it.unit || "وحدة").trim(),
+              quantity: qty,
+              unit_price: unitPrice,
+              total: Number((qty * unitPrice).toFixed(2)),
+            };
+          })
+      : [];
+
+    const purchaseItemsTotal = normalizedPurchaseItems.reduce(
+      (sum, it) => sum + Number(it.total || 0),
+      0,
+    );
+    const resolvedAmount =
+      normalizedPurchaseItems.length > 0 && purchaseItemsTotal > 0
+        ? Number(purchaseItemsTotal.toFixed(2))
+        : Number(amount) || 0;
+
+    if (resolvedAmount <= 0) {
+      throw new Error("قيمة السند المالي يجب أن تكون أكبر من الصفر.");
+    }
+
+    const baseAmount = chosenCurrency === "USD" ? resolvedAmount : resolvedAmount / rate;
+
+    const inferredDepartment: "mall" | "park" | "restaurant" | "admin" =
+      options?.department ||
+      (costCenter.includes("المول")
+        ? "mall"
+        : costCenter.includes("الحديقة") || costCenter.includes("الملاهي")
+          ? "park"
+          : costCenter.includes("المطعم")
+            ? "restaurant"
+            : "admin");
+
+    const supplierObj = options?.supplier_id
+      ? (this.state.suppliers || []).find((s) => s.id === options.supplier_id)
+      : undefined;
+    const resolvedSupplierName = options?.supplier_name || supplierObj?.name_ar || undefined;
+    const resolvedSupplierAccCode =
+      options?.supplier_account_code || supplierObj?.account_code || undefined;
+
+    const seqNum = (this.state.vouchers?.length || 0) + 1;
+    const yearStr = new Date().getFullYear();
+    const referenceNumber =
+      options?.reference_number ||
+      `${type === "receipt" ? "RV" : "PV"}-${yearStr}-${String(seqNum).padStart(4, "0")}`;
+
+    const nowIso = new Date().toISOString();
+    const currentUser = this.state.currentUser || "admin";
 
     const voucher: Voucher = {
-      id: "vch-" + Date.now(),
+      id: "vch-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
+      reference_number: referenceNumber,
       branch_id: this.state.currentBranchId,
       type,
+      department: inferredDepartment,
       category,
-      amount,
+      amount: resolvedAmount,
       currency: chosenCurrency,
       exchange_rate: rate,
       base_amount: baseAmount,
       payment_method: treasury?.type || "cash",
       treasury_id: treasuryId,
       description,
+      beneficiary: options?.beneficiary || resolvedSupplierName,
+      notes: options?.notes,
       status: "approved",
-      created_at: new Date().toISOString(),
+      created_at: nowIso,
       cost_center: costCenter,
       attachment,
       deleted: false,
+      ...(options?.supplier_id ? { supplier_id: options.supplier_id } : {}),
+      ...(resolvedSupplierName ? { supplier_name: resolvedSupplierName } : {}),
+      ...(resolvedSupplierAccCode ? { supplier_account_code: resolvedSupplierAccCode } : {}),
+      ...(normalizedPurchaseItems.length > 0 ? { purchase_items: normalizedPurchaseItems } : {}),
+      audit_history: [
+        {
+          id: "aud-" + Date.now(),
+          action: "created",
+          timestamp: nowIso,
+          user: currentUser,
+          summary: `إنشاء واعتماد ${type === "receipt" ? "سند قبض" : "سند صرف"} رقم ${referenceNumber} بقيمة ${resolvedAmount} ${chosenCurrency} (${category})`,
+        },
+      ],
     };
 
     let generatedJournalEntry: any = null;
 
     if (treasury) {
       const txType = type === "receipt" ? "deposit" : "withdrawal";
+      // Pass skipJournal = true so addTreasuryTransaction does NOT create a second duplicate journal entry
       this.addTreasuryTransaction(
         treasuryId,
         txType,
-        amount,
+        resolvedAmount,
         chosenCurrency,
-        `${type === "receipt" ? "سند قبض" : "سند صرف"} (${category}) - ${description}`,
+        `${type === "receipt" ? "سند قبض" : "سند صرف"} #${referenceNumber} (${category}) - ${description}`,
         voucher.id,
+        treasury.type || "cash",
+        undefined,
+        true,
       );
 
-      const defaultAccountCode =
-        {
-          "رواتب الموظفين": "31010110",
-          "رواتب وأجور الموظفين": "31010110",
-          "إيجار الفروع": "31010140",
-          "إيجار العقارات والفروع": "31010140",
-          "الكهرباء والمياه": "31010145",
-          "الكهرباء والمياه والطاقة": "31010145",
-          "كهرباء ومياه وطاقة": "31010145",
-          "التسويق والإعلانات": "31020310",
-          "الدعاية والتسويق": "31020310",
-          "دعاية، إعلانات وتسويق": "31020310",
-          "الهدر والمفقودات": "31010160",
-          "شراء مستلزمات هدر": "31010160",
-          "صيانة وتشغيل": "31010170",
-          "صيانة وتشغيل ومعدات": "31010170",
-          "مصروفات نثرية وإدارية": "31010160",
-          "ضيافة ونظافة": "31010160",
-          "شراء خامات ومواد": "31010100",
-          "إيراد تشغيل حفلات": "43020300",
-          "إيرادات تشغيل بوفيهات وحفلات خارجية": "43020300",
-          "إيرادات تشغيل بوفيهات خارجية": "43020300",
-          "رأسمال إضافي": "41020100",
-          "حقوق ملكية ورأسمال مضاف": "41020100",
-          "بيع مخلفات المطبخ": "43020200",
-          "مبيعات فرعية وتدوير مخلفات": "43020200",
-          "إيرادات تدوير ومبيعات فرعية": "43020200",
-          "تسوية عهد وأمانات": "41010110",
-          "إيرادات استثمارية وتمويلية": "41010100",
-        }[category] || (type === "payment" ? "31010110" : "41020100");
-
-      const finalAccountCode = accountCodeOverride || defaultAccountCode;
+      const finalAccountCode = this.resolveVoucherDefaultAccountCode(
+        type,
+        category,
+        accountCodeOverride,
+      );
       voucher.account_code = finalAccountCode;
 
       const treasuryAccCode =
@@ -5193,7 +5428,7 @@ export class ERPStore {
         if (type === "payment") {
           generatedJournalEntry = this.postExpenseJournal(
             voucher.id,
-            amount,
+            resolvedAmount,
             finalAccountCode,
             costCenter,
             this.state.currentBranchId,
@@ -5204,7 +5439,7 @@ export class ERPStore {
         } else {
           generatedJournalEntry = this.postRevenueJournal(
             voucher.id,
-            amount,
+            resolvedAmount,
             finalAccountCode,
             costCenter,
             this.state.currentBranchId,
@@ -5215,6 +5450,16 @@ export class ERPStore {
         }
 
         if (generatedJournalEntry) {
+          if (resolvedSupplierName || normalizedPurchaseItems.length > 0) {
+            const itemsSummary =
+              normalizedPurchaseItems.length > 0
+                ? ` [أصناف: ${normalizedPurchaseItems.map((i) => `${i.name_ar} (${i.quantity} ${i.unit})`).join("، ")}]`
+                : "";
+            const supSummary = resolvedSupplierName
+              ? ` - المورد: ${resolvedSupplierName}${resolvedSupplierAccCode ? ` (#${resolvedSupplierAccCode})` : ""}`
+              : "";
+            generatedJournalEntry.description = `${generatedJournalEntry.description}${supSummary}${itemsSummary} - ${description}`;
+          }
           voucher.journal_entry_id = generatedJournalEntry.id;
           voucher.journal_reference = generatedJournalEntry.reference;
         }
@@ -5223,13 +5468,22 @@ export class ERPStore {
       }
     }
 
+    if (normalizedPurchaseItems.length > 0) {
+      this.syncVoucherPurchaseItemsStock(
+        referenceNumber,
+        normalizedPurchaseItems,
+        "in",
+        resolvedSupplierName,
+      );
+    }
+
     this.state.vouchers.unshift(voucher);
     this.saveState();
 
     this.logAction(
       "ADMIN",
       "إنشاء سند مالي",
-      `تم تسجيل وترحيل ${type === "receipt" ? "سند قبض" : "سند صرف"} فئة (${category}) بمبلغ ${amount} ${chosenCurrency} (مركز: ${costCenter}) - قيد رقم #${voucher.journal_reference || voucher.id}`,
+      `تم تسجيل وترحيل ${type === "receipt" ? "سند قبض" : "سند صرف"} رقم ${referenceNumber} فئة (${category}) بمبلغ ${resolvedAmount} ${chosenCurrency} (مركز: ${costCenter}) - قيد رقم #${voucher.journal_reference || voucher.id}`,
       "CREATE",
     );
 
@@ -5237,17 +5491,378 @@ export class ERPStore {
     return { ...voucher, journal_entry: generatedJournalEntry };
   }
 
+  updateVoucher(
+    voucherId: string,
+    updates: {
+      type?: "receipt" | "payment";
+      department?: "mall" | "park" | "restaurant" | "admin";
+      category?: string;
+      amount?: number;
+      currency?: string;
+      exchange_rate?: number;
+      treasury_id?: string;
+      account_code?: string;
+      description?: string;
+      cost_center?: string;
+      beneficiary?: string;
+      notes?: string;
+      attachment?: string;
+      supplier_id?: string;
+      supplier_name?: string;
+      supplier_account_code?: string;
+      purchase_items?: Array<{
+        inventory_id: string;
+        name_ar: string;
+        unit: string;
+        quantity: number;
+        unit_price: number;
+        total?: number;
+      }>;
+    },
+  ) {
+    const voucher = this.state.vouchers.find((v) => v.id === voucherId);
+    if (!voucher) {
+      throw new Error("السند المالي غير موجود.");
+    }
+    if (voucher.deleted) {
+      throw new Error("لا يمكن تعديل سند محذوف.");
+    }
+    if (voucher.reverted) {
+      throw new Error("لا يمكن تعديل سند تم عكسه مسبقاً.");
+    }
+
+    const previousValues: Record<string, any> = {
+      type: voucher.type,
+      department: voucher.department,
+      category: voucher.category,
+      amount: voucher.amount,
+      currency: voucher.currency,
+      exchange_rate: voucher.exchange_rate,
+      treasury_id: voucher.treasury_id,
+      account_code: voucher.account_code,
+      description: voucher.description,
+      cost_center: voucher.cost_center,
+      beneficiary: voucher.beneficiary,
+      notes: voucher.notes,
+      supplier_id: voucher.supplier_id,
+      supplier_name: voucher.supplier_name,
+      supplier_account_code: voucher.supplier_account_code,
+      purchase_items: voucher.purchase_items
+        ? JSON.parse(JSON.stringify(voucher.purchase_items))
+        : undefined,
+    };
+
+    // 1. Reverse previous inventory stock if old voucher had purchase_items
+    if (Array.isArray(voucher.purchase_items) && voucher.purchase_items.length > 0) {
+      this.syncVoucherPurchaseItemsStock(
+        voucher.reference_number || voucher.id,
+        voucher.purchase_items,
+        "out",
+        voucher.supplier_name,
+      );
+    }
+
+    // 2. Reverse old treasury balance effect
+    const oldTreasury = this.state.treasuries.find((t) => t.id === voucher.treasury_id);
+    if (oldTreasury) {
+      if (voucher.type === "receipt") {
+        oldTreasury.balance -= Number(voucher.amount || 0);
+      } else {
+        oldTreasury.balance += Number(voucher.amount || 0);
+      }
+      oldTreasury.available_balance = oldTreasury.balance;
+    }
+
+    // 3. Resolve new values
+    const nextType = updates.type || voucher.type;
+    const nextCategory = updates.category ?? voucher.category;
+    const nextTreasuryId = updates.treasury_id || voucher.treasury_id;
+    const nextTreasury =
+      this.state.treasuries.find((t) => t.id === nextTreasuryId) || oldTreasury;
+    const nextCurrency = (
+      updates.currency ||
+      voucher.currency ||
+      nextTreasury?.currency ||
+      "USD"
+    ).toUpperCase();
+    const nextRate =
+      updates.exchange_rate && Number(updates.exchange_rate) > 0
+        ? Number(updates.exchange_rate)
+        : nextCurrency === voucher.currency && voucher.exchange_rate
+          ? Number(voucher.exchange_rate)
+          : this.getExchangeRate(nextCurrency);
+
+    const nextPurchaseItems =
+      updates.purchase_items !== undefined
+        ? (updates.purchase_items || [])
+            .filter((it) => it && String(it.inventory_id || "").trim() && Number(it.quantity) > 0)
+            .map((it) => {
+              const qty = Number(it.quantity) || 0;
+              const unitPrice = Number(it.unit_price) || 0;
+              return {
+                inventory_id: String(it.inventory_id).trim(),
+                name_ar: String(it.name_ar || "صنف مخزني").trim(),
+                unit: String(it.unit || "وحدة").trim(),
+                quantity: qty,
+                unit_price: unitPrice,
+                total: Number((qty * unitPrice).toFixed(2)),
+              };
+            })
+        : voucher.purchase_items || [];
+
+    const purchaseTotal = nextPurchaseItems.reduce((sum, it) => sum + Number(it.total || 0), 0);
+    const nextAmount =
+      nextPurchaseItems.length > 0 && purchaseTotal > 0
+        ? Number(purchaseTotal.toFixed(2))
+        : updates.amount !== undefined
+          ? Number(updates.amount)
+          : Number(voucher.amount);
+
+    if (nextAmount <= 0) {
+      // Restore old treasury balance before throwing
+      if (oldTreasury) {
+        if (voucher.type === "receipt") oldTreasury.balance += Number(voucher.amount || 0);
+        else oldTreasury.balance -= Number(voucher.amount || 0);
+        oldTreasury.available_balance = oldTreasury.balance;
+      }
+      throw new Error("قيمة السند بعد التعديل يجب أن تكون أكبر من الصفر.");
+    }
+
+    const nextCostCenter = updates.cost_center ?? voucher.cost_center ?? "الإدارة (Administration)";
+    const nextDepartment =
+      updates.department ||
+      voucher.department ||
+      (nextCostCenter.includes("المول")
+        ? "mall"
+        : nextCostCenter.includes("الحديقة")
+          ? "park"
+          : nextCostCenter.includes("المطعم")
+            ? "restaurant"
+            : "admin");
+
+    const nextAccountCode = this.resolveVoucherDefaultAccountCode(
+      nextType,
+      nextCategory,
+      updates.account_code || voucher.account_code,
+    );
+
+    const supplierObj =
+      updates.supplier_id !== undefined
+        ? (this.state.suppliers || []).find((s) => s.id === updates.supplier_id)
+        : voucher.supplier_id
+          ? (this.state.suppliers || []).find((s) => s.id === voucher.supplier_id)
+          : undefined;
+
+    const nextSupplierId =
+      updates.supplier_id !== undefined ? updates.supplier_id : voucher.supplier_id;
+    const nextSupplierName =
+      updates.supplier_name !== undefined
+        ? updates.supplier_name
+        : supplierObj?.name_ar || voucher.supplier_name;
+    const nextSupplierAccCode =
+      updates.supplier_account_code !== undefined
+        ? updates.supplier_account_code
+        : supplierObj?.account_code || voucher.supplier_account_code;
+
+    const nextDescription = updates.description ?? voucher.description;
+    const nowIso = new Date().toISOString();
+    const currentUser = this.state.currentUser || "admin";
+
+    // 4. Apply new treasury balance & update linked TreasuryTransaction
+    if (nextTreasury) {
+      if (nextType === "receipt") {
+        nextTreasury.balance += nextAmount;
+      } else {
+        nextTreasury.balance -= nextAmount;
+      }
+      nextTreasury.available_balance = nextTreasury.balance;
+
+      const linkedTx = (this.state.treasuryTransactions || []).find(
+        (tx) => tx.related_entity_id === voucher.id,
+      );
+      const txNote = `${nextType === "receipt" ? "سند قبض" : "سند صرف"} #${voucher.reference_number || voucher.id.substring(4, 9)} (${nextCategory}) - ${nextDescription}`;
+      if (linkedTx) {
+        linkedTx.treasury_id = nextTreasury.id;
+        linkedTx.type = nextType === "receipt" ? "deposit" : "withdrawal";
+        linkedTx.amount = nextAmount;
+        linkedTx.currency = nextCurrency;
+        linkedTx.payment_method = nextTreasury.type || "cash";
+        linkedTx.note = txNote;
+      } else {
+        this.state.treasuryTransactions.unshift({
+          id: "tx-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
+          branch_id: this.state.currentBranchId,
+          treasury_id: nextTreasury.id,
+          type: nextType === "receipt" ? "deposit" : "withdrawal",
+          amount: nextAmount,
+          currency: nextCurrency,
+          payment_method: nextTreasury.type || "cash",
+          note: txNote,
+          related_entity_id: voucher.id,
+          created_at: nowIso,
+        });
+      }
+    }
+
+    // 5. Update voucher fields
+    voucher.type = nextType;
+    voucher.department = nextDepartment;
+    voucher.category = nextCategory;
+    voucher.amount = nextAmount;
+    voucher.currency = nextCurrency;
+    voucher.exchange_rate = nextRate;
+    voucher.base_amount = nextCurrency === "USD" ? nextAmount : nextAmount / nextRate;
+    voucher.treasury_id = nextTreasuryId;
+    voucher.payment_method = nextTreasury?.type || voucher.payment_method || "cash";
+    voucher.account_code = nextAccountCode;
+    voucher.description = nextDescription;
+    voucher.cost_center = nextCostCenter;
+    voucher.beneficiary =
+      updates.beneficiary !== undefined ? updates.beneficiary : voucher.beneficiary;
+    voucher.notes = updates.notes !== undefined ? updates.notes : voucher.notes;
+    if (updates.attachment !== undefined) voucher.attachment = updates.attachment;
+    voucher.supplier_id = nextSupplierId || undefined;
+    voucher.supplier_name = nextSupplierName || undefined;
+    voucher.supplier_account_code = nextSupplierAccCode || undefined;
+    voucher.purchase_items = nextPurchaseItems.length > 0 ? nextPurchaseItems : undefined;
+    voucher.updated_at = nowIso;
+    voucher.updated_by = currentUser;
+
+    // 6. Apply new inventory stock if updated voucher has purchase_items
+    if (nextPurchaseItems.length > 0) {
+      this.syncVoucherPurchaseItemsStock(
+        voucher.reference_number || voucher.id,
+        nextPurchaseItems,
+        "in",
+        nextSupplierName,
+      );
+    }
+
+    // 7. Update linked JournalEntry in-place and recalculate balances
+    const treasuryAccCode =
+      nextTreasury?.account_code ||
+      (nextTreasury?.type === "bank"
+        ? "13040100"
+        : nextCurrency === "USD"
+          ? "13010100"
+          : "13010130");
+
+    const updatedLines =
+      nextType === "payment"
+        ? [
+            {
+              account_code: nextAccountCode,
+              debit: nextAmount,
+              credit: 0,
+              cost_center: nextCostCenter,
+              currency: nextCurrency,
+              rate: nextRate,
+            },
+            {
+              account_code: treasuryAccCode,
+              debit: 0,
+              credit: nextAmount,
+              currency: nextCurrency,
+              rate: nextRate,
+            },
+          ]
+        : [
+            {
+              account_code: treasuryAccCode,
+              debit: nextAmount,
+              credit: 0,
+              currency: nextCurrency,
+              rate: nextRate,
+            },
+            {
+              account_code: nextAccountCode,
+              debit: 0,
+              credit: nextAmount,
+              cost_center: nextCostCenter,
+              currency: nextCurrency,
+              rate: nextRate,
+            },
+          ];
+
+    this.ensureJournalAccounts(updatedLines, nextCurrency);
+
+    const existingJournal = this.state.journalEntries.find(
+      (je) =>
+        je.id === voucher.journal_entry_id ||
+        (voucher.journal_reference && je.reference === voucher.journal_reference),
+    );
+
+    const itemsSummary =
+      nextPurchaseItems.length > 0
+        ? ` [أصناف: ${nextPurchaseItems.map((i) => `${i.name_ar} (${i.quantity} ${i.unit})`).join("، ")}]`
+        : "";
+    const supSummary = nextSupplierName
+      ? ` - المورد: ${nextSupplierName}${nextSupplierAccCode ? ` (#${nextSupplierAccCode})` : ""}`
+      : "";
+    const journalDesc = `${nextType === "payment" ? "سند صرف مصروفات" : "سند قبض إيرادات"} - رقم #${voucher.reference_number || voucher.id.substring(4, 9)}${supSummary}${itemsSummary} - ${nextDescription}`;
+
+    if (existingJournal) {
+      existingJournal.description = journalDesc;
+      existingJournal.currency = nextCurrency;
+      existingJournal.lines = updatedLines;
+      this.recalculateAccountBalances();
+    } else {
+      try {
+        const createdJe = this.addJournalEntry(
+          journalDesc,
+          updatedLines,
+          `${nextType === "payment" ? "EXP" : "REV"}-${voucher.id.substring(4, 9).toUpperCase()}`,
+          nextCurrency,
+        );
+        if (createdJe) {
+          voucher.journal_entry_id = createdJe.id;
+          voucher.journal_reference = createdJe.reference;
+        }
+      } catch (err) {
+        console.warn("Update voucher journal entry notice:", err);
+      }
+    }
+
+    // 8. Append audit history entry
+    if (!Array.isArray(voucher.audit_history)) {
+      voucher.audit_history = [];
+    }
+    voucher.audit_history.push({
+      id: "aud-" + Date.now(),
+      action: "updated",
+      timestamp: nowIso,
+      user: currentUser,
+      summary: `تعديل السند #${voucher.reference_number || voucher.id.substring(4, 9)}: القيمة (${previousValues.amount} ${previousValues.currency} ← ${nextAmount} ${nextCurrency})، البند (${previousValues.category} ← ${nextCategory})`,
+      previous_values: previousValues,
+    });
+
+    this.saveState();
+    this.logAction(
+      "ADMIN",
+      "تعديل سند مالي",
+      `تم تعديل السند #${voucher.reference_number || voucher.id} وتحديث القيد المحاسبي المرتبط #${voucher.journal_reference || voucher.journal_entry_id || ""}`,
+      "UPDATE",
+      JSON.stringify({ amount: previousValues.amount, category: previousValues.category }),
+      JSON.stringify({ amount: voucher.amount, category: voucher.category }),
+    );
+    this.notify();
+    return voucher;
+  }
+
   revertVoucher(voucherId: string, reason: string) {
     const voucher = this.state.vouchers.find((v) => v.id === voucherId);
     if (!voucher || voucher.deleted || voucher.reverted) {
       throw new Error("السند غير موجود أو تم إرجاعه مسبقاً.");
     }
+    const nowIso = new Date().toISOString();
+    const currentUser = this.state.currentUser || "admin";
+
     voucher.reverted = true;
-    voucher.reverted_at = new Date().toISOString();
+    voucher.reverted_at = nowIso;
     voucher.reverted_reason = reason;
     voucher.status = "rejected";
 
-    // Reverse treasury movement
+    // Reverse treasury movement with skipJournal = true (so we don't post a duplicate reversal journal)
     if (voucher.treasury_id) {
       const reverseTxType = voucher.type === "receipt" ? "withdrawal" : "deposit";
       this.addTreasuryTransaction(
@@ -5255,8 +5870,21 @@ export class ERPStore {
         reverseTxType,
         voucher.amount,
         voucher.currency,
-        `عكس سند مالي #${voucher.id.substring(4, 9)}: ${reason}`,
+        `عكس سند مالي #${voucher.reference_number || voucher.id.substring(4, 9)}: ${reason}`,
         voucher.id,
+        voucher.payment_method || "cash",
+        undefined,
+        true,
+      );
+    }
+
+    // Reverse inventory stock if voucher had purchase_items
+    if (Array.isArray(voucher.purchase_items) && voucher.purchase_items.length > 0) {
+      this.syncVoucherPurchaseItemsStock(
+        voucher.reference_number || voucher.id,
+        voucher.purchase_items,
+        "out",
+        voucher.supplier_name,
       );
     }
 
@@ -5281,7 +5909,7 @@ export class ERPStore {
       }));
       try {
         reversalEntry = this.addJournalEntry(
-          `قيد عكسي تسوية لإلغاء سند #${voucher.id.substring(4, 9)} - ${reason}`,
+          `قيد عكسي تسوية لإلغاء سند #${voucher.reference_number || voucher.id.substring(4, 9)} - ${reason}`,
           reversalLines,
           `REV-${voucher.journal_reference || voucher.id.substring(4, 9).toUpperCase()}`,
           voucher.currency,
@@ -5291,10 +5919,21 @@ export class ERPStore {
       }
     }
 
+    if (!Array.isArray(voucher.audit_history)) {
+      voucher.audit_history = [];
+    }
+    voucher.audit_history.push({
+      id: "aud-" + Date.now(),
+      action: "reverted",
+      timestamp: nowIso,
+      user: currentUser,
+      summary: `عكس وإلغاء الأثر المالي للسند #${voucher.reference_number || voucher.id.substring(4, 9)} - السبب: ${reason}`,
+    });
+
     this.logAction(
       "ADMIN",
       "عكس وإرجاع سند مالي",
-      `تم إرجاع السند #${voucher.id} (المبلغ: ${voucher.amount} ${voucher.currency}) وعكس القيد المحاسبي وحركة الخزينة. السبب: ${reason}`,
+      `تم إرجاع السند #${voucher.reference_number || voucher.id} (المبلغ: ${voucher.amount} ${voucher.currency}) وعكس القيد المحاسبي وحركة الخزينة. السبب: ${reason}`,
       "REVERT",
     );
     this.saveState();
@@ -5304,22 +5943,53 @@ export class ERPStore {
 
   deleteVoucher(id: string, reason?: string) {
     const vch = this.state.vouchers.find((v) => v.id === id);
-    if (vch) {
-      vch.deleted = true;
-      vch.deleted_at = new Date().toISOString();
-      vch.deleted_by = this.state.currentUser || "admin";
-      vch.deleted_reason = reason || "حذف يدوي بواسطة المسؤول المالي";
-      this.saveState();
-      this.logAction(
-        "ADMIN",
-        "حذف سند مالي",
-        `تم حذف السند المالي #${vch.id} (المبلغ: ${vch.amount} ${vch.currency} - النوع: ${vch.type === "receipt" ? "قبض" : "صرف"}). السبب: ${vch.deleted_reason}`,
-        "DELETE",
-      );
-      this.notify();
-      return true;
+    if (!vch || vch.deleted) return false;
+
+    const delReason = reason || "حذف السند مع عكس الأثر المالي والمحاسبي";
+    const nowIso = new Date().toISOString();
+    const currentUser = this.state.currentUser || "admin";
+
+    // Automatically reverse financial & inventory impact if not already reverted
+    if (!vch.reverted) {
+      try {
+        this.revertVoucher(vch.id, delReason);
+      } catch (err) {
+        console.warn("Reversal during deleteVoucher notice:", err);
+      }
     }
-    return false;
+
+    vch.deleted = true;
+    vch.deleted_at = nowIso;
+    vch.deleted_by = currentUser;
+    vch.deleted_reason = delReason;
+
+    if (!Array.isArray(vch.audit_history)) {
+      vch.audit_history = [];
+    }
+    vch.audit_history.push({
+      id: "aud-" + Date.now() + "-del",
+      action: "deleted",
+      timestamp: nowIso,
+      user: currentUser,
+      summary: `حذف السند المالي #${vch.reference_number || vch.id.substring(4, 9)} مع حفظ السجل التاريخي وعكس القيود - السبب: ${delReason}`,
+      previous_values: {
+        amount: vch.amount,
+        currency: vch.currency,
+        category: vch.category,
+        account_code: vch.account_code,
+        treasury_id: vch.treasury_id,
+      },
+    });
+
+    this.saveState();
+    this.logAction(
+      "ADMIN",
+      "حذف سند مالي",
+      `تم حذف السند المالي #${vch.reference_number || vch.id} (المبلغ: ${vch.amount} ${vch.currency} - النوع: ${vch.type === "receipt" ? "قبض" : "صرف"}) مع عكس القيد المحاسبي المرتبط. السبب: ${vch.deleted_reason}`,
+      "DELETE",
+    );
+    this.notify();
+    return true;
   }
   addExpiryBatch(inventoryId, batchNo, qty, expiryDate, warehouseId, storageCondition) {
     this.state.inventoryExpiry.push({

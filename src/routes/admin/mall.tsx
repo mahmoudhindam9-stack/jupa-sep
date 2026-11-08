@@ -156,8 +156,8 @@ function MallManagementPage() {
   );
 
   useEffect(() => {
-    if (tabParam === "payments" || tabParam === "expenses") {
-      navigate({ to: "/admin/ledger", search: { tab: "mall_finance" } as any });
+    if (tabParam === "payments" || tabParam === "expenses" || tabParam === "vouchers") {
+      navigate({ to: "/admin/ledger", search: { tab: "vouchers" } as any });
       return;
     }
     if (tabParam === "vouchers") {
@@ -511,7 +511,7 @@ function MallManagementPage() {
     if (!contractForm.shop_id || !contractForm.tenant_name) {
       return;
     }
-    erpStore.updateMallShop(contractForm.shop_id, {
+    erpStore.createMallContract(contractForm.shop_id, {
       tenant_name: contractForm.tenant_name,
       phone: contractForm.phone,
       monthly_rent: contractForm.monthly_rent,
@@ -548,6 +548,7 @@ function MallManagementPage() {
         custom_activity: contractForm.custom_activity,
       },
     });
+    toast.success("تم حفظ العقد كسجل تعاقدي مستقل (تُسجل العمليات المالية من الإدارة المالية)");
     setIsContractModalOpen(false);
   };
 
@@ -1532,87 +1533,84 @@ function MallManagementPage() {
 
   return (
     <div className="space-y-6 w-full max-w-7xl mx-auto pb-12" dir="rtl">
-      {/* Unified Header + 3 Main Subsections Bar */}
-      <div className="rounded-2xl border border-border bg-card p-4 sm:p-5 shadow-xs space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-500/12 text-blue-600 dark:text-blue-400 border border-blue-500/25">
-              <Building2 size={22} />
+      {/* Compact Single-Row Header */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3 shadow-xs">
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500/12 text-blue-600 dark:text-blue-400 border border-blue-500/25">
+              <Building2 size={18} />
             </div>
-            <h1 className="text-xl sm:text-2xl font-black text-foreground">إدارة المول</h1>
+            <h1 className="text-lg sm:text-xl font-black text-foreground">إدارة المول</h1>
           </div>
 
-          <div className="flex items-center gap-2.5 flex-wrap">
-            <ViewModeToggle mode={viewMode} onChange={setViewMode} />
-            <Button
-              onClick={() => setIsContractModalOpen(true)}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-1.5 shadow-xs rounded-xl text-xs h-9 cursor-pointer"
+          <div className="inline-flex items-center gap-1 rounded-xl bg-muted/60 p-1 border border-border/70">
+            <button
+              type="button"
+              data-testid="mall-tab-definitions"
+              onClick={() => setActiveTab("definitions")}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-black text-xs transition cursor-pointer ${
+                activeTab === "definitions"
+                  ? "bg-primary text-primary-foreground shadow-2xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
             >
-              <Plus size={15} />
-              عمل عقد جديد
-            </Button>
-            <Button
-              onClick={() => setIsTerminationModalOpen(true)}
-              variant="outline"
-              className="border-rose-200 text-rose-700 hover:bg-rose-50 font-bold gap-1.5 rounded-xl text-xs h-9 cursor-pointer"
+              <Store size={14} />
+              <span>التعريفات</span>
+            </button>
+            <button
+              type="button"
+              data-testid="mall-tab-operations"
+              onClick={() => setActiveTab("operations")}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-black text-xs transition cursor-pointer ${
+                activeTab === "operations"
+                  ? "bg-primary text-primary-foreground shadow-2xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
             >
-              <XCircle size={15} />
-              فسخ تعاقد
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() =>
-                navigate({ to: "/admin/ledger", search: { tab: "mall_finance" } as any })
-              }
-              className="font-bold text-xs h-9 px-3.5 rounded-xl gap-1.5 border-indigo-500/30 text-indigo-600 dark:text-indigo-400 cursor-pointer"
+              <FileText size={14} />
+              <span>العمليات</span>
+            </button>
+            <button
+              type="button"
+              data-testid="mall-tab-reports"
+              onClick={() => setActiveTab("reports")}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-black text-xs transition cursor-pointer ${
+                activeTab === "reports"
+                  ? "bg-primary text-primary-foreground shadow-2xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
             >
-              <Landmark size={15} />
-              <span>الإدارة المالية</span>
-            </Button>
+              <TrendingUp size={14} />
+              <span>التقارير</span>
+            </button>
           </div>
         </div>
 
-        {/* Unified 3-Section Tabs: التعريفات | العمليات | التقارير */}
-        <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border/60">
-          <button
-            type="button"
-            data-testid="mall-tab-definitions"
-            onClick={() => setActiveTab("definitions")}
-            className={`flex items-center justify-center gap-2 h-10 rounded-xl font-black text-xs sm:text-sm transition cursor-pointer ${
-              activeTab === "definitions"
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "bg-muted/50 text-muted-foreground hover:text-foreground hover:bg-muted"
-            }`}
+        <div className="flex items-center gap-2 flex-wrap">
+          <ViewModeToggle mode={viewMode} onChange={setViewMode} />
+          <Button
+            onClick={() => setIsContractModalOpen(true)}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-1.5 shadow-xs rounded-xl text-xs h-8 px-3.5 cursor-pointer"
           >
-            <Store size={16} />
-            <span>التعريفات</span>
-          </button>
-          <button
-            type="button"
-            data-testid="mall-tab-operations"
-            onClick={() => setActiveTab("operations")}
-            className={`flex items-center justify-center gap-2 h-10 rounded-xl font-black text-xs sm:text-sm transition cursor-pointer ${
-              activeTab === "operations"
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "bg-muted/50 text-muted-foreground hover:text-foreground hover:bg-muted"
-            }`}
+            <Plus size={14} />
+            عمل عقد جديد
+          </Button>
+          <Button
+            onClick={() => setIsTerminationModalOpen(true)}
+            variant="outline"
+            className="border-rose-200 text-rose-700 hover:bg-rose-50 font-bold gap-1.5 rounded-xl text-xs h-8 px-3 cursor-pointer"
           >
-            <FileText size={16} />
-            <span>العمليات</span>
-          </button>
-          <button
-            type="button"
-            data-testid="mall-tab-reports"
-            onClick={() => setActiveTab("reports")}
-            className={`flex items-center justify-center gap-2 h-10 rounded-xl font-black text-xs sm:text-sm transition cursor-pointer ${
-              activeTab === "reports"
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "bg-muted/50 text-muted-foreground hover:text-foreground hover:bg-muted"
-            }`}
+            <XCircle size={14} />
+            فسخ تعاقد
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => navigate({ to: "/admin/ledger", search: { tab: "vouchers" } as any })}
+            className="font-bold text-xs h-8 px-3 rounded-xl gap-1.5 border-indigo-500/30 text-indigo-600 dark:text-indigo-400 cursor-pointer"
           >
-            <TrendingUp size={16} />
-            <span>التقارير</span>
-          </button>
+            <Landmark size={14} />
+            <span>الإدارة المالية</span>
+          </Button>
         </div>
       </div>
 
@@ -2361,527 +2359,7 @@ function MallManagementPage() {
         </DialogContent>
       </Dialog>
 
-      {/* PAYMENT MODAL */}
-      <Dialog open={isPaymentModalOpen} onOpenChange={setIsPaymentModalOpen}>
-        <DialogContent className="max-w-md text-right">
-          <DialogHeader className="text-right">
-            <DialogTitle className="text-lg font-black text-foreground">
-              تسجيل تحصيل إيجار شهر {MONTHS_AR[paymentForm.month - 1]} {paymentForm.year}
-            </DialogTitle>
-            <DialogDescription className="text-xs">
-              تسجيل دفعة الإيجار الشهرية المستحقة للمحل بالدولار الأمريكي.
-            </DialogDescription>
-          </DialogHeader>
 
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-foreground">القيمة المستحقة للشهر ($)</label>
-              <Input
-                type="number"
-                disabled
-                value={paymentForm.amount_due}
-                className="rounded-xl font-bold bg-muted"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-foreground flex items-center justify-between">
-                <span>المبلغ المدفوع فعلياً ($) *</span>
-                <span className="text-[10px] text-muted-foreground font-normal">
-                  (أدخل قيمة سالبة مثل -500 لرد دفعة أو مقدم)
-                </span>
-              </label>
-              <Input
-                type="number"
-                value={paymentForm.amount_paid}
-                onChange={(e) => {
-                  const paid = Number(e.target.value);
-                  const st =
-                    paid >= paymentForm.amount_due
-                      ? "paid"
-                      : paid > 0
-                        ? "partial"
-                        : paid < 0
-                          ? "partial"
-                          : "unpaid";
-                  setPaymentForm({ ...paymentForm, amount_paid: paid, status: st });
-                }}
-                className={`rounded-xl font-black text-base ${paymentForm.amount_paid < 0 ? "text-rose-600 bg-rose-50" : "text-emerald-600"}`}
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-foreground">خزينة / حساب التحصيل</label>
-              <Select
-                value={paymentForm.treasury_account_id}
-                onValueChange={(v) => setPaymentForm({ ...paymentForm, treasury_account_id: v })}
-              >
-                <SelectTrigger className="rounded-xl font-bold bg-background">
-                  <SelectValue placeholder="اختر الخزينة/الحساب..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {treasuries.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>
-                      {t.account_code ? `[رقم الحساب: ${t.account_code}] ` : ""}
-                      {t.name_ar}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-foreground">حالة السداد</label>
-              <Select
-                value={paymentForm.status}
-                onValueChange={(v: any) => setPaymentForm({ ...paymentForm, status: v })}
-              >
-                <SelectTrigger className="rounded-xl font-bold">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="paid">مسدد بالكامل</SelectItem>
-                  <SelectItem value="partial">سداد جزئي / مرتجع</SelectItem>
-                  <SelectItem value="unpaid">لم يتم السداد</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-foreground">تاريخ السداد</label>
-                <Input
-                  type="date"
-                  value={paymentForm.payment_date}
-                  onChange={(e) => setPaymentForm({ ...paymentForm, payment_date: e.target.value })}
-                  className="rounded-xl"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-foreground">طريقة السداد</label>
-                <Select
-                  value={paymentForm.payment_method}
-                  onValueChange={(v) => setPaymentForm({ ...paymentForm, payment_method: v })}
-                >
-                  <SelectTrigger className="rounded-xl font-bold">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="cash">نقدي بالخزينة</SelectItem>
-                    <SelectItem value="bank_transfer">تحويل بنكي</SelectItem>
-                    <SelectItem value="check">شيك بنكي</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-foreground">رقم سند الإيصال</label>
-              <Input
-                value={paymentForm.receipt_number}
-                onChange={(e) => setPaymentForm({ ...paymentForm, receipt_number: e.target.value })}
-                className="rounded-xl font-mono"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-foreground">ملاحظات السداد</label>
-              <Input
-                value={paymentForm.notes}
-                onChange={(e) => setPaymentForm({ ...paymentForm, notes: e.target.value })}
-                placeholder="أية ملاحظات إضافية..."
-                className="rounded-xl"
-              />
-            </div>
-          </div>
-
-          <DialogFooter className="gap-2 sm:gap-0 flex-wrap">
-            <Button
-              variant="outline"
-              className="rounded-xl font-bold"
-              onClick={() => setIsPaymentModalOpen(false)}
-            >
-              إلغاء
-            </Button>
-            <Button
-              variant="outline"
-              className="rounded-xl font-bold text-blue-600 border-blue-200 hover:bg-blue-50 gap-1.5 cursor-pointer"
-              onClick={handleSaveAndPrintPayment}
-            >
-              <Printer size={15} />
-              حفظ وطباعة السند
-            </Button>
-            <Button
-              className="rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white gap-2 cursor-pointer"
-              onClick={handleSavePayment}
-            >
-              حفظ وتأكيد السداد
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* PAYMENT RECEIPT PRINTING MODAL */}
-      <Dialog
-        open={!!printingPaymentReceipt}
-        onOpenChange={(open) => !open && setPrintingPaymentReceipt(null)}
-      >
-        <DialogContent className="max-w-lg text-right">
-          <DialogHeader className="text-right">
-            <DialogTitle className="flex items-center gap-2 text-emerald-600 text-lg font-black">
-              <Printer size={20} />
-              {(printingPaymentReceipt?.payment?.amount_paid ?? 0) < 0
-                ? "سند صرف (رد دفعة / مقدم)"
-                : "سند قبض إيجار وحدة"}
-            </DialogTitle>
-            <DialogDescription className="text-xs">
-              معاينة وطباعة سند رسمي موثق بقيمة الحركة المالية.
-            </DialogDescription>
-          </DialogHeader>
-
-          {printingPaymentReceipt && (
-            <div className="printable-area border-2 border-border bg-card p-6 rounded-2xl space-y-4 text-xs text-foreground shadow-sm my-2">
-              <div className="text-center border-b border-border pb-3 space-y-1">
-                <h4 className="text-base font-black tracking-wide text-primary">
-                  {printingPaymentReceipt.payment.amount_paid < 0
-                    ? "سند صرف نقدي / بنكي"
-                    : "سند قبض إيجار ومستحقات"}
-                </h4>
-                <p className="text-[11px] text-muted-foreground">
-                  مركز التسوق التجاري والحديقة الترفيهية - قسم الإدارة المالية
-                </p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 text-foreground font-bold">
-                <div>
-                  رقم السند:{" "}
-                  <span className="font-mono text-primary font-black">
-                    {printingPaymentReceipt.payment.receipt_number}
-                  </span>
-                </div>
-                <div>
-                  التاريخ:{" "}
-                  <span className="font-mono font-bold">
-                    {printingPaymentReceipt.payment.payment_date}
-                  </span>
-                </div>
-                <div>
-                  اسم المستأجر:{" "}
-                  <span className="font-black text-foreground">
-                    {printingPaymentReceipt.shop.tenant_name || "غير محدد"}
-                  </span>
-                </div>
-                <div>
-                  المحل / الوحدة:{" "}
-                  <span className="font-black text-foreground">
-                    #{printingPaymentReceipt.shop.shop_number} (
-                    {printingPaymentReceipt.shop.name_ar})
-                  </span>
-                </div>
-                <div>
-                  عن شهر:{" "}
-                  <span className="font-bold">
-                    {MONTHS_AR[printingPaymentReceipt.payment.month - 1]}{" "}
-                    {printingPaymentReceipt.payment.year}
-                  </span>
-                </div>
-                <div>
-                  طريقة الدفع:{" "}
-                  <span className="font-bold">
-                    {printingPaymentReceipt.payment.payment_method === "cash"
-                      ? "نقدي بالخزينة"
-                      : printingPaymentReceipt.payment.payment_method === "bank_transfer"
-                        ? "تحويل بنكي"
-                        : "شيك بنكي"}
-                  </span>
-                </div>
-              </div>
-
-              <div className="bg-muted/40 p-4 rounded-xl text-center space-y-1 border border-border">
-                <p className="text-muted-foreground text-xs font-bold">
-                  {printingPaymentReceipt.payment.amount_paid < 0
-                    ? "مبلغ وقدره (مرترد):"
-                    : "مبلغ وقدره المحصل:"}
-                </p>
-                <p
-                  className={`text-2xl font-black ${printingPaymentReceipt.payment.amount_paid < 0 ? "text-rose-600" : "text-emerald-600"}`}
-                >
-                  ${Math.abs(printingPaymentReceipt.payment.amount_paid).toLocaleString()} USD
-                </p>
-              </div>
-
-              {printingPaymentReceipt.payment.notes && (
-                <div className="space-y-1">
-                  <p className="font-bold text-muted-foreground">ملاحظات:</p>
-                  <p className="bg-muted/20 p-2.5 rounded-xl font-medium">
-                    {printingPaymentReceipt.payment.notes}
-                  </p>
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-8 pt-8 text-center text-xs font-bold">
-                <div className="space-y-6">
-                  <p>توقيع المحصل / الموظف المسؤول</p>
-                  <p className="border-b border-dotted border-muted-foreground pb-1 w-32 mx-auto"></p>
-                </div>
-                <div className="space-y-6">
-                  <p>توقيع المستلم / المستأجر</p>
-                  <p className="border-b border-dotted border-muted-foreground pb-1 w-32 mx-auto"></p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-border">
-            <Button
-              variant="outline"
-              className="rounded-xl font-bold cursor-pointer"
-              onClick={() => setPrintingPaymentReceipt(null)}
-            >
-              إلغاء
-            </Button>
-            <Button
-              onClick={printPaymentReceipt}
-              className="rounded-xl font-bold bg-blue-600 hover:bg-blue-700 text-white gap-2 cursor-pointer"
-            >
-              <Printer size={16} />
-              طباعة السند الرسمي
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* GARDEN REVENUE MODAL */}
-      <Dialog open={isRevenueModalOpen} onOpenChange={setIsRevenueModalOpen}>
-        <DialogContent className="max-w-md text-right">
-          <DialogHeader className="text-right">
-            <DialogTitle className="text-lg font-black text-foreground">
-              إضافة إيراد حديقة جديد
-            </DialogTitle>
-            <DialogDescription className="text-xs">
-              تسجيل إيرادات تذاكر الحديقة، الفعاليات، أو المواقف بالدولار الأمريكي.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-foreground">تصنيف الإيراد</label>
-              <Select
-                value={revenueForm.category}
-                onValueChange={(v: any) => setRevenueForm({ ...revenueForm, category: v })}
-              >
-                <SelectTrigger className="rounded-xl font-bold">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="garden_ticket">تذاكر دخول الحديقة</SelectItem>
-                  <SelectItem value="garden_event">فعاليات وحفلات عائلية</SelectItem>
-                  <SelectItem value="parking">مواقف سيارات</SelectItem>
-                  <SelectItem value="other">إيرادات أخرى</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-foreground">وصف البيان *</label>
-              <Input
-                value={revenueForm.description}
-                onChange={(e) => setRevenueForm({ ...revenueForm, description: e.target.value })}
-                placeholder="مثال: حصيلة تذاكر يوم الجمعة"
-                className="rounded-xl font-bold"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-foreground">المبلغ ($) *</label>
-                <Input
-                  type="number"
-                  value={revenueForm.amount}
-                  onChange={(e) =>
-                    setRevenueForm({ ...revenueForm, amount: Number(e.target.value) })
-                  }
-                  className="rounded-xl font-bold text-teal-600"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-foreground">التاريخ</label>
-                <Input
-                  type="date"
-                  value={revenueForm.date}
-                  onChange={(e) => setRevenueForm({ ...revenueForm, date: e.target.value })}
-                  className="rounded-xl"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-foreground">رقم سند الإيصال</label>
-              <Input
-                value={revenueForm.receipt_number}
-                onChange={(e) => setRevenueForm({ ...revenueForm, receipt_number: e.target.value })}
-                className="rounded-xl font-mono"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-foreground">
-                الخزينة / الحساب البنكي (اختياري)
-              </label>
-              <Select
-                value={revenueForm.treasury_id}
-                onValueChange={(v) => setRevenueForm({ ...revenueForm, treasury_id: v })}
-              >
-                <SelectTrigger className="rounded-xl font-bold bg-background">
-                  <SelectValue placeholder="اختر الخزينة للإيداع التلقائي..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {treasuries.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>
-                      {t.account_code ? `[رقم الحساب: ${t.account_code}] ` : ""}
-                      {t.name_ar}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button
-              variant="outline"
-              className="rounded-xl font-bold"
-              onClick={() => setIsRevenueModalOpen(false)}
-            >
-              إلغاء
-            </Button>
-            <Button
-              className="rounded-xl font-bold bg-teal-600 hover:bg-teal-700 text-white cursor-pointer"
-              onClick={handleSaveRevenue}
-            >
-              حفظ الإيراد
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* EXPENSE MODAL */}
-      <Dialog open={isExpenseModalOpen} onOpenChange={setIsExpenseModalOpen}>
-        <DialogContent className="max-w-md text-right">
-          <DialogHeader className="text-right">
-            <DialogTitle className="text-lg font-black text-foreground">
-              إضافة مصروف مول أو حديقة جديد
-            </DialogTitle>
-            <DialogDescription className="text-xs">
-              تسجيل مصروفات التشغيل والصيانة بالدولار الأمريكي.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-foreground">تصنيف المصروف</label>
-              <Select
-                value={expenseForm.category}
-                onValueChange={(v: any) => setExpenseForm({ ...expenseForm, category: v })}
-              >
-                <SelectTrigger className="rounded-xl font-bold">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="maintenance">صيانة وإصلاحات</SelectItem>
-                  <SelectItem value="electricity">فاتورة كهرباء</SelectItem>
-                  <SelectItem value="water">فاتورة مياه</SelectItem>
-                  <SelectItem value="security">أمن وحراسة</SelectItem>
-                  <SelectItem value="cleaning">نظافة ومواد</SelectItem>
-                  <SelectItem value="salary">رواتب وأجور</SelectItem>
-                  <SelectItem value="other">مصروفات أخرى</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-foreground">عنوان المصروف / البيان *</label>
-              <Input
-                value={expenseForm.title}
-                onChange={(e) => setExpenseForm({ ...expenseForm, title: e.target.value })}
-                placeholder="مثال: صيانة إنارة الحديقة الرئيسية"
-                className="rounded-xl font-bold"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-foreground">المبلغ ($) *</label>
-                <Input
-                  type="number"
-                  value={expenseForm.amount}
-                  onChange={(e) =>
-                    setExpenseForm({ ...expenseForm, amount: Number(e.target.value) })
-                  }
-                  className="rounded-xl font-bold text-rose-600"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-foreground">التاريخ</label>
-                <Input
-                  type="date"
-                  value={expenseForm.date}
-                  onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })}
-                  className="rounded-xl"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-foreground">مستفيد / مدفوع إلى</label>
-              <Input
-                value={expenseForm.paid_to}
-                onChange={(e) => setExpenseForm({ ...expenseForm, paid_to: e.target.value })}
-                placeholder="اسم الجهة أو الشخص المستلم"
-                className="rounded-xl"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-foreground">
-                الخزينة / الحساب البنكي (اختياري)
-              </label>
-              <Select
-                value={expenseForm.treasury_id}
-                onValueChange={(v) => setExpenseForm({ ...expenseForm, treasury_id: v })}
-              >
-                <SelectTrigger className="rounded-xl font-bold bg-background">
-                  <SelectValue placeholder="اختر الخزينة للدفع التلقائي..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {treasuries.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>
-                      {t.account_code ? `[رقم الحساب: ${t.account_code}] ` : ""}
-                      {t.name_ar}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button
-              variant="outline"
-              className="rounded-xl font-bold"
-              onClick={() => setIsExpenseModalOpen(false)}
-            >
-              إلغاء
-            </Button>
-            <Button
-              className="rounded-xl font-bold bg-rose-600 hover:bg-rose-700 text-white cursor-pointer"
-              onClick={handleSaveExpense}
-            >
-              حفظ المصروف
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* DELETE SHOP CONFIRMATION DIALOG */}
       <Dialog open={!!shopToDelete} onOpenChange={(open) => !open && setShopToDelete(null)}>
@@ -2923,83 +2401,7 @@ function MallManagementPage() {
         </DialogContent>
       </Dialog>
 
-      {/* DELETE REVENUE CONFIRMATION DIALOG */}
-      <Dialog open={!!revenueToDelete} onOpenChange={(open) => !open && setRevenueToDelete(null)}>
-        <DialogContent className="max-w-md text-right">
-          <DialogHeader className="text-right">
-            <DialogTitle className="flex items-center gap-2 text-destructive text-lg font-black">
-              <AlertCircle size={22} />
-              تأكيد حذف إيراد الحديقة
-            </DialogTitle>
-            <DialogDescription className="text-xs pt-2 leading-relaxed">
-              هل أنت متأكد من رغبتك في حذف الإيراد{" "}
-              <span className="font-black text-foreground">"{revenueToDelete?.description}"</span>{" "}
-              بمبلغ ${revenueToDelete?.amount}?
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0 mt-4">
-            <Button
-              variant="outline"
-              className="rounded-xl font-bold"
-              onClick={() => setRevenueToDelete(null)}
-            >
-              إلغاء
-            </Button>
-            <Button
-              variant="destructive"
-              className="rounded-xl font-bold gap-2 cursor-pointer"
-              onClick={() => {
-                if (revenueToDelete) {
-                  erpStore.deleteMallGardenRevenue(revenueToDelete.id);
-                  setRevenueToDelete(null);
-                }
-              }}
-            >
-              <Trash2 size={16} />
-              حذف الإيراد
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
-      {/* DELETE EXPENSE CONFIRMATION DIALOG */}
-      <Dialog open={!!expenseToDelete} onOpenChange={(open) => !open && setExpenseToDelete(null)}>
-        <DialogContent className="max-w-md text-right">
-          <DialogHeader className="text-right">
-            <DialogTitle className="flex items-center gap-2 text-destructive text-lg font-black">
-              <AlertCircle size={22} />
-              تأكيد حذف المصروف
-            </DialogTitle>
-            <DialogDescription className="text-xs pt-2 leading-relaxed">
-              هل أنت متأكد من رغبتك في حذف المصروف{" "}
-              <span className="font-black text-foreground">"{expenseToDelete?.title}"</span> بمبلغ $
-              {expenseToDelete?.amount}?
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0 mt-4">
-            <Button
-              variant="outline"
-              className="rounded-xl font-bold"
-              onClick={() => setExpenseToDelete(null)}
-            >
-              إلغاء
-            </Button>
-            <Button
-              variant="destructive"
-              className="rounded-xl font-bold gap-2 cursor-pointer"
-              onClick={() => {
-                if (expenseToDelete) {
-                  erpStore.deleteMallGardenExpense(expenseToDelete.id);
-                  setExpenseToDelete(null);
-                }
-              }}
-            >
-              <Trash2 size={16} />
-              حذف المصروف
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* CONTRACT CREATION & PRINTING MODAL */}
       <Dialog open={isContractModalOpen} onOpenChange={setIsContractModalOpen}>

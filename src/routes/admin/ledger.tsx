@@ -3247,8 +3247,7 @@ function LedgerPage() {
           {/* Subpage Switcher Pills */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 print:hidden">
             {[
-              { id: "vouchers", label: "سندات الصرف والقبض" },
-              { id: "mall_finance", label: "تحصيلات ومصروفات المول والحديقة" },
+              { id: "vouchers", label: "السندات والعمليات المالية الموحدة" },
               { id: "financial_position", label: "المركز المالي الشامل ⭐" },
               { id: "ledger", label: "كشف الأستاذ" },
               { id: "journal", label: "اليومية العامة" },
@@ -3283,9 +3282,17 @@ function LedgerPage() {
             <ComprehensiveFinancialPositionCard />
           </TabsContent>
 
-          {/* Tab Mall & Garden Finance */}
+          {/* Tab Mall & Garden Finance (Consolidated into Unified Financial Workflow) */}
           <TabsContent value="mall_finance" className="space-y-6">
-            <MallFinanceSection />
+            <VouchersLedgerSection
+              initialDepartmentFilter="mall"
+              autoOpenNewModal={autoOpenVoucherModal}
+              onModalClosed={() => setAutoOpenVoucherModal(false)}
+              onNavigateToJournal={(ref) => {
+                if (ref) setJournalSearch(ref);
+                setSelectedTab("journal");
+              }}
+            />
           </TabsContent>
 
           {/* Tab 0: Vouchers Entry & Management */}

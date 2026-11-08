@@ -46,7 +46,6 @@ import { cn } from "@/lib/utils";
 import { CURRENT_VERSION } from "@/shared/config/version";
 import { GitHubUpdateBanner } from "@/components/admin/GitHubUpdateBanner";
 import { AppMainNavbar } from "@/components/navigation/AppMainNavbar";
-import { AppBreadcrumbBar } from "@/components/navigation/AppBreadcrumbBar";
 import { isAiStudioPreview, isHostedDeployment } from "@/shared/services/previewAccess";
 import {
   PERMISSIONS_UPDATED_EVENT,
@@ -625,9 +624,6 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
           "super_admin_full_access",
         ])}
       />
-
-      {/* 2. Contextual Breadcrumb Bar (Hidden inside full-screen Studio to eliminate duplicate bars and maximize canvas) */}
-      {!isStudioRoute && <AppBreadcrumbBar />}
 
       {/* Main Content Area - Full-bleed edge-to-edge on Studio route, standard container on other admin pages */}
       <main
