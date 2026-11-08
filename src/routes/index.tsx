@@ -47,16 +47,9 @@ export const Route = createFileRoute("/")({
       });
     }
 
-    const hasStoredUser =
-      typeof localStorage !== "undefined" &&
-      Boolean(
-        localStorage.getItem("restocash_auth_user") ||
-          sessionStorage.getItem("restocash_auth_user"),
-      );
-
-    throw redirect({
-      to: hasStoredUser ? "/admin" : "/login",
-    });
+    // Always enter through the login route. It restores a valid Supabase
+    // session itself; a stale local identifier must never bypass the login screen.
+    throw redirect({ to: "/login" });
   },
   component: () => null,
 });
