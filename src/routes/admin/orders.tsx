@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ViewModeToggle, useViewMode } from "@/components/ui/view-mode-toggle";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -116,6 +117,7 @@ function OrdersPage() {
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [editNotes, setEditNotes] = useState("");
   const [editTotal, setEditTotal] = useState("");
+  const [viewMode, setViewMode] = useViewMode("orders", "list");
 
   const ordersQuery = useQuery({
     queryKey: ["admin", "orders", statusFilter],
@@ -254,10 +256,8 @@ function OrdersPage() {
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">
             إدارة ومتابعة الطلبات
           </h1>
-          <p className="text-xs text-muted-foreground font-medium">
-            متابعة حالة الطلبات، التعديل، والحذف لحظياً
-          </p>
         </div>
+        <ViewModeToggle mode={viewMode} onChange={setViewMode} />
       </div>
 
       {/* Stats Bar */}
@@ -366,115 +366,198 @@ function OrdersPage() {
         </AlertDialog>
       </div>
 
-      {/* Orders Table / List */}
-      <div className="bg-white rounded-3xl border border-border/60 shadow-xs overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-right border-collapse">
-            <thead>
-              <tr className="border-b bg-slate-50/75 text-xs text-muted-foreground font-bold">
-                <th className="p-4">رقم الطلب</th>
-                <th className="p-4">الوقت والمدة</th>
-                <th className="p-4">نوع الطلب</th>
-                <th className="p-4">الطاولة / العميل</th>
-                <th className="p-4">الإجمالي</th>
-                <th className="p-4">الحالة</th>
-                <th className="p-4 text-center">الإجراءات</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y text-xs font-semibold">
-              {orders.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="text-center py-16 text-muted-foreground">
-                    لا توجد طلبات مطابقة للبحث الحالي.
-                  </td>
-                </tr>
-              )}
-              {orders.map((o) => {
-                const table = o.table_id ? tablesMap.get(o.table_id) : null;
-                return (
-                  <tr key={o.id} className="hover:bg-slate-50/50 transition">
-                    <td className="p-4 font-black text-slate-900">
+      {/* Orders Grid / List */}
+      {viewMode === "grid" ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {orders.length === 0 ? (
+            <div className="col-span-full bg-white rounded-3xl border border-border/60 p-12 text-center text-muted-foreground text-xs font-bold">
+              لا توجد طلبات مطابقة للبحث الحالي.
+            </div>
+          ) : (
+            orders.map((o) => {
+              const table = o.table_id ? tablesMap.get(o.table_id) : null;
+              return (
+                <div
+                  key={o.id}
+                  className="bg-white rounded-2xl border border-border/60 p-4 shadow-xs space-y-3 flex flex-col justify-between"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-black text-slate-900 text-sm">
                       #{String(o.order_number || o.id).slice(-6)}
-                    </td>
-                    <td className="p-4">
-                      <div className="text-slate-800">
-                        {o.created_at
-                          ? new Date(o.created_at).toLocaleTimeString("ar-EG", {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })
-                          : "-"}
-                      </div>
-                      <div className="mt-1">
-                        <ElapsedTimer createdAt={o.created_at} status={o.status} />
-                      </div>
-                    </td>
-                    <td className="p-4">
-                      <Badge variant="outline" className="font-bold">
-                        {orderTypeLabels[o.order_type] || o.order_type}
-                      </Badge>
-                    </td>
-                    <td className="p-4 font-bold text-slate-800">
-                      {table ? table.name || `طاولة ${table.number}` : "-"}
-                    </td>
-                    <td className="p-4 font-black text-emerald-600">
+                    </span>
+                    <Badge variant="outline" className="font-bold text-xs">
+                      {orderTypeLabels[o.order_type] || o.order_type}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>{table ? table.name || `طاولة ${table.number}` : "-"}</span>
+                    <span className="font-black text-emerald-600 text-sm">
                       {formatOrderPrice(o.total, o.notes)}
-                    </td>
-                    <td className="p-4">
-                      <select
-                        className="h-8 rounded-lg border border-input bg-background px-2 text-xs font-bold focus:ring-1 focus:ring-primary text-right"
-                        value={o.status}
-                        onChange={(e) => updateStatus.mutate({ id: o.id, status: e.target.value })}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 pt-2 border-t">
+                    <select
+                      className="h-8 rounded-lg border border-input bg-background px-2 text-xs font-bold focus:ring-1 focus:ring-primary text-right"
+                      value={o.status}
+                      onChange={(e) => updateStatus.mutate({ id: o.id, status: e.target.value })}
+                    >
+                      {Object.entries(statusLabels).map(([k, v]) => (
+                        <option key={k} value={k}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8 rounded-xl text-blue-600 hover:bg-blue-50"
+                        onClick={() => setSelectedOrder(o)}
+                        title="عرض التفاصيل"
                       >
-                        {Object.entries(statusLabels).map(([k, v]) => (
-                          <option key={k} value={k}>
-                            {v}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="p-4">
-                      <div className="flex items-center justify-center gap-1.5">
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          className="h-8 w-8 rounded-xl text-blue-600 hover:bg-blue-50"
-                          onClick={() => setSelectedOrder(o)}
-                          title="عرض التفاصيل"
-                        >
-                          <Eye size={15} />
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          className="h-8 w-8 rounded-xl text-emerald-600 hover:bg-emerald-50"
-                          onClick={() => {
-                            setEditingOrder(o);
-                            setEditNotes(o.notes || "");
-                            setEditTotal(o.total ? o.total.toString() : "0");
-                          }}
-                          title="تعديل الطلب"
-                        >
-                          <Pencil size={15} />
-                        </Button>
-                        <Button
-                          variant="destructive"
-                          size="icon"
-                          className="h-8 w-8 rounded-xl shadow-xs"
-                          onClick={() => deleteOrder.mutate(o.id)}
-                          title="حذف الطلب"
-                        >
-                          <Trash2 size={15} />
-                        </Button>
-                      </div>
+                        <Eye size={14} />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8 rounded-xl text-emerald-600 hover:bg-emerald-50"
+                        onClick={() => {
+                          setEditingOrder(o);
+                          setEditNotes(o.notes || "");
+                          setEditTotal(o.total ? o.total.toString() : "0");
+                        }}
+                        title="تعديل الطلب"
+                      >
+                        <Pencil size={14} />
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="icon"
+                        className="h-8 w-8 rounded-xl shadow-xs"
+                        onClick={() => deleteOrder.mutate(o.id)}
+                        title="حذف الطلب"
+                      >
+                        <Trash2 size={14} />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      ) : (
+        <div className="bg-white rounded-3xl border border-border/60 shadow-xs overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-right border-collapse">
+              <thead>
+                <tr className="border-b bg-slate-50/75 text-xs text-muted-foreground font-bold">
+                  <th className="p-4">رقم الطلب</th>
+                  <th className="p-4">الوقت والمدة</th>
+                  <th className="p-4">نوع الطلب</th>
+                  <th className="p-4">الطاولة / العميل</th>
+                  <th className="p-4">الإجمالي</th>
+                  <th className="p-4">الحالة</th>
+                  <th className="p-4 text-center">الإجراءات</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y text-xs font-semibold">
+                {orders.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="text-center py-16 text-muted-foreground">
+                      لا توجد طلبات مطابقة للبحث الحالي.
                     </td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                )}
+                {orders.map((o) => {
+                  const table = o.table_id ? tablesMap.get(o.table_id) : null;
+                  return (
+                    <tr key={o.id} className="hover:bg-slate-50/50 transition">
+                      <td className="p-4 font-black text-slate-900">
+                        #{String(o.order_number || o.id).slice(-6)}
+                      </td>
+                      <td className="p-4">
+                        <div className="text-slate-800">
+                          {o.created_at
+                            ? new Date(o.created_at).toLocaleTimeString("ar-EG", {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
+                            : "-"}
+                        </div>
+                        <div className="mt-1">
+                          <ElapsedTimer createdAt={o.created_at} status={o.status} />
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        <Badge variant="outline" className="font-bold">
+                          {orderTypeLabels[o.order_type] || o.order_type}
+                        </Badge>
+                      </td>
+                      <td className="p-4 font-bold text-slate-800">
+                        {table ? table.name || `طاولة ${table.number}` : "-"}
+                      </td>
+                      <td className="p-4 font-black text-emerald-600">
+                        {formatOrderPrice(o.total, o.notes)}
+                      </td>
+                      <td className="p-4">
+                        <select
+                          className="h-8 rounded-lg border border-input bg-background px-2 text-xs font-bold focus:ring-1 focus:ring-primary text-right"
+                          value={o.status}
+                          onChange={(e) =>
+                            updateStatus.mutate({ id: o.id, status: e.target.value })
+                          }
+                        >
+                          {Object.entries(statusLabels).map(([k, v]) => (
+                            <option key={k} value={k}>
+                              {v}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="p-4">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8 rounded-xl text-blue-600 hover:bg-blue-50"
+                            onClick={() => setSelectedOrder(o)}
+                            title="عرض التفاصيل"
+                          >
+                            <Eye size={15} />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8 rounded-xl text-emerald-600 hover:bg-emerald-50"
+                            onClick={() => {
+                              setEditingOrder(o);
+                              setEditNotes(o.notes || "");
+                              setEditTotal(o.total ? o.total.toString() : "0");
+                            }}
+                            title="تعديل الطلب"
+                          >
+                            <Pencil size={15} />
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            size="icon"
+                            className="h-8 w-8 rounded-xl shadow-xs"
+                            onClick={() => deleteOrder.mutate(o.id)}
+                            title="حذف الطلب"
+                          >
+                            <Trash2 size={15} />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Details Modal */}
       {selectedOrder && (

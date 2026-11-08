@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ViewModeToggle, useViewMode } from "@/components/ui/view-mode-toggle";
 import {
   Pencil,
   Trash2,
@@ -87,6 +88,7 @@ function MenuPage() {
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [itemToDelete, setItemToDelete] = useState<MenuItem | null>(null);
+  const [viewMode, setViewMode] = useViewMode("menu-items", "grid");
 
   const [catForm, setCatForm] = useState({ name_ar: "", sort_order: "0" });
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
@@ -400,10 +402,8 @@ function MenuPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-black text-foreground">إدارة المنيو والتكلفة</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            تحديد فئات الطعام، تسعير الأصناف، وتحليل التكاليف وهامش الربح للمكونات
-          </p>
         </div>
+        <ViewModeToggle mode={viewMode} onChange={setViewMode} />
       </div>
 
       <Tabs defaultValue="items" className="w-full">
@@ -504,15 +504,7 @@ function MenuPage() {
                             size="icon"
                             variant="destructive"
                             className="h-8 w-8 rounded-lg"
-                            onClick={() => {
-                              if (
-                                confirm(
-                                  `هل تريد بالتأكيد حذف فئة ${c.name_ar}؟ سيؤثر هذا على الأصناف التابعة لها.`,
-                                )
-                              ) {
-                                deleteCategory.mutate(c.id);
-                              }
-                            }}
+                            onClick={() => deleteCategory.mutate(c.id)}
                             disabled={deleteCategory.isPending}
                           >
                             <Trash2 size={12} />
@@ -544,13 +536,16 @@ function MenuPage() {
                 />
               </div>
 
-              <Button
-                onClick={openAddModal}
-                className="font-bold bg-primary hover:bg-primary/90 text-primary-foreground flex items-center gap-2 h-10 px-5 rounded-xl shadow-xs cursor-pointer"
-              >
-                <Plus size={18} />
-                <span>إضافة صنف جديد للمنيو</span>
-              </Button>
+              <div className="flex items-center gap-2">
+                <ViewModeToggle mode={viewMode} onChange={setViewMode} />
+                <Button
+                  onClick={openAddModal}
+                  className="font-bold bg-primary hover:bg-primary/90 text-primary-foreground flex items-center gap-2 h-10 px-5 rounded-xl shadow-xs cursor-pointer"
+                >
+                  <Plus size={18} />
+                  <span>إضافة صنف جديد للمنيو</span>
+                </Button>
+              </div>
             </div>
 
             {/* Categories filters */}
@@ -578,6 +573,65 @@ function MenuPage() {
             ) : filteredItems.length === 0 ? (
               <div className="text-center text-muted-foreground py-20">
                 لا توجد أصناف مطابقة للبحث أو للفلترة حالياً
+              </div>
+            ) : viewMode === "list" ? (
+              <div className="rounded-xl border border-border overflow-x-auto">
+                <table className="w-full text-sm text-right">
+                  <thead className="bg-muted text-muted-foreground text-xs">
+                    <tr className="border-b border-border">
+                      <th className="p-3 font-bold">الصنف</th>
+                      <th className="p-3 font-bold">الفئة</th>
+                      <th className="p-3 font-bold">السعر</th>
+                      <th className="p-3 font-bold">الحالة</th>
+                      <th className="p-3 font-bold text-center">الإجراءات</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {filteredItems.map((item) => {
+                      const cat = categoriesQuery.data?.find((c) => c.id === item.category_id);
+                      return (
+                        <tr key={item.id} className="hover:bg-muted/30 transition-colors">
+                          <td className="p-3 font-bold text-foreground">{item.name_ar}</td>
+                          <td className="p-3 text-muted-foreground text-xs">
+                            {cat?.name_ar ?? "غير محدد"}
+                          </td>
+                          <td className="p-3 font-mono font-black text-primary">
+                            {formatPrice(item.price)}
+                          </td>
+                          <td className="p-3">
+                            <Switch
+                              checked={item.is_available}
+                              onCheckedChange={(val) =>
+                                toggleItemAvailability.mutate({ id: item.id, isAvailable: val })
+                              }
+                            />
+                          </td>
+                          <td className="p-3 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <Button
+                                size="icon"
+                                variant="outline"
+                                className="h-8 w-8 rounded-lg"
+                                onClick={() => startEditItem(item)}
+                              >
+                                <Pencil size={12} />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="destructive"
+                                className="h-8 w-8 rounded-lg"
+                                onClick={() => setItemToDelete(item)}
+                                disabled={deleteItem.isPending}
+                              >
+                                <Trash2 size={12} />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">

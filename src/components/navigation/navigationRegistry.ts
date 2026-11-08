@@ -73,9 +73,7 @@ const commandListeners = new Set<(pathname: string, tab: string) => void>();
 
 function normalizePathname(pathname: string): string {
   if (!pathname) return "/";
-  return pathname.length > 1 && pathname.endsWith("/")
-    ? pathname.slice(0, -1)
-    : pathname;
+  return pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
 }
 
 export function setActivePageSubTab(pathname: string, tab: string) {
@@ -198,177 +196,61 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
     ],
     children: [
       {
-        id: "restaurant-hub",
-        label: "لوحة إدارة المطعم",
+        id: "restaurant-definitions",
+        label: "التعريفات",
         to: "/admin/restaurant",
-        tabValue: "grid",
-        icon: Store,
-        permissionKeys: ["page_restaurant"],
+        search: { tab: "definitions" },
+        tabValue: "definitions",
+        icon: Settings,
+        permissionKeys: [
+          "page_restaurant",
+          "page_restaurant_menu",
+          "pos",
+          "pos_access",
+          "inventory",
+          "orders",
+        ],
         matchPath: (p, tab) =>
-          p === "/admin/restaurant" && (!tab || tab === "grid"),
+          p.startsWith("/admin/menu") ||
+          (p.startsWith("/admin/restaurant") &&
+            (tab === "definitions" || tab === "menu" || tab === "tables")),
       },
       {
-        id: "pos",
-        label: "نقطة بيع الكاشير (POS)",
-        to: "/pos",
-        icon: CreditCard,
-        permissionKeys: ["pos", "pos_access", "orders", "orders_create_custom"],
-        matchPath: (p) => p === "/pos",
-      },
-      {
-        id: "captain",
-        label: "شاشة الكابتن والصالة",
-        to: "/captain",
-        icon: Users,
-        permissionKeys: ["captain", "captain_access", "captain_create_order"],
-        matchPath: (p) => p === "/captain",
-      },
-      {
-        id: "oven",
-        label: "شاشة المطبخ والفرن (KDS)",
-        to: "/oven",
-        icon: Flame,
-        permissionKeys: ["kitchen", "kitchen_view", "kitchen_change_status"],
-        matchPath: (p) => p === "/oven",
-      },
-      {
-        id: "cashier-treasury",
-        label: "شاشة الكاشير والخزينة",
-        to: "/cashier-treasury",
-        icon: Wallet,
-        permissionKeys: ["page_restaurant_cashier_treasury", "treasury", "treasury_view", "treasury_open_close", "pos", "pos_access"],
-        matchPath: (p) => p === "/cashier-treasury",
-      },
-      {
-        id: "orders",
-        label: "سجل الطلبات والفواتير",
-        to: "/admin/orders",
+        id: "restaurant-operations",
+        label: "العمليات",
+        to: "/admin/restaurant",
+        search: { tab: "operations" },
+        tabValue: "operations",
         icon: ClipboardList,
-        permissionKeys: ["orders", "orders_view", "delivery", "delivery_view"],
-        matchPath: (p) => p.startsWith("/admin/orders"),
+        permissionKeys: [
+          "page_restaurant",
+          "pos",
+          "pos_access",
+          "orders",
+          "orders_view",
+          "captain",
+          "captain_access",
+          "kitchen",
+          "kitchen_view",
+          "restaurant_open_shift",
+        ],
+        matchPath: (p, tab) =>
+          p === "/pos" ||
+          p === "/captain" ||
+          p === "/oven" ||
+          p.startsWith("/admin/orders") ||
+          (p.startsWith("/admin/restaurant") &&
+            (!tab || tab === "grid" || tab === "operations" || tab === "shifts")),
       },
       {
-        id: "menu",
-        label: "إدارة المنيو وقائمة الطعام",
-        to: "/admin/menu",
-        icon: Utensils,
-        permissionKeys: ["page_restaurant_menu", "pos", "pos_access", "inventory", "orders"],
-        matchPath: (p) => p.startsWith("/admin/menu"),
-      },
-      {
-        id: "restaurant-vouchers",
-        label: "سندات الصرف والقبض",
+        id: "restaurant-reports",
+        label: "التقارير",
         to: "/admin/restaurant",
-        search: { tab: "vouchers" },
-        tabValue: "vouchers",
-        icon: Receipt,
-        permissionKeys: ["page_restaurant_vouchers", "treasury", "accounting"],
-        matchPath: (p, tab) =>
-          p.startsWith("/admin/restaurant") && tab === "vouchers",
-      },
-      {
-        id: "restaurant-shifts",
-        label: "ورديات كاشير المطعم",
-        to: "/admin/restaurant",
-        search: { tab: "shifts" },
-        tabValue: "shifts",
-        icon: Clock,
-        permissionKeys: ["restaurant_open_shift", "pos", "pos_access"],
-        matchPath: (p, tab) =>
-          p.startsWith("/admin/restaurant") && tab === "shifts",
-      },
-      {
-        id: "restaurant-expenses",
-        label: "مصروفات وتسويات المطعم",
-        to: "/admin/restaurant",
-        search: { tab: "expenses" },
-        tabValue: "expenses",
-        icon: DollarSign,
-        permissionKeys: ["page_restaurant_vouchers", "treasury", "accounting"],
-        matchPath: (p, tab) =>
-          p.startsWith("/admin/restaurant") && tab === "expenses",
-      },
-    ],
-  },
-  {
-    id: "mall",
-    label: "إدارة المول",
-    to: "/admin/mall",
-    icon: Building2,
-    permissionKeys: ["page_mall", "mall_manage_shops", "mall_garden_finance"],
-    children: [
-      {
-        id: "mall-hub",
-        label: "لوحة إدارة المول",
-        to: "/admin/mall",
-        tabValue: "grid",
-        icon: Building2,
-        permissionKeys: ["page_mall"],
-        matchPath: (p, tab) =>
-          p.startsWith("/admin/mall") && (!tab || tab === "grid"),
-      },
-      {
-        id: "mall-shops",
-        label: "دليل المحلات والمستأجرين",
-        to: "/admin/mall",
-        search: { tab: "shops" },
-        tabValue: "shops",
-        icon: Store,
-        permissionKeys: ["page_mall_shops", "mall_manage_shops"],
-        matchPath: (p, tab) => p.startsWith("/admin/mall") && tab === "shops",
-      },
-      {
-        id: "mall-payments",
-        label: "متابعة عقود الإيجار والدفعات",
-        to: "/admin/mall",
-        search: { tab: "payments" },
-        tabValue: "payments",
-        icon: Calendar,
-        permissionKeys: ["page_mall_payments", "mall_manage_shops", "accounting"],
-        matchPath: (p, tab) =>
-          p.startsWith("/admin/mall") && tab === "payments",
-      },
-      {
-        id: "mall-expenses",
-        label: "مصروفات وتشغيل المول",
-        to: "/admin/mall",
-        search: { tab: "expenses" },
-        tabValue: "expenses",
-        icon: CreditCard,
-        permissionKeys: ["page_mall_expenses", "mall_manage_shops", "mall_garden_finance"],
-        matchPath: (p, tab) =>
-          p.startsWith("/admin/mall") && tab === "expenses",
-      },
-      {
-        id: "mall-vouchers",
-        label: "سندات الصرف والقبض للمول",
-        to: "/admin/mall",
-        search: { tab: "vouchers" },
-        tabValue: "vouchers",
-        icon: Receipt,
-        permissionKeys: ["page_mall_vouchers", "mall_manage_shops", "treasury"],
-        matchPath: (p, tab) =>
-          p.startsWith("/admin/mall") && tab === "vouchers",
-      },
-      {
-        id: "mall-reports",
-        label: "التقارير المالية وإشغال المول",
-        to: "/admin/mall",
         search: { tab: "reports" },
         tabValue: "reports",
         icon: TrendingUp,
-        permissionKeys: ["page_mall_reports", "mall_manage_shops", "reports"],
-        matchPath: (p, tab) => p.startsWith("/admin/mall") && tab === "reports",
-      },
-      {
-        id: "mall-garden",
-        label: "الحديقة والمرافق الترفيهية",
-        to: "/admin/mall",
-        search: { tab: "garden" },
-        tabValue: "garden",
-        icon: Trees,
-        permissionKeys: ["page_park", "mall_garden_finance"],
-        matchPath: (p, tab) => p.startsWith("/admin/mall") && tab === "garden",
+        permissionKeys: ["page_restaurant", "reports", "orders", "pos"],
+        matchPath: (p, tab) => p.startsWith("/admin/restaurant") && tab === "reports",
       },
     ],
   },
@@ -386,89 +268,99 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
     ],
     children: [
       {
-        id: "park-overview",
-        label: "لوحة إدارة الحديقة",
+        id: "park-definitions",
+        label: "التعريفات",
         to: "/admin/park",
-        tabValue: "grid",
-        icon: LayoutDashboard,
-        permissionKeys: ["page_park"],
+        search: { tab: "definitions" },
+        tabValue: "definitions",
+        icon: Settings,
+        permissionKeys: [
+          "page_park",
+          "page_park_prices",
+          "page_park_customers",
+          "page_park_treasury",
+          "manage_park_shifts",
+        ],
         matchPath: (p, tab) =>
           p.startsWith("/admin/park") &&
-          (!tab || tab === "grid" || tab === "overview"),
+          (tab === "definitions" || tab === "prices" || tab === "customers" || tab === "treasury"),
       },
       {
-        id: "park-tickets",
-        label: "نقطة بيع تذاكر الحديقة (POS)",
+        id: "park-operations",
+        label: "العمليات",
         to: "/admin/park",
-        search: { tab: "tickets" },
-        tabValue: "tickets",
+        search: { tab: "operations" },
+        tabValue: "operations",
         icon: Ticket,
-        permissionKeys: ["page_park_pos", "manage_park_shifts", "mall_garden_finance"],
+        permissionKeys: [
+          "page_park",
+          "page_park_pos",
+          "page_park_shifts",
+          "manage_park_shifts",
+          "park_open_shift",
+          "mall_garden_finance",
+        ],
         matchPath: (p, tab) =>
-          p.startsWith("/admin/park") && (tab === "tickets" || tab === "pos"),
-      },
-      {
-        id: "park-shifts",
-        label: "ورديات كاشير الحديقة",
-        to: "/admin/park",
-        search: { tab: "shifts" },
-        tabValue: "shifts",
-        icon: Clock,
-        permissionKeys: ["page_park_shifts", "manage_park_shifts"],
-        matchPath: (p, tab) => p.startsWith("/admin/park") && tab === "shifts",
-      },
-      {
-        id: "park-treasury",
-        label: "الخزائن التشغيلية الثمانية",
-        to: "/admin/park",
-        search: { tab: "treasury" },
-        tabValue: "treasury",
-        icon: Landmark,
-        permissionKeys: ["page_park_treasury", "manage_park_shifts", "treasury"],
-        matchPath: (p, tab) =>
-          p.startsWith("/admin/park") && tab === "treasury",
-      },
-      {
-        id: "park-vouchers",
-        label: "سندات الصرف والقبض للحديقة",
-        to: "/admin/park",
-        search: { tab: "vouchers" },
-        tabValue: "vouchers",
-        icon: Receipt,
-        permissionKeys: ["page_park_vouchers", "mall_garden_finance"],
-        matchPath: (p, tab) =>
-          p.startsWith("/admin/park") && tab === "vouchers",
-      },
-      {
-        id: "park-prices",
-        label: "أسعار وتصنيفات التذاكر",
-        to: "/admin/park",
-        search: { tab: "prices" },
-        tabValue: "prices",
-        icon: Settings,
-        permissionKeys: ["page_park_prices", "manage_park_shifts"],
-        matchPath: (p, tab) => p.startsWith("/admin/park") && tab === "prices",
-      },
-      {
-        id: "park-customers",
-        label: "دليل عملاء الحديقة",
-        to: "/admin/park",
-        search: { tab: "customers" },
-        tabValue: "customers",
-        icon: Users,
-        permissionKeys: ["page_park_customers", "manage_park_shifts"],
-        matchPath: (p, tab) =>
-          p.startsWith("/admin/park") && tab === "customers",
+          p.startsWith("/admin/park") &&
+          (!tab ||
+            tab === "grid" ||
+            tab === "overview" ||
+            tab === "operations" ||
+            tab === "tickets" ||
+            tab === "pos" ||
+            tab === "shifts"),
       },
       {
         id: "park-reports",
-        label: "تقارير مبيعات وإيرادات الحديقة",
+        label: "التقارير",
         to: "/admin/park",
         search: { tab: "reports" },
         tabValue: "reports",
         icon: TrendingUp,
-        permissionKeys: ["park_reports", "manage_park_shifts"],
+        permissionKeys: ["page_park", "park_reports", "manage_park_shifts"],
         matchPath: (p, tab) => p.startsWith("/admin/park") && tab === "reports",
+      },
+    ],
+  },
+  {
+    id: "mall",
+    label: "إدارة المول",
+    to: "/admin/mall",
+    icon: Building2,
+    permissionKeys: ["page_mall", "mall_manage_shops", "mall_garden_finance"],
+    children: [
+      {
+        id: "mall-definitions",
+        label: "التعريفات",
+        to: "/admin/mall",
+        search: { tab: "definitions" },
+        tabValue: "definitions",
+        icon: Store,
+        permissionKeys: ["page_mall", "page_mall_shops", "mall_manage_shops"],
+        matchPath: (p, tab) =>
+          p.startsWith("/admin/mall") &&
+          (!tab || tab === "grid" || tab === "definitions" || tab === "shops"),
+      },
+      {
+        id: "mall-operations",
+        label: "العمليات",
+        to: "/admin/mall",
+        search: { tab: "operations" },
+        tabValue: "operations",
+        icon: FileText,
+        permissionKeys: ["page_mall", "page_mall_shops", "mall_manage_shops"],
+        matchPath: (p, tab) =>
+          p.startsWith("/admin/mall") && (tab === "operations" || tab === "contracts"),
+      },
+      {
+        id: "mall-reports",
+        label: "التقارير",
+        to: "/admin/mall",
+        search: { tab: "reports" },
+        tabValue: "reports",
+        icon: TrendingUp,
+        permissionKeys: ["page_mall", "page_mall_reports", "mall_manage_shops", "reports"],
+        matchPath: (p, tab) => p.startsWith("/admin/mall") && tab === "reports",
       },
     ],
   },
@@ -477,17 +369,65 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
     label: "الإدارة المالية",
     to: "/admin/ledger",
     icon: Landmark,
-    permissionKeys: ["page_finance", "accounting", "accounting_view", "treasury"],
+    permissionKeys: [
+      "page_finance",
+      "accounting",
+      "accounting_view",
+      "treasury",
+      "expense_approval",
+      "revenue_approval",
+      "purchasing",
+      "mall_garden_finance",
+    ],
     children: [
       {
         id: "financial-hub",
-        label: "المركز المالي ولوحة المحاسبة",
+        label: "لوحة الإدارة المالية",
         to: "/admin/ledger",
         tabValue: "hub",
         icon: Landmark,
         permissionKeys: ["page_finance"],
+        matchPath: (p, tab) => p.startsWith("/admin/ledger") && (!tab || tab === "hub"),
+      },
+      {
+        id: "financial-vouchers",
+        label: "السندات والمقبوضات والمصروفات",
+        to: "/admin/ledger",
+        search: { tab: "vouchers" },
+        tabValue: "vouchers",
+        icon: Receipt,
+        permissionKeys: [
+          "page_finance_vouchers",
+          "accounting",
+          "treasury",
+          "expense_approval",
+          "revenue_approval",
+        ],
         matchPath: (p, tab) =>
-          p.startsWith("/admin/ledger") && (!tab || tab === "hub"),
+          (p.startsWith("/admin/ledger") && tab === "vouchers") ||
+          ((p === "/admin" || p === "/admin/") && tab === "vouchers_entry"),
+      },
+      {
+        id: "financial-mall-garden",
+        label: "تحصيلات ومصروفات المول والحديقة",
+        to: "/admin/ledger",
+        search: { tab: "mall_finance" },
+        tabValue: "mall_finance",
+        icon: Building2,
+        permissionKeys: ["page_finance", "accounting", "treasury", "mall_garden_finance"],
+        matchPath: (p, tab) =>
+          p.startsWith("/admin/ledger") &&
+          (tab === "mall_finance" || tab === "payments" || tab === "expenses"),
+      },
+      {
+        id: "financial-purchasing",
+        label: "المشتريات وفواتير الموردين",
+        to: "/admin/inventory",
+        search: { tab: "purchases" },
+        tabValue: "purchases",
+        icon: ShoppingCart,
+        permissionKeys: ["page_inventory_purchases", "purchasing", "accounting"],
+        matchPath: (p, tab) => p.startsWith("/admin/inventory") && tab === "purchases",
       },
       {
         id: "financial-position",
@@ -497,8 +437,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         tabValue: "financial_position",
         icon: TrendingUp,
         permissionKeys: ["page_finance_position", "accounting", "accounting_view"],
-        matchPath: (p, tab) =>
-          p.startsWith("/admin/ledger") && tab === "financial_position",
+        matchPath: (p, tab) => p.startsWith("/admin/ledger") && tab === "financial_position",
       },
       {
         id: "financial-ledger",
@@ -518,20 +457,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         tabValue: "journal",
         icon: FileText,
         permissionKeys: ["page_finance_journal", "accounting", "accounting_post_journal"],
-        matchPath: (p, tab) =>
-          p.startsWith("/admin/ledger") && tab === "journal",
-      },
-      {
-        id: "financial-vouchers",
-        label: "سندات الصرف والقبض",
-        to: "/admin/ledger",
-        search: { tab: "vouchers" },
-        tabValue: "vouchers",
-        icon: Receipt,
-        permissionKeys: ["page_finance_vouchers", "accounting", "treasury"],
-        matchPath: (p, tab) =>
-          (p.startsWith("/admin/ledger") && tab === "vouchers") ||
-          ((p === "/admin" || p === "/admin/") && tab === "vouchers_entry"),
+        matchPath: (p, tab) => p.startsWith("/admin/ledger") && tab === "journal",
       },
       {
         id: "financial-treasury",
@@ -542,6 +468,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         icon: Wallet,
         permissionKeys: ["page_finance_treasury", "treasury"],
         matchPath: (p, tab) =>
+          p === "/cashier-treasury" ||
           (p.startsWith("/admin/ledger") && tab === "treasury") ||
           ((p === "/admin" || p === "/admin/") && tab === "treasury"),
       },
@@ -559,7 +486,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
       },
       {
         id: "financial-trial",
-        label: "ميزان المراجعة بالأرصدة والمجاميع",
+        label: "ميزان المراجعة",
         to: "/admin/ledger",
         search: { tab: "trial" },
         tabValue: "trial",
@@ -575,8 +502,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         tabValue: "statements",
         icon: FileSpreadsheet,
         permissionKeys: ["page_finance_statements", "reports"],
-        matchPath: (p, tab) =>
-          p.startsWith("/admin/ledger") && tab === "statements",
+        matchPath: (p, tab) => p.startsWith("/admin/ledger") && tab === "statements",
       },
       {
         id: "financial-reports",
@@ -586,12 +512,11 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         icon: BarChart3,
         permissionKeys: ["page_finance_reports", "reports"],
         matchPath: (p, tab) =>
-          p.startsWith("/admin/reports") ||
-          (p.startsWith("/admin/ledger") && tab === "reports"),
+          p.startsWith("/admin/reports") || (p.startsWith("/admin/ledger") && tab === "reports"),
       },
       {
         id: "financial-receipts",
-        label: "تصميم وإدارة الإيصالات والسندات",
+        label: "تصميم الإيصالات والسندات",
         to: "/admin/receipts",
         icon: Receipt,
         permissionKeys: ["page_finance_receipts", "accounting", "treasury"],
@@ -621,8 +546,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         tabValue: "grid",
         icon: UserCheck,
         permissionKeys: ["page_hr"],
-        matchPath: (p, tab) =>
-          p.startsWith("/admin/hr") && (!tab || tab === "grid"),
+        matchPath: (p, tab) => p.startsWith("/admin/hr") && (!tab || tab === "grid"),
       },
       {
         id: "hr-employees",
@@ -632,8 +556,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         tabValue: "employees",
         icon: Users,
         permissionKeys: ["page_hr_employees", "hr"],
-        matchPath: (p, tab) =>
-          p.startsWith("/admin/hr") && tab === "employees",
+        matchPath: (p, tab) => p.startsWith("/admin/hr") && tab === "employees",
       },
       {
         id: "hr-attendance",
@@ -643,8 +566,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         tabValue: "attendance",
         icon: CalendarDays,
         permissionKeys: ["page_hr_attendance", "hr_view_attendance"],
-        matchPath: (p, tab) =>
-          p.startsWith("/admin/hr") && tab === "attendance",
+        matchPath: (p, tab) => p.startsWith("/admin/hr") && tab === "attendance",
       },
       {
         id: "hr-payroll",
@@ -674,8 +596,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         icon: ShieldCheck,
         permissionKeys: ["users_roles", "system_manage_users"],
         matchPath: (p, tab) =>
-          p.startsWith("/admin/users") ||
-          (p.startsWith("/admin/hr") && tab === "users"),
+          p.startsWith("/admin/users") || (p.startsWith("/admin/hr") && tab === "users"),
       },
     ],
   },
@@ -699,8 +620,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         tabValue: "grid",
         icon: Package,
         permissionKeys: ["page_inventory"],
-        matchPath: (p, tab) =>
-          p.startsWith("/admin/inventory") && (!tab || tab === "grid"),
+        matchPath: (p, tab) => p.startsWith("/admin/inventory") && (!tab || tab === "grid"),
       },
       {
         id: "inventory-warehouses",
@@ -710,8 +630,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         tabValue: "warehouses",
         icon: Building2,
         permissionKeys: ["page_inventory_warehouses", "inventory"],
-        matchPath: (p, tab) =>
-          p.startsWith("/admin/inventory") && tab === "warehouses",
+        matchPath: (p, tab) => p.startsWith("/admin/inventory") && tab === "warehouses",
       },
       {
         id: "inventory-items",
@@ -722,8 +641,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         icon: Package,
         permissionKeys: ["page_inventory_items", "inventory", "inventory_view"],
         matchPath: (p, tab) =>
-          p.startsWith("/admin/inventory") &&
-          (tab === "items" || tab === "stock"),
+          p.startsWith("/admin/inventory") && (tab === "items" || tab === "stock"),
       },
       {
         id: "inventory-transfers",
@@ -733,8 +651,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         tabValue: "transfers",
         icon: Truck,
         permissionKeys: ["page_inventory_transfers", "inventory_adjust_transfer"],
-        matchPath: (p, tab) =>
-          p.startsWith("/admin/inventory") && tab === "transfers",
+        matchPath: (p, tab) => p.startsWith("/admin/inventory") && tab === "transfers",
       },
       {
         id: "inventory-transactions",
@@ -744,8 +661,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         tabValue: "transactions",
         icon: ArrowLeftRight,
         permissionKeys: ["page_inventory_transactions", "inventory"],
-        matchPath: (p, tab) =>
-          p.startsWith("/admin/inventory") && tab === "transactions",
+        matchPath: (p, tab) => p.startsWith("/admin/inventory") && tab === "transactions",
       },
       {
         id: "inventory-expiry",
@@ -755,8 +671,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         tabValue: "expiry",
         icon: Calendar,
         permissionKeys: ["page_inventory_expiry", "inventory"],
-        matchPath: (p, tab) =>
-          p.startsWith("/admin/inventory") && tab === "expiry",
+        matchPath: (p, tab) => p.startsWith("/admin/inventory") && tab === "expiry",
       },
       {
         id: "inventory-purchases",
@@ -766,8 +681,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         tabValue: "purchases",
         icon: ShoppingCart,
         permissionKeys: ["page_inventory_purchases", "purchasing"],
-        matchPath: (p, tab) =>
-          p.startsWith("/admin/inventory") && tab === "purchases",
+        matchPath: (p, tab) => p.startsWith("/admin/inventory") && tab === "purchases",
       },
       {
         id: "inventory-suppliers",
@@ -777,8 +691,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         tabValue: "suppliers",
         icon: Users,
         permissionKeys: ["page_inventory_suppliers", "purchasing_view"],
-        matchPath: (p, tab) =>
-          p.startsWith("/admin/inventory") && tab === "suppliers",
+        matchPath: (p, tab) => p.startsWith("/admin/inventory") && tab === "suppliers",
       },
       {
         id: "inventory-waste",
@@ -788,8 +701,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         tabValue: "waste",
         icon: AlertCircle,
         permissionKeys: ["page_inventory_waste", "inventory_waste_dispose"],
-        matchPath: (p, tab) =>
-          p.startsWith("/admin/inventory") && tab === "waste",
+        matchPath: (p, tab) => p.startsWith("/admin/inventory") && tab === "waste",
       },
       {
         id: "inventory-reports",
@@ -799,8 +711,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         tabValue: "reports",
         icon: FileText,
         permissionKeys: ["page_inventory_reports", "reports"],
-        matchPath: (p, tab) =>
-          p.startsWith("/admin/inventory") && tab === "reports",
+        matchPath: (p, tab) => p.startsWith("/admin/inventory") && tab === "reports",
       },
       {
         id: "inventory-settings",
@@ -810,8 +721,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         tabValue: "settings",
         icon: Settings,
         permissionKeys: ["page_inventory_settings", "inventory"],
-        matchPath: (p, tab) =>
-          p.startsWith("/admin/inventory") && tab === "settings",
+        matchPath: (p, tab) => p.startsWith("/admin/inventory") && tab === "settings",
       },
     ],
   },
@@ -842,8 +752,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
           "manage_park_shifts",
           "restaurant_open_shift",
         ],
-        matchPath: (p, tab) =>
-          (p === "/admin" || p === "/admin/") && tab === "shift_audit",
+        matchPath: (p, tab) => (p === "/admin" || p === "/admin/") && tab === "shift_audit",
       },
       {
         id: "shift-audit-park",
@@ -883,8 +792,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         tabValue: "audit_logs",
         icon: History,
         permissionKeys: ["page_audit_logs", "audit_logs", "system_audit_logs"],
-        matchPath: (p, tab) =>
-          (p === "/admin" || p === "/admin/") && tab === "audit_logs",
+        matchPath: (p, tab) => (p === "/admin" || p === "/admin/") && tab === "audit_logs",
       },
     ],
   },
@@ -902,9 +810,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         tabValue: "system",
         icon: Settings,
         permissionKeys: ["page_developer"],
-        matchPath: (p, tab) =>
-          p.startsWith("/admin/system-update") &&
-          (!tab || tab === "system"),
+        matchPath: (p, tab) => p.startsWith("/admin/system-update") && (!tab || tab === "system"),
       },
       {
         id: "system-access",
@@ -914,8 +820,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         tabValue: "access",
         icon: Database,
         permissionKeys: ["page_system_access_db", "system_backup_update"],
-        matchPath: (p, tab) =>
-          p.startsWith("/admin/system-update") && tab === "access",
+        matchPath: (p, tab) => p.startsWith("/admin/system-update") && tab === "access",
       },
       {
         id: "system-audit",
@@ -926,8 +831,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         icon: History,
         permissionKeys: ["page_developer", "system_backup_update"],
         matchPath: (p, tab) =>
-          p.startsWith("/admin/system-update") &&
-          (tab === "audit" || tab === "audit_logs"),
+          p.startsWith("/admin/system-update") && (tab === "audit" || tab === "audit_logs"),
       },
       {
         id: "system-sync",
@@ -938,8 +842,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         icon: RefreshCw,
         permissionKeys: ["page_system_github", "system_backup_update"],
         matchPath: (p, tab) =>
-          p.startsWith("/admin/system-update") &&
-          (tab === "sync" || tab === "updates"),
+          p.startsWith("/admin/system-update") && (tab === "sync" || tab === "updates"),
       },
       {
         id: "system-status",
@@ -949,8 +852,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         tabValue: "status",
         icon: ShieldCheck,
         permissionKeys: ["page_system_status", "system_backup_update"],
-        matchPath: (p, tab) =>
-          p.startsWith("/admin/system-update") && tab === "status",
+        matchPath: (p, tab) => p.startsWith("/admin/system-update") && tab === "status",
       },
       {
         id: "system-studio",
@@ -958,9 +860,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         to: "/admin/studio",
         icon: Sparkles,
         permissionKeys: ["developer_options", "super_admin_full_access"],
-        matchPath: (p) =>
-          p.startsWith("/admin/studio") ||
-          p.startsWith("/admin/developer-studio"),
+        matchPath: (p) => p.startsWith("/admin/studio") || p.startsWith("/admin/developer-studio"),
       },
     ],
   },
@@ -984,10 +884,7 @@ export function resolveNavigationState(
   const activeTab = localTab !== undefined ? localTab : urlTab || "";
 
   // Check if at root dashboard (/admin with no tab or tab=grid)
-  if (
-    (normPath === "/admin" || normPath === "/") &&
-    (!activeTab || activeTab === "grid")
-  ) {
+  if ((normPath === "/admin" || normPath === "/") && (!activeTab || activeTab === "grid")) {
     return {
       isRootDashboard: true,
       department: null,
@@ -1017,10 +914,7 @@ export function resolveNavigationState(
     if (deptTab && deptTab !== activeTab) {
       continue;
     }
-    if (
-      deptNorm !== "/admin" &&
-      (normPath === deptNorm || normPath.startsWith(`${deptNorm}/`))
-    ) {
+    if (deptNorm !== "/admin" && (normPath === deptNorm || normPath.startsWith(`${deptNorm}/`))) {
       return {
         isRootDashboard: false,
         department: dept,
@@ -1061,8 +955,7 @@ export function isRestaurantScreenPath(
   search?: unknown,
   searchStr?: string,
 ): boolean {
-  const rawPath =
-    pathname || (typeof window !== "undefined" ? window.location.pathname : "/");
+  const rawPath = pathname || (typeof window !== "undefined" ? window.location.pathname : "/");
   const normPath = normalizePathname(rawPath);
 
   if (
@@ -1089,4 +982,3 @@ export function isRestaurantScreenPath(
 }
 
 export { Grid3X3 };
-

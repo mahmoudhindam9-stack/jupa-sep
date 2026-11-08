@@ -67,8 +67,8 @@ export function MallReportAndArchiveDialogs({
               طباعة وفسخ عقد إيجار وتسليم المحل
             </DialogTitle>
             <DialogDescription className="text-xs">
-              اختر المحل المرغوب فسخ تعاقده، حدد مبلغ التأمين المسترد، وارفع وثيقة الفسخ الموقعة
-              لإتمام الأرشفة وتسوية القيود المحاسبية.
+              اختر المحل المرغوب فسخ تعاقده وارفع وثيقة الفسخ الموقعة لإتمام الأرشفة. لا يتم توليد
+              أي قيود مالية تلقائية؛ تُسجّل أي تسوية مالية بشكل مستقل عبر قسم الإدارة المالية.
             </DialogDescription>
           </DialogHeader>
 
@@ -135,7 +135,7 @@ export function MallReportAndArchiveDialogs({
 
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-foreground">
-                مبلغ التأمين المسترد للعميل ($) *
+                قيمة التأمين المثبتة في محضر التسليم ($)
               </label>
               <Input
                 type="number"
@@ -145,30 +145,10 @@ export function MallReportAndArchiveDialogs({
                 }
                 className="rounded-xl font-black text-rose-600 text-base"
               />
-            </div>
-
-            <div className="space-y-1.5 pt-2 border-t border-border">
-              <label className="text-xs font-black text-foreground">
-                خزينة / حساب صرف التأمين المرتجع:
-              </label>
-              <Select
-                value={terminationForm.treasury_account_id}
-                onValueChange={(v) =>
-                  setTerminationForm({ ...terminationForm, treasury_account_id: v })
-                }
-              >
-                <SelectTrigger className="rounded-xl font-bold bg-background">
-                  <SelectValue placeholder="اختر الخزينة/الحساب..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {treasuries.map((t: any) => (
-                    <SelectItem key={t.id} value={t.id}>
-                      {t.account_code ? `[رقم الحساب: ${t.account_code}] ` : ""}
-                      {t.name_ar}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <p className="text-[11px] text-muted-foreground">
+                بيان توثيقي في محضر التسليم فقط — يتم إصدار أي سند صرف أو تسوية مالية بشكل منفصل من
+                قسم الإدارة المالية.
+              </p>
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-foreground">

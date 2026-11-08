@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { ViewModeToggle, useViewMode } from "@/components/ui/view-mode-toggle";
 import { useToast } from "@/hooks/use-toast";
 import {
   Pencil,
@@ -988,14 +989,17 @@ const PERMISSION_CATEGORIES: PermissionCategory[] = [
   },
 ];
 
-
 function profileToSystemUser(profile: any): SystemUser {
-  const email = String(profile.email || "").trim().toLowerCase();
+  const email = String(profile.email || "")
+    .trim()
+    .toLowerCase();
   return {
     id: String(profile.id || ""),
     employee_code: profile.employee_code ? String(profile.employee_code).trim() : undefined,
     full_name: profile.full_name || profile.username || "",
-    username: String(profile.username || email.split("@")[0] || "").trim().toLowerCase(),
+    username: String(profile.username || email.split("@")[0] || "")
+      .trim()
+      .toLowerCase(),
     email,
     phone: profile.phone || "",
     role: profile.role || "cashier",
@@ -1020,8 +1024,12 @@ function isActiveUserRecord(user: SystemUser | null | undefined, activeAuthUser?
             sessionStorage.getItem("restocash_auth_user"))) ||
         "";
   const active = activeValue.trim().toLowerCase();
-  const storedUsername = String(user.username || "").trim().toLowerCase();
-  const storedEmail = String(user.email || "").trim().toLowerCase();
+  const storedUsername = String(user.username || "")
+    .trim()
+    .toLowerCase();
+  const storedEmail = String(user.email || "")
+    .trim()
+    .toLowerCase();
   if (!active || (!storedUsername && !storedEmail)) return false;
   return (
     (!!storedEmail && active === storedEmail) ||
@@ -1043,8 +1051,12 @@ function isUserOnlineSession(
       const raw = localStorage.getItem("restocash_online_sessions_v1");
       if (raw) {
         const map = JSON.parse(raw) || {};
-        const uname = String(user.username || "").trim().toLowerCase();
-        const uemail = String(user.email || "").trim().toLowerCase();
+        const uname = String(user.username || "")
+          .trim()
+          .toLowerCase();
+        const uemail = String(user.email || "")
+          .trim()
+          .toLowerCase();
         const code = String(user.employee_code || "").trim();
         if ((uname && map[uname]) || (uemail && map[uemail]) || (code && map[`code:${code}`])) {
           return true;
@@ -1090,27 +1102,35 @@ function currentActorPermissions(
         sessionStorage.getItem("restocash_auth_user") ||
         ""
       : ""
-  ).trim().toLowerCase();
+  )
+    .trim()
+    .toLowerCase();
   const storedRole = (
     typeof window !== "undefined"
       ? localStorage.getItem("restocash_user_role") ||
         sessionStorage.getItem("restocash_user_role") ||
         ""
       : ""
-  ).trim().toLowerCase();
+  )
+    .trim()
+    .toLowerCase();
   const username = String(state?.currentUser || activeStored.split("@")[0] || "")
     .trim()
     .toLowerCase();
 
   const record = (state?.users || []).find((user: any) => {
-    const candidateUsername = String(user.username || "").trim().toLowerCase();
-    const candidateEmail = String(user.email || "").trim().toLowerCase();
+    const candidateUsername = String(user.username || "")
+      .trim()
+      .toLowerCase();
+    const candidateEmail = String(user.email || "")
+      .trim()
+      .toLowerCase();
     return candidateUsername === username || (!!activeStored && candidateEmail === activeStored);
   });
 
-  const actorRole = String(
-    authoritativeProfile?.role || record?.role || storedRole || "cashier",
-  ).trim().toLowerCase();
+  const actorRole = String(authoritativeProfile?.role || record?.role || storedRole || "cashier")
+    .trim()
+    .toLowerCase();
 
   const isAdminActor =
     actorRole === "admin" ||
@@ -1323,9 +1343,7 @@ export function UsersPage() {
     usersList: SystemUser[],
     currentAuthUserId?: string,
   ): Promise<SystemUser[]> => {
-    const admins = usersList.filter(
-      (u) => u.role === "admin" || u.role === "super_admin",
-    );
+    const admins = usersList.filter((u) => u.role === "admin" || u.role === "super_admin");
     if (admins.length <= 1) return usersList;
 
     const activeStored =
@@ -1350,8 +1368,7 @@ export function UsersPage() {
       ) ||
       admins.find(
         (u) =>
-          u.username !== "admin" &&
-          String(u.email || "").toLowerCase() !== "admin@restocash.com",
+          u.username !== "admin" && String(u.email || "").toLowerCase() !== "admin@restocash.com",
       ) ||
       admins[0];
 
@@ -1364,9 +1381,7 @@ export function UsersPage() {
     }
 
     return usersList.filter(
-      (u) =>
-        (u.role !== "admin" && u.role !== "super_admin") ||
-        u.id === keptAdmin.id,
+      (u) => (u.role !== "admin" && u.role !== "super_admin") || u.id === keptAdmin.id,
     );
   };
 
@@ -1465,10 +1480,9 @@ export function UsersPage() {
           return;
         }
         const rawMessage = String(err?.message || "");
-        const message =
-          rawMessage.toLowerCase().includes("auth session missing")
-            ? "انتهت جلسة الدخول السحابية؛ يرجى تسجيل الدخول مرة أخرى."
-            : rawMessage || "تعذر تحميل دليل المستخدمين من Supabase.";
+        const message = rawMessage.toLowerCase().includes("auth session missing")
+          ? "انتهت جلسة الدخول السحابية؛ يرجى تسجيل الدخول مرة أخرى."
+          : rawMessage || "تعذر تحميل دليل المستخدمين من Supabase.";
         setUserDirectoryError(message);
         setUserDirectoryStatus("error");
         console.error("Users directory load failed:", err);
@@ -1485,13 +1499,9 @@ export function UsersPage() {
 
     const channel = supabase
       .channel("managed-users-directory")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "profiles" },
-        () => {
-          void loadUsersDirectory();
-        },
-      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => {
+        void loadUsersDirectory();
+      })
       .on(
         "postgres_changes",
         {
@@ -1560,7 +1570,8 @@ export function UsersPage() {
         editingUserId: editing?.id || null,
       });
 
-      const requestedCode = String(form.employee_code || "").trim() || erpStore.getNextEmployeeCode();
+      const requestedCode =
+        String(form.employee_code || "").trim() || erpStore.getNextEmployeeCode();
       const duplicateCodeUser = localUsers.find(
         (u) =>
           u.id !== (editing?.id || "") &&
@@ -1579,7 +1590,10 @@ export function UsersPage() {
       if (editing) {
         const permissions =
           validatedForm.role !== editing.role
-            ? limitPermissionsToActor(defaultPermissionsForRole(validatedForm.role), actorPermissions)
+            ? limitPermissionsToActor(
+                defaultPermissionsForRole(validatedForm.role),
+                actorPermissions,
+              )
             : editing.permissions ||
               erpState.userPermissions[editing.username] ||
               defaultPermissionsForRole(form.role);
@@ -1655,8 +1669,7 @@ export function UsersPage() {
       );
       assertNoPrivilegeEscalation(permissions as any, validatedForm.role, actorPermissions);
 
-      const emailToUse =
-        validatedForm.email || `${validatedForm.username}@restocash.com`;
+      const emailToUse = validatedForm.email || `${validatedForm.username}@restocash.com`;
 
       // 1. Save new user locally first (Local-First)
       const localUser: SystemUser = {
@@ -1960,6 +1973,7 @@ export function UsersPage() {
     const presetPerms = defaultPermissionsForRole(preset);
     setEditedPermissions({ ...presetPerms });
   };
+  const [viewMode, setViewMode] = useViewMode("users-directory", "list");
 
   return (
     <div className="space-y-8 p-1 sm:p-2">
@@ -1985,25 +1999,25 @@ export function UsersPage() {
             <UsersIcon size={14} />
             المرجع الموحد للمستخدمين والصلاحيات
           </span>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 text-xs font-bold gap-1.5 rounded-xl"
-            onClick={handleManualCloudSync}
-            disabled={isSyncingDirectory}
-          >
-            <RefreshCw size={14} className={isSyncingDirectory ? "animate-spin" : ""} />
-            {isSyncingDirectory
-              ? "جارٍ المزامنة مع قاعدة البيانات..."
-              : `مزامنة مع قاعدة البيانات${pendingSyncCount > 0 ? ` (${pendingSyncCount} بالانتظار)` : ""}`}
-          </Button>
+          <div className="flex items-center gap-2">
+            <ViewModeToggle mode={viewMode} onChange={setViewMode} />
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs font-bold gap-1.5 rounded-xl"
+              onClick={handleManualCloudSync}
+              disabled={isSyncingDirectory}
+            >
+              <RefreshCw size={14} className={isSyncingDirectory ? "animate-spin" : ""} />
+              {isSyncingDirectory
+                ? "جارٍ المزامنة مع قاعدة البيانات..."
+                : `مزامنة مع قاعدة البيانات${pendingSyncCount > 0 ? ` (${pendingSyncCount} بالانتظار)` : ""}`}
+            </Button>
+          </div>
         </div>
         <h1 className="text-3xl font-black tracking-tight text-foreground mt-2">
           إدارة المستخدمين وصلاحيات الوصول والرقابة
         </h1>
-        <p className="text-xs text-muted-foreground mt-1">
-          يتم حفظ المستخدمين الجدد محلياً أولاً ثم مزامنتهم تلقائياً مع قاعدة البيانات (Supabase) بنفس الشروط والقيود، مع إخفاء أي قسم غير مصرح به لكل مستخدم
-        </p>
         <div
           className={`mt-3 rounded-xl border px-3 py-2 text-xs font-semibold ${
             userDirectoryStatus === "error"
@@ -2028,7 +2042,11 @@ export function UsersPage() {
       <div className="space-y-4">
         <h2 className="text-lg font-black text-foreground flex items-center gap-2">
           <ShieldCheck size={18} className="text-primary" />
-          <span>{editing ? `تعديل بيانات المستخدم (${editing.username})` : "إضافة مستخدم جديد (موحد مع شروط قاعدة البيانات)"}</span>
+          <span>
+            {editing
+              ? `تعديل بيانات المستخدم (${editing.username})`
+              : "إضافة مستخدم جديد (موحد مع شروط قاعدة البيانات)"}
+          </span>
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-6 gap-4 bg-card border border-border p-5 rounded-2xl shadow-sm">
           <div className="md:col-span-2 lg:col-span-1">
@@ -2096,14 +2114,14 @@ export function UsersPage() {
                   const prevAutoEmail = s.username
                     ? `${normalizeManagedUsername(s.username)}@restocash.com`
                     : "";
-                  const shouldAutoFillEmail =
-                    !editing && (!s.email || s.email === prevAutoEmail);
+                  const shouldAutoFillEmail = !editing && (!s.email || s.email === prevAutoEmail);
                   return {
                     ...s,
                     username: nextUsername,
-                    email: shouldAutoFillEmail && nextUsername.trim()
-                      ? `${normalizeManagedUsername(nextUsername)}@restocash.com`
-                      : s.email,
+                    email:
+                      shouldAutoFillEmail && nextUsername.trim()
+                        ? `${normalizeManagedUsername(nextUsername)}@restocash.com`
+                        : s.email,
                   };
                 });
               }}
@@ -2210,9 +2228,7 @@ export function UsersPage() {
                   <li
                     key={rule.id}
                     className={`flex items-center gap-1.5 font-semibold ${
-                      rule.met
-                        ? "text-emerald-600 dark:text-emerald-400"
-                        : "text-destructive"
+                      rule.met ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"
                     }`}
                   >
                     {rule.met ? (
@@ -2250,7 +2266,8 @@ export function UsersPage() {
               </div>
               {formInspection.passwordChecks.length === 0 ? (
                 <p className="text-[11px] text-muted-foreground font-semibold">
-                  أثناء التعديل، اترك خانة الرقم السري فارغة للاحتفاظ بالرقم السري الحالي، أو أدخل رقماً سرياً جديداً لمطابقة الشروط.
+                  أثناء التعديل، اترك خانة الرقم السري فارغة للاحتفاظ بالرقم السري الحالي، أو أدخل
+                  رقماً سرياً جديداً لمطابقة الشروط.
                 </p>
               ) : (
                 <ul className="space-y-1 text-[11px]">
@@ -2258,9 +2275,7 @@ export function UsersPage() {
                     <li
                       key={rule.id}
                       className={`flex items-center gap-1.5 font-semibold ${
-                        rule.met
-                          ? "text-emerald-600 dark:text-emerald-400"
-                          : "text-destructive"
+                        rule.met ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"
                       }`}
                     >
                       {rule.met ? (
@@ -2281,7 +2296,8 @@ export function UsersPage() {
               {!formInspection.isValid ? (
                 <span className="text-destructive flex items-center gap-1.5">
                   <AlertTriangle size={14} />
-                  يرجى استيفاء الشروط الموضحة باللون الأحمر أعلاه لتفعيل الحفظ والمزامنة مع قاعدة البيانات.
+                  يرجى استيفاء الشروط الموضحة باللون الأحمر أعلاه لتفعيل الحفظ والمزامنة مع قاعدة
+                  البيانات.
                 </span>
               ) : (
                 <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
@@ -2324,133 +2340,215 @@ export function UsersPage() {
           </div>
         </div>
 
-        <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
-          <table className="w-full text-xs">
-            <thead className="bg-muted text-muted-foreground">
-              <tr>
-                <th className="text-right p-3 font-bold">الرقم الوظيفي</th>
-                <th className="text-right p-3 font-bold">الاسم الكامل</th>
-                <th className="text-right p-3 font-bold">اسم المستخدم / البريد الإلكتروني</th>
-                <th className="text-right p-3 font-bold">حالة الاتصال</th>
-                <th className="text-right p-3 font-bold">رقم الهاتف</th>
-                <th className="text-right p-3 font-bold">الدور الوظيفي</th>
-                <th className="text-right p-3 font-bold">حالة المزامنة</th>
-                <th className="text-center p-3 font-bold w-40">الإجراءات</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border font-semibold">
-              {localUsers.map((u) => {
-                const isCloudUuid =
-                  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-                    String(u.id || ""),
-                  );
-                const isPending = hasPendingUserChange(u.id, u.username);
-                const syncError = getPendingUserError(u.id, u.username);
-                const isOnlineNow = isUserOnlineSession(u, activeAuthUser, erpState.currentUser);
-                const matchedEmp = (erpState.employees || []).find(
-                  (emp) =>
-                    (u.employee_code && emp.employee_code === u.employee_code) ||
-                    (u.full_name && emp.name.trim() === u.full_name.trim()),
-                );
-                const displayCode = u.employee_code || matchedEmp?.employee_code || "-";
-                return (
-                  <tr key={u.id} className="hover:bg-muted/30 transition-colors">
-                    <td className="p-3">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/25 font-mono font-black text-xs">
-                        #{displayCode}
-                      </span>
-                    </td>
-                    <td className="p-3 font-bold text-foreground">{u.full_name || "-"}</td>
-                    <td className="p-3">
-                      <div className="font-mono font-bold">{u.username || "-"}</div>
-                      {u.email && (
-                        <div className="font-mono text-[10px] text-muted-foreground mt-1" dir="ltr">
-                          {u.email}
-                        </div>
-                      )}
-                    </td>
-                    <td className="p-3">
-                      {isOnlineNow ? (
-                        <span className="inline-flex items-center gap-1.5 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 px-2.5 py-0.5 rounded-full text-[10px] font-black">
-                          <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                          أونلاين (متصل الآن)
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 bg-slate-500/10 text-slate-600 dark:text-slate-400 border border-slate-400/30 px-2.5 py-0.5 rounded-full text-[10px] font-bold">
-                          <span className="h-2 w-2 rounded-full bg-slate-400" />
-                          أوفلاين (غير متصل)
-                        </span>
-                      )}
-                    </td>
-                    <td className="p-3 font-mono">{u.phone || "-"}</td>
-                    <td className="p-3">
-                      <span className="bg-primary/10 text-primary border border-primary/20 px-2.5 py-0.5 rounded-full font-black text-[10px]">
-                        {roleLabels[u.role] ?? u.role}
-                      </span>
-                    </td>
-                    <td className="p-3">
-                      {isPending ? (
-                        <div className="space-y-0.5">
-                          <span className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full text-[10px] font-bold">
-                            محفوظ محلياً • قيد المزامنة
-                          </span>
-                          {syncError && (
-                            <div className="text-[10px] text-destructive max-w-[200px] truncate" title={syncError}>
-                              {syncError}
-                            </div>
-                          )}
-                        </div>
-                      ) : isCloudUuid || isCloudSyncActive ? (
-                        <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full text-[10px] font-bold">
-                          متزامن مع قاعدة البيانات ✓
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/30 px-2 py-0.5 rounded-full text-[10px] font-bold">
-                          محفوظ محلياً وجاهز للمزامنة ✓
-                        </span>
-                      )}
-                    </td>
-                    <td className="p-3 flex items-center justify-center gap-1.5 flex-wrap">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-8 px-2.5 rounded-lg gap-1.5 text-primary border-primary/30 hover:bg-primary/10 font-bold"
-                        onClick={() => openPermissionsForUser(u)}
-                        disabled={userDirectoryStatus !== "ready"}
-                      >
-                        <ShieldCheck size={14} />
-                        الصلاحيات
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="outline"
-                        className="h-8 w-8 rounded-lg"
-                        onClick={() => startEdit(u)}
-                        disabled={userDirectoryStatus !== "ready"}
-                      >
-                        <Pencil size={14} />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="destructive"
-                        className="h-8 w-8 rounded-lg"
-                        onClick={() => {
-                          setUserToDelete(u.id);
-                          setIsConfirmDeleteOpen(true);
-                        }}
-                        disabled={
-                          isActiveUserRecord(u, activeAuthUser) || userDirectoryStatus !== "ready"
-                        }
-                      >
-                        <Trash2 size={14} />
-                      </Button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-black text-foreground">
+            دليل المستخدمين المسجلين ({localUsers.length})
+          </h3>
+          <ViewModeToggle mode={viewMode} onChange={setViewMode} />
         </div>
+
+        {viewMode === "grid" ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {localUsers.map((u) => {
+              const matchedEmp = (erpState.employees || []).find(
+                (emp) =>
+                  (u.employee_code && emp.employee_code === u.employee_code) ||
+                  (u.full_name && emp.name.trim() === u.full_name.trim()),
+              );
+              const displayCode = u.employee_code || matchedEmp?.employee_code || "-";
+              return (
+                <div
+                  key={u.id}
+                  className="bg-card border border-border rounded-2xl p-4 shadow-xs space-y-3 flex flex-col justify-between"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/25 font-mono font-black text-xs">
+                      #{displayCode}
+                    </span>
+                    <span className="bg-primary/10 text-primary border border-primary/20 px-2.5 py-0.5 rounded-full font-black text-[10px]">
+                      {roleLabels[u.role] ?? u.role}
+                    </span>
+                  </div>
+                  <div>
+                    <div className="font-bold text-sm text-foreground">{u.full_name || "-"}</div>
+                    <div className="font-mono text-xs text-muted-foreground">
+                      {u.username || "-"}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-end gap-1.5 pt-2 border-t border-border/60">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 px-2.5 rounded-lg gap-1.5 text-primary border-primary/30 hover:bg-primary/10 font-bold text-xs"
+                      onClick={() => openPermissionsForUser(u)}
+                      disabled={userDirectoryStatus !== "ready"}
+                    >
+                      <ShieldCheck size={13} />
+                      الصلاحيات
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="outline"
+                      className="h-8 w-8 rounded-lg"
+                      onClick={() => startEdit(u)}
+                      disabled={userDirectoryStatus !== "ready"}
+                    >
+                      <Pencil size={13} />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="destructive"
+                      className="h-8 w-8 rounded-lg"
+                      onClick={() => {
+                        setUserToDelete(u.id);
+                        setIsConfirmDeleteOpen(true);
+                      }}
+                      disabled={
+                        isActiveUserRecord(u, activeAuthUser) || userDirectoryStatus !== "ready"
+                      }
+                    >
+                      <Trash2 size={13} />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
+            <table className="w-full text-xs">
+              <thead className="bg-muted text-muted-foreground">
+                <tr>
+                  <th className="text-right p-3 font-bold">الرقم الوظيفي</th>
+                  <th className="text-right p-3 font-bold">الاسم الكامل</th>
+                  <th className="text-right p-3 font-bold">اسم المستخدم / البريد الإلكتروني</th>
+                  <th className="text-right p-3 font-bold">حالة الاتصال</th>
+                  <th className="text-right p-3 font-bold">رقم الهاتف</th>
+                  <th className="text-right p-3 font-bold">الدور الوظيفي</th>
+                  <th className="text-right p-3 font-bold">حالة المزامنة</th>
+                  <th className="text-center p-3 font-bold w-40">الإجراءات</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border font-semibold">
+                {localUsers.map((u) => {
+                  const isCloudUuid =
+                    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+                      String(u.id || ""),
+                    );
+                  const isPending = hasPendingUserChange(u.id, u.username);
+                  const syncError = getPendingUserError(u.id, u.username);
+                  const isOnlineNow = isUserOnlineSession(u, activeAuthUser, erpState.currentUser);
+                  const matchedEmp = (erpState.employees || []).find(
+                    (emp) =>
+                      (u.employee_code && emp.employee_code === u.employee_code) ||
+                      (u.full_name && emp.name.trim() === u.full_name.trim()),
+                  );
+                  const displayCode = u.employee_code || matchedEmp?.employee_code || "-";
+                  return (
+                    <tr key={u.id} className="hover:bg-muted/30 transition-colors">
+                      <td className="p-3">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/25 font-mono font-black text-xs">
+                          #{displayCode}
+                        </span>
+                      </td>
+                      <td className="p-3 font-bold text-foreground">{u.full_name || "-"}</td>
+                      <td className="p-3">
+                        <div className="font-mono font-bold">{u.username || "-"}</div>
+                        {u.email && (
+                          <div
+                            className="font-mono text-[10px] text-muted-foreground mt-1"
+                            dir="ltr"
+                          >
+                            {u.email}
+                          </div>
+                        )}
+                      </td>
+                      <td className="p-3">
+                        {isOnlineNow ? (
+                          <span className="inline-flex items-center gap-1.5 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 px-2.5 py-0.5 rounded-full text-[10px] font-black">
+                            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                            أونلاين (متصل الآن)
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 bg-slate-500/10 text-slate-600 dark:text-slate-400 border border-slate-400/30 px-2.5 py-0.5 rounded-full text-[10px] font-bold">
+                            <span className="h-2 w-2 rounded-full bg-slate-400" />
+                            أوفلاين (غير متصل)
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-3 font-mono">{u.phone || "-"}</td>
+                      <td className="p-3">
+                        <span className="bg-primary/10 text-primary border border-primary/20 px-2.5 py-0.5 rounded-full font-black text-[10px]">
+                          {roleLabels[u.role] ?? u.role}
+                        </span>
+                      </td>
+                      <td className="p-3">
+                        {isPending ? (
+                          <div className="space-y-0.5">
+                            <span className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                              محفوظ محلياً • قيد المزامنة
+                            </span>
+                            {syncError && (
+                              <div
+                                className="text-[10px] text-destructive max-w-[200px] truncate"
+                                title={syncError}
+                              >
+                                {syncError}
+                              </div>
+                            )}
+                          </div>
+                        ) : isCloudUuid || isCloudSyncActive ? (
+                          <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                            متزامن مع قاعدة البيانات ✓
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/30 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                            محفوظ محلياً وجاهز للمزامنة ✓
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-3 flex items-center justify-center gap-1.5 flex-wrap">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 px-2.5 rounded-lg gap-1.5 text-primary border-primary/30 hover:bg-primary/10 font-bold"
+                          onClick={() => openPermissionsForUser(u)}
+                          disabled={userDirectoryStatus !== "ready"}
+                        >
+                          <ShieldCheck size={14} />
+                          الصلاحيات
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="outline"
+                          className="h-8 w-8 rounded-lg"
+                          onClick={() => startEdit(u)}
+                          disabled={userDirectoryStatus !== "ready"}
+                        >
+                          <Pencil size={14} />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="destructive"
+                          className="h-8 w-8 rounded-lg"
+                          onClick={() => {
+                            setUserToDelete(u.id);
+                            setIsConfirmDeleteOpen(true);
+                          }}
+                          disabled={
+                            isActiveUserRecord(u, activeAuthUser) || userDirectoryStatus !== "ready"
+                          }
+                        >
+                          <Trash2 size={14} />
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Lock accounting periods & fiscal year status */}

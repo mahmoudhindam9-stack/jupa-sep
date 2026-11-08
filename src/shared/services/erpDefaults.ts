@@ -82,9 +82,10 @@ export const DEFAULT_EMPLOYEES: Employee[] = [
 ];
 
 export function ensureEmployeesWithUniqueCodes(rawEmployees: unknown): Employee[] {
-  const list = Array.isArray(rawEmployees) && rawEmployees.length > 0
-    ? (rawEmployees as Employee[])
-    : DEFAULT_EMPLOYEES;
+  const list =
+    Array.isArray(rawEmployees) && rawEmployees.length > 0
+      ? (rawEmployees as Employee[])
+      : DEFAULT_EMPLOYEES;
 
   const usedCodes = new Set<string>();
   let maxNumericCode = 1000;
@@ -1154,13 +1155,9 @@ export const DEFAULT_SUPPLIERS: Supplier[] = ORACLE_MIGRATION_ACCOUNTS.filter(
   deleted: false,
 }));
 
-export const LEGACY_DEFAULT_USER_IDS = new Set([
-  "u-manager",
-  "u-cashier",
-  "u-owner-mahmoud",
-]);
+export const LEGACY_DEFAULT_USER_IDS = new Set(["u-manager", "u-cashier", "u-owner-mahmoud"]);
 
-export const DEFAULT_COMPLIANT_ADMIN_PASSWORD = "Admin@12345";
+export const DEFAULT_COMPLIANT_ADMIN_PASSWORD = "";
 
 export const ROOT_DEFAULT_ADMIN: SystemUser = {
   id: "u-admin",
@@ -1170,7 +1167,6 @@ export const ROOT_DEFAULT_ADMIN: SystemUser = {
   email: "admin@restocash.com",
   phone: "01000000000",
   role: "super_admin",
-  password: DEFAULT_COMPLIANT_ADMIN_PASSWORD,
   permissions: {
     super_admin_full_access: true,
     orders: true,
@@ -1219,7 +1215,6 @@ export const OWNER_DEFAULT_ADMIN: SystemUser = {
   email: "mahmoudhindam9@gmail.com",
   phone: "01000000000",
   role: "super_admin",
-  password: DEFAULT_COMPLIANT_ADMIN_PASSWORD,
   permissions: {
     ...ROOT_DEFAULT_ADMIN.permissions,
   },
@@ -1248,9 +1243,15 @@ function isCompliantPasswordValue(pw: unknown): boolean {
 }
 
 function isSeedAdminRecord(u: SystemUser): boolean {
-  const uid = String(u.id || "").trim().toLowerCase();
-  const uname = String(u.username || "").trim().toLowerCase();
-  const uemail = String(u.email || "").trim().toLowerCase();
+  const uid = String(u.id || "")
+    .trim()
+    .toLowerCase();
+  const uname = String(u.username || "")
+    .trim()
+    .toLowerCase();
+  const uemail = String(u.email || "")
+    .trim()
+    .toLowerCase();
   return (
     uid === "u-admin" ||
     uid === "u-owner-mahmoud" ||
@@ -1281,15 +1282,18 @@ export function ensureCurrentManagedUsers(
   const normalizedEmployees = ensureEmployeesWithUniqueCodes(employees);
 
   const normalizedList: SystemUser[] = rawList.map((user, idx) => {
-    const rawUserStr = String(user.username || "").trim().toLowerCase();
-    const rawEmailStr = String(user.email || "").trim().toLowerCase();
+    const rawUserStr = String(user.username || "")
+      .trim()
+      .toLowerCase();
+    const rawEmailStr = String(user.email || "")
+      .trim()
+      .toLowerCase();
 
-    const candidateEmail =
-      /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(rawEmailStr)
-        ? rawEmailStr
-        : /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(rawUserStr)
-          ? rawUserStr
-          : "";
+    const candidateEmail = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(rawEmailStr)
+      ? rawEmailStr
+      : /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(rawUserStr)
+        ? rawUserStr
+        : "";
 
     let compliantUsername =
       rawUserStr === "mahmoudhindam9@gmail.com"
@@ -1316,7 +1320,7 @@ export function ensureCurrentManagedUsers(
 
     const resolvedPassword = isCompliantPasswordValue(user.password)
       ? String(user.password)
-      : DEFAULT_COMPLIANT_ADMIN_PASSWORD;
+      : undefined;
 
     const validRoles = new Set([
       "super_admin",
@@ -1326,7 +1330,9 @@ export function ensureCurrentManagedUsers(
       "captain",
       "kitchen",
     ]);
-    const rawRole = String(user.role || "cashier").trim().toLowerCase();
+    const rawRole = String(user.role || "cashier")
+      .trim()
+      .toLowerCase();
     const resolvedRole = (
       compliantUsername === "admin" && (rawRole === "admin" || rawRole === "super_admin")
         ? "super_admin"
@@ -1340,7 +1346,9 @@ export function ensureCurrentManagedUsers(
         ? { ...ROOT_DEFAULT_ADMIN.permissions, ...(user.permissions || {}) }
         : { ...(user.permissions || {}) };
 
-    const fullNameClean = String(user.full_name || compliantUsername).trim().slice(0, 120);
+    const fullNameClean = String(user.full_name || compliantUsername)
+      .trim()
+      .slice(0, 120);
 
     // Match employee_code with HR employee if linked by code or name, otherwise assign unique code
     const matchedHrEmp = normalizedEmployees.find(
@@ -1370,7 +1378,9 @@ export function ensureCurrentManagedUsers(
       full_name: fullNameClean,
       username: compliantUsername,
       email: compliantEmail,
-      phone: String(user.phone || matchedHrEmp?.phone || "").trim().slice(0, 40),
+      phone: String(user.phone || matchedHrEmp?.phone || "")
+        .trim()
+        .slice(0, 40),
       role: resolvedRole,
       password: resolvedPassword,
       permissions: resolvedPermissions,
@@ -1380,9 +1390,7 @@ export function ensureCurrentManagedUsers(
   // Enforce keeping ONLY ONE administration account (admin / super_admin):
   // If multiple admin accounts exist, keep the active logged-in admin or the real non-seed admin
   // and remove the extra/default admin account.
-  const adminUsers = normalizedList.filter(
-    (u) => u.role === "admin" || u.role === "super_admin",
-  );
+  const adminUsers = normalizedList.filter((u) => u.role === "admin" || u.role === "super_admin");
 
   let finalList = normalizedList;
   if (adminUsers.length > 1) {
@@ -1401,8 +1409,12 @@ export function ensureCurrentManagedUsers(
     const keptAdmin =
       adminUsers.find((u) => {
         if (!activeAuth) return false;
-        const uname = String(u.username || "").trim().toLowerCase();
-        const uemail = String(u.email || "").trim().toLowerCase();
+        const uname = String(u.username || "")
+          .trim()
+          .toLowerCase();
+        const uemail = String(u.email || "")
+          .trim()
+          .toLowerCase();
         return (
           uemail === activeAuth ||
           uname === activeAuth ||
@@ -1413,15 +1425,11 @@ export function ensureCurrentManagedUsers(
       adminUsers[0];
 
     finalList = normalizedList.filter(
-      (u) =>
-        (u.role !== "admin" && u.role !== "super_admin") ||
-        u.id === keptAdmin.id,
+      (u) => (u.role !== "admin" && u.role !== "super_admin") || u.id === keptAdmin.id,
     );
   }
 
-  const hasAnyAdmin = finalList.some(
-    (u) => u.role === "admin" || u.role === "super_admin",
-  );
+  const hasAnyAdmin = finalList.some((u) => u.role === "admin" || u.role === "super_admin");
   if (!hasAnyAdmin) {
     finalList.unshift({
       ...ROOT_DEFAULT_ADMIN,

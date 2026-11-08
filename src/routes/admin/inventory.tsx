@@ -1,9 +1,6 @@
 // @ts-nocheck
 import { createFileRoute, Link, useLocation } from "@tanstack/react-router";
-import {
-  extractTabParam,
-  useSyncedSubTab,
-} from "@/components/navigation/navigationRegistry";
+import { extractTabParam, useSyncedSubTab } from "@/components/navigation/navigationRegistry";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as XLSX from "xlsx";
 import { useState, useMemo, useEffect, useCallback } from "react";
@@ -13,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ViewModeToggle, useViewMode } from "@/components/ui/view-mode-toggle";
 import { erpStore } from "@/shared/services/erpStore";
 import { useSettings } from "@/hooks/use-settings";
 import { convertToInventoryUnit } from "@/shared/utils/inventoryUtils";
@@ -110,6 +108,7 @@ function InventoryPage() {
   const { formatPrice } = useSettings();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [hubViewMode, setHubViewMode] = useViewMode("inventory-hub", "grid");
 
   // Load the authenticated Supabase identity and its real managed profile.
   // Never synthesize an admin profile or promote the current user from this feature.
@@ -1330,18 +1329,16 @@ function InventoryPage() {
     <div className="space-y-6 text-right">
       {/* Top Bar - Frozen Sticky Header with Clear Department Title */}
       {activeTab === "grid" ? (
-        <div className="flex items-center justify-between gap-3 pt-2">
+        <div className="flex items-center justify-between gap-3 pt-2 flex-wrap">
           <div>
-            <h1 className="text-xl sm:text-2xl font-black text-foreground">
-              المخزون والمستودعات
-            </h1>
-            <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-              إدارة الأصناف، حركات التحويل الداخلي، المشتريات والموردين، والجرد المخزني
-            </p>
+            <h1 className="text-xl sm:text-2xl font-black text-foreground">المخزون والمستودعات</h1>
           </div>
-          <span className="bg-emerald-500/10 text-emerald-600 text-xs px-2.5 py-1 rounded-full font-bold">
-            {currentBranch.name_ar}
-          </span>
+          <div className="flex items-center gap-2">
+            <ViewModeToggle mode={hubViewMode} onChange={setHubViewMode} />
+            <span className="bg-emerald-500/10 text-emerald-600 text-xs px-2.5 py-1 rounded-full font-bold">
+              {currentBranch.name_ar}
+            </span>
+          </div>
         </div>
       ) : (
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 pb-2 border-b border-border/60">
@@ -1495,7 +1492,7 @@ function InventoryPage() {
             </div>
           </div>
 
-          {/* Inventory Modules Square Cards Grid (نظام المربعات مثل قسم المطعم) */}
+          {/* Inventory Modules (Grid or List) */}
           <section aria-labelledby="inventory-modules-heading" className="space-y-3">
             <div className="flex items-center justify-between gap-4">
               <h2
@@ -1503,266 +1500,136 @@ function InventoryPage() {
                 className="flex items-center gap-2 text-base font-black text-foreground"
               >
                 <Building2 size={18} className="text-primary" aria-hidden="true" />
-                أقسام ووظائف إدارة المخازن والتوريد
+                أقسام إدارة المخازن والتوريد
               </h2>
-              <span className="text-xs font-bold text-muted-foreground">8 أقسام تشغيلية</span>
+              <ViewModeToggle mode={hubViewMode} onChange={setHubViewMode} />
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <Card
-                onClick={() => setActiveTab("warehouses")}
-                className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
-                  activeTab === "warehouses"
-                    ? "border-primary bg-primary/5 shadow-sm ring-2 ring-primary/30"
-                    : "border-border/80 bg-card hover:border-primary/40 hover:bg-accent/30"
-                }`}
-              >
-                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
-                  <div className="rounded-xl bg-gradient-to-br from-blue-500/20 to-indigo-500/20 text-blue-600 dark:text-blue-400 p-2.5 shadow-xs">
-                    <Building2 size={22} />
-                  </div>
-                  <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
-                    المستودعات
-                  </span>
-                </CardHeader>
-                <CardContent className="space-y-1.5 p-4 pt-0">
-                  <h3 className="font-black text-sm text-foreground group-hover:text-primary transition-colors">
-                    إدارة المخازن والفروع
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
-                    المخزن الرئيسي ومخازن الأقسام، ربط الحسابات ومتابعة الأرصدة
-                  </p>
-                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
-                    <span className="text-primary">إدارة مركزية</span>
-                    <span className="text-muted-foreground group-hover:text-primary text-xs transition-transform group-hover:translate-x-[-2px]">
-                      فتح المخازن ←
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
+            {(() => {
+              const modules = [
+                {
+                  id: "warehouses",
+                  title: "إدارة المخازن والفروع",
+                  badge: "المستودعات",
+                  icon: Building2,
+                  colorClass: "text-blue-600 dark:text-blue-400 bg-blue-500/15",
+                  onClick: () => setActiveTab("warehouses"),
+                },
+                {
+                  id: "stock",
+                  title: "الأصناف المخزنية والباركود",
+                  badge: `${stats.totalItems} صنف`,
+                  icon: Layers3,
+                  colorClass: "text-indigo-600 dark:text-indigo-400 bg-indigo-500/15",
+                  onClick: () => setActiveTab("stock"),
+                },
+                {
+                  id: "transfers",
+                  title: "التحويلات بين المخازن",
+                  badge: "التحويلات",
+                  icon: Truck,
+                  colorClass: "text-amber-600 dark:text-amber-400 bg-amber-500/15",
+                  onClick: () => setActiveTab("transfers"),
+                },
+                {
+                  id: "purchases",
+                  title: "فواتير وأوامر الشراء",
+                  badge: "المشتريات",
+                  icon: FileText,
+                  colorClass: "text-emerald-600 dark:text-emerald-400 bg-emerald-500/15",
+                  onClick: () => setActiveTab("purchases"),
+                },
+                {
+                  id: "suppliers",
+                  title: "إدارة الشركات والموردين",
+                  badge: "الموردين",
+                  icon: Users2,
+                  colorClass: "text-purple-600 dark:text-purple-400 bg-purple-500/15",
+                  onClick: () => setActiveTab("suppliers"),
+                },
+                {
+                  id: "transactions",
+                  title: "سجل حركات المخزن",
+                  badge: "الحركات",
+                  icon: Calendar,
+                  colorClass: "text-teal-600 dark:text-teal-400 bg-teal-500/15",
+                  onClick: () => setActiveTab("transactions"),
+                },
+                {
+                  id: "waste",
+                  title: "الهالك والفاقد والتسويات",
+                  badge: "الهالك",
+                  icon: AlertTriangle,
+                  colorClass: "text-rose-600 dark:text-rose-400 bg-rose-500/15",
+                  onClick: () => setActiveTab("waste"),
+                },
+                {
+                  id: "new_item",
+                  title: "إضافة صنف مخزني جديد",
+                  badge: "صنف جديد",
+                  icon: Plus,
+                  colorClass: "bg-primary text-primary-foreground",
+                  onClick: openAddInventoryModal,
+                },
+              ];
 
-              <Card
-                onClick={() => setActiveTab("stock")}
-                className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
-                  activeTab === "stock"
-                    ? "border-indigo-500 bg-indigo-50/40 dark:bg-indigo-950/20 shadow-sm ring-2 ring-indigo-400/30"
-                    : "border-border/80 bg-card hover:border-indigo-500/40 hover:bg-accent/30"
-                }`}
-              >
-                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
-                  <div className="rounded-xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 text-indigo-600 dark:text-indigo-400 p-2.5 shadow-xs">
-                    <Layers3 size={22} />
+              if (hubViewMode === "list") {
+                return (
+                  <div className="flex flex-col gap-2">
+                    {modules.map((m) => {
+                      const IconComp = m.icon;
+                      return (
+                        <div
+                          key={m.id}
+                          onClick={m.onClick}
+                          className="group cursor-pointer rounded-xl border border-border/80 bg-card hover:border-primary/40 p-3.5 flex items-center justify-between gap-4 transition-all hover:shadow-md"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`rounded-xl p-2.5 ${m.colorClass}`}>
+                              <IconComp size={20} />
+                            </div>
+                            <h3 className="font-black text-sm text-foreground">{m.title}</h3>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                              {m.badge}
+                            </span>
+                            <span className="text-xs font-bold text-primary">فتح ←</span>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                  <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
-                    الأصناف
-                  </span>
-                </CardHeader>
-                <CardContent className="space-y-1.5 p-4 pt-0">
-                  <h3 className="font-black text-sm text-foreground group-hover:text-indigo-600 transition-colors">
-                    الأصناف المخزنية والباركود
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
-                    جرد المواد الخام، حدود الطلب، وحدات القياس، وطباعة ملصقات الباركود
-                  </p>
-                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
-                    <span className="text-indigo-600 dark:text-indigo-400">
-                      {stats.totalItems} صنف مسجل
-                    </span>
-                    <span className="text-muted-foreground group-hover:text-indigo-600 text-xs transition-transform group-hover:translate-x-[-2px]">
-                      عرض الأصناف ←
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
+                );
+              }
 
-              <Card
-                onClick={() => setActiveTab("transfers")}
-                className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
-                  activeTab === "transfers"
-                    ? "border-amber-500 bg-amber-50/40 dark:bg-amber-950/20 shadow-sm ring-2 ring-amber-400/30"
-                    : "border-border/80 bg-card hover:border-amber-500/40 hover:bg-accent/30"
-                }`}
-              >
-                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
-                  <div className="rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 text-amber-600 dark:text-amber-400 p-2.5 shadow-xs">
-                    <Truck size={22} />
-                  </div>
-                  <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
-                    التحويلات
-                  </span>
-                </CardHeader>
-                <CardContent className="space-y-1.5 p-4 pt-0">
-                  <h3 className="font-black text-sm text-foreground group-hover:text-amber-600 transition-colors">
-                    التحويلات بين المخازن
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
-                    أوامر التحويل الداخلي بين المخازن وتتبع الاستلام المباشر
-                  </p>
-                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
-                    <span className="text-amber-600 dark:text-amber-400">تحويل فوري</span>
-                    <span className="text-muted-foreground group-hover:text-amber-600 text-xs transition-transform group-hover:translate-x-[-2px]">
-                      أمر تحويل ←
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card
-                onClick={() => setActiveTab("purchases")}
-                className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
-                  activeTab === "purchases"
-                    ? "border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/20 shadow-sm ring-2 ring-emerald-400/30"
-                    : "border-border/80 bg-card hover:border-emerald-500/40 hover:bg-accent/30"
-                }`}
-              >
-                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
-                  <div className="rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 text-emerald-600 dark:text-emerald-400 p-2.5 shadow-xs">
-                    <FileText size={22} />
-                  </div>
-                  <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
-                    المشتريات
-                  </span>
-                </CardHeader>
-                <CardContent className="space-y-1.5 p-4 pt-0">
-                  <h3 className="font-black text-sm text-foreground group-hover:text-emerald-600 transition-colors">
-                    فواتير وأوامر الشراء
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
-                    إدخال فواتير الشراء، ترحيل كميات الوارد لحسابات الموردين تلقائياً
-                  </p>
-                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
-                    <span className="text-emerald-600 dark:text-emerald-400">فواتير الوارد</span>
-                    <span className="text-muted-foreground group-hover:text-emerald-600 text-xs transition-transform group-hover:translate-x-[-2px]">
-                      شراء جديد ←
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card
-                onClick={() => setActiveTab("suppliers")}
-                className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
-                  activeTab === "suppliers"
-                    ? "border-purple-500 bg-purple-50/40 dark:bg-purple-950/20 shadow-sm ring-2 ring-purple-400/30"
-                    : "border-border/80 bg-card hover:border-purple-500/40 hover:bg-accent/30"
-                }`}
-              >
-                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
-                  <div className="rounded-xl bg-gradient-to-br from-purple-500/20 to-indigo-500/20 text-purple-600 dark:text-purple-400 p-2.5 shadow-xs">
-                    <Users2 size={22} />
-                  </div>
-                  <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
-                    الموردين
-                  </span>
-                </CardHeader>
-                <CardContent className="space-y-1.5 p-4 pt-0">
-                  <h3 className="font-black text-sm text-foreground group-hover:text-purple-600 transition-colors">
-                    إدارة الشركات والموردين
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
-                    سجل الموردين، كشوفات الحسابات، الأرصدة المستحقة وسندات السداد
-                  </p>
-                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
-                    <span className="text-purple-600 dark:text-purple-400">سجل الموردين</span>
-                    <span className="text-muted-foreground group-hover:text-purple-600 text-xs transition-transform group-hover:translate-x-[-2px]">
-                      فتح الدليل ←
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card
-                onClick={() => setActiveTab("transactions")}
-                className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
-                  activeTab === "transactions"
-                    ? "border-teal-500 bg-teal-50/40 dark:bg-teal-950/20 shadow-sm ring-2 ring-teal-400/30"
-                    : "border-border/80 bg-card hover:border-teal-500/40 hover:bg-accent/30"
-                }`}
-              >
-                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
-                  <div className="rounded-xl bg-gradient-to-br from-teal-500/20 to-emerald-500/20 text-teal-600 dark:text-teal-400 p-2.5 shadow-xs">
-                    <Calendar size={22} />
-                  </div>
-                  <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
-                    الحركات
-                  </span>
-                </CardHeader>
-                <CardContent className="space-y-1.5 p-4 pt-0">
-                  <h3 className="font-black text-sm text-foreground group-hover:text-teal-600 transition-colors">
-                    سجل حركات المخزن
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
-                    تتبع كشوفات الصادر، الوارد، تحويلات المطبخ، ومسؤولي الصرف
-                  </p>
-                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
-                    <span className="text-teal-600 dark:text-teal-400">تدقيق كامل</span>
-                    <span className="text-muted-foreground group-hover:text-teal-600 text-xs transition-transform group-hover:translate-x-[-2px]">
-                      عرض السجل ←
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card
-                onClick={() => setActiveTab("waste")}
-                className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
-                  activeTab === "waste"
-                    ? "border-rose-500 bg-rose-50/40 dark:bg-rose-950/20 shadow-sm ring-2 ring-rose-400/30"
-                    : "border-border/80 bg-card hover:border-rose-500/40 hover:bg-accent/30"
-                }`}
-              >
-                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
-                  <div className="rounded-xl bg-gradient-to-br from-rose-500/20 to-red-500/20 text-rose-600 dark:text-rose-400 p-2.5 shadow-xs">
-                    <AlertTriangle size={22} />
-                  </div>
-                  <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
-                    الهالك
-                  </span>
-                </CardHeader>
-                <CardContent className="space-y-1.5 p-4 pt-0">
-                  <h3 className="font-black text-sm text-foreground group-hover:text-rose-600 transition-colors">
-                    الهالك والفاقد والتسويات
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
-                    تسجيل المواد المنتهية صلاحيتها، التالف أثناء التحضير والتسويات الجردية
-                  </p>
-                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
-                    <span className="text-rose-600 dark:text-rose-400">إتلاف وتسويه</span>
-                    <span className="text-muted-foreground group-hover:text-rose-600 text-xs transition-transform group-hover:translate-x-[-2px]">
-                      تسجيل هالك ←
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card
-                onClick={openAddInventoryModal}
-                className="group cursor-pointer rounded-2xl border border-primary/30 bg-primary/5 hover:border-primary hover:bg-primary/10 transition-all duration-200 hover:shadow-lg"
-              >
-                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
-                  <div className="rounded-xl bg-primary text-primary-foreground p-2.5 shadow-xs">
-                    <Plus size={22} />
-                  </div>
-                  <span className="rounded-full border border-primary/30 bg-primary/20 px-2 py-0.5 text-[10px] font-bold text-primary">
-                    صنف جديد
-                  </span>
-                </CardHeader>
-                <CardContent className="space-y-1.5 p-4 pt-0">
-                  <h3 className="font-black text-sm text-primary transition-colors">
-                    إضافة صنف مخزني جديد
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
-                    إدخال مادة خام جديدة مع الباركود، تكلفة الوحدة والحد الأدنى للطلب
-                  </p>
-                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
-                    <span className="text-primary font-bold">إضافة فورية</span>
-                    <span className="text-primary text-xs transition-transform group-hover:translate-x-[-2px]">
-                      فتح النموذج +
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+              return (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {modules.map((m) => {
+                    const IconComp = m.icon;
+                    return (
+                      <Card
+                        key={m.id}
+                        onClick={m.onClick}
+                        className="group cursor-pointer rounded-2xl border border-border/80 bg-card hover:border-primary/40 transition-all duration-200 hover:shadow-lg"
+                      >
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4">
+                          <div className="flex items-center gap-3">
+                            <div className={`rounded-xl p-2.5 shadow-xs ${m.colorClass}`}>
+                              <IconComp size={22} />
+                            </div>
+                            <h3 className="font-black text-sm text-foreground">{m.title}</h3>
+                          </div>
+                          <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground shrink-0">
+                            {m.badge}
+                          </span>
+                        </CardHeader>
+                      </Card>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </section>
         </div>
       )}
@@ -3401,8 +3268,8 @@ function InventoryPage() {
                           تسجيل تالف أو هالك مخزني جديد (مع قيد محاسبي آلي)
                         </h3>
                         <p className="text-xs text-muted-foreground mt-1">
-                          يتم خصم الكمية التالفة فوراً من رصيد المخزن المحدد وإنشاء قيد مزدوج (من
-                          ح/ 506000 الهدر والمفقودات إلى ح/ 103000 المخزون)
+                          يتم خصم الكمية التالفة فوراً من رصيد المخزن المحدد وإنشاء قيد مزدوج (من ح/
+                          506000 الهدر والمفقودات إلى ح/ 103000 المخزون)
                         </p>
                       </div>
                       <span className="text-xs font-mono font-bold px-3 py-1.5 rounded-lg bg-rose-500/10 text-rose-600 border border-rose-500/20">
@@ -3585,9 +3452,7 @@ function InventoryPage() {
                                   className="border-b border-border/50 hover:bg-muted/10"
                                 >
                                   <td className="p-2.5 font-mono font-bold">{batch.batch_no}</td>
-                                  <td className="p-2.5 font-bold">
-                                    {inv?.name_ar || "صنف مخزني"}
-                                  </td>
+                                  <td className="p-2.5 font-bold">{inv?.name_ar || "صنف مخزني"}</td>
                                   <td className="p-2.5 text-center font-mono font-bold text-rose-600">
                                     {batch.quantity} {inv?.unit || ""}
                                   </td>
@@ -3682,8 +3547,8 @@ function InventoryPage() {
                                 colSpan={5}
                                 className="p-8 text-center text-muted-foreground font-bold"
                               >
-                                لا توجد حركات توالف أو هالك مسجلة حتى الآن. يمكنك تسجيل أي تالف
-                                من النموذج أعلاه.
+                                لا توجد حركات توالف أو هالك مسجلة حتى الآن. يمكنك تسجيل أي تالف من
+                                النموذج أعلاه.
                               </td>
                             </tr>
                           ) : (
@@ -3691,8 +3556,7 @@ function InventoryPage() {
                               const inv = (inventoryQuery.data ?? []).find(
                                 (i) => i.id === tx.inventory_id,
                               );
-                              const totalCost =
-                                Number(tx.quantity || 0) * Number(inv?.cost || 0);
+                              const totalCost = Number(tx.quantity || 0) * Number(inv?.cost || 0);
                               return (
                                 <tr
                                   key={tx.id}

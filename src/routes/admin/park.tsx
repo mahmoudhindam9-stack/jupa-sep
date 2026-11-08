@@ -1,10 +1,7 @@
 // @ts-nocheck
 import React, { useState, useMemo, useEffect, useSyncExternalStore } from "react";
-import { createFileRoute, useLocation, Link, useNavigate } from "@tanstack/react-router";
-import {
-  extractTabParam,
-  useSyncedSubTab,
-} from "@/components/navigation/navigationRegistry";
+import { createFileRoute, useLocation, useNavigate } from "@tanstack/react-router";
+import { extractTabParam, useSyncedSubTab } from "@/components/navigation/navigationRegistry";
 import { toast } from "sonner";
 import {
   Trees,
@@ -16,36 +13,28 @@ import {
   History,
   Clock,
   Search,
-  Printer,
   FileSpreadsheet,
   RotateCcw,
-  CheckCircle2,
-  XCircle,
-  AlertCircle,
-  Wallet,
-  Calendar,
-  DollarSign,
-  TrendingUp,
-  ShieldCheck,
+  FileBarChart,
   Eye,
-  Filter,
-  ArrowRight,
   Play,
   Edit,
   Trash2,
   ShoppingBag,
   UserCheck,
-  Receipt,
+  Store,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { erpStore } from "@/shared/services/erpStore";
-import { getCurrentUserIdentitySync, canCurrentUserCloseShift } from "@/shared/services/userAuthorization";
+import {
+  getCurrentUserIdentitySync,
+  canCurrentUserCloseShift,
+} from "@/shared/services/userAuthorization";
 import { shiftAuditService } from "@/features/shifts/services/shiftAuditService";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -55,6 +44,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { ViewModeToggle, useViewMode } from "@/components/ui/view-mode-toggle";
 import {
   ParkTicketsPOSView,
   ParkRefundModal,
@@ -67,12 +57,29 @@ import {
   ParkShiftClosingReportModal,
 } from "@/components/mall/ParkTicketsPOS";
 import { ShiftAuditLogViewerModal } from "@/components/admin/ShiftAuditLogViewerModal";
-import { VouchersLedgerSection } from "@/components/admin/VouchersLedgerSection";
 
 export const Route = createFileRoute("/admin/park")({
-  head: () => ({ meta: [{ title: "إدارة الحديقة - تذاكر الدخول والورديات والخزائن" }] }),
+  head: () => ({ meta: [{ title: "إدارة الحديقة" }] }),
   component: ParkManagementPage,
 });
+
+type ParkSectionTab = "definitions" | "operations" | "reports";
+
+function resolveParkTab(tabParam: string | undefined): ParkSectionTab {
+  if (!tabParam) return "operations";
+  if (
+    tabParam === "definitions" ||
+    tabParam === "prices" ||
+    tabParam === "customers" ||
+    tabParam === "treasury"
+  ) {
+    return "definitions";
+  }
+  if (tabParam === "reports") {
+    return "reports";
+  }
+  return "operations";
+}
 
 function ParkManagementPage() {
   const state = useSyncExternalStore(
@@ -83,12 +90,18 @@ function ParkManagementPage() {
 
   const navigate = useNavigate();
   const location = useLocation();
-  const tabParam = extractTabParam(location.search, (location as any).searchStr) || "grid";
+  const tabParam = extractTabParam(location.search, (location as any).searchStr);
 
-  const [activeTab, setActiveTab] = useState(tabParam);
+  const [activeTab, setActiveTab] = useState<ParkSectionTab>(() => resolveParkTab(tabParam));
+  const [viewMode, setViewMode] = useViewMode("park", "grid");
+
   useEffect(() => {
-    setActiveTab(tabParam || "grid");
-  }, [tabParam]);
+    if (tabParam === "vouchers" || tabParam === "expenses") {
+      navigate({ to: "/admin/ledger", search: { tab: "vouchers" } as any });
+      return;
+    }
+    setActiveTab(resolveParkTab(tabParam));
+  }, [tabParam, navigate]);
 
   useEffect(() => {
     void shiftAuditService.syncOpenShiftsFromSupabase(erpStore);
@@ -105,11 +118,11 @@ function ParkManagementPage() {
     [isCashier, state.parkShifts, state.parkActiveShift, currentIdentity],
   );
 
-  useSyncedSubTab("/admin/park", activeTab, setActiveTab, "grid");
+  useSyncedSubTab("/admin/park", activeTab, setActiveTab as any, "operations");
 
-  const handleTabChange = (newTab: string) => {
+  const handleTabChange = (newTab: ParkSectionTab) => {
     setActiveTab(newTab);
-    navigate({ to: "/admin/park", search: newTab === "grid" ? {} : { tab: newTab } });
+    navigate({ to: "/admin/park", search: { tab: newTab } as any });
   };
 
   // POS full screen view
@@ -171,9 +184,7 @@ function ParkManagementPage() {
     }
   };
 
-  // Search & Filter
   const [txSearch, setTxSearch] = useState("");
-  const [dateFilter, setDateFilter] = useState("all");
 
   const transactions = state.parkTicketTransactions || state.parkTransactions || [];
   const rawShifts = state.parkShifts || [];
@@ -243,856 +254,166 @@ function ParkManagementPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto w-full pb-12">
-      {/* Top Bar - Sticky frozen with Clear Department Title */}
-      {activeTab === "grid" ? (
-        <div className="sticky top-0 z-20 bg-card/95 backdrop-blur py-3 px-3 sm:px-5 -mx-2 sm:-mx-4 border-b border-border/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
-          <div className="flex items-center gap-3 flex-wrap">
-            <Link to="/admin">
-              <Button variant="outline" size="sm" className="gap-2 font-bold rounded-xl text-xs">
-                <ArrowRight size={16} />
-                العودة إلى الأقسام الرئيسية
-              </Button>
-            </Link>
-            <div className="h-5 w-px bg-border/80 hidden sm:block" />
-            <div className="flex items-center gap-2">
-              <Trees size={18} className="text-teal-600 shrink-0" />
-              <h1 className="text-sm sm:text-base font-black text-foreground tracking-tight whitespace-nowrap">
-                إدارة الحديقة وتذاكر الدخول
-              </h1>
+    <div className="space-y-6 max-w-7xl mx-auto w-full pb-12" dir="rtl">
+      {/* Unified Header + 3 Main Subsections Bar */}
+      <div className="rounded-2xl border border-border bg-card p-4 sm:p-5 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/12 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25">
+              <Trees size={22} />
             </div>
+            <h1 className="text-xl sm:text-2xl font-black text-foreground">إدارة الحديقة</h1>
           </div>
+
           <div className="flex items-center gap-2.5 flex-wrap">
+            <ViewModeToggle mode={viewMode} onChange={setViewMode} />
             <Button
               onClick={() => setIsParkPosOpen(true)}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs h-9 px-4 rounded-xl gap-1.5 shadow-sm transition active:scale-95"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs h-9 px-4 rounded-xl gap-1.5 shadow-xs cursor-pointer"
             >
-              <Ticket size={16} />
+              <Ticket size={15} />
               <span>نقطة بيع التذاكر (POS)</span>
             </Button>
             {(!isCashier || !cashierActiveShift) && (
               <Button
                 onClick={() => setIsParkShiftLauncherOpen(true)}
                 variant="outline"
-                className="font-bold text-xs h-9 px-3.5 rounded-xl gap-1.5"
+                className="font-bold text-xs h-9 px-3.5 rounded-xl gap-1.5 cursor-pointer"
               >
                 <Plus size={15} />
                 <span>فتح وردية جديدة</span>
               </Button>
             )}
-          </div>
-        </div>
-      ) : (
-        <div className="sticky top-0 z-20 bg-card/95 backdrop-blur py-3 px-3 sm:px-5 -mx-2 sm:-mx-4 border-b border-border/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
-          <div className="flex items-center gap-3 flex-wrap">
             <Button
               variant="outline"
-              onClick={() => setActiveTab("grid")}
-              className="gap-2 font-black rounded-xl text-xs py-2 px-4 border-teal-500/30 text-teal-700 dark:text-teal-400 hover:bg-teal-500/10 w-fit cursor-pointer"
+              onClick={() => navigate({ to: "/admin/ledger", search: { tab: "vouchers" } as any })}
+              className="font-bold text-xs h-9 px-3.5 rounded-xl gap-1.5 border-indigo-500/30 text-indigo-600 dark:text-indigo-400 cursor-pointer"
             >
-              <ArrowRight size={16} />
-              العودة إلى أقسام الحديقة
-            </Button>
-            <div className="h-5 w-px bg-border/80 hidden sm:block" />
-            <div className="flex items-center gap-2">
-              <Trees size={18} className="text-teal-600 shrink-0" />
-              <h1 className="text-sm sm:text-base font-black text-foreground tracking-tight whitespace-nowrap">
-                إدارة الحديقة وتذاكر الدخول
-              </h1>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1.5 overflow-x-auto">
-            <Button
-              size="sm"
-              variant={activeTab === "tickets" ? "default" : "outline"}
-              onClick={() => handleTabChange("tickets")}
-              className="rounded-xl font-bold text-xs h-8"
-            >
-              التذاكر ({transactions.length})
-            </Button>
-            <Button
-              size="sm"
-              variant={activeTab === "shifts" ? "default" : "outline"}
-              onClick={() => handleTabChange("shifts")}
-              className="rounded-xl font-bold text-xs h-8"
-            >
-              الورديات ({shifts.length})
-            </Button>
-            <Button
-              size="sm"
-              variant={activeTab === "treasury" ? "default" : "outline"}
-              onClick={() => handleTabChange("treasury")}
-              className="rounded-xl font-bold text-xs h-8"
-            >
-              الخزائن (8)
-            </Button>
-            <Button
-              size="sm"
-              variant={activeTab === "reports" ? "default" : "outline"}
-              onClick={() => handleTabChange("reports")}
-              className="rounded-xl font-bold text-xs h-8"
-            >
-              التقارير
-            </Button>
-            <Button
-              size="sm"
-              variant={activeTab === "vouchers" ? "default" : "outline"}
-              onClick={() => handleTabChange("vouchers")}
-              className="rounded-xl font-bold text-xs h-8"
-            >
-              السندات المالية
+              <Landmark size={15} />
+              <span>الإدارة المالية</span>
             </Button>
           </div>
         </div>
-      )}
 
-      {/* Grid view containing open shifts and park modules cards */}
-      {activeTab === "grid" && (
-        <div className="space-y-6">
-          {/* Active Shift Card from Image (بدلاً من المربع المستحدث) */}
-          {openShifts.length > 0 ? (
-            <div className="space-y-3">
-              {openShifts.map((shift: any) => {
-                const shiftTxs = (transactions || []).filter(
-                  (t: any) => t.shift_id === shift.id || t.shift_number === shift.shift_number,
-                );
-                const completedTxs = shiftTxs.filter((t: any) => t.status === "completed");
-                const refundedTxs = shiftTxs.filter((t: any) => t.status === "refunded");
-                const shiftRevenueUsd = completedTxs.reduce(
-                  (s: number, t: any) => s + (t.total_usd || t.total_amount_usd || 0),
-                  0,
-                );
+        {/* Unified 3-Section Tabs: التعريفات | العمليات | التقارير */}
+        <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border/60">
+          <button
+            type="button"
+            data-testid="park-tab-definitions"
+            onClick={() => handleTabChange("definitions")}
+            className={`flex items-center justify-center gap-2 h-10 rounded-xl font-black text-xs sm:text-sm transition cursor-pointer ${
+              activeTab === "definitions"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "bg-muted/50 text-muted-foreground hover:text-foreground hover:bg-muted"
+            }`}
+          >
+            <Settings size={16} />
+            <span>التعريفات</span>
+          </button>
+          <button
+            type="button"
+            data-testid="park-tab-operations"
+            onClick={() => handleTabChange("operations")}
+            className={`flex items-center justify-center gap-2 h-10 rounded-xl font-black text-xs sm:text-sm transition cursor-pointer ${
+              activeTab === "operations"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "bg-muted/50 text-muted-foreground hover:text-foreground hover:bg-muted"
+            }`}
+          >
+            <Store size={16} />
+            <span>العمليات</span>
+          </button>
+          <button
+            type="button"
+            data-testid="park-tab-reports"
+            onClick={() => handleTabChange("reports")}
+            className={`flex items-center justify-center gap-2 h-10 rounded-xl font-black text-xs sm:text-sm transition cursor-pointer ${
+              activeTab === "reports"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "bg-muted/50 text-muted-foreground hover:text-foreground hover:bg-muted"
+            }`}
+          >
+            <FileBarChart size={16} />
+            <span>التقارير</span>
+          </button>
+        </div>
+      </div>
 
-                return (
-                  <div
-                    key={shift.id}
-                    className="p-4 sm:p-5 rounded-3xl border border-border/80 bg-card shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 transition hover:border-teal-500/40"
-                  >
-                    {/* Information (Right side in RTL) */}
-                    <div className="space-y-1.5 text-right flex-1 min-w-0">
-                      {/* Row 1: Title and Auto Shift Number badge */}
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-black text-sm text-foreground">
-                          {shift.shift_number || `وردية تذاكر #${shift.auto_shift_number || "1"}`}
-                        </h3>
-                        {!isCashier && shift.auto_shift_number && (
-                          <span className="border border-border/80 bg-muted/40 text-muted-foreground text-[11px] font-mono px-2.5 py-0.5 rounded-full">
-                            رقم النظام: {shift.auto_shift_number}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Row 2: "وردية مفتوحة" badge */}
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="inline-flex items-center bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700/60 text-xs font-bold px-2.5 py-0.5 rounded-full">
-                          وردية مفتوحة
-                        </span>
-                        {shift.currency && (
-                          <span className="inline-flex items-center border border-border/80 bg-muted/40 text-muted-foreground text-[11px] font-mono px-2.5 py-0.5 rounded-full">
-                            العملة: {shift.currency}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Row 3: Cashier and start time */}
-                      <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-                        <span className="flex items-center gap-1 font-bold text-foreground">
-                          <UserCheck size={14} className="text-teal-600" />
-                          الكاشير: {shift.cashier_name}
-                        </span>
-                        <span>•</span>
-                        <span className="flex items-center gap-1 font-mono">
-                          <Clock size={13} className="text-muted-foreground" />
-                          بدأت:{" "}
-                          {new Date(
-                            shift.opened_at || shift.start_at || Date.now(),
-                          ).toLocaleTimeString("ar-EG")}
-                        </span>
-                        <span>•</span>
-                      </div>
-
-                      {/* Row 4: Sales count and revenue */}
-                      <div className="flex items-center gap-1 text-teal-600 dark:text-teal-400 font-black text-xs">
-                        <ShoppingBag size={14} />
-                        <span>
-                          {completedTxs.length} مبيعات (${shiftRevenueUsd.toLocaleString()})
-                        </span>
-                        {refundedTxs.length > 0 && (
-                          <span className="text-rose-600 font-bold mr-1">
-                            ({refundedTxs.length} مرتجع)
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Action buttons (Left side in RTL) */}
-                    <div className="flex flex-col items-start md:items-end gap-2.5 shrink-0">
-                      {/* Enter shift button */}
-                      <Button
-                        size="sm"
-                        onClick={() => {
-                          erpStore.setActiveParkShift(shift.id);
-                          toast.success(`تم الدخول إلى ${shift.shift_number}`);
-                          setIsParkPosOpen(true);
-                        }}
-                        className="bg-[#00897b] hover:bg-[#00796b] text-white rounded-full font-black text-xs px-5 py-2 shadow-xs flex items-center gap-1.5 cursor-pointer h-9 transition active:scale-95"
-                      >
-                        <Play size={13} className="fill-white" />
-                        <span>دخول الوردية (بيع / مرتجع)</span>
-                      </Button>
-
-                      {/* Edit and Delete buttons - Manager/Admin Only */}
-                      {!isCashier && (
-                        <div className="flex items-center gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setEditingShift(shift);
-                              setEditShiftNumber(shift.shift_number);
-                              setEditCashierName(shift.cashier_name);
-                              setEditNotes(shift.notes || "");
-                            }}
-                            className="border border-amber-200/90 bg-amber-50/50 hover:bg-amber-100/60 dark:bg-amber-950/20 dark:border-amber-900/50 text-foreground rounded-full text-xs font-bold px-3 py-1 flex items-center gap-1 cursor-pointer h-7"
-                            title="تعديل بيانات الوردية"
-                          >
-                            <Edit size={13} className="text-blue-600" />
-                            <span>تعديل</span>
-                          </Button>
-
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setDeletingShift(shift)}
-                            className="text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/30 p-1.5 h-7 w-7 rounded-full cursor-pointer transition flex items-center justify-center"
-                            title="حذف الوردية"
-                          >
-                            <Trash2 size={15} />
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="p-4 sm:p-5 rounded-3xl border border-dashed border-teal-500/30 bg-card shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
-              <div className="text-right">
-                <h3 className="font-black text-sm text-foreground">لا توجد وردية مفتوحة حالياً</h3>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  اضغط على زر فتح وردية جديدة لبدء جلسة بيع واستخراج تذاكر الحديقة
-                </p>
+      {/* SECTION 1: DEFINITIONS (التعريفات) */}
+      {activeTab === "definitions" && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          {/* Master Data Actions */}
+          <div
+            className={viewMode === "grid" ? "grid grid-cols-1 sm:grid-cols-3 gap-4" : "space-y-3"}
+          >
+            <Card
+              onClick={() => setIsParkPricesModalOpen(true)}
+              className="group cursor-pointer rounded-2xl border border-border/80 bg-card p-5 hover:border-purple-500/40 hover:shadow-md transition flex items-center justify-between gap-4"
+            >
+              <div className="flex items-center gap-3.5">
+                <div className="rounded-xl bg-purple-500/15 text-purple-600 dark:text-purple-400 p-3">
+                  <Settings size={22} />
+                </div>
+                <h3 className="font-black text-base text-foreground group-hover:text-purple-600 transition-colors">
+                  أسعار وتصنيفات التذاكر
+                </h3>
               </div>
-              <Button
-                onClick={() => setIsParkShiftLauncherOpen(true)}
-                className="bg-[#00897b] hover:bg-[#00796b] text-white rounded-full font-black text-xs px-5 py-2 shadow-xs flex items-center gap-1.5 cursor-pointer h-9 shrink-0"
-              >
-                <Plus size={15} />
-                <span>فتح وردية جديدة</span>
-              </Button>
-            </div>
-          )}
+              <Badge variant="outline" className="font-bold">
+                تعديل الأسعار
+              </Badge>
+            </Card>
 
-          {/* Park Modules Square Cards Grid (نظام المربعات مثل قسم المطعم) */}
-          <section aria-labelledby="park-modules-heading" className="space-y-3">
-            <div className="flex items-center justify-between gap-4">
-              <h2
-                id="park-modules-heading"
-                className="flex items-center gap-2 text-base font-black text-foreground"
-              >
-                <Trees size={18} className="text-teal-600" aria-hidden="true" />
-                أقسام ووظائف إدارة الحديقة
-              </h2>
-              <span className="text-xs font-bold text-muted-foreground">6 أقسام تشغيلية</span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <Card
-                onClick={() => setIsParkPosOpen(true)}
-                className="group cursor-pointer rounded-2xl border border-border/80 bg-card hover:border-emerald-500/50 hover:bg-emerald-50/20 dark:hover:bg-emerald-950/20 transition-all duration-200 hover:shadow-lg"
-              >
-                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
-                  <div className="rounded-xl bg-gradient-to-br from-emerald-500/25 to-teal-500/25 text-emerald-600 dark:text-emerald-400 p-2.5 shadow-xs">
-                    <Ticket size={22} />
-                  </div>
-                  <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
-                    شباك التذاكر
-                  </span>
-                </CardHeader>
-                <CardContent className="space-y-1.5 p-4 pt-0">
-                  <h3 className="font-black text-sm text-foreground group-hover:text-emerald-600 transition-colors">
-                    نقطة بيع التذاكر (POS)
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
-                    قطع تذاكر الدخول، الألعاب، طباعة إيصالات الباركود، والدفع النقدي والفيزا
-                  </p>
-                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
-                    <span className="text-emerald-700 dark:text-emerald-400">تشغيل فوري</span>
-                    <span className="text-muted-foreground group-hover:text-emerald-600 text-xs transition-transform group-hover:translate-x-[-2px]">
-                      فتح الشباك ←
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card
-                onClick={() => handleTabChange("shifts")}
-                className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
-                  activeTab === "shifts"
-                    ? "border-teal-500 bg-teal-50/40 dark:bg-teal-950/20 shadow-sm ring-2 ring-teal-400/30"
-                    : "border-border/80 bg-card hover:border-teal-500/40 hover:bg-accent/30"
-                }`}
-              >
-                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
-                  <div className="rounded-xl bg-gradient-to-br from-teal-500/20 to-cyan-500/20 text-teal-600 dark:text-teal-400 p-2.5 shadow-xs">
-                    <Clock size={22} />
-                  </div>
-                  <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
-                    الورديات
-                  </span>
-                </CardHeader>
-                <CardContent className="space-y-1.5 p-4 pt-0">
-                  <h3 className="font-black text-sm text-foreground group-hover:text-teal-600 transition-colors">
-                    ورديات الكاشير والتشغيل
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
-                    فتح ورديات جديدة، تتبع حركات الكاشير، إغلاق الورديات وطباعة التقارير
-                  </p>
-                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
-                    <span className="text-teal-700 dark:text-teal-400">
-                      {openShifts.length} وردية مفتوحة
-                    </span>
-                    <span className="text-muted-foreground group-hover:text-teal-600 text-xs transition-transform group-hover:translate-x-[-2px]">
-                      متابعة الورديات ←
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card
-                onClick={() => {
-                  handleTabChange("treasury");
-                  setIsParkTreasuriesModalOpen(true);
-                }}
-                className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
-                  activeTab === "treasury"
-                    ? "border-blue-500 bg-blue-50/40 dark:bg-blue-950/20 shadow-sm ring-2 ring-blue-400/30"
-                    : "border-border/80 bg-card hover:border-blue-500/40 hover:bg-accent/30"
-                }`}
-              >
-                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
-                  <div className="rounded-xl bg-gradient-to-br from-blue-500/20 to-indigo-500/20 text-blue-600 dark:text-blue-400 p-2.5 shadow-xs">
-                    <Landmark size={22} />
-                  </div>
-                  <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
-                    الخزائن
-                  </span>
-                </CardHeader>
-                <CardContent className="space-y-1.5 p-4 pt-0">
-                  <h3 className="font-black text-sm text-foreground group-hover:text-blue-600 transition-colors">
-                    الخزائن التشغيلية (8 خزائن)
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
-                    متابعة أرصدة خزائن الحديقة الثمانية، تحويل النقدية، والتسويات اليومية
-                  </p>
-                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
-                    <span className="text-blue-700 dark:text-blue-400">
-                      {operationalTreasuries.length} خزينة جاهزة
-                    </span>
-                    <span className="text-muted-foreground group-hover:text-blue-600 text-xs transition-transform group-hover:translate-x-[-2px]">
-                      فتح الخزائن ←
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card
-                onClick={() => handleTabChange("tickets")}
-                className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
-                  activeTab === "tickets"
-                    ? "border-amber-500 bg-amber-50/40 dark:bg-amber-950/20 shadow-sm ring-2 ring-amber-400/30"
-                    : "border-border/80 bg-card hover:border-amber-500/40 hover:bg-accent/30"
-                }`}
-              >
-                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
-                  <div className="rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 text-amber-600 dark:text-amber-400 p-2.5 shadow-xs">
-                    <Ticket size={22} />
-                  </div>
-                  <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
-                    العمليات
-                  </span>
-                </CardHeader>
-                <CardContent className="space-y-1.5 p-4 pt-0">
-                  <h3 className="font-black text-sm text-foreground group-hover:text-amber-600 transition-colors">
-                    سجل التذاكر واسترجاعها
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
-                    استعراض كافة تذاكر الدخول المباعة، البحث برقم التذكرة، وإجراء الاسترجاع
-                  </p>
-                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
-                    <span className="text-amber-700 dark:text-amber-400">
-                      {transactions.length} تذكرة مباعة
-                    </span>
-                    <span className="text-muted-foreground group-hover:text-amber-600 text-xs transition-transform group-hover:translate-x-[-2px]">
-                      عرض السجل ←
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card
-                onClick={() => setIsParkPricesModalOpen(true)}
-                className="group cursor-pointer rounded-2xl border border-border/80 bg-card hover:border-purple-500/40 hover:bg-purple-50/20 dark:hover:bg-purple-950/20 transition-all duration-200 hover:shadow-lg"
-              >
-                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
-                  <div className="rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 text-purple-600 dark:text-purple-400 p-2.5 shadow-xs">
-                    <Settings size={22} />
-                  </div>
-                  <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
-                    الأسعار
-                  </span>
-                </CardHeader>
-                <CardContent className="space-y-1.5 p-4 pt-0">
-                  <h3 className="font-black text-sm text-foreground group-hover:text-purple-600 transition-colors">
-                    أسعار وتصنيفات التذاكر
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
-                    تحديد أسعار التذاكر العادية، ألعاب الأطفال، الفعاليات والمواقف بالدولار
-                  </p>
-                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
-                    <span className="text-purple-700 dark:text-purple-400">إعدادات سريعة</span>
-                    <span className="text-muted-foreground group-hover:text-purple-600 text-xs transition-transform group-hover:translate-x-[-2px]">
-                      تعديل الأسعار ←
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card
-                onClick={() => handleTabChange("reports")}
-                className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
-                  activeTab === "reports"
-                    ? "border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/20 shadow-sm ring-2 ring-emerald-400/30"
-                    : "border-border/80 bg-card hover:border-emerald-500/40 hover:bg-accent/30"
-                }`}
-              >
-                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
-                  <div className="rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 text-emerald-600 dark:text-emerald-400 p-2.5 shadow-xs">
-                    <TrendingUp size={22} />
-                  </div>
-                  <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
-                    التقارير
-                  </span>
-                </CardHeader>
-                <CardContent className="space-y-1.5 p-4 pt-0">
-                  <h3 className="font-black text-sm text-foreground group-hover:text-emerald-600 transition-colors">
-                    التقارير والمبيعات المالية
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
-                    إجمالي الإيرادات المحصلة، إحصائيات الإشغال والزوار، والمبيعات حسب طرق الدفع
-                  </p>
-                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
-                    <span className="text-emerald-700 dark:text-emerald-400">
-                      ${totalRevenue.toLocaleString()} إيراد كلي
-                    </span>
-                    <span className="text-muted-foreground group-hover:text-emerald-600 text-xs transition-transform group-hover:translate-x-[-2px]">
-                      عرض التقارير ←
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card
-                onClick={() => handleTabChange("vouchers")}
-                className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
-                  activeTab === "vouchers"
-                    ? "border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/20 shadow-sm ring-2 ring-emerald-400/30"
-                    : "border-border/80 bg-card hover:border-emerald-500/40 hover:bg-accent/30"
-                }`}
-              >
-                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
-                  <div className="rounded-xl bg-gradient-to-br from-emerald-500/25 to-teal-500/25 text-emerald-600 dark:text-emerald-400 p-2.5 shadow-xs">
-                    <Receipt size={22} />
-                  </div>
-                  <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
-                    سندات مالية
-                  </span>
-                </CardHeader>
-                <CardContent className="space-y-1.5 p-4 pt-0">
-                  <h3 className="font-black text-sm text-foreground group-hover:text-emerald-600 transition-colors">
-                    سندات الصرف والقبض
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
-                    إصدار وتسجيل سندات الصرف والقبض الخاصة بإدارة الحديقة والترفيه وتوليد القيود
-                  </p>
-                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
-                    <span className="text-emerald-700 dark:text-emerald-400">إدارة السندات</span>
-                    <span className="text-muted-foreground group-hover:text-emerald-600 text-xs transition-transform group-hover:translate-x-[-2px]">
-                      فتح السندات ←
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </section>
-
-          {/* Quick Action Buttons Bar */}
-          <div className="flex items-center justify-between gap-3 flex-wrap bg-card border border-border p-3.5 rounded-2xl shadow-xs">
-            <div className="flex items-center gap-2 flex-wrap">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsParkTreasuriesModalOpen(true)}
-                className="rounded-xl text-xs font-bold gap-1.5"
-              >
-                <Landmark size={14} />
-                الخزائن التشغيلية (8)
-              </Button>
-
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsParkPricesModalOpen(true)}
-                className="rounded-xl text-xs font-bold gap-1.5"
-              >
-                <Settings size={14} />
-                أسعار وتصنيفات التذاكر
-              </Button>
-
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsParkCustomersModalOpen(true)}
-                className="rounded-xl text-xs font-bold gap-1.5"
-              >
-                <Users size={14} />
-                دليل عملاء الحديقة
-              </Button>
-
-              {canCloseShifts && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsParkShiftCloseModalOpen(true)}
-                  className="rounded-xl text-xs font-bold gap-1.5 border-rose-200 text-rose-700 hover:bg-rose-50 dark:border-rose-900/50 dark:text-rose-400"
-                >
-                  <History size={14} />
-                  سجل إغلاق الورديات
-                </Button>
-              )}
-            </div>
-
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleExportExcel}
-              className="rounded-xl text-xs font-bold gap-1.5"
+            <Card
+              onClick={() => setIsParkCustomersModalOpen(true)}
+              className="group cursor-pointer rounded-2xl border border-border/80 bg-card p-5 hover:border-teal-500/40 hover:shadow-md transition flex items-center justify-between gap-4"
             >
-              <FileSpreadsheet size={14} />
-              تصدير التذاكر إلى Excel
-            </Button>
+              <div className="flex items-center gap-3.5">
+                <div className="rounded-xl bg-teal-500/15 text-teal-600 dark:text-teal-400 p-3">
+                  <Users size={22} />
+                </div>
+                <h3 className="font-black text-base text-foreground group-hover:text-teal-600 transition-colors">
+                  دليل عملاء الحديقة
+                </h3>
+              </div>
+              <Badge variant="outline" className="font-bold">
+                إدارة العملاء
+              </Badge>
+            </Card>
+
+            <Card
+              onClick={() => setIsParkTreasuriesModalOpen(true)}
+              className="group cursor-pointer rounded-2xl border border-border/80 bg-card p-5 hover:border-blue-500/40 hover:shadow-md transition flex items-center justify-between gap-4"
+            >
+              <div className="flex items-center gap-3.5">
+                <div className="rounded-xl bg-blue-500/15 text-blue-600 dark:text-blue-400 p-3">
+                  <Landmark size={22} />
+                </div>
+                <h3 className="font-black text-base text-foreground group-hover:text-blue-600 transition-colors">
+                  إعدادات الخزائن التشغيلية ({operationalTreasuries.length})
+                </h3>
+              </div>
+              <Badge variant="outline" className="font-bold">
+                إدارة الخزائن
+              </Badge>
+            </Card>
           </div>
-        </div>
-      )}
 
-      {/* Tabs */}
-      {activeTab !== "grid" && (
-        <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
-          <TabsList className="bg-muted p-1 rounded-xl flex flex-wrap gap-1 h-auto w-full md:w-auto">
-            <TabsTrigger value="tickets" className="rounded-lg font-bold py-2.5 px-5">
-              <Ticket size={16} className="ml-1.5 inline" />
-              تذاكر وعمليات الحديقة ({transactions.length})
-            </TabsTrigger>
-            <TabsTrigger value="shifts" className="rounded-lg font-bold py-2.5 px-5">
-              <Clock size={16} className="ml-1.5 inline" />
-              ورديات الكاشير ({shifts.length})
-            </TabsTrigger>
-            <TabsTrigger value="treasury" className="rounded-lg font-bold py-2.5 px-5">
-              <Landmark size={16} className="ml-1.5 inline" />
-              الخزائن التشغيلية ({operationalTreasuries.length})
-            </TabsTrigger>
-            <TabsTrigger value="reports" className="rounded-lg font-bold py-2.5 px-5">
-              <TrendingUp size={16} className="ml-1.5 inline" />
-              التقارير والمبيعات
-            </TabsTrigger>
-            <TabsTrigger value="vouchers" className="rounded-lg font-bold py-2.5 px-5">
-              <Receipt size={16} className="ml-1.5 inline" />
-              سندات الصرف والقبض
-            </TabsTrigger>
-          </TabsList>
-
-          {/* TAB 0: VOUCHERS */}
-          <TabsContent value="vouchers" className="space-y-4 mt-4">
-            <VouchersLedgerSection
-              defaultCostCenter="إدارة الحديقة (Park Management)"
-              departmentTitle="الحديقة والترفيه"
-            />
-          </TabsContent>
-
-          {/* TAB 1: TICKETS & TRANSACTIONS */}
-          <TabsContent value="tickets" className="space-y-4 mt-4">
-            <Card className="border border-border shadow-xs rounded-2xl">
-              <CardHeader className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60">
-                <div>
-                  <CardTitle className="text-base font-black">سجل تذاكر وعمليات الدخول</CardTitle>
-                  <CardDescription className="text-xs">
-                    كشف كامل بجميع الفواتير والتذاكر الصادرة مع إمكانية الطباعة والاسترجاع
-                  </CardDescription>
-                </div>
-                <div className="relative w-full sm:w-72">
-                  <Search size={15} className="absolute right-3 top-2.5 text-muted-foreground" />
-                  <Input
-                    value={txSearch}
-                    onChange={(e) => setTxSearch(e.target.value)}
-                    placeholder="ابحث برقم الحركة، الكاشير، العميل..."
-                    className="pr-9 h-9 text-xs rounded-xl"
-                  />
-                </div>
-              </CardHeader>
-              <CardContent className="p-0 overflow-x-auto">
-                <table className="w-full text-right text-xs">
-                  <thead className="bg-muted/50 border-b border-border text-muted-foreground font-bold">
-                    <tr>
-                      <th className="p-3">رقم الحركة</th>
-                      <th className="p-3">التوقيت والتاريخ</th>
-                      <th className="p-3">العميل</th>
-                      <th className="p-3">الكاشير</th>
-                      <th className="p-3">طريقة الدفع</th>
-                      <th className="p-3">الإجمالي ($)</th>
-                      <th className="p-3">الحالة</th>
-                      <th className="p-3 text-center">إجراءات</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border/60">
-                    {filteredTransactions.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} className="text-center py-12 text-muted-foreground">
-                          لا توجد حركات تذاكر مسجلة مطابقة للبحث
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredTransactions.map((tx: any) => (
-                        <tr key={tx.id} className="hover:bg-muted/30 transition">
-                          <td className="p-3 font-mono font-bold text-foreground">
-                            {tx.transaction_number || tx.id.slice(0, 8)}
-                          </td>
-                          <td className="p-3 text-muted-foreground font-mono">
-                            {new Date(tx.created_at).toLocaleString("ar-EG")}
-                          </td>
-                          <td className="p-3 font-semibold text-foreground">
-                            {tx.customer_name || "عميل نقدي"}
-                          </td>
-                          <td className="p-3 text-muted-foreground">
-                            {tx.cashier_name || "كاشير عام"}
-                          </td>
-                          <td className="p-3 font-medium">
-                            <Badge variant="outline" className="text-[10px] font-bold">
-                              {tx.payment_method === "cash"
-                                ? "كاش"
-                                : tx.payment_method === "card"
-                                  ? "بطاقة"
-                                  : tx.payment_method || "نقدي"}
-                            </Badge>
-                          </td>
-                          <td className="p-3 font-mono font-black text-emerald-600 dark:text-emerald-400">
-                            ${Number(tx.total_amount_usd || 0).toLocaleString()}
-                          </td>
-                          <td className="p-3">
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                tx.status === "refunded"
-                                  ? "bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300"
-                                  : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300"
-                              }`}
-                            >
-                              {tx.status === "refunded" ? "مسترجع" : "مكتمل"}
-                            </span>
-                          </td>
-                          <td className="p-3 text-center">
-                            <div className="flex items-center justify-center gap-1.5">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => {
-                                  setSelectedTxForDetails(tx);
-                                  setIsParkTxDetailsModalOpen(true);
-                                }}
-                                className="h-7 px-2 text-xs font-bold"
-                              >
-                                <Eye size={13} className="ml-1" />
-                                عرض
-                              </Button>
-                              {tx.status !== "refunded" && (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => {
-                                    setSelectedTxForRefund(tx);
-                                    setIsParkRefundModalOpen(true);
-                                  }}
-                                  className="h-7 px-2 text-xs font-bold text-rose-600 hover:bg-rose-50"
-                                >
-                                  <RotateCcw size={13} className="ml-1" />
-                                  استرجاع
-                                </Button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* TAB 2: SHIFTS */}
-          <TabsContent value="shifts" className="space-y-4 mt-4">
-            <Card className="border border-border shadow-xs rounded-2xl">
-              <CardHeader className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60">
-                <div>
-                  <CardTitle className="text-base font-black">
-                    ورديات وجلسات كاشير الحديقة
-                  </CardTitle>
-                  <CardDescription className="text-xs">
-                    سجل الورديات المفتوحة والمغلقة، تقارير الإغلاق، ومطابقة الصناديق
-                  </CardDescription>
-                </div>
-                {(!isCashier || !cashierActiveShift) && (
-                  <Button
-                    onClick={() => setIsParkShiftLauncherOpen(true)}
-                    size="sm"
-                    className="bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl text-xs gap-1.5"
-                  >
-                    <Plus size={14} />
-                    فتح وردية جديدة
-                  </Button>
-                )}
-              </CardHeader>
-              <CardContent className="p-0 overflow-x-auto">
-                <table className="w-full text-right text-xs">
-                  <thead className="bg-muted/50 border-b border-border text-muted-foreground font-bold">
-                    <tr>
-                      <th className="p-3">{isCashier ? "اسم الوردية" : "رقم الوردية"}</th>
-                      <th className="p-3">الكاشير المسؤول</th>
-                      <th className="p-3">وقت الفتح</th>
-                      <th className="p-3">وقت الإغلاق</th>
-                      <th className="p-3">الخزينة التشغيلية</th>
-                      <th className="p-3">الحالة</th>
-                      <th className="p-3 text-center">إجراءات</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border/60">
-                    {shifts.length === 0 ? (
-                      <tr>
-                        <td colSpan={7} className="text-center py-10 text-muted-foreground">
-                          لا توجد ورديات مسجلة بعد
-                        </td>
-                      </tr>
-                    ) : (
-                      shifts.map((s: any) => (
-                        <tr key={s.id} className="hover:bg-muted/30 transition">
-                          <td className="p-3 font-bold">
-                            {isCashier ? s.shift_number : s.shift_number || s.id.slice(0, 8)}
-                          </td>
-                          <td className="p-3 font-bold text-foreground">{s.cashier_name}</td>
-                          <td className="p-3 text-muted-foreground font-mono">
-                            {new Date(s.opened_at || s.start_at).toLocaleString("ar-EG")}
-                          </td>
-                          <td className="p-3 text-muted-foreground font-mono">
-                            {s.closed_at || s.end_at
-                              ? new Date(s.closed_at || s.end_at).toLocaleString("ar-EG")
-                              : "— نشطة حالياً —"}
-                          </td>
-                          <td className="p-3 font-medium">
-                            {s.treasury_name || "الخزينة التشغيلية"}
-                          </td>
-                          <td className="p-3">
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                s.status === "open"
-                                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
-                                  : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                              }`}
-                            >
-                              {s.status === "open" ? "مفتوحة" : "مغلقة"}
-                            </span>
-                          </td>
-                          <td className="p-3 text-center">
-                            <div className="flex items-center justify-center gap-1.5">
-                              {s.status === "open" && (
-                                <Button
-                                  size="sm"
-                                  onClick={() => {
-                                    erpStore.setActiveParkShift(s.id);
-                                    toast.success(`تم الدخول إلى ${s.shift_number}`);
-                                    setIsParkPosOpen(true);
-                                  }}
-                                  className="h-7 px-2.5 text-xs font-black bg-teal-600 hover:bg-teal-700 text-white rounded-lg gap-1"
-                                >
-                                  <Play size={12} />
-                                  دخول الوردية
-                                </Button>
-                              )}
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => {
-                                  setSelectedShiftForReport(s);
-                                  setIsShiftClosingReportOpen(true);
-                                }}
-                                className="h-7 px-2 text-xs font-bold"
-                              >
-                                تقرير الوردية
-                              </Button>
-                              {!isCashier && (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => {
-                                    setSelectedShiftForAudit(s);
-                                    setIsShiftAuditLogOpen(true);
-                                  }}
-                                  className="h-7 px-2 text-xs font-bold text-indigo-600"
-                                >
-                                  سجل التدقيق
-                                </Button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* TAB 3: OPERATIONAL TREASURIES */}
-          <TabsContent value="treasury" className="space-y-4 mt-4">
-            <Card className="border border-border shadow-xs rounded-2xl">
-              <CardHeader className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60">
-                <div>
-                  <CardTitle className="text-base font-black">
-                    الخزائن التشغيلية الثمانية للحديقة
-                  </CardTitle>
-                  <CardDescription className="text-xs">
-                    مراقبة الأرصدة النقدية والعملات الأجنبية لكل كاشير ونقطة بيع
-                  </CardDescription>
-                </div>
-                <Button
-                  onClick={() => setIsParkTreasuriesModalOpen(true)}
-                  size="sm"
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs gap-1.5"
-                >
-                  إدارة أوعية الخزائن
-                </Button>
-              </CardHeader>
-              <CardContent className="p-5">
+          {/* Operational Treasuries List/Grid */}
+          <Card className="border border-border shadow-xs rounded-2xl">
+            <CardHeader className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60">
+              <CardTitle className="text-base font-black">
+                الخزائن التشغيلية للحديقة ({operationalTreasuries.length})
+              </CardTitle>
+              <Button
+                onClick={() => setIsParkTreasuriesModalOpen(true)}
+                size="sm"
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs gap-1.5 cursor-pointer"
+              >
+                إدارة أوعية الخزائن
+              </Button>
+            </CardHeader>
+            <CardContent className="p-5">
+              {viewMode === "grid" ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   {operationalTreasuries.map((tr: any) => (
                     <div
@@ -1114,57 +435,562 @@ function ParkManagementPage() {
                     </div>
                   ))}
                 </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* TAB 4: REPORTS */}
-          <TabsContent value="reports" className="space-y-4 mt-4">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <Card className="border border-border p-5 rounded-2xl">
-                <p className="text-xs text-muted-foreground font-bold">إجمالي مبيعات التذاكر</p>
-                <h3 className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-2 font-mono">
-                  ${totalRevenue.toLocaleString()}
-                </h3>
-              </Card>
-              <Card className="border border-border p-5 rounded-2xl">
-                <p className="text-xs text-muted-foreground font-bold">إجمالي التذاكر الصادرة</p>
-                <h3 className="text-2xl font-black text-foreground mt-2 font-mono">
-                  {totalTickets.toLocaleString()} تذكرة
-                </h3>
-              </Card>
-              <Card className="border border-border p-5 rounded-2xl">
-                <p className="text-xs text-muted-foreground font-bold">الورديات المنفذة</p>
-                <h3 className="text-2xl font-black text-indigo-600 mt-2 font-mono">
-                  {shifts.length} وردية
-                </h3>
-              </Card>
-            </div>
-          </TabsContent>
-        </Tabs>
+              ) : (
+                <div className="space-y-2.5">
+                  {operationalTreasuries.map((tr: any) => (
+                    <div
+                      key={tr.id}
+                      className="flex items-center justify-between gap-4 bg-muted/40 border border-border p-3.5 rounded-xl text-right"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Landmark size={18} className="text-blue-600" />
+                        <span className="font-bold text-sm text-foreground">{tr.name_ar}</span>
+                        <span className="text-xs text-muted-foreground">
+                          ({tr.responsible_cashier || "كاشير مناوب"})
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-black font-mono text-emerald-600 dark:text-emerald-400">
+                          {Number(tr.balance || 0).toLocaleString()} {tr.currency || "USD"}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       )}
 
-      {/* Vouchers Section in Park Management */}
-      {activeTab === "vouchers" && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between p-4 rounded-2xl bg-card border border-border shadow-xs">
-            <Button
-              onClick={() => setActiveTab("grid")}
-              variant="default"
-              className="gap-2 bg-[#00897b] hover:bg-[#00796b] text-white font-black rounded-xl text-xs md:text-sm shadow-md cursor-pointer"
+      {/* SECTION 2: OPERATIONS (العمليات) */}
+      {activeTab === "operations" && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          {/* Open Shifts Section */}
+          {openShifts.length > 0 ? (
+            <div className="space-y-3">
+              {openShifts.map((shift: any) => {
+                const shiftTxs = (transactions || []).filter(
+                  (t: any) => t.shift_id === shift.id || t.shift_number === shift.shift_number,
+                );
+                const completedTxs = shiftTxs.filter((t: any) => t.status === "completed");
+                const refundedTxs = shiftTxs.filter((t: any) => t.status === "refunded");
+                const shiftRevenueUsd = completedTxs.reduce(
+                  (s: number, t: any) => s + (t.total_usd || t.total_amount_usd || 0),
+                  0,
+                );
+
+                return (
+                  <div
+                    key={shift.id}
+                    className="p-4 sm:p-5 rounded-2xl border border-border/80 bg-card shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 transition hover:border-teal-500/40"
+                  >
+                    <div className="space-y-1.5 text-right flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-black text-sm text-foreground">
+                          {shift.shift_number || `وردية تذاكر #${shift.auto_shift_number || "1"}`}
+                        </h3>
+                        <span className="inline-flex items-center bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700/60 text-xs font-bold px-2.5 py-0.5 rounded-full">
+                          وردية مفتوحة
+                        </span>
+                        {shift.currency && (
+                          <span className="inline-flex items-center border border-border/80 bg-muted/40 text-muted-foreground text-[11px] font-mono px-2.5 py-0.5 rounded-full">
+                            {shift.currency}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                        <span className="flex items-center gap-1 font-bold text-foreground">
+                          <UserCheck size={14} className="text-teal-600" />
+                          الكاشير: {shift.cashier_name}
+                        </span>
+                        <span>•</span>
+                        <span className="flex items-center gap-1 font-mono">
+                          <Clock size={13} className="text-muted-foreground" />
+                          {new Date(
+                            shift.opened_at || shift.start_at || Date.now(),
+                          ).toLocaleTimeString("ar-EG")}
+                        </span>
+                        <span>•</span>
+                        <span className="flex items-center gap-1 text-teal-600 dark:text-teal-400 font-black">
+                          <ShoppingBag size={14} />
+                          {completedTxs.length} مبيعات (${shiftRevenueUsd.toLocaleString()})
+                          {refundedTxs.length > 0 && ` (${refundedTxs.length} مرتجع)`}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col items-start md:items-end gap-2.5 shrink-0">
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          erpStore.setActiveParkShift(shift.id);
+                          toast.success(`تم الدخول إلى ${shift.shift_number}`);
+                          setIsParkPosOpen(true);
+                        }}
+                        className="bg-[#00897b] hover:bg-[#00796b] text-white rounded-full font-black text-xs px-5 py-2 shadow-xs flex items-center gap-1.5 cursor-pointer h-9"
+                      >
+                        <Play size={13} className="fill-white" />
+                        <span>دخول الوردية</span>
+                      </Button>
+
+                      {!isCashier && (
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setEditingShift(shift);
+                              setEditShiftNumber(shift.shift_number);
+                              setEditCashierName(shift.cashier_name);
+                              setEditNotes(shift.notes || "");
+                            }}
+                            className="rounded-full text-xs font-bold px-3 py-1 flex items-center gap-1 cursor-pointer h-7"
+                          >
+                            <Edit size={13} className="text-blue-600" />
+                            <span>تعديل</span>
+                          </Button>
+
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setDeletingShift(shift)}
+                            className="text-rose-500 hover:text-rose-700 p-1.5 h-7 w-7 rounded-full cursor-pointer"
+                            title="حذف الوردية"
+                          >
+                            <Trash2 size={15} />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="p-4 sm:p-5 rounded-2xl border border-dashed border-teal-500/30 bg-card shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
+              <h3 className="font-black text-sm text-foreground">لا توجد وردية مفتوحة حالياً</h3>
+              <Button
+                onClick={() => setIsParkShiftLauncherOpen(true)}
+                className="bg-[#00897b] hover:bg-[#00796b] text-white rounded-full font-black text-xs px-5 py-2 shadow-xs flex items-center gap-1.5 cursor-pointer h-9 shrink-0"
+              >
+                <Plus size={15} />
+                <span>فتح وردية جديدة</span>
+              </Button>
+            </div>
+          )}
+
+          {/* Operational Action Cards */}
+          <div
+            className={viewMode === "grid" ? "grid grid-cols-1 sm:grid-cols-3 gap-4" : "space-y-3"}
+          >
+            <Card
+              onClick={() => setIsParkPosOpen(true)}
+              className="group cursor-pointer rounded-2xl border border-border/80 bg-card p-5 hover:border-emerald-500/50 hover:shadow-md transition flex items-center justify-between gap-4"
             >
-              <ArrowRight size={18} />
-              <span>الرجوع لأقسام الحديقة الرئيسية</span>
-            </Button>
-            <h3 className="text-base font-black text-foreground flex items-center gap-2">
-              <Receipt className="text-teal-600" size={20} />
-              <span>سندات الصرف والقبض الرسمية - إدارة الحديقة والترفيه</span>
-            </h3>
+              <div className="flex items-center gap-3.5">
+                <div className="rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 p-3">
+                  <Ticket size={22} />
+                </div>
+                <h3 className="font-black text-base text-foreground group-hover:text-emerald-600 transition-colors">
+                  نقطة بيع التذاكر (POS)
+                </h3>
+              </div>
+              <Badge variant="outline" className="font-bold">
+                فتح الشباك
+              </Badge>
+            </Card>
+
+            <Card
+              onClick={() => setIsParkShiftLauncherOpen(true)}
+              className="group cursor-pointer rounded-2xl border border-border/80 bg-card p-5 hover:border-teal-500/50 hover:shadow-md transition flex items-center justify-between gap-4"
+            >
+              <div className="flex items-center gap-3.5">
+                <div className="rounded-xl bg-teal-500/15 text-teal-600 dark:text-teal-400 p-3">
+                  <Plus size={22} />
+                </div>
+                <h3 className="font-black text-base text-foreground group-hover:text-teal-600 transition-colors">
+                  فتح وردية كاشير جديدة
+                </h3>
+              </div>
+              <Badge variant="outline" className="font-bold">
+                {openShifts.length} نشطة
+              </Badge>
+            </Card>
+
+            {canCloseShifts && (
+              <Card
+                onClick={() => setIsParkShiftCloseModalOpen(true)}
+                className="group cursor-pointer rounded-2xl border border-border/80 bg-card p-5 hover:border-rose-500/50 hover:shadow-md transition flex items-center justify-between gap-4"
+              >
+                <div className="flex items-center gap-3.5">
+                  <div className="rounded-xl bg-rose-500/15 text-rose-600 dark:text-rose-400 p-3">
+                    <History size={22} />
+                  </div>
+                  <h3 className="font-black text-base text-foreground group-hover:text-rose-600 transition-colors">
+                    إغلاق وتسوية وردية الكاشير
+                  </h3>
+                </div>
+                <Badge variant="outline" className="font-bold">
+                  إغلاق وردية
+                </Badge>
+              </Card>
+            )}
           </div>
-          <VouchersLedgerSection
-            defaultCostCenter="إدارة الحديقة (Park Management)"
-            departmentTitle="الحديقة والمنتزه"
-          />
+
+          {/* Tickets & Transactions Table */}
+          <Card className="border border-border shadow-xs rounded-2xl">
+            <CardHeader className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60">
+              <CardTitle className="text-base font-black">
+                سجل تذاكر وعمليات الدخول ({filteredTransactions.length})
+              </CardTitle>
+              <div className="relative w-full sm:w-72">
+                <Search size={15} className="absolute right-3 top-2.5 text-muted-foreground" />
+                <Input
+                  value={txSearch}
+                  onChange={(e) => setTxSearch(e.target.value)}
+                  placeholder="ابحث برقم الحركة، الكاشير، العميل..."
+                  className="pr-9 h-9 text-xs rounded-xl"
+                />
+              </div>
+            </CardHeader>
+            <CardContent className="p-0 overflow-x-auto">
+              <table className="w-full text-right text-xs">
+                <thead className="bg-muted/50 border-b border-border text-muted-foreground font-bold">
+                  <tr>
+                    <th className="p-3">رقم الحركة</th>
+                    <th className="p-3">التوقيت والتاريخ</th>
+                    <th className="p-3">العميل</th>
+                    <th className="p-3">الكاشير</th>
+                    <th className="p-3">طريقة الدفع</th>
+                    <th className="p-3">الإجمالي ($)</th>
+                    <th className="p-3">الحالة</th>
+                    <th className="p-3 text-center">إجراءات</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/60">
+                  {filteredTransactions.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="text-center py-10 text-muted-foreground">
+                        لا توجد حركات تذاكر مسجلة
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredTransactions.map((tx: any) => (
+                      <tr key={tx.id} className="hover:bg-muted/30 transition">
+                        <td className="p-3 font-mono font-bold text-foreground">
+                          {tx.transaction_number || tx.id.slice(0, 8)}
+                        </td>
+                        <td className="p-3 text-muted-foreground font-mono">
+                          {new Date(tx.created_at).toLocaleString("ar-EG")}
+                        </td>
+                        <td className="p-3 font-semibold text-foreground">
+                          {tx.customer_name || "عميل نقدي"}
+                        </td>
+                        <td className="p-3 text-muted-foreground">
+                          {tx.cashier_name || "كاشير عام"}
+                        </td>
+                        <td className="p-3 font-medium">
+                          <Badge variant="outline" className="text-[10px] font-bold">
+                            {tx.payment_method === "cash"
+                              ? "كاش"
+                              : tx.payment_method === "card"
+                                ? "بطاقة"
+                                : tx.payment_method || "نقدي"}
+                          </Badge>
+                        </td>
+                        <td className="p-3 font-mono font-black text-emerald-600 dark:text-emerald-400">
+                          ${Number(tx.total_amount_usd || 0).toLocaleString()}
+                        </td>
+                        <td className="p-3">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              tx.status === "refunded"
+                                ? "bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300"
+                                : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300"
+                            }`}
+                          >
+                            {tx.status === "refunded" ? "مسترجع" : "مكتمل"}
+                          </span>
+                        </td>
+                        <td className="p-3 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                setSelectedTxForDetails(tx);
+                                setIsParkTxDetailsModalOpen(true);
+                              }}
+                              className="h-7 px-2 text-xs font-bold"
+                            >
+                              <Eye size={13} className="ml-1" />
+                              عرض
+                            </Button>
+                            {tx.status !== "refunded" && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  setSelectedTxForRefund(tx);
+                                  setIsParkRefundModalOpen(true);
+                                }}
+                                className="h-7 px-2 text-xs font-bold text-rose-600 hover:bg-rose-50"
+                              >
+                                <RotateCcw size={13} className="ml-1" />
+                                استرجاع
+                              </Button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
+
+          {/* Shifts Table */}
+          <Card className="border border-border shadow-xs rounded-2xl">
+            <CardHeader className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60">
+              <CardTitle className="text-base font-black">
+                ورديات كاشير الحديقة ({shifts.length})
+              </CardTitle>
+              {(!isCashier || !cashierActiveShift) && (
+                <Button
+                  onClick={() => setIsParkShiftLauncherOpen(true)}
+                  size="sm"
+                  className="bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl text-xs gap-1.5"
+                >
+                  <Plus size={14} />
+                  فتح وردية جديدة
+                </Button>
+              )}
+            </CardHeader>
+            <CardContent className="p-0 overflow-x-auto">
+              <table className="w-full text-right text-xs">
+                <thead className="bg-muted/50 border-b border-border text-muted-foreground font-bold">
+                  <tr>
+                    <th className="p-3">{isCashier ? "اسم الوردية" : "رقم الوردية"}</th>
+                    <th className="p-3">الكاشير المسؤول</th>
+                    <th className="p-3">وقت الفتح</th>
+                    <th className="p-3">وقت الإغلاق</th>
+                    <th className="p-3">الخزينة التشغيلية</th>
+                    <th className="p-3">الحالة</th>
+                    <th className="p-3 text-center">إجراءات</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/60">
+                  {shifts.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="text-center py-10 text-muted-foreground">
+                        لا توجد ورديات مسجلة بعد
+                      </td>
+                    </tr>
+                  ) : (
+                    shifts.map((s: any) => (
+                      <tr key={s.id} className="hover:bg-muted/30 transition">
+                        <td className="p-3 font-bold">
+                          {isCashier ? s.shift_number : s.shift_number || s.id.slice(0, 8)}
+                        </td>
+                        <td className="p-3 font-bold text-foreground">{s.cashier_name}</td>
+                        <td className="p-3 text-muted-foreground font-mono">
+                          {new Date(s.opened_at || s.start_at).toLocaleString("ar-EG")}
+                        </td>
+                        <td className="p-3 text-muted-foreground font-mono">
+                          {s.closed_at || s.end_at
+                            ? new Date(s.closed_at || s.end_at).toLocaleString("ar-EG")
+                            : "— نشطة حالياً —"}
+                        </td>
+                        <td className="p-3 font-medium">
+                          {s.treasury_name || "الخزينة التشغيلية"}
+                        </td>
+                        <td className="p-3">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              s.status === "open"
+                                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
+                                : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                            }`}
+                          >
+                            {s.status === "open" ? "مفتوحة" : "مغلقة"}
+                          </span>
+                        </td>
+                        <td className="p-3 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            {s.status === "open" && (
+                              <Button
+                                size="sm"
+                                onClick={() => {
+                                  erpStore.setActiveParkShift(s.id);
+                                  toast.success(`تم الدخول إلى ${s.shift_number}`);
+                                  setIsParkPosOpen(true);
+                                }}
+                                className="h-7 px-2.5 text-xs font-black bg-teal-600 hover:bg-teal-700 text-white rounded-lg gap-1"
+                              >
+                                <Play size={12} />
+                                دخول الوردية
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                setSelectedShiftForReport(s);
+                                setIsShiftClosingReportOpen(true);
+                              }}
+                              className="h-7 px-2 text-xs font-bold"
+                            >
+                              تقرير الوردية
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* SECTION 3: REPORTS (التقارير) */}
+      {activeTab === "reports" && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          <div className="flex items-center justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExportExcel}
+              className="rounded-xl text-xs font-bold gap-1.5 cursor-pointer"
+            >
+              <FileSpreadsheet size={14} />
+              تصدير التذاكر إلى Excel
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Card className="border border-border p-5 rounded-2xl">
+              <p className="text-xs text-muted-foreground font-bold">إجمالي مبيعات التذاكر</p>
+              <h3 className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-2 font-mono">
+                ${totalRevenue.toLocaleString()}
+              </h3>
+            </Card>
+            <Card className="border border-border p-5 rounded-2xl">
+              <p className="text-xs text-muted-foreground font-bold">إجمالي التذاكر الصادرة</p>
+              <h3 className="text-2xl font-black text-foreground mt-2 font-mono">
+                {totalTickets.toLocaleString()} تذكرة
+              </h3>
+            </Card>
+            <Card className="border border-border p-5 rounded-2xl">
+              <p className="text-xs text-muted-foreground font-bold">الورديات المنفذة</p>
+              <h3 className="text-2xl font-black text-indigo-600 mt-2 font-mono">
+                {shifts.length} وردية
+              </h3>
+            </Card>
+          </div>
+
+          <Card className="border border-border shadow-xs rounded-2xl">
+            <CardHeader className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60">
+              <CardTitle className="text-base font-black">
+                تقارير ورديات الحديقة وسجل التدقيق
+              </CardTitle>
+              {!isCashier && (
+                <Button
+                  onClick={() => {
+                    setSelectedShiftForAudit(null);
+                    setIsShiftAuditLogOpen(true);
+                  }}
+                  variant="outline"
+                  size="sm"
+                  className="font-bold rounded-xl text-xs gap-1.5 border-indigo-500/30 text-indigo-600 dark:text-indigo-400 cursor-pointer"
+                >
+                  <History size={14} />
+                  سجل التدقيق الشامل
+                </Button>
+              )}
+            </CardHeader>
+            <CardContent className="p-0 overflow-x-auto">
+              <table className="w-full text-right text-xs">
+                <thead className="bg-muted/50 border-b border-border text-muted-foreground font-bold">
+                  <tr>
+                    <th className="p-3">رقم الوردية</th>
+                    <th className="p-3">الكاشير المسؤول</th>
+                    <th className="p-3">وقت الفتح</th>
+                    <th className="p-3">وقت الإغلاق</th>
+                    <th className="p-3">الحالة</th>
+                    <th className="p-3 text-center">التقرير والتدقيق</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/60">
+                  {shifts.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="text-center py-10 text-muted-foreground">
+                        لا توجد تقارير ورديات مسجلة بعد
+                      </td>
+                    </tr>
+                  ) : (
+                    shifts.map((s: any) => (
+                      <tr key={s.id} className="hover:bg-muted/30 transition">
+                        <td className="p-3 font-bold">{s.shift_number || s.id.slice(0, 8)}</td>
+                        <td className="p-3 font-bold text-foreground">{s.cashier_name}</td>
+                        <td className="p-3 text-muted-foreground font-mono">
+                          {new Date(s.opened_at || s.start_at).toLocaleString("ar-EG")}
+                        </td>
+                        <td className="p-3 text-muted-foreground font-mono">
+                          {s.closed_at || s.end_at
+                            ? new Date(s.closed_at || s.end_at).toLocaleString("ar-EG")
+                            : "— نشطة حالياً —"}
+                        </td>
+                        <td className="p-3">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              s.status === "open"
+                                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
+                                : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                            }`}
+                          >
+                            {s.status === "open" ? "مفتوحة" : "مغلقة"}
+                          </span>
+                        </td>
+                        <td className="p-3 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                setSelectedShiftForReport(s);
+                                setIsShiftClosingReportOpen(true);
+                              }}
+                              className="h-7 px-2 text-xs font-bold"
+                            >
+                              تقرير الوردية
+                            </Button>
+                            {!isCashier && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  setSelectedShiftForAudit(s);
+                                  setIsShiftAuditLogOpen(true);
+                                }}
+                                className="h-7 px-2 text-xs font-bold text-indigo-600"
+                              >
+                                سجل التدقيق
+                              </Button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
         </div>
       )}
 
@@ -1326,4 +1152,3 @@ function ParkManagementPage() {
     </div>
   );
 }
-

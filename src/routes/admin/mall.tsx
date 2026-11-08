@@ -1,12 +1,9 @@
 // @ts-nocheck
 import { toast } from "sonner";
-import { createFileRoute, useLocation, Link } from "@tanstack/react-router";
-import {
-  extractTabParam,
-  useSyncedSubTab,
-} from "@/components/navigation/navigationRegistry";
+import { createFileRoute, useLocation, useNavigate, Link } from "@tanstack/react-router";
+import { extractTabParam, useSyncedSubTab } from "@/components/navigation/navigationRegistry";
 import { useState, useMemo, useEffect } from "react";
-import { VouchersLedgerSection } from "@/components/admin/VouchersLedgerSection";
+import { ViewModeToggle, useViewMode } from "@/components/ui/view-mode-toggle";
 import { printRawHtml } from "@/shared/utils/printAccountingDocument";
 import {
   Building2,
@@ -143,41 +140,38 @@ function MallManagementPage() {
     }
   }, [shops.length]);
 
+  const navigate = useNavigate();
   const location = useLocation();
   const tabParam = extractTabParam(location.search, (location as any).searchStr);
+  const [viewMode, setViewMode] = useViewMode("mall", "grid");
 
-  const [activeTab, setActiveTab] = useState<
-    "grid" | "shops" | "payments" | "expenses" | "reports" | "vouchers" | "garden"
-  >(() => {
-    if (
-      tabParam === "payments" ||
-      tabParam === "expenses" ||
-      tabParam === "reports" ||
-      tabParam === "shops" ||
-      tabParam === "vouchers" ||
-      tabParam === "garden"
-    ) {
-      return tabParam;
-    }
-    return "grid";
-  });
+  const resolveMallTab = (rawTab: string | undefined): "definitions" | "operations" | "reports" => {
+    if (rawTab === "definitions" || rawTab === "shops") return "definitions";
+    if (rawTab === "reports") return "reports";
+    return "operations";
+  };
+
+  const [activeTab, setActiveTab] = useState<"definitions" | "operations" | "reports">(() =>
+    resolveMallTab(tabParam),
+  );
 
   useEffect(() => {
-    if (
-      tabParam === "payments" ||
-      tabParam === "expenses" ||
-      tabParam === "reports" ||
-      tabParam === "shops" ||
-      tabParam === "vouchers" ||
-      tabParam === "garden"
-    ) {
-      setActiveTab(tabParam);
-    } else if (!tabParam || tabParam === "grid") {
-      setActiveTab("grid");
+    if (tabParam === "payments" || tabParam === "expenses") {
+      navigate({ to: "/admin/ledger", search: { tab: "mall_finance" } as any });
+      return;
     }
-  }, [tabParam]);
+    if (tabParam === "vouchers") {
+      navigate({ to: "/admin/ledger", search: { tab: "vouchers" } as any });
+      return;
+    }
+    if (tabParam === "garden") {
+      navigate({ to: "/admin/park" });
+      return;
+    }
+    setActiveTab(resolveMallTab(tabParam));
+  }, [tabParam, navigate]);
 
-  useSyncedSubTab("/admin/mall", activeTab, setActiveTab, "grid");
+  useSyncedSubTab("/admin/mall", activeTab, setActiveTab as any, "operations");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedYear, setSelectedYear] = useState(2026);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
@@ -411,7 +405,11 @@ function MallManagementPage() {
     }
 
     const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
-    window.open(whatsappUrl, "_blank");
+    const anchor = document.createElement("a");
+    anchor.href = whatsappUrl;
+    anchor.target = "_blank";
+    anchor.rel = "noopener noreferrer";
+    anchor.click();
   };
 
   const handleSaveTermination = () => {
@@ -422,25 +420,23 @@ function MallManagementPage() {
     )
       return;
     const s = selectedShopForTermination;
-    erpStore.terminateMallContract(
-      {
-        shop_id: s.id,
-        shop_number: s.shop_number,
-        shop_name: s.name_ar,
-        tenant_name: s.tenant_name || "غير محدد",
-        phone: s.phone || "",
-        monthly_rent: s.monthly_rent,
-        deposit_amount: s.contract?.deposit_amount || 0,
-        refund_amount: Number(terminationForm.refund_amount) || 0,
-        start_date: s.contract?.start_date || new Date().toISOString().split("T")[0],
-        end_date: s.contract?.end_date || new Date().toISOString().split("T")[0],
-        termination_date: new Date().toISOString().split("T")[0],
-        contract_image: s.contract?.contract_image,
-        termination_image: terminationForm.termination_image,
-        notes: terminationForm.notes,
-      },
-      terminationForm.treasury_account_id,
-    );
+    erpStore.terminateMallContract({
+      shop_id: s.id,
+      shop_number: s.shop_number,
+      shop_name: s.name_ar,
+      tenant_name: s.tenant_name || "غير محدد",
+      phone: s.phone || "",
+      monthly_rent: s.monthly_rent,
+      deposit_amount: s.contract?.deposit_amount || 0,
+      refund_amount: Number(terminationForm.refund_amount) || 0,
+      start_date: s.contract?.start_date || new Date().toISOString().split("T")[0],
+      end_date: s.contract?.end_date || new Date().toISOString().split("T")[0],
+      termination_date: new Date().toISOString().split("T")[0],
+      contract_image: s.contract?.contract_image,
+      termination_image: terminationForm.termination_image,
+      notes: terminationForm.notes,
+    });
+    toast.success("تم فسخ العقد وأرشفته وتحديث حالة المحل إلى شاغر");
     setIsTerminationModalOpen(false);
     setTerminationForm({ shop_id: "", refund_amount: 0, termination_image: "", notes: "" });
   };
@@ -1535,19 +1531,19 @@ function MallManagementPage() {
   };
 
   return (
-    <div className="space-y-6 w-full px-2 lg:px-6 mx-auto pb-12">
-      {/* Mall Top Header & Actions */}
-      {activeTab === "grid" ? (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-foreground">
-              إدارة المول والمحلات التجارية
-            </h1>
-            <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-              إدارة المحلات والمستأجرين، عقود الإيجار، مقبوضات الإيجارات، ومصروفات التشغيل
-            </p>
+    <div className="space-y-6 w-full max-w-7xl mx-auto pb-12" dir="rtl">
+      {/* Unified Header + 3 Main Subsections Bar */}
+      <div className="rounded-2xl border border-border bg-card p-4 sm:p-5 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-500/12 text-blue-600 dark:text-blue-400 border border-blue-500/25">
+              <Building2 size={22} />
+            </div>
+            <h1 className="text-xl sm:text-2xl font-black text-foreground">إدارة المول</h1>
           </div>
-          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <ViewModeToggle mode={viewMode} onChange={setViewMode} />
             <Button
               onClick={() => setIsContractModalOpen(true)}
               className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-1.5 shadow-xs rounded-xl text-xs h-9 cursor-pointer"
@@ -1564,333 +1560,65 @@ function MallManagementPage() {
               فسخ تعاقد
             </Button>
             <Button
-              onClick={() => setIsStatusReportModalOpen(true)}
               variant="outline"
-              className="border-emerald-200 text-emerald-700 hover:bg-emerald-50 font-bold gap-1.5 rounded-xl text-xs h-9 cursor-pointer"
+              onClick={() =>
+                navigate({ to: "/admin/ledger", search: { tab: "mall_finance" } as any })
+              }
+              className="font-bold text-xs h-9 px-3.5 rounded-xl gap-1.5 border-indigo-500/30 text-indigo-600 dark:text-indigo-400 cursor-pointer"
             >
-              <Printer size={15} />
-              تقرير حالة المول
+              <Landmark size={15} />
+              <span>الإدارة المالية</span>
             </Button>
           </div>
         </div>
-      ) : (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 pb-2 border-b border-border/60">
-          <Button
-            variant="outline"
-            onClick={() => setActiveTab("grid")}
-            className="gap-2 font-black rounded-xl text-xs py-2 px-4 border-emerald-500/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 w-fit cursor-pointer"
+
+        {/* Unified 3-Section Tabs: التعريفات | العمليات | التقارير */}
+        <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border/60">
+          <button
+            type="button"
+            data-testid="mall-tab-definitions"
+            onClick={() => setActiveTab("definitions")}
+            className={`flex items-center justify-center gap-2 h-10 rounded-xl font-black text-xs sm:text-sm transition cursor-pointer ${
+              activeTab === "definitions"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "bg-muted/50 text-muted-foreground hover:text-foreground hover:bg-muted"
+            }`}
           >
-            <ArrowRight size={16} />
-            العودة إلى أقسام المول
-          </Button>
-
-          <div className="flex items-center gap-1.5 overflow-x-auto">
-            <Button
-              size="sm"
-              variant={activeTab === "shops" ? "default" : "outline"}
-              onClick={() => setActiveTab("shops")}
-              className="rounded-xl font-bold text-xs h-8"
-            >
-              المحلات ({totalShops})
-            </Button>
-            <Button
-              size="sm"
-              variant={activeTab === "payments" ? "default" : "outline"}
-              onClick={() => setActiveTab("payments")}
-              className="rounded-xl font-bold text-xs h-8"
-            >
-              الدفعات
-            </Button>
-            <Button
-              size="sm"
-              variant={activeTab === "expenses" ? "default" : "outline"}
-              onClick={() => setActiveTab("expenses")}
-              className="rounded-xl font-bold text-xs h-8"
-            >
-              المصروفات
-            </Button>
-            <Button
-              size="sm"
-              variant={activeTab === "reports" ? "default" : "outline"}
-              onClick={() => setActiveTab("reports")}
-              className="rounded-xl font-bold text-xs h-8"
-            >
-              التقارير
-            </Button>
-            <Button
-              size="sm"
-              variant={activeTab === "vouchers" ? "default" : "outline"}
-              onClick={() => setActiveTab("vouchers")}
-              className="rounded-xl font-bold text-xs h-8"
-            >
-              سندات الصرف والقبض
-            </Button>
-          </div>
+            <Store size={16} />
+            <span>التعريفات</span>
+          </button>
+          <button
+            type="button"
+            data-testid="mall-tab-operations"
+            onClick={() => setActiveTab("operations")}
+            className={`flex items-center justify-center gap-2 h-10 rounded-xl font-black text-xs sm:text-sm transition cursor-pointer ${
+              activeTab === "operations"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "bg-muted/50 text-muted-foreground hover:text-foreground hover:bg-muted"
+            }`}
+          >
+            <FileText size={16} />
+            <span>العمليات</span>
+          </button>
+          <button
+            type="button"
+            data-testid="mall-tab-reports"
+            onClick={() => setActiveTab("reports")}
+            className={`flex items-center justify-center gap-2 h-10 rounded-xl font-black text-xs sm:text-sm transition cursor-pointer ${
+              activeTab === "reports"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "bg-muted/50 text-muted-foreground hover:text-foreground hover:bg-muted"
+            }`}
+          >
+            <TrendingUp size={16} />
+            <span>التقارير</span>
+          </button>
         </div>
-      )}
+      </div>
 
-      {/* Mall Modules Square Cards Grid (نظام المربعات مثل قسم المطعم) */}
-      {activeTab === "grid" && (
-        <div className="space-y-6">
-          <section aria-labelledby="mall-modules-heading" className="space-y-3">
-            <div className="flex items-center justify-between gap-4">
-              <h2
-                id="mall-modules-heading"
-                className="flex items-center gap-2 text-base font-black text-foreground"
-              >
-                <Building2 size={18} className="text-emerald-600" aria-hidden="true" />
-                أقسام ووظائف إدارة المول
-              </h2>
-              <span className="text-xs font-bold text-muted-foreground">5 أقسام تشغيلية</span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-              <Card
-                onClick={() => setActiveTab("shops")}
-                className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
-                  activeTab === "shops"
-                    ? "border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/20 shadow-sm ring-2 ring-emerald-400/30"
-                    : "border-border/80 bg-card hover:border-emerald-500/40 hover:bg-accent/30"
-                }`}
-              >
-                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
-                  <div className="rounded-xl bg-gradient-to-br from-blue-500/20 to-indigo-500/20 text-blue-600 dark:text-blue-400 p-2.5 shadow-xs">
-                    <Store size={22} />
-                  </div>
-                  <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
-                    المحلات
-                  </span>
-                </CardHeader>
-                <CardContent className="space-y-1.5 p-4 pt-0">
-                  <h3 className="font-black text-sm text-foreground group-hover:text-emerald-600 transition-colors">
-                    قائمة المحلات والعقود
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
-                    إدارة عقود الإيجار، بيانات المستأجرين، المساحات والقيمة الإيجارية الشهرية
-                  </p>
-                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
-                    <span className="text-emerald-700 dark:text-emerald-400">
-                      {totalShops} محل مسجل ({rentedShops} مؤجر)
-                    </span>
-                    <span className="text-muted-foreground group-hover:text-emerald-600 text-xs transition-transform group-hover:translate-x-[-2px]">
-                      فتح القسم ←
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card
-                onClick={() => setActiveTab("payments")}
-                className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
-                  activeTab === "payments"
-                    ? "border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/20 shadow-sm ring-2 ring-emerald-400/30"
-                    : "border-border/80 bg-card hover:border-emerald-500/40 hover:bg-accent/30"
-                }`}
-              >
-                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
-                  <div className="rounded-xl bg-gradient-to-br from-emerald-500/25 to-teal-500/25 text-emerald-600 dark:text-emerald-400 p-2.5 shadow-xs">
-                    <Calendar size={22} />
-                  </div>
-                  <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
-                    التحصيل
-                  </span>
-                </CardHeader>
-                <CardContent className="space-y-1.5 p-4 pt-0">
-                  <h3 className="font-black text-sm text-foreground group-hover:text-emerald-600 transition-colors">
-                    متابعة الدفعات والأقساط
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
-                    تحصيل الإيجارات الشهرية، سجل الدفعات المسددة، وتتبع المتأخرات والمستحقات
-                  </p>
-                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
-                    <span className="text-emerald-700 dark:text-emerald-400">
-                      ${totalCollectedThisMonth.toLocaleString()} محصل هذا الشهر
-                    </span>
-                    <span className="text-muted-foreground group-hover:text-emerald-600 text-xs transition-transform group-hover:translate-x-[-2px]">
-                      فتح القسم ←
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card
-                onClick={() => setActiveTab("expenses")}
-                className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
-                  activeTab === "expenses"
-                    ? "border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/20 shadow-sm ring-2 ring-emerald-400/30"
-                    : "border-border/80 bg-card hover:border-emerald-500/40 hover:bg-accent/30"
-                }`}
-              >
-                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
-                  <div className="rounded-xl bg-gradient-to-br from-rose-500/20 to-orange-500/20 text-rose-600 dark:text-rose-400 p-2.5 shadow-xs">
-                    <CreditCard size={22} />
-                  </div>
-                  <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
-                    التشغيل
-                  </span>
-                </CardHeader>
-                <CardContent className="space-y-1.5 p-4 pt-0">
-                  <h3 className="font-black text-sm text-foreground group-hover:text-emerald-600 transition-colors">
-                    مصروفات وتشغيل المول
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
-                    تسجيل فواتير الصيانة، الإنارة، الأمن، النظافة والخدمات العامة للمول
-                  </p>
-                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
-                    <span className="text-rose-600 dark:text-rose-400">
-                      ${totalGardenExpenseMonth.toLocaleString()} مصروفات
-                    </span>
-                    <span className="text-muted-foreground group-hover:text-emerald-600 text-xs transition-transform group-hover:translate-x-[-2px]">
-                      فتح القسم ←
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card
-                onClick={() => setActiveTab("reports")}
-                className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
-                  activeTab === "reports"
-                    ? "border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/20 shadow-sm ring-2 ring-emerald-400/30"
-                    : "border-border/80 bg-card hover:border-emerald-500/40 hover:bg-accent/30"
-                }`}
-              >
-                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
-                  <div className="rounded-xl bg-gradient-to-br from-purple-500/20 to-indigo-500/20 text-purple-600 dark:text-purple-400 p-2.5 shadow-xs">
-                    <TrendingUp size={22} />
-                  </div>
-                  <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
-                    التقارير
-                  </span>
-                </CardHeader>
-                <CardContent className="space-y-1.5 p-4 pt-0">
-                  <h3 className="font-black text-sm text-foreground group-hover:text-emerald-600 transition-colors">
-                    التقارير والملخص المالي
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
-                    الملخص الشامل لإيرادات ومصروفات المول وصافي الدخل التشغيلي السنوي والشهري
-                  </p>
-                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
-                    <span className="text-purple-600 dark:text-purple-400">
-                      صافي ${netOperatingIncomeMonth.toLocaleString()}
-                    </span>
-                    <span className="text-muted-foreground group-hover:text-emerald-600 text-xs transition-transform group-hover:translate-x-[-2px]">
-                      فتح القسم ←
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card
-                onClick={() => setActiveTab("vouchers")}
-                className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-lg ${
-                  activeTab === "vouchers"
-                    ? "border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/20 shadow-sm ring-2 ring-emerald-400/30"
-                    : "border-border/80 bg-card hover:border-emerald-500/40 hover:bg-accent/30"
-                }`}
-              >
-                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 p-4">
-                  <div className="rounded-xl bg-gradient-to-br from-emerald-500/25 to-teal-500/25 text-emerald-600 dark:text-emerald-400 p-2.5 shadow-xs">
-                    <Receipt size={22} />
-                  </div>
-                  <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
-                    سندات مالية
-                  </span>
-                </CardHeader>
-                <CardContent className="space-y-1.5 p-4 pt-0">
-                  <h3 className="font-black text-sm text-foreground group-hover:text-emerald-600 transition-colors">
-                    سندات الصرف والقبض
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
-                    إصدار وتسجيل سندات الصرف والقبض الخاصة بالمول التجاري وتوليد القيود
-                  </p>
-                  <div className="pt-2 flex items-center justify-between border-t border-border/50 text-[11px] font-bold">
-                    <span className="text-emerald-700 dark:text-emerald-400">إدارة السندات</span>
-                    <span className="text-muted-foreground group-hover:text-emerald-600 text-xs transition-transform group-hover:translate-x-[-2px]">
-                      فتح السندات ←
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </section>
-
-          {/* KPI Cards (4 Mall Cards) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <Card className="border border-border/80 bg-card shadow-sm rounded-2xl p-4">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-muted-foreground">إجمالي المحلات</span>
-                <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-600">
-                  <Store size={20} />
-                </div>
-              </div>
-              <div className="mt-3">
-                <h3 className="text-2xl font-black text-foreground">{totalShops}</h3>
-                <p className="text-[11px] text-muted-foreground mt-1">
-                  {rentedShops} مؤجر | {vacantShops} فارغ | {maintenanceShops} صيانة
-                </p>
-              </div>
-            </Card>
-
-            <Card className="border border-border/80 bg-card shadow-sm rounded-2xl p-4">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-muted-foreground">
-                  محصول الإيجار ({MONTHS_AR[selectedMonth - 1]})
-                </span>
-                <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-600">
-                  <DollarSign size={20} />
-                </div>
-              </div>
-              <div className="mt-3">
-                <h3 className="text-xl sm:text-2xl font-black text-emerald-600">
-                  ${totalCollectedThisMonth.toLocaleString()}
-                </h3>
-                <p className="text-[11px] text-muted-foreground mt-1">
-                  من إجمالي المستحق ${totalDueThisMonth.toLocaleString()}
-                </p>
-              </div>
-            </Card>
-
-            <Card className="border border-border/80 bg-card shadow-sm rounded-2xl p-4">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-muted-foreground">
-                  مصروفات وتشغيل المول
-                </span>
-                <div className="p-2.5 rounded-xl bg-rose-500/10 text-rose-600">
-                  <TrendingDown size={20} />
-                </div>
-              </div>
-              <div className="mt-3">
-                <h3 className="text-xl sm:text-2xl font-black text-rose-600">
-                  ${totalGardenExpenseMonth.toLocaleString()}
-                </h3>
-                <p className="text-[11px] text-muted-foreground mt-1">صيانة، كهرباء، أمن ونظافة</p>
-              </div>
-            </Card>
-
-            <Card className="border border-border/80 bg-card shadow-sm rounded-2xl p-4">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-muted-foreground">صافي الدخل التشغيلي</span>
-                <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-600">
-                  <Wallet size={20} />
-                </div>
-              </div>
-              <div className="mt-3">
-                <h3
-                  className={`text-xl sm:text-2xl font-black ${netOperatingIncomeMonth >= 0 ? "text-purple-600" : "text-rose-600"}`}
-                >
-                  ${netOperatingIncomeMonth.toLocaleString()}
-                </h3>
-                <p className="text-[11px] text-muted-foreground mt-1">الإيرادات ناقص المصروفات</p>
-              </div>
-            </Card>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 1: SHOPS LIST */}
-      {activeTab === "shops" && (
-        <div className="space-y-4">
+      {/* SECTION 1: DEFINITIONS (التعريفات - دليل المحلات والوحدات التجارية) */}
+      {activeTab === "definitions" && (
+        <div className="space-y-4 animate-in fade-in duration-200">
           <div className="flex flex-col lg:flex-row items-center justify-between gap-4 bg-card p-4 rounded-2xl border border-border">
             <div className="relative w-full lg:w-80">
               <Search className="absolute right-3 top-2.5 text-muted-foreground" size={18} />
@@ -1903,76 +1631,68 @@ function MallManagementPage() {
             </div>
             <div className="flex items-center gap-3 w-full lg:w-auto justify-end flex-wrap">
               <Select value={filterStatus} onValueChange={setFilterStatus}>
-                <SelectTrigger className="w-[160px] rounded-xl font-bold">
+                <SelectTrigger className="w-[150px] rounded-xl font-bold">
                   <SelectValue placeholder="حالة المحل" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">كل الحالات</SelectItem>
-                  <SelectItem value="rented">مؤجر</SelectItem>
-                  <SelectItem value="vacant">فارغ</SelectItem>
-                  <SelectItem value="maintenance">صيانة</SelectItem>
+                  <SelectItem value="all">كل الحالات ({totalShops})</SelectItem>
+                  <SelectItem value="rented">مؤجر ({rentedShops})</SelectItem>
+                  <SelectItem value="vacant">فارغ ({vacantShops})</SelectItem>
+                  <SelectItem value="maintenance">صيانة ({maintenanceShops})</SelectItem>
                 </SelectContent>
               </Select>
               <Button
-                onClick={() => {
-                  erpStore.resetMallData();
-                }}
+                onClick={handleOpenAddShop}
+                className="bg-primary text-primary-foreground font-bold gap-1.5 rounded-xl text-xs h-10 cursor-pointer"
+              >
+                <Plus size={15} />
+                إضافة محل جديد
+              </Button>
+              <Button
+                onClick={() => erpStore.resetMallData()}
                 variant="outline"
                 className="font-bold gap-2 rounded-xl text-xs h-10 cursor-pointer border-emerald-200 text-emerald-700 hover:bg-emerald-50"
               >
                 <Building2 size={15} />
-                تحميل بيانات الإكسل والمحلات (51 محل)
-              </Button>
-              <Button
-                onClick={() => setIsArchiveModalOpen(true)}
-                variant="outline"
-                className="font-bold gap-2 rounded-xl text-xs h-10 cursor-pointer"
-              >
-                <Archive size={15} />
-                أرشيف الفسخ ({terminatedArchive.length})
+                تحديث المحلات (51 محل)
               </Button>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredShops.map((shop) => (
-              <Card
-                key={shop.id}
-                className="border border-border/80 bg-card rounded-2xl shadow-sm hover:shadow-md transition flex flex-col justify-between overflow-hidden"
-              >
-                <CardHeader className="pb-3 border-b border-border/60 bg-muted/20">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-black bg-primary/10 text-primary px-3 py-1 rounded-full border border-primary/20">
-                      محل رقم #{shop.shop_number}
-                    </span>
-                    <span
-                      className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
-                        shop.status === "rented"
-                          ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+          {viewMode === "grid" ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredShops.map((shop) => (
+                <Card
+                  key={shop.id}
+                  className="border border-border/80 bg-card rounded-2xl shadow-xs hover:shadow-md transition flex flex-col justify-between overflow-hidden"
+                >
+                  <CardHeader className="pb-3 border-b border-border/60 bg-muted/20">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black bg-primary/10 text-primary px-3 py-1 rounded-full border border-primary/20">
+                        محل #{shop.shop_number}
+                      </span>
+                      <span
+                        className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
+                          shop.status === "rented"
+                            ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                            : shop.status === "vacant"
+                              ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                              : "bg-rose-500/15 text-rose-700 dark:text-rose-300"
+                        }`}
+                      >
+                        {shop.status === "rented"
+                          ? "مؤجر"
                           : shop.status === "vacant"
-                            ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
-                            : "bg-rose-500/15 text-rose-700 dark:text-rose-300"
-                      }`}
-                    >
-                      {shop.status === "rented"
-                        ? "مؤجر"
-                        : shop.status === "vacant"
-                          ? "فارغ"
-                          : "صيانة"}
-                    </span>
-                  </div>
-                  <CardTitle className="text-base font-black text-foreground mt-2 line-clamp-1">
-                    {shop.name_ar}
-                  </CardTitle>
-                  <CardDescription className="text-xs text-muted-foreground flex items-center gap-1.5 pt-0.5">
-                    <FileText size={13} />
-                    رقم الحساب:{" "}
-                    <span className="font-bold text-foreground">{shop.account_number}</span>
-                  </CardDescription>
-                </CardHeader>
+                            ? "فارغ"
+                            : "صيانة"}
+                      </span>
+                    </div>
+                    <CardTitle className="text-base font-black text-foreground mt-2 line-clamp-1">
+                      {shop.name_ar}
+                    </CardTitle>
+                  </CardHeader>
 
-                <CardContent className="py-4 space-y-3 flex-1">
-                  <div className="space-y-2 text-xs">
+                  <CardContent className="py-4 space-y-2.5 flex-1 text-xs">
                     <div className="flex items-center justify-between text-muted-foreground">
                       <span className="flex items-center gap-1">
                         <User size={14} /> المستأجر:
@@ -1996,501 +1716,447 @@ function MallManagementPage() {
                       <span className="font-bold text-foreground">{shop.space_sqm || 0} م٢</span>
                     </div>
                     <div className="flex items-center justify-between pt-2 border-t border-border/60">
-                      <span className="text-muted-foreground font-bold">الإيجار الشهري:</span>
+                      <span className="text-muted-foreground font-bold">القيمة التعاقدية:</span>
                       <span className="font-black text-base text-primary">
                         ${shop.monthly_rent.toLocaleString()}
                       </span>
                     </div>
-                    {shop.notes && (
-                      <p className="text-[11px] text-muted-foreground italic bg-muted/40 p-2 rounded-lg mt-1">
-                        ملاحظة: {shop.notes}
-                      </p>
-                    )}
+                  </CardContent>
+
+                  <div className="p-3 bg-muted/20 border-t border-border/60 flex items-center justify-between gap-2 flex-wrap">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 h-8 text-xs font-bold gap-1 rounded-xl cursor-pointer"
+                      onClick={() => handleOpenEditShop(shop)}
+                    >
+                      <Edit size={14} />
+                      تعديل البيانات
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 text-xs font-bold gap-1 rounded-xl bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100 cursor-pointer"
+                      onClick={() => setViewingContractShop(shop)}
+                    >
+                      <Paperclip size={14} />
+                      العقد والمرفقات
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8 text-destructive hover:bg-destructive/10 rounded-xl cursor-pointer"
+                      onClick={() => setShopToDelete(shop)}
+                    >
+                      <Trash2 size={14} />
+                    </Button>
                   </div>
-                </CardContent>
-
-                <div className="p-3 bg-muted/20 border-t border-border/60 flex items-center justify-between gap-2 flex-wrap">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1 h-8 text-xs font-bold gap-1 rounded-xl cursor-pointer"
-                    onClick={() => handleOpenEditShop(shop)}
-                  >
-                    <Edit size={14} />
-                    تعديل
-                  </Button>
-                  <Button
-                    size="sm"
-                    className="flex-1 h-8 text-xs font-bold gap-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
-                    onClick={() => handleOpenPayment(shop)}
-                  >
-                    <DollarSign size={14} />
-                    تسجيل دفعة / رد مقدم
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 text-xs font-bold gap-1 rounded-xl bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100 cursor-pointer"
-                    onClick={() => setViewingContractShop(shop)}
-                  >
-                    <Paperclip size={14} />
-                    المرفقات
-                  </Button>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-8 text-xs font-bold gap-1 rounded-xl bg-green-50 text-green-600 border-green-200 hover:bg-green-100 cursor-pointer"
-                      >
-                        <MessageCircle size={14} />
-                        واتساب
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent className="w-48 rounded-xl font-bold text-xs">
-                      <DropdownMenuItem
-                        className="cursor-pointer"
-                        onClick={() => handleSendWhatsApp(shop, "payment")}
-                      >
-                        تذكير بالسداد (Payment)
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        className="cursor-pointer"
-                        onClick={() => handleSendWhatsApp(shop, "renewal")}
-                      >
-                        تجديد العقد (Renewal)
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        className="cursor-pointer"
-                        onClick={() => handleSendWhatsApp(shop, "welcome")}
-                      >
-                        رسالة ترحيب (Welcome)
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        className="cursor-pointer text-destructive focus:text-destructive"
-                        onClick={() => handleSendWhatsApp(shop, "violation")}
-                      >
-                        إنذار مخالفة (Violation)
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="h-8 w-8 text-destructive hover:bg-destructive/10 rounded-xl cursor-pointer"
-                    onClick={() => setShopToDelete(shop)}
-                  >
-                    <Trash2 size={14} />
-                  </Button>
-                </div>
-              </Card>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* TAB 2: PAYMENTS TRACKING */}
-      {activeTab === "payments" && (
-        <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-card p-4 rounded-2xl border border-border">
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-bold text-foreground">السنة المالية:</span>
-              <Select
-                value={selectedYear.toString()}
-                onValueChange={(v) => setSelectedYear(Number(v))}
-              >
-                <SelectTrigger className="w-[120px] rounded-xl font-bold">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="2026">2026</SelectItem>
-                  <SelectItem value="2027">2027</SelectItem>
-                </SelectContent>
-              </Select>
+                </Card>
+              ))}
             </div>
-
-            <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 w-full sm:w-auto">
-              {MONTHS_AR.map((monthName, idx) => {
-                const mNum = idx + 1;
-                const isSelected = selectedMonth === mNum;
-                return (
-                  <Button
-                    key={mNum}
-                    size="sm"
-                    variant={isSelected ? "default" : "outline"}
-                    onClick={() => setSelectedMonth(mNum)}
-                    className="rounded-xl text-xs font-bold shrink-0 h-9 px-3 cursor-pointer"
-                  >
-                    {monthName}
-                  </Button>
-                );
-              })}
-            </div>
-          </div>
-
-          <Card className="border border-border/80 bg-card rounded-2xl shadow-sm overflow-hidden">
-            <CardHeader className="pb-3 border-b border-border/60">
-              <CardTitle className="text-base font-black text-foreground flex items-center justify-between flex-wrap gap-2">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <span>
-                    متابعة إيجارات شهر {MONTHS_AR[selectedMonth - 1]} {selectedYear}
-                  </span>
-                  {isAccrualGeneratedForMonth ? (
-                    <span className="text-[11px] font-extrabold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 px-3 py-1 rounded-full flex items-center gap-1 border border-emerald-500/30">
-                      <CheckCircle2 size={13} />
-                      قيود الاستحقاق مُولّدة
-                    </span>
-                  ) : (
-                    <span className="text-[11px] font-extrabold bg-amber-500/15 text-amber-700 dark:text-amber-300 px-3 py-1 rounded-full flex items-center gap-1 border border-amber-500/30">
-                      <AlertCircle size={13} />
-                      لم تُولد قيود الاستحقاق بعد
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Button
-                    onClick={handleGenerateAccrual}
-                    size="sm"
-                    className={`${
-                      isAccrualGeneratedForMonth
-                        ? "bg-amber-600 hover:bg-amber-700 text-white"
-                        : "bg-indigo-600 hover:bg-indigo-700 text-white"
-                    } font-bold gap-1.5 text-xs shadow-sm cursor-pointer`}
-                  >
-                    <CalendarCheck size={15} />
-                    توليد قيود استحقاق الإيجار
-                  </Button>
-                  <span className="text-xs font-bold bg-muted text-muted-foreground px-3 py-1.5 rounded-xl">
-                    المحلات المؤجرة: {shops.filter((s) => s.status === "rented").length}
-                  </span>
-                </div>
-              </CardTitle>
-              <CardDescription className="text-xs">
-                جدول متابعة حالة السداد والقيم المستحقة لكل محل خلال الشهر المحدد بالدولار الأمريكي.
-              </CardDescription>
-            </CardHeader>
-
-            <CardContent className="p-0">
+          ) : (
+            <Card className="border border-border/80 bg-card rounded-2xl shadow-xs overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full text-right border-collapse">
-                  <thead>
-                    <tr className="border-b border-border bg-muted/40 text-xs font-black text-muted-foreground">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-muted/50 border-b border-border text-muted-foreground font-bold">
+                    <tr>
                       <th className="p-3">رقم المحل</th>
-                      <th className="p-3">اسم النشاط والمستأجر</th>
-                      <th className="p-3">رقم الحساب</th>
-                      <th className="p-3">القيمة المستحقة</th>
-                      <th className="p-3">المبلغ المدفوع</th>
-                      <th className="p-3 text-center">حالة السداد</th>
-                      <th className="p-3">تاريخ وطريقة الدفع</th>
-                      <th className="p-3 text-center">الإجراء</th>
+                      <th className="p-3">النشاط التجاري</th>
+                      <th className="p-3">المستأجر</th>
+                      <th className="p-3">الهاتف</th>
+                      <th className="p-3">المساحة</th>
+                      <th className="p-3">القيمة التعاقدية</th>
+                      <th className="p-3">الحالة</th>
+                      <th className="p-3 text-center">الإجراءات</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-border text-xs">
-                    {shops
-                      .filter((s) => s.status === "rented")
-                      .map((shop) => {
-                        const payment = payments.find(
-                          (p) =>
-                            p.shop_id === shop.id &&
-                            p.year === selectedYear &&
-                            p.month === selectedMonth,
-                        );
-                        const status = payment ? payment.status : "unpaid";
-                        const amountPaid = payment ? payment.amount_paid : 0;
-                        return (
-                          <tr key={shop.id} className="hover:bg-muted/30 transition">
-                            <td className="p-3 font-black text-foreground">#{shop.shop_number}</td>
-                            <td className="p-3">
-                              <div className="font-bold text-foreground">{shop.name_ar}</div>
-                              <div className="text-[11px] text-muted-foreground">
-                                {shop.tenant_name}
-                              </div>
-                            </td>
-                            <td className="p-3 font-mono font-bold text-primary">
-                              {shop.account_number}
-                            </td>
-                            <td className="p-3 font-black text-foreground">
-                              ${shop.monthly_rent.toLocaleString()}
-                            </td>
-                            <td className="p-3 font-black text-emerald-600">
-                              ${amountPaid.toLocaleString()}
-                            </td>
-                            <td className="p-3 text-center">
-                              <span
-                                className={`px-2.5 py-1 rounded-full font-bold text-[10px] ${
-                                  status === "paid"
-                                    ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                                    : status === "partial"
-                                      ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
-                                      : "bg-rose-500/15 text-rose-700 dark:text-rose-300"
-                                }`}
-                              >
-                                {status === "paid"
-                                  ? "مسدد"
-                                  : status === "partial"
-                                    ? "جزئي"
-                                    : "غير مسدد"}
-                              </span>
-                            </td>
-                            <td className="p-3 text-muted-foreground">
-                              {payment ? (
-                                <div>
-                                  <div className="font-bold text-foreground">
-                                    {payment.payment_date || "-"}
-                                  </div>
-                                  <div className="text-[10px]">
-                                    {payment.payment_method === "cash" ? "نقدي" : "تحويل بنكي"} (
-                                    {payment.receipt_number || "-"})
-                                  </div>
-                                </div>
-                              ) : (
-                                "-"
-                              )}
-                            </td>
-                            <td className="p-3 text-center">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-7 text-xs font-bold rounded-lg cursor-pointer"
-                                onClick={() => handleOpenPayment(shop, selectedMonth)}
-                              >
-                                {payment ? "تعديل" : "تسجيل"}
-                              </Button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* TAB 4: MALL & GARDEN EXPENSES */}
-      {activeTab === "expenses" && (
-        <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-card p-4 rounded-2xl border border-border">
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-bold text-foreground">السنة المالية:</span>
-              <Select
-                value={selectedYear.toString()}
-                onValueChange={(v) => setSelectedYear(Number(v))}
-              >
-                <SelectTrigger className="w-[120px] rounded-xl font-bold">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="2026">2026</SelectItem>
-                  <SelectItem value="2027">2027</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <Button
-              onClick={() => {
-                setExpenseForm({
-                  year: selectedYear,
-                  month: selectedMonth,
-                  category: "maintenance",
-                  title: "",
-                  amount: 500,
-                  date: new Date().toISOString().split("T")[0],
-                  paid_to: "",
-                  notes: "",
-                });
-                setIsExpenseModalOpen(true);
-              }}
-              className="bg-rose-600 hover:bg-rose-700 text-white font-black gap-2 rounded-xl cursor-pointer"
-            >
-              <Plus size={16} />
-              إضافة مصروف جديد للمول أو الحديقة
-            </Button>
-          </div>
-
-          <Card className="border border-border/80 bg-card rounded-2xl shadow-sm overflow-hidden">
-            <CardHeader className="pb-3 border-b border-border/60">
-              <CardTitle className="text-base font-black text-foreground flex items-center justify-between">
-                <span>سجل مصروفات وتشغيل المول (صيانة، كهرباء، أمن، نظافة)</span>
-                <span className="text-xs font-bold bg-rose-500/10 text-rose-600 px-3 py-1 rounded-full">
-                  الإجمالي: ${gardenExpenses.reduce((sum, e) => sum + e.amount, 0).toLocaleString()}
-                </span>
-              </CardTitle>
-              <CardDescription className="text-xs">
-                حساب المصروفات التشغيلية للمول التجاري بالدولار الأمريكي.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-right border-collapse">
-                  <thead>
-                    <tr className="border-b border-border bg-muted/40 text-xs font-black text-muted-foreground">
-                      <th className="p-3">التاريخ</th>
-                      <th className="p-3">الشهر/السنة</th>
-                      <th className="p-3">التصنيف</th>
-                      <th className="p-3">عنوان المصروف / البيان</th>
-                      <th className="p-3">مستفيد / مدفوع إلى</th>
-                      <th className="p-3">المبلغ ($)</th>
-                      <th className="p-3 text-center">الإجراء</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border text-xs">
-                    {gardenExpenses.map((exp) => (
-                      <tr key={exp.id} className="hover:bg-muted/30 transition">
-                        <td className="p-3 font-bold text-foreground">{exp.date}</td>
-                        <td className="p-3 text-muted-foreground">
-                          {MONTHS_AR[exp.month - 1]} {exp.year}
+                  <tbody className="divide-y divide-border/60">
+                    {filteredShops.map((shop) => (
+                      <tr key={shop.id} className="hover:bg-muted/30 transition">
+                        <td className="p-3 font-black text-foreground">#{shop.shop_number}</td>
+                        <td className="p-3 font-bold text-foreground">{shop.name_ar}</td>
+                        <td className="p-3 font-bold text-foreground">
+                          {shop.tenant_name || "غير محدد"}
                         </td>
-                        <td className="p-3 font-bold">
-                          <span className="bg-rose-500/10 text-rose-700 dark:text-rose-300 px-2.5 py-1 rounded-full text-[10px]">
-                            {exp.category === "maintenance"
-                              ? "صيانة وإصلاحات"
-                              : exp.category === "electricity"
-                                ? "كهرباء"
-                                : exp.category === "water"
-                                  ? "مياه"
-                                  : exp.category === "security"
-                                    ? "أمن وحراسة"
-                                    : exp.category === "cleaning"
-                                      ? "نظافة"
-                                      : exp.category === "salary"
-                                        ? "رواتب وأجور"
-                                        : "أخرى"}
+                        <td className="p-3 font-mono" dir="ltr">
+                          {shop.phone || "-"}
+                        </td>
+                        <td className="p-3">{shop.space_sqm || 0} م٢</td>
+                        <td className="p-3 font-mono font-black text-primary">
+                          ${shop.monthly_rent.toLocaleString()}
+                        </td>
+                        <td className="p-3">
+                          <span
+                            className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
+                              shop.status === "rented"
+                                ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                                : shop.status === "vacant"
+                                  ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                                  : "bg-rose-500/15 text-rose-700 dark:text-rose-300"
+                            }`}
+                          >
+                            {shop.status === "rented"
+                              ? "مؤجر"
+                              : shop.status === "vacant"
+                                ? "فارغ"
+                                : "صيانة"}
                           </span>
                         </td>
-                        <td className="p-3 font-bold text-foreground">{exp.title}</td>
-                        <td className="p-3 text-muted-foreground">{exp.paid_to || "-"}</td>
-                        <td className="p-3 font-black text-rose-600">
-                          ${exp.amount.toLocaleString()}
-                        </td>
                         <td className="p-3 text-center">
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            className="h-7 w-7 text-destructive hover:bg-destructive/10 rounded-lg cursor-pointer"
-                            onClick={() => setExpenseToDelete(exp)}
-                          >
-                            <Trash2 size={13} />
-                          </Button>
+                          <div className="flex items-center justify-center gap-1.5">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2.5 text-xs font-bold rounded-lg cursor-pointer"
+                              onClick={() => handleOpenEditShop(shop)}
+                            >
+                              تعديل
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2.5 text-xs font-bold rounded-lg text-blue-600 cursor-pointer"
+                              onClick={() => setViewingContractShop(shop)}
+                            >
+                              المرفقات
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-destructive rounded-lg cursor-pointer"
+                              onClick={() => setShopToDelete(shop)}
+                            >
+                              <Trash2 size={13} />
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     ))}
-                    {gardenExpenses.length === 0 && (
-                      <tr>
-                        <td colSpan={7} className="text-center py-8 text-muted-foreground">
-                          لا توجد مصروفات مسجلة للمول.
-                        </td>
-                      </tr>
-                    )}
                   </tbody>
                 </table>
               </div>
-            </CardContent>
-          </Card>
+            </Card>
+          )}
         </div>
       )}
 
-      {/* TAB 5: FINANCIAL REPORTS */}
-      {activeTab === "reports" && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Card className="border border-border/80 bg-card rounded-2xl p-6 shadow-sm">
-              <h3 className="text-sm font-bold text-muted-foreground">
-                إجمالي إيرادات المحلات المحصلة
-              </h3>
-              <p className="text-3xl font-black text-emerald-600 mt-2">
-                ${totalCollectedThisMonth.toLocaleString()}
-              </p>
-              <p className="text-xs text-muted-foreground mt-2">
-                عن شهر {MONTHS_AR[selectedMonth - 1]} {selectedYear}
-              </p>
-            </Card>
-            <Card className="border border-border/80 bg-card rounded-2xl p-6 shadow-sm">
-              <h3 className="text-sm font-bold text-muted-foreground">
-                إجمالي المصروفات التشغيلية للمول
-              </h3>
-              <p className="text-3xl font-black text-rose-600 mt-2">
-                ${totalGardenExpenseMonth.toLocaleString()}
-              </p>
-              <p className="text-xs text-muted-foreground mt-2">صيانة، كهرباء وأمن ونظافة</p>
-            </Card>
-            <Card className="border border-border/80 bg-card rounded-2xl p-6 shadow-sm">
-              <h3 className="text-sm font-bold text-muted-foreground">صافي الدخل التشغيلي للمول</h3>
-              <p
-                className={`text-3xl font-black mt-2 ${
-                  netOperatingIncomeMonth >= 0 ? "text-purple-600" : "text-rose-600"
-                }`}
-              >
-                ${netOperatingIncomeMonth.toLocaleString()}
-              </p>
-              <p className="text-xs text-muted-foreground mt-2">الإيرادات المحصلة ناقص المصروفات</p>
-            </Card>
-          </div>
-
-          <Card className="border border-border/80 bg-card rounded-2xl p-6 shadow-sm">
-            <CardHeader className="px-0 pt-0">
-              <CardTitle className="text-lg font-black text-foreground">
-                بيان الأرباح والخسائر التشغيلي للمول
-              </CardTitle>
-              <CardDescription className="text-xs">
-                ملخص مالي شامل للشهر المحدد بالدولار الأمريكي ($)
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="px-0 space-y-4">
-              <div className="flex justify-between items-center py-2.5 border-b border-border text-sm">
-                <span className="font-bold text-muted-foreground">
-                  + إيرادات إيجارات المحلات المحصلة
-                </span>
-                <span className="font-black text-emerald-600">
-                  ${totalCollectedThisMonth.toLocaleString()}
-                </span>
-              </div>
-              <div className="flex justify-between items-center py-2.5 border-b border-border text-sm">
-                <span className="font-bold text-muted-foreground">
-                  - إجمالي مصروفات التشغيل والصيانة
-                </span>
-                <span className="font-black text-rose-600">
-                  (${totalGardenExpenseMonth.toLocaleString()})
-                </span>
-              </div>
-              <div className="flex justify-between items-center py-4 bg-muted/30 px-4 rounded-xl text-base font-black">
-                <span className="text-foreground">صافي الدخل التشغيلي للمول والمحلات:</span>
-                <span
-                  className={
-                    netOperatingIncomeMonth >= 0
-                      ? "text-purple-600 text-xl"
-                      : "text-rose-600 text-xl"
-                  }
-                >
-                  ${netOperatingIncomeMonth.toLocaleString()}
-                </span>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* TAB 6: VOUCHERS LEDGER SECTION */}
-      {activeTab === "vouchers" && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between p-4 rounded-2xl bg-card border border-border shadow-xs">
-            <Button
-              onClick={() => setActiveTab("grid")}
-              variant="default"
-              className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl text-xs md:text-sm shadow-md"
+      {/* SECTION 2: OPERATIONS (العمليات - إبرام وتجديد وفسخ العقود ومتابعة الإشغال) */}
+      {activeTab === "operations" && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          {/* Operational Actions */}
+          <div
+            className={viewMode === "grid" ? "grid grid-cols-1 sm:grid-cols-3 gap-4" : "space-y-3"}
+          >
+            <Card
+              onClick={() => setIsContractModalOpen(true)}
+              className="group cursor-pointer rounded-2xl border border-border/80 bg-card p-5 hover:border-emerald-500/50 hover:shadow-md transition flex items-center justify-between gap-4"
             >
-              <ArrowRight size={18} />
-              <span>الرجوع لأقسام المول الرئيسية</span>
-            </Button>
-            <h3 className="text-base font-black text-foreground flex items-center gap-2">
-              <Receipt className="text-emerald-600" size={20} />
-              <span>سندات الصرف والقبض الرسمية - المول التجاري</span>
-            </h3>
+              <div className="flex items-center gap-3.5">
+                <div className="rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 p-3">
+                  <FileText size={22} />
+                </div>
+                <h3 className="font-black text-base text-foreground group-hover:text-emerald-600 transition-colors">
+                  عمل عقد إيجار جديد أو تجديد عقد
+                </h3>
+              </div>
+              <Badge variant="outline" className="font-bold">
+                إبرام عقد
+              </Badge>
+            </Card>
+
+            <Card
+              onClick={() => setIsTerminationModalOpen(true)}
+              className="group cursor-pointer rounded-2xl border border-border/80 bg-card p-5 hover:border-rose-500/50 hover:shadow-md transition flex items-center justify-between gap-4"
+            >
+              <div className="flex items-center gap-3.5">
+                <div className="rounded-xl bg-rose-500/15 text-rose-600 dark:text-rose-400 p-3">
+                  <XCircle size={22} />
+                </div>
+                <h3 className="font-black text-base text-foreground group-hover:text-rose-600 transition-colors">
+                  فسخ تعاقد وإخلاء وحدة
+                </h3>
+              </div>
+              <Badge variant="outline" className="font-bold">
+                إخلاء
+              </Badge>
+            </Card>
+
+            <Card
+              onClick={() => setIsArchiveModalOpen(true)}
+              className="group cursor-pointer rounded-2xl border border-border/80 bg-card p-5 hover:border-blue-500/50 hover:shadow-md transition flex items-center justify-between gap-4"
+            >
+              <div className="flex items-center gap-3.5">
+                <div className="rounded-xl bg-blue-500/15 text-blue-600 dark:text-blue-400 p-3">
+                  <Archive size={22} />
+                </div>
+                <h3 className="font-black text-base text-foreground group-hover:text-blue-600 transition-colors">
+                  أرشيف العقود المفسوخة ({terminatedArchive.length})
+                </h3>
+              </div>
+              <Badge variant="outline" className="font-bold">
+                الأرشيف
+              </Badge>
+            </Card>
           </div>
-          <VouchersLedgerSection
-            defaultCostCenter="إدارة المول (Mall Management)"
-            departmentTitle="المول التجاري"
-          />
+
+          {/* Active Contracts List */}
+          <Card className="border border-border/80 bg-card rounded-2xl shadow-xs overflow-hidden">
+            <CardHeader className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60">
+              <CardTitle className="text-base font-black text-foreground">
+                عقود الإيجار السارية والوحدات المشغولة ({rentedShops})
+              </CardTitle>
+              <div className="relative w-full sm:w-72">
+                <Search size={15} className="absolute right-3 top-2.5 text-muted-foreground" />
+                <Input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="بحث برقم المحل أو اسم المستأجر..."
+                  className="pr-9 h-9 text-xs rounded-xl"
+                />
+              </div>
+            </CardHeader>
+            <CardContent className="p-0 overflow-x-auto">
+              <table className="w-full text-right text-xs">
+                <thead className="bg-muted/50 border-b border-border text-muted-foreground font-bold">
+                  <tr>
+                    <th className="p-3">رقم المحل</th>
+                    <th className="p-3">النشاط التجاري</th>
+                    <th className="p-3">المستأجر</th>
+                    <th className="p-3">بداية العقد</th>
+                    <th className="p-3">نهاية العقد</th>
+                    <th className="p-3">القيمة التعاقدية</th>
+                    <th className="p-3 text-center">إدارة العقد</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/60">
+                  {filteredShops.filter((s) => s.status === "rented").length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="text-center py-10 text-muted-foreground">
+                        لا توجد عقود مطابقة للبحث
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredShops
+                      .filter((s) => s.status === "rented")
+                      .map((shop) => (
+                        <tr key={shop.id} className="hover:bg-muted/30 transition">
+                          <td className="p-3 font-black text-foreground">#{shop.shop_number}</td>
+                          <td className="p-3 font-bold text-foreground">{shop.name_ar}</td>
+                          <td className="p-3 font-bold text-foreground">
+                            {shop.tenant_name || "غير محدد"}
+                          </td>
+                          <td className="p-3 font-mono text-muted-foreground">
+                            {shop.contract?.start_date || "-"}
+                          </td>
+                          <td className="p-3 font-mono text-muted-foreground">
+                            {shop.contract?.end_date || "-"}
+                          </td>
+                          <td className="p-3 font-mono font-black text-primary">
+                            ${shop.monthly_rent.toLocaleString()}
+                          </td>
+                          <td className="p-3 text-center">
+                            <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2.5 text-xs font-bold rounded-lg cursor-pointer"
+                                onClick={() => {
+                                  handleSelectShopForContract(shop.id);
+                                  setIsContractModalOpen(true);
+                                }}
+                              >
+                                <Edit size={12} className="ml-1" />
+                                تعديل / تجديد العقد
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2.5 text-xs font-bold rounded-lg text-blue-600 cursor-pointer"
+                                onClick={() => setViewingContractShop(shop)}
+                              >
+                                <Eye size={12} className="ml-1" />
+                                عرض العقد
+                              </Button>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 px-2 text-xs font-bold rounded-lg text-green-600 border-green-200 hover:bg-green-50 cursor-pointer"
+                                  >
+                                    <MessageCircle size={12} className="ml-1" />
+                                    واتساب
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent className="w-44 rounded-xl font-bold text-xs">
+                                  <DropdownMenuItem
+                                    className="cursor-pointer"
+                                    onClick={() => handleSendWhatsApp(shop, "renewal")}
+                                  >
+                                    تجديد العقد
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    className="cursor-pointer"
+                                    onClick={() => handleSendWhatsApp(shop, "welcome")}
+                                  >
+                                    رسالة ترحيب
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    className="cursor-pointer text-destructive"
+                                    onClick={() => handleSendWhatsApp(shop, "violation")}
+                                  >
+                                    إنذار مخالفة
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2.5 text-xs font-bold rounded-lg text-rose-600 border-rose-200 hover:bg-rose-50 cursor-pointer"
+                                onClick={() => {
+                                  setTerminationForm({
+                                    shop_id: shop.id,
+                                    refund_amount: shop.contract?.deposit_amount || 0,
+                                    termination_image: "",
+                                    notes: "",
+                                  });
+                                  setIsTerminationModalOpen(true);
+                                }}
+                              >
+                                <XCircle size={12} className="ml-1" />
+                                فسخ
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                  )}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* SECTION 3: REPORTS (التقارير - تقارير الإشغال وحالة المحلات والعقود) */}
+      {activeTab === "reports" && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <h2 className="text-base font-black text-foreground">
+              تقارير حالة المول ونسب الإشغال والعقود
+            </h2>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={() => setIsStatusReportModalOpen(true)}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-1.5 rounded-xl text-xs h-9 cursor-pointer"
+              >
+                <Printer size={15} />
+                طباعة تقرير حالة المول
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() =>
+                  exportToExcel(
+                    shops.map((s) => ({
+                      "رقم المحل": s.shop_number,
+                      "النشاط التجاري": s.name_ar,
+                      المستأجر: s.tenant_name || "-",
+                      الهاتف: s.phone || "-",
+                      الحالة:
+                        s.status === "rented" ? "مؤجر" : s.status === "vacant" ? "فارغ" : "صيانة",
+                      "الإيجار التعاقدي ($)": s.monthly_rent,
+                      "بداية العقد": s.contract?.start_date || "-",
+                      "نهاية العقد": s.contract?.end_date || "-",
+                    })),
+                    `mall_shops_report_${new Date().toISOString().slice(0, 10)}`,
+                  )
+                }
+                className="font-bold gap-1.5 rounded-xl text-xs h-9 cursor-pointer"
+              >
+                <FileSpreadsheet size={15} />
+                تصدير إلى Excel
+              </Button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card className="border border-border/80 bg-card rounded-2xl p-5 shadow-xs">
+              <span className="text-xs font-bold text-muted-foreground">إجمالي الوحدات</span>
+              <h3 className="text-2xl font-black text-foreground mt-2 font-mono">{totalShops}</h3>
+            </Card>
+            <Card className="border border-border/80 bg-card rounded-2xl p-5 shadow-xs">
+              <span className="text-xs font-bold text-muted-foreground">الوحدات المؤجرة</span>
+              <h3 className="text-2xl font-black text-emerald-600 mt-2 font-mono">{rentedShops}</h3>
+            </Card>
+            <Card className="border border-border/80 bg-card rounded-2xl p-5 shadow-xs">
+              <span className="text-xs font-bold text-muted-foreground">الوحدات الشاغرة</span>
+              <h3 className="text-2xl font-black text-amber-600 mt-2 font-mono">{vacantShops}</h3>
+            </Card>
+            <Card className="border border-border/80 bg-card rounded-2xl p-5 shadow-xs">
+              <span className="text-xs font-bold text-muted-foreground">
+                العقود المفسوخة المؤرشفة
+              </span>
+              <h3 className="text-2xl font-black text-rose-600 mt-2 font-mono">
+                {terminatedArchive.length}
+              </h3>
+            </Card>
+          </div>
+
+          <Card className="border border-border/80 bg-card rounded-2xl shadow-xs overflow-hidden">
+            <CardHeader className="p-4 border-b border-border/60">
+              <CardTitle className="text-base font-black text-foreground">
+                البيان الشامل لوحدات وعقود المول ({shops.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0 overflow-x-auto">
+              <table className="w-full text-right text-xs">
+                <thead className="bg-muted/50 border-b border-border text-muted-foreground font-bold">
+                  <tr>
+                    <th className="p-3">رقم المحل</th>
+                    <th className="p-3">النشاط التجاري</th>
+                    <th className="p-3">المستأجر</th>
+                    <th className="p-3">الحالة</th>
+                    <th className="p-3">فترة العقد</th>
+                    <th className="p-3">القيمة التعاقدية</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/60">
+                  {shops.map((shop) => (
+                    <tr key={shop.id} className="hover:bg-muted/30 transition">
+                      <td className="p-3 font-black text-foreground">#{shop.shop_number}</td>
+                      <td className="p-3 font-bold text-foreground">{shop.name_ar}</td>
+                      <td className="p-3 text-foreground">{shop.tenant_name || "-"}</td>
+                      <td className="p-3">
+                        <span
+                          className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
+                            shop.status === "rented"
+                              ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                              : shop.status === "vacant"
+                                ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                                : "bg-rose-500/15 text-rose-700 dark:text-rose-300"
+                          }`}
+                        >
+                          {shop.status === "rented"
+                            ? "مؤجر"
+                            : shop.status === "vacant"
+                              ? "فارغ"
+                              : "صيانة"}
+                        </span>
+                      </td>
+                      <td className="p-3 font-mono text-muted-foreground">
+                        {shop.contract
+                          ? `${shop.contract.start_date} → ${shop.contract.end_date}`
+                          : "-"}
+                      </td>
+                      <td className="p-3 font-mono font-black text-primary">
+                        ${shop.monthly_rent.toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
         </div>
       )}
 

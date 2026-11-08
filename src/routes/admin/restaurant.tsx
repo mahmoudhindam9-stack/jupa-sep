@@ -1,24 +1,23 @@
-import { createFileRoute, useNavigate, useLocation, Link } from "@tanstack/react-router";
-import {
-  extractTabParam,
-  useSyncedSubTab,
-} from "@/components/navigation/navigationRegistry";
+import { createFileRoute, useNavigate, useLocation } from "@tanstack/react-router";
+import { extractTabParam, useSyncedSubTab } from "@/components/navigation/navigationRegistry";
 import { useEffect, useState } from "react";
 import {
   ArrowUpRight,
-  ArrowRight,
   ClipboardList,
   Clock,
   Edit,
   Eye,
+  FileBarChart,
   FileSpreadsheet,
   Grid3X3,
   History,
+  Landmark,
   Lock,
   Package,
   Play,
   Plus,
   Receipt,
+  Settings,
   ShoppingBag,
   Store,
   Trash2,
@@ -27,7 +26,7 @@ import {
   UtensilsCrossed,
   Wallet,
 } from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -39,6 +38,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ViewModeToggle, useViewMode } from "@/components/ui/view-mode-toggle";
 import { erpStore, RestaurantShift } from "@/shared/services/erpStore";
 import { shiftAuditService } from "@/features/shifts/services/shiftAuditService";
 import { RestaurantShiftLauncherModal } from "@/components/restaurant/RestaurantShiftLauncherModal";
@@ -48,7 +48,6 @@ import { menuService } from "@/features/menu/services/menuService";
 import { inventoryService } from "@/features/inventory/services/inventoryService";
 import { tableOrdersStore } from "@/shared/services/tableOrdersStore";
 import { supabase } from "@/integrations/supabase/client";
-import { VouchersLedgerSection } from "@/components/admin/VouchersLedgerSection";
 import {
   getActiveUserPermissionsSync,
   getCurrentUserIdentitySync,
@@ -58,7 +57,7 @@ import {
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/admin/restaurant")({
-  head: () => ({ meta: [{ title: "إدارة المطعم - النظام الشامل" }] }),
+  head: () => ({ meta: [{ title: "إدارة المطعم" }] }),
   component: RestaurantHubPage,
 });
 
@@ -67,6 +66,24 @@ type RestaurantCounts = {
   inventory: number;
   orders: number;
 };
+
+type RestaurantSectionTab = "definitions" | "operations" | "reports";
+
+function resolveRestaurantTab(tabParam: string | undefined): RestaurantSectionTab {
+  if (!tabParam) return "operations";
+  if (
+    tabParam === "definitions" ||
+    tabParam === "menu" ||
+    tabParam === "tables" ||
+    tabParam === "inventory"
+  ) {
+    return "definitions";
+  }
+  if (tabParam === "reports") {
+    return "reports";
+  }
+  return "operations";
+}
 
 function getSyncCounts(): RestaurantCounts {
   let menu = 8;
@@ -139,7 +156,6 @@ function RestaurantHubPage() {
   const [selectedShiftForAudit, setSelectedShiftForAudit] = useState<RestaurantShift | null>(null);
   const [isShiftAuditLogOpen, setIsShiftAuditLogOpen] = useState(false);
 
-  // Edit & Delete Shift Dialog states (matching Park page)
   const [editingShift, setEditingShift] = useState<RestaurantShift | null>(null);
   const [editShiftNumber, setEditShiftNumber] = useState("");
   const [editCashierName, setEditCashierName] = useState("");
@@ -147,9 +163,10 @@ function RestaurantHubPage() {
   const [editNotes, setEditNotes] = useState("");
   const [deletingShift, setDeletingShift] = useState<RestaurantShift | null>(null);
 
-  const [activeTab, setActiveTab] = useState<"grid" | "vouchers" | "shifts">(
-    tabParam === "vouchers" ? "vouchers" : tabParam === "shifts" ? "shifts" : "grid",
+  const [activeTab, setActiveTab] = useState<RestaurantSectionTab>(() =>
+    resolveRestaurantTab(tabParam),
   );
+  const [viewMode, setViewMode] = useViewMode("restaurant", "grid");
   const [activePerms, setActivePerms] = useState<Record<string, boolean>>(() =>
     getActiveUserPermissionsSync(),
   );
@@ -170,12 +187,14 @@ function RestaurantHubPage() {
   }, []);
 
   useEffect(() => {
-    setActiveTab(
-      tabParam === "vouchers" ? "vouchers" : tabParam === "shifts" ? "shifts" : "grid",
-    );
-  }, [tabParam]);
+    if (tabParam === "vouchers" || tabParam === "expenses") {
+      navigate({ to: "/admin/ledger", search: { tab: "vouchers" } as any });
+      return;
+    }
+    setActiveTab(resolveRestaurantTab(tabParam));
+  }, [tabParam, navigate]);
 
-  useSyncedSubTab("/admin/restaurant", activeTab, setActiveTab as any, "grid");
+  useSyncedSubTab("/admin/restaurant", activeTab, setActiveTab as any, "operations");
 
   useEffect(() => {
     let active = true;
@@ -306,10 +325,51 @@ function RestaurantHubPage() {
     }
   };
 
-  const allModules = [
+  const definitionCards = [
+    {
+      title: "إدارة المنيو والأصناف",
+      to: "/admin/menu",
+      icon: Utensils,
+      color: "from-rose-500/20 to-red-500/20 text-rose-600 dark:text-rose-400",
+      badge: "الأصناف",
+      stats: `${counts.menu} صنف`,
+      permissionKeys: ["pos", "pos_access", "inventory", "orders", "page_restaurant_menu"],
+    },
+    {
+      title: "إدارة الطاولات والباركود QR",
+      to: "/captain",
+      icon: Grid3X3,
+      color: "from-purple-500/20 to-indigo-500/20 text-purple-600 dark:text-purple-400",
+      badge: "الصالة",
+      stats: "تخطيط الصالة والباركود",
+      permissionKeys: [
+        "page_restaurant_tables",
+        "orders",
+        "orders_generate_qr",
+        "captain",
+        "captain_access",
+      ],
+    },
+    {
+      title: "مستودع وخامات المطعم",
+      to: "/admin/inventory",
+      icon: Package,
+      color: "from-amber-600/20 to-yellow-600/20 text-amber-700 dark:text-amber-400",
+      badge: "المخزون",
+      stats: `${counts.inventory} صنف مخزني`,
+      permissionKeys: [
+        "page_restaurant_inventory",
+        "inventory",
+        "inventory_view",
+        "production",
+        "production_view",
+      ],
+    },
+  ].filter((m) => hasAnyRequestedPermission(activePerms, m.permissionKeys));
+
+  const operationCards = [
     {
       title: "نقطة البيع (POS)",
-      description: "شاشة البيع السريعة لإدخال الطلبات، الدفع، طباعة الفواتير، أو المعاينة المباشرة",
       to: "/pos",
       icon: Grid3X3,
       color: "from-blue-500/20 to-indigo-500/20 text-blue-600 dark:text-blue-400",
@@ -318,38 +378,16 @@ function RestaurantHubPage() {
       permissionKeys: ["pos", "pos_access", "orders", "orders_create_custom"],
     },
     {
-      title: "ورديات كاشير المطعم",
-      description: "إدارة ورديات الكاشير المفتوحة والمغلقة، تقارير الإغلاق، وسجل تدقيق الورديات",
-      action: () => setActiveTab("shifts"),
-      icon: History,
-      color: "from-teal-500/20 to-emerald-500/20 text-teal-600 dark:text-teal-400",
-      badge: "الورديات",
-      stats: `${openShifts.length} مفتوحة | ${closedShifts.length} مغلقة`,
-      permissionKeys: ["pos", "pos_access", "treasury", "treasury_open_close", "accounting"],
+      title: "شاشة طلبات العملاء (Captain)",
+      to: "/captain",
+      icon: ClipboardList,
+      color: "from-purple-500/20 to-pink-500/20 text-purple-600 dark:text-purple-400",
+      badge: "الصالة",
+      stats: "طلبات الطاولات",
+      permissionKeys: ["captain", "captain_access", "captain_create_order"],
     },
     {
-      title: "سندات الصرف والقبض",
-      description: "إصدار وتسجيل سندات الصرف والقبض الخاصة بإدارة المطعم وتوليد القيود",
-      action: () => setActiveTab("vouchers"),
-      icon: Receipt,
-      color: "from-emerald-500/25 to-teal-500/25 text-emerald-600 dark:text-emerald-400",
-      badge: "سندات مالية",
-      stats: "إدارة السندات",
-      permissionKeys: ["accounting", "treasury", "expense_approval", "revenue_approval", "pos"],
-    },
-    {
-      title: "شاشة الكاشير والخزينة",
-      description: "إدارة النقدية اليومية، فتح وإغلاق الشيفتات، وحركات الخزينة",
-      to: "/cashier-treasury",
-      icon: Wallet,
-      color: "from-emerald-500/25 to-teal-500/25 text-emerald-600 dark:text-emerald-400",
-      badge: "مالي",
-      stats: "الخزينة والشيفتات",
-      permissionKeys: ["treasury", "treasury_view", "treasury_open_close", "pos", "pos_access"],
-    },
-    {
-      title: "شاشة المطبخ (الفرن)",
-      description: "متابعة الطلبات الواردة للمطبخ والفرن وأوقات التجهيز الفعلي",
+      title: "شاشة المطبخ والفرن",
       to: "/oven",
       icon: UtensilsCrossed,
       color: "from-amber-500/20 to-orange-500/20 text-amber-600 dark:text-amber-400",
@@ -358,18 +396,7 @@ function RestaurantHubPage() {
       permissionKeys: ["kitchen", "kitchen_view", "kitchen_change_status"],
     },
     {
-      title: "شاشة طلبات العملاء (Captain)",
-      description: "تسجيل طلبات الطاولات والصالة بواسطة الكابتن والويتر",
-      to: "/captain",
-      icon: ClipboardList,
-      color: "from-purple-500/20 to-pink-500/20 text-purple-600 dark:text-purple-400",
-      badge: "الصالة",
-      stats: "طلبات الكابتن",
-      permissionKeys: ["captain", "captain_access", "captain_create_order"],
-    },
-    {
       title: "إدارة الطلبات والفواتير",
-      description: "سجل كامل للطلبات، متابعة الحالات، وتعديل أو إلغاء الطلبات",
       to: "/admin/orders",
       icon: Receipt,
       color: "from-cyan-500/20 to-blue-500/20 text-cyan-600 dark:text-cyan-400",
@@ -378,30 +405,16 @@ function RestaurantHubPage() {
       permissionKeys: ["orders", "orders_view", "delivery", "delivery_view"],
     },
     {
-      title: "إدارة المنيو والأصناف",
-      description: "إضافة وتعديل الأقسام، الأسعار، الشعارات، والمكونات",
-      to: "/admin/menu",
-      icon: Utensils,
-      color: "from-rose-500/20 to-red-500/20 text-rose-600 dark:text-rose-400",
-      badge: "القائمة",
-      stats: `${counts.menu} صنف في المنيو`,
-      permissionKeys: ["pos", "pos_access", "inventory", "orders"],
+      title: "شاشة الكاشير والخزينة",
+      to: "/cashier-treasury",
+      icon: Wallet,
+      color: "from-emerald-500/25 to-teal-500/25 text-emerald-600 dark:text-emerald-400",
+      badge: "تشغيل",
+      stats: "الورديات النقدية",
+      permissionKeys: ["treasury", "treasury_view", "treasury_open_close", "pos", "pos_access"],
     },
-    {
-      title: "المخزن والمستودع",
-      description: "متابعة أرصدة المواد الخام، الوارد والصادر، وجرد المستودع",
-      to: "/admin/inventory",
-      icon: Package,
-      color: "from-amber-600/20 to-yellow-600/20 text-amber-700 dark:text-amber-400",
-      badge: "المخزون",
-      stats: `${counts.inventory} صنف مخزني`,
-      permissionKeys: ["inventory", "inventory_view", "production", "production_view"],
-    },
-  ];
+  ].filter((m) => hasAnyRequestedPermission(activePerms, m.permissionKeys));
 
-  const modules = allModules.filter((m) =>
-    hasAnyRequestedPermission(activePerms, m.permissionKeys),
-  );
   const hasPosAccess = hasAnyRequestedPermission(activePerms, [
     "pos",
     "pos_access",
@@ -409,140 +422,324 @@ function RestaurantHubPage() {
     "orders_create_custom",
   ]);
 
+  const totalRestaurantSales = restaurantShifts.reduce(
+    (sum, s) => sum + Number(s.total_sales || 0),
+    0,
+  );
+  const totalRestaurantOrders = restaurantShifts.reduce(
+    (sum, s) => sum + Number(s.orders_count || 0),
+    0,
+  );
+
+  const renderModuleItems = (items: typeof operationCards) => {
+    if (viewMode === "list") {
+      return (
+        <div className="space-y-2.5">
+          {items.map((module) => {
+            const Icon = module.icon;
+            return (
+              <Card
+                key={module.title}
+                onClick={() => navigate({ to: module.to as any })}
+                className="group flex items-center justify-between gap-4 rounded-2xl border border-border/80 bg-card p-4 shadow-xs transition hover:border-primary/50 hover:shadow-md cursor-pointer"
+              >
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className={`rounded-xl bg-gradient-to-br p-2.5 ${module.color}`}>
+                    <Icon size={20} />
+                  </div>
+                  <span className="text-base font-black text-foreground group-hover:text-primary transition truncate">
+                    {module.title}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <span className="rounded-full border border-border/60 bg-muted px-2.5 py-1 text-xs font-bold text-primary">
+                    {module.stats}
+                  </span>
+                  <ArrowUpRight size={16} className="text-primary" />
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      );
+    }
+
+    return (
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {items.map((module) => {
+          const Icon = module.icon;
+          return (
+            <Card
+              key={module.title}
+              onClick={() => navigate({ to: module.to as any })}
+              className="group flex h-full flex-col justify-between overflow-hidden rounded-2xl border border-border/80 bg-card p-5 shadow-xs transition-all duration-200 hover:border-primary/50 hover:shadow-lg cursor-pointer"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className={`rounded-2xl bg-gradient-to-br p-3 shadow-inner ${module.color}`}>
+                    <Icon size={22} />
+                  </div>
+                  <h3 className="text-base font-black text-foreground group-hover:text-primary transition truncate">
+                    {module.title}
+                  </h3>
+                </div>
+                <span className="rounded-full border border-border/60 bg-muted px-2.5 py-1 text-[11px] font-bold text-muted-foreground shrink-0">
+                  {module.badge}
+                </span>
+              </div>
+              <div className="mt-4 flex items-center justify-between border-t border-border/60 pt-3 text-xs font-bold">
+                <span className="inline-flex items-center gap-1.5 font-black text-primary">
+                  <Clock size={13} />
+                  {module.stats}
+                </span>
+                <span className="inline-flex items-center gap-1 text-primary">
+                  فتح
+                  <ArrowUpRight size={14} />
+                </span>
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+    );
+  };
+
   return (
     <div className="mx-auto max-w-7xl space-y-6 pb-12" dir="rtl">
-      {/* Page Header & Quick Launch Actions (Modeled after Park Management) */}
-      {activeTab === "grid" ? (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-foreground">إدارة وتشغيل المطعم</h1>
-            <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-              نظام تشغيل المطعم، نقاط البيع، المطبخ، الصالة، والورديات اليومية
-            </p>
+      {/* Unified Header + 3 Main Subsections Bar */}
+      <div className="rounded-2xl border border-border bg-card p-4 sm:p-5 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-500/12 text-amber-600 dark:text-amber-400 border border-amber-500/25">
+              <UtensilsCrossed size={22} />
+            </div>
+            <h1 className="text-xl sm:text-2xl font-black text-foreground">إدارة المطعم</h1>
           </div>
-          {hasPosAccess && (
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <Button
-                onClick={() => navigate({ to: "/pos" })}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs h-9 px-4 rounded-xl gap-1.5 shadow-sm transition active:scale-95 cursor-pointer"
-              >
-                <Grid3X3 size={16} />
-                <span>نقطة بيع المطعم (POS)</span>
-              </Button>
-              {(!isCashier || !cashierActiveShift) && (
+
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <ViewModeToggle mode={viewMode} onChange={setViewMode} />
+            {hasPosAccess && (
+              <>
+                <Button
+                  onClick={() => navigate({ to: "/pos" })}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs h-9 px-4 rounded-xl gap-1.5 shadow-xs cursor-pointer"
+                >
+                  <Grid3X3 size={15} />
+                  <span>نقطة البيع (POS)</span>
+                </Button>
+                {(!isCashier || !cashierActiveShift) && (
+                  <Button
+                    onClick={() => setIsLauncherOpen(true)}
+                    variant="outline"
+                    className="font-bold text-xs h-9 px-3.5 rounded-xl gap-1.5 cursor-pointer"
+                  >
+                    <Plus size={15} />
+                    <span>فتح وردية جديدة</span>
+                  </Button>
+                )}
+              </>
+            )}
+            <Button
+              variant="outline"
+              onClick={() => navigate({ to: "/admin/ledger", search: { tab: "vouchers" } as any })}
+              className="font-bold text-xs h-9 px-3.5 rounded-xl gap-1.5 border-indigo-500/30 text-indigo-600 dark:text-indigo-400 cursor-pointer"
+            >
+              <Landmark size={15} />
+              <span>الإدارة المالية</span>
+            </Button>
+          </div>
+        </div>
+
+        {/* Unified 3-Section Tabs: التعريفات | العمليات | التقارير */}
+        <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border/60">
+          <button
+            type="button"
+            data-testid="restaurant-tab-definitions"
+            onClick={() => setActiveTab("definitions")}
+            className={`flex items-center justify-center gap-2 h-10 rounded-xl font-black text-xs sm:text-sm transition cursor-pointer ${
+              activeTab === "definitions"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "bg-muted/50 text-muted-foreground hover:text-foreground hover:bg-muted"
+            }`}
+          >
+            <Settings size={16} />
+            <span>التعريفات</span>
+          </button>
+          <button
+            type="button"
+            data-testid="restaurant-tab-operations"
+            onClick={() => setActiveTab("operations")}
+            className={`flex items-center justify-center gap-2 h-10 rounded-xl font-black text-xs sm:text-sm transition cursor-pointer ${
+              activeTab === "operations"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "bg-muted/50 text-muted-foreground hover:text-foreground hover:bg-muted"
+            }`}
+          >
+            <Store size={16} />
+            <span>العمليات</span>
+          </button>
+          <button
+            type="button"
+            data-testid="restaurant-tab-reports"
+            onClick={() => setActiveTab("reports")}
+            className={`flex items-center justify-center gap-2 h-10 rounded-xl font-black text-xs sm:text-sm transition cursor-pointer ${
+              activeTab === "reports"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "bg-muted/50 text-muted-foreground hover:bg-muted"
+            }`}
+          >
+            <FileBarChart size={16} />
+            <span>التقارير</span>
+          </button>
+        </div>
+      </div>
+
+      {/* SECTION 1: DEFINITIONS (التعريفات) */}
+      {activeTab === "definitions" && (
+        <div className="space-y-5 animate-in fade-in duration-200">
+          {renderModuleItems(definitionCards)}
+        </div>
+      )}
+
+      {/* SECTION 2: OPERATIONS (العمليات) */}
+      {activeTab === "operations" && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          {/* Active Open Shifts Banner */}
+          {openShifts.length > 0 ? (
+            <div className="space-y-3">
+              {openShifts.map((shift) => {
+                const isSessionActive = activeRestaurantShift?.id === shift.id;
+                return (
+                  <div
+                    key={shift.id}
+                    className="p-4 sm:p-5 rounded-2xl border border-border/80 bg-card shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 transition hover:border-teal-500/40"
+                  >
+                    <div className="space-y-1.5 text-right flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-black text-sm text-foreground">
+                          {shift.shift_number || `وردية مطعم #${shift.auto_shift_number || "1"}`}
+                        </h3>
+                        <span className="inline-flex items-center bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700/60 text-xs font-bold px-2.5 py-0.5 rounded-full">
+                          وردية مفتوحة
+                        </span>
+                        {isSessionActive && (
+                          <span className="inline-flex items-center bg-teal-500/10 text-teal-700 dark:text-teal-300 border border-teal-300 dark:border-teal-700/60 text-[11px] font-bold px-2.5 py-0.5 rounded-full">
+                            متصلة بشاشة الكاشير الآن
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                        <span className="flex items-center gap-1 font-bold text-foreground">
+                          <UserCheck size={14} className="text-teal-600" />
+                          الكاشير: {shift.cashier_name}
+                        </span>
+                        <span>•</span>
+                        <span className="flex items-center gap-1 font-mono">
+                          <Clock size={13} className="text-muted-foreground" />
+                          {new Date(shift.start_at || Date.now()).toLocaleTimeString("ar-EG")}
+                        </span>
+                        <span>•</span>
+                        <span className="flex items-center gap-1 text-teal-600 dark:text-teal-400 font-black">
+                          <ShoppingBag size={14} />
+                          {shift.orders_count || 0} مبيعات (
+                          {Number(shift.total_sales || 0).toLocaleString()}{" "}
+                          {shift.currency || "ج.م"})
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col items-start md:items-end gap-2.5 shrink-0">
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          erpStore.resumeRestaurantShift(shift.id);
+                          toast.success(`تم الدخول إلى ${shift.shift_number}`);
+                          navigate({ to: "/pos" });
+                        }}
+                        className="bg-[#00897b] hover:bg-[#00796b] text-white rounded-full font-black text-xs px-5 py-2 shadow-xs flex items-center gap-1.5 cursor-pointer h-9"
+                      >
+                        <Play size={13} className="fill-white" />
+                        <span>دخول الوردية</span>
+                      </Button>
+
+                      {canCloseShifts && !isCashier && (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setEditingShift(shift);
+                              setEditShiftNumber(shift.shift_number);
+                              setEditCashierName(shift.cashier_name);
+                              setEditOpeningBalance(String(shift.opening_balance || 0));
+                              setEditNotes(shift.notes || shift.opening_notes || "");
+                            }}
+                            className="rounded-full text-xs font-bold px-3 py-1 flex items-center gap-1 cursor-pointer h-7"
+                          >
+                            <Edit size={13} className="text-blue-600" />
+                            <span>تعديل</span>
+                          </Button>
+
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setClosingShift(shift)}
+                            className="text-rose-700 dark:text-rose-300 rounded-full text-xs font-bold px-3 py-1 flex items-center gap-1 cursor-pointer h-7"
+                          >
+                            <Lock size={12} className="text-rose-600" />
+                            <span>إغلاق الوردية</span>
+                          </Button>
+
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setDeletingShift(shift)}
+                            className="text-rose-500 hover:text-rose-700 p-1.5 h-7 w-7 rounded-full cursor-pointer"
+                            title="حذف الوردية"
+                          >
+                            <Trash2 size={15} />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="p-4 sm:p-5 rounded-2xl border border-dashed border-teal-500/30 bg-card shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
+              <h3 className="font-black text-sm text-foreground">لا توجد وردية مفتوحة حالياً</h3>
+              <div className="flex items-center gap-2 flex-wrap shrink-0">
+                <Button
+                  variant="outline"
+                  onClick={() => navigate({ to: "/pos" })}
+                  className="rounded-full font-bold text-xs px-4 py-2 flex items-center gap-1.5 cursor-pointer h-9 border-teal-500/30 text-teal-700 dark:text-teal-300"
+                >
+                  <Eye size={15} />
+                  <span>معاينة الكاشير</span>
+                </Button>
                 <Button
                   onClick={() => setIsLauncherOpen(true)}
-                  variant="outline"
-                  className="font-bold text-xs h-9 px-3.5 rounded-xl gap-1.5 cursor-pointer"
+                  className="bg-[#00897b] hover:bg-[#00796b] text-white rounded-full font-black text-xs px-5 py-2 shadow-xs flex items-center gap-1.5 cursor-pointer h-9 shrink-0"
                 >
                   <Plus size={15} />
                   <span>فتح وردية جديدة</span>
                 </Button>
-              )}
+              </div>
             </div>
           )}
-        </div>
-      ) : (
-        <div className="sticky top-0 z-20 bg-card/95 backdrop-blur py-3 px-3 sm:px-5 -mx-2 sm:-mx-4 border-b border-border/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
-          <div className="flex items-center gap-3 flex-wrap">
-            <Button
-              variant="outline"
-              onClick={() => setActiveTab("grid")}
-              className="gap-2 font-black rounded-xl text-xs py-2 px-4 border-teal-500/30 text-teal-700 dark:text-teal-400 hover:bg-teal-500/10 w-fit cursor-pointer"
-            >
-              <ArrowRight size={16} />
-              العودة إلى أقسام المطعم
-            </Button>
-            <div className="h-5 w-px bg-border/80 hidden sm:block" />
-            <div className="flex items-center gap-2">
-              <Store size={18} className="text-teal-600 shrink-0" />
-              <h1 className="text-sm sm:text-base font-black text-foreground tracking-tight whitespace-nowrap">
-                إدارة وتشغيل المطعم
-              </h1>
-            </div>
-          </div>
 
-          <div className="flex items-center gap-1.5 overflow-x-auto">
-            <Button
-              size="sm"
-              variant={activeTab === "shifts" ? "default" : "outline"}
-              onClick={() => setActiveTab("shifts")}
-              className="rounded-xl font-bold text-xs h-8 cursor-pointer"
-            >
-              الورديات ({restaurantShifts.length})
-            </Button>
-            <Button
-              size="sm"
-              variant={activeTab === "vouchers" ? "default" : "outline"}
-              onClick={() => setActiveTab("vouchers")}
-              className="rounded-xl font-bold text-xs h-8 cursor-pointer"
-            >
-              السندات المالية
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => navigate({ to: "/pos" })}
-              className="rounded-xl font-bold text-xs h-8 gap-1 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 cursor-pointer"
-            >
-              <Grid3X3 size={13} />
-              شاشة الكاشير (POS)
-            </Button>
-          </div>
-        </div>
-      )}
+          {/* Operational Screens */}
+          {renderModuleItems(operationCards)}
 
-      {/* TAB: VOUCHERS */}
-      {activeTab === "vouchers" && (
-        <div className="space-y-6 animate-in fade-in duration-200">
-          <div className="flex items-center justify-between bg-card p-4 rounded-2xl border border-border shadow-xs">
-            <Button
-              onClick={() => setActiveTab("grid")}
-              className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl text-xs md:text-sm shadow-md cursor-pointer"
-            >
-              <ArrowRight size={18} />
-              <span>الرجوع لأقسام المطعم الرئيسية</span>
-            </Button>
-            <h3 className="text-base font-black text-foreground flex items-center gap-2">
-              <Receipt className="text-emerald-600" size={20} />
-              <span>سندات الصرف والقبض الرسمية - إدارة المطعم</span>
-            </h3>
-          </div>
-          <VouchersLedgerSection
-            defaultCostCenter="إدارة المطعم (Restaurant Management)"
-            departmentTitle="المطعم والمأكولات"
-          />
-        </div>
-      )}
-
-      {/* TAB: SHIFTS */}
-      {activeTab === "shifts" && (
-        <div className="space-y-4 animate-in fade-in duration-200">
+          {/* Shifts Management Table */}
           <Card className="border border-border shadow-xs rounded-2xl">
-            <CardHeader className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60">
-              <div>
-                <CardTitle className="text-base font-black">
-                  ورديات وجلسات كاشير المطعم
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  سجل الورديات المفتوحة والمغلقة، تقارير الإغلاق، ومطابقة مبيعات الكاشير
-                </CardDescription>
-              </div>
+            <CardHeader className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60">
+              <CardTitle className="text-base font-black">
+                ورديات كاشير المطعم ({restaurantShifts.length})
+              </CardTitle>
               <div className="flex items-center gap-2 flex-wrap">
-                {!isCashier && (
-                  <Button
-                    onClick={() => {
-                      setSelectedShiftForAudit(null);
-                      setIsShiftAuditLogOpen(true);
-                    }}
-                    variant="outline"
-                    size="sm"
-                    className="font-bold rounded-xl text-xs gap-1.5 border-indigo-500/30 text-indigo-600 dark:text-indigo-400 cursor-pointer"
-                  >
-                    <History size={14} />
-                    سجل التدقيق وفحص الورديات
-                  </Button>
-                )}
                 {(!isCashier || !cashierActiveShift) && (
                   <Button
                     onClick={() => setIsLauncherOpen(true)}
@@ -578,14 +775,7 @@ function RestaurantHubPage() {
                   ) : (
                     restaurantShifts.map((s) => (
                       <tr key={s.id} className="hover:bg-muted/30 transition">
-                        <td className="p-3">
-                          <div className="font-black text-foreground">{s.shift_number}</div>
-                          {!isCashier && s.auto_shift_number && (
-                            <div className="text-[10px] font-mono text-muted-foreground">
-                              {s.auto_shift_number}
-                            </div>
-                          )}
-                        </td>
+                        <td className="p-3 font-black text-foreground">{s.shift_number}</td>
                         <td className="p-3 font-bold text-foreground">{s.cashier_name}</td>
                         <td className="p-3 text-muted-foreground font-mono">
                           {new Date(s.start_at).toLocaleString("ar-EG")}
@@ -669,17 +859,6 @@ function RestaurantHubPage() {
                                 <Button
                                   size="sm"
                                   variant="ghost"
-                                  onClick={() => {
-                                    setSelectedShiftForAudit(s);
-                                    setIsShiftAuditLogOpen(true);
-                                  }}
-                                  className="h-7 px-2 text-xs font-bold text-indigo-600 cursor-pointer"
-                                >
-                                  سجل التدقيق
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
                                   onClick={() => setDeletingShift(s)}
                                   className="h-7 w-7 p-0 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-full cursor-pointer"
                                   title="حذف الوردية"
@@ -700,250 +879,136 @@ function RestaurantHubPage() {
         </div>
       )}
 
-      {/* TAB: GRID (Open Shifts Card + Modules Grid — Modeled after Park Management) */}
-      {activeTab === "grid" && (
-        <div className="space-y-6">
-          {/* Open Shifts Section (مطابق لصفحة الحديقة) */}
-          {openShifts.length > 0 ? (
-            <div className="space-y-3">
-              {openShifts.map((shift) => {
-                const isSessionActive = activeRestaurantShift?.id === shift.id;
-                return (
-                  <div
-                    key={shift.id}
-                    className="p-4 sm:p-5 rounded-3xl border border-border/80 bg-card shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 transition hover:border-teal-500/40"
-                  >
-                    {/* Information (Right side in RTL) */}
-                    <div className="space-y-1.5 text-right flex-1 min-w-0">
-                      {/* Row 1: Title and Auto Shift Number badge */}
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-black text-sm text-foreground">
-                          {shift.shift_number || `وردية مطعم #${shift.auto_shift_number || "1"}`}
-                        </h3>
-                        {!isCashier && shift.auto_shift_number && (
-                          <span className="border border-border/80 bg-muted/40 text-muted-foreground text-[11px] font-mono px-2.5 py-0.5 rounded-full">
-                            رقم النظام: {shift.auto_shift_number}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Row 2: "وردية مفتوحة" badge */}
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="inline-flex items-center bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700/60 text-xs font-bold px-2.5 py-0.5 rounded-full">
-                          وردية مفتوحة
-                        </span>
-                        {isSessionActive && (
-                          <span className="inline-flex items-center bg-teal-500/10 text-teal-700 dark:text-teal-300 border border-teal-300 dark:border-teal-700/60 text-[11px] font-bold px-2.5 py-0.5 rounded-full">
-                            متصلة بشاشة الكاشير الآن
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Row 3: Cashier and start time */}
-                      <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-                        <span className="flex items-center gap-1 font-bold text-foreground">
-                          <UserCheck size={14} className="text-teal-600" />
-                          الكاشير: {shift.cashier_name}
-                        </span>
-                        <span>•</span>
-                        <span className="flex items-center gap-1 font-mono">
-                          <Clock size={13} className="text-muted-foreground" />
-                          بدأت:{" "}
-                          {new Date(shift.start_at || Date.now()).toLocaleTimeString("ar-EG")}
-                        </span>
-                        {Number(shift.opening_balance || 0) > 0 && (
-                          <>
-                            <span>•</span>
-                            <span className="font-mono font-bold text-foreground">
-                              عهدة البداية: {Number(shift.opening_balance || 0).toLocaleString()}{" "}
-                              {shift.currency || "ج.م"}
-                            </span>
-                          </>
-                        )}
-                      </div>
-
-                      {/* Row 4: Sales count and revenue */}
-                      <div className="flex items-center gap-1 text-teal-600 dark:text-teal-400 font-black text-xs">
-                        <ShoppingBag size={14} />
-                        <span>
-                          {shift.orders_count || 0} مبيعات (
-                          {Number(shift.total_sales || 0).toLocaleString()} {shift.currency || "ج.م"})
-                        </span>
-                        {(shift.refunds_count || 0) > 0 && (
-                          <span className="text-rose-600 font-bold mr-1">
-                            ({shift.refunds_count} مرتجع)
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Action buttons (Left side in RTL) */}
-                    <div className="flex flex-col items-start md:items-end gap-2.5 shrink-0">
-                      {/* Enter shift button */}
-                      <Button
-                        size="sm"
-                        onClick={() => {
-                          erpStore.resumeRestaurantShift(shift.id);
-                          toast.success(`تم الدخول إلى ${shift.shift_number}`);
-                          navigate({ to: "/pos" });
-                        }}
-                        className="bg-[#00897b] hover:bg-[#00796b] text-white rounded-full font-black text-xs px-5 py-2 shadow-xs flex items-center gap-1.5 cursor-pointer h-9 transition active:scale-95"
-                      >
-                        <Play size={13} className="fill-white" />
-                        <span>دخول الوردية (بيع / مرتجع)</span>
-                      </Button>
-
-                      {/* Edit, Close, and Delete buttons (Restricted to Managers/Admins; hidden for Cashiers) */}
-                      {canCloseShifts && !isCashier && (
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setEditingShift(shift);
-                              setEditShiftNumber(shift.shift_number);
-                              setEditCashierName(shift.cashier_name);
-                              setEditOpeningBalance(String(shift.opening_balance || 0));
-                              setEditNotes(shift.notes || shift.opening_notes || "");
-                            }}
-                            className="border border-amber-200/90 bg-amber-50/50 hover:bg-amber-100/60 dark:bg-amber-950/20 dark:border-amber-900/50 text-foreground rounded-full text-xs font-bold px-3 py-1 flex items-center gap-1 cursor-pointer h-7"
-                            title="تعديل بيانات الوردية"
-                          >
-                            <Edit size={13} className="text-blue-600" />
-                            <span>تعديل</span>
-                          </Button>
-
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setClosingShift(shift)}
-                            className="border border-rose-200/90 bg-rose-50/50 hover:bg-rose-100/60 dark:bg-rose-950/20 dark:border-rose-900/50 text-rose-700 dark:text-rose-300 rounded-full text-xs font-bold px-3 py-1 flex items-center gap-1 cursor-pointer h-7"
-                            title="إغلاق الوردية وإصدار التقرير"
-                          >
-                            <Lock size={12} className="text-rose-600" />
-                            <span>إغلاق الوردية</span>
-                          </Button>
-
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setDeletingShift(shift)}
-                            className="text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/30 p-1.5 h-7 w-7 rounded-full cursor-pointer transition flex items-center justify-center"
-                            title="حذف الوردية"
-                          >
-                            <Trash2 size={15} />
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="p-4 sm:p-5 rounded-3xl border border-dashed border-teal-500/30 bg-card shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
-              <div className="text-right">
-                <h3 className="font-black text-sm text-foreground">لا توجد وردية مفتوحة حالياً</h3>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  اضغط على زر فتح وردية جديدة لبدء جلسة بيع واستلام طلبات المطعم، أو يمكنك معاينة
-                  شاشة الكاشير بدون فتح وردية
-                </p>
+      {/* SECTION 3: REPORTS (التقارير) */}
+      {activeTab === "reports" && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          {/* Summary KPI Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card className="p-4 rounded-2xl border border-border">
+              <div className="text-xs font-bold text-muted-foreground">إجمالي مبيعات الورديات</div>
+              <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1 font-mono">
+                {totalRestaurantSales.toLocaleString()} ج.م
               </div>
-              <div className="flex items-center gap-2 flex-wrap shrink-0">
+            </Card>
+            <Card className="p-4 rounded-2xl border border-border">
+              <div className="text-xs font-bold text-muted-foreground">إجمالي الطلبات المسجلة</div>
+              <div className="text-2xl font-black text-foreground mt-1 font-mono">
+                {Math.max(totalRestaurantOrders, counts.orders)}
+              </div>
+            </Card>
+            <Card className="p-4 rounded-2xl border border-border">
+              <div className="text-xs font-bold text-muted-foreground">الورديات المفتوحة</div>
+              <div className="text-2xl font-black text-teal-600 mt-1 font-mono">
+                {openShifts.length}
+              </div>
+            </Card>
+            <Card className="p-4 rounded-2xl border border-border">
+              <div className="text-xs font-bold text-muted-foreground">الورديات المغلقة</div>
+              <div className="text-2xl font-black text-foreground mt-1 font-mono">
+                {closedShifts.length}
+              </div>
+            </Card>
+          </div>
+
+          <Card className="border border-border shadow-xs rounded-2xl">
+            <CardHeader className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60">
+              <CardTitle className="text-base font-black">تقارير الورديات وسجل التدقيق</CardTitle>
+              {!isCashier && (
                 <Button
+                  onClick={() => {
+                    setSelectedShiftForAudit(null);
+                    setIsShiftAuditLogOpen(true);
+                  }}
                   variant="outline"
-                  onClick={() => navigate({ to: "/pos" })}
-                  className="rounded-full font-bold text-xs px-4 py-2 flex items-center gap-1.5 cursor-pointer h-9 border-teal-500/30 text-teal-700 dark:text-teal-300 hover:bg-teal-500/10"
+                  size="sm"
+                  className="font-bold rounded-xl text-xs gap-1.5 border-indigo-500/30 text-indigo-600 dark:text-indigo-400 cursor-pointer"
                 >
-                  <Eye size={15} />
-                  <span>معاينة الكاشير (بدون وردية)</span>
+                  <History size={14} />
+                  سجل التدقيق الشامل للورديات
                 </Button>
-                <Button
-                  onClick={() => setIsLauncherOpen(true)}
-                  className="bg-[#00897b] hover:bg-[#00796b] text-white rounded-full font-black text-xs px-5 py-2 shadow-xs flex items-center gap-1.5 cursor-pointer h-9 shrink-0"
-                >
-                  <Plus size={15} />
-                  <span>فتح وردية جديدة</span>
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* Restaurant Modules Cards Grid */}
-          <section aria-labelledby="restaurant-modules-heading">
-            <div className="mb-4 flex items-center justify-between gap-4">
-              <h2
-                id="restaurant-modules-heading"
-                className="flex items-center gap-2 text-lg font-black text-foreground"
-              >
-                <Store size={20} className="text-primary" aria-hidden="true" />
-                أقسام نظام تشغيل المطعم
-              </h2>
-              <span className="text-xs font-bold text-muted-foreground">
-                {modules.length} أقسام أساسية
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
-              {modules.map((module) => {
-                const Icon = module.icon;
-
-                return (
-                  <div
-                    key={module.title}
-                    className="group rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-                  >
-                    <Card
-                      onClick={() => {
-                        if (module.action) {
-                          module.action();
-                        } else if (module.to) {
-                          navigate({ to: module.to as any });
-                        }
-                      }}
-                      className="flex h-full flex-col overflow-hidden rounded-2xl border border-border/80 bg-card shadow-sm transition-all duration-300 group-hover:border-primary/50 group-hover:bg-accent/30 group-hover:shadow-xl cursor-pointer"
-                    >
-                      <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
-                        <div
-                          className={`rounded-2xl bg-gradient-to-br p-3 shadow-inner ${module.color}`}
-                        >
-                          <Icon size={24} aria-hidden="true" />
-                        </div>
-                        <span className="rounded-full border border-border/60 bg-muted px-2.5 py-1 text-[11px] font-bold text-muted-foreground">
-                          {module.badge}
-                        </span>
-                      </CardHeader>
-                      <CardContent className="flex flex-1 flex-col justify-between space-y-4 pt-1">
-                        <div className="space-y-1.5">
-                          <h3 className="flex items-center justify-between gap-3 text-lg font-black text-foreground transition group-hover:text-primary">
-                            <span>{module.title}</span>
-                            <ArrowUpRight
-                              size={18}
-                              className="shrink-0 text-primary opacity-0 transition-opacity group-hover:opacity-100"
-                              aria-hidden="true"
-                            />
-                          </h3>
-                          <CardDescription className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-                            {module.description}
-                          </CardDescription>
-                        </div>
-                        <div className="flex items-center justify-between border-t border-border/60 pt-3 text-xs font-bold text-muted-foreground">
-                          <span className="inline-flex items-center gap-1.5 font-black text-primary">
-                            <Clock size={13} aria-hidden="true" />
-                            {module.stats}
+              )}
+            </CardHeader>
+            <CardContent className="p-0 overflow-x-auto">
+              <table className="w-full text-right text-xs">
+                <thead className="bg-muted/50 border-b border-border text-muted-foreground font-bold">
+                  <tr>
+                    <th className="p-3">رقم / مسمى الوردية</th>
+                    <th className="p-3">الكاشير المسؤول</th>
+                    <th className="p-3">وقت الفتح</th>
+                    <th className="p-3">وقت الإغلاق</th>
+                    <th className="p-3">المبيعات</th>
+                    <th className="p-3">الحالة</th>
+                    <th className="p-3 text-center">التقرير</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/60">
+                  {restaurantShifts.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="text-center py-10 text-muted-foreground">
+                        لا توجد تقارير ورديات مسجلة بعد
+                      </td>
+                    </tr>
+                  ) : (
+                    restaurantShifts.map((s) => (
+                      <tr key={s.id} className="hover:bg-muted/30 transition">
+                        <td className="p-3 font-black text-foreground">{s.shift_number}</td>
+                        <td className="p-3 font-bold text-foreground">{s.cashier_name}</td>
+                        <td className="p-3 text-muted-foreground font-mono">
+                          {new Date(s.start_at).toLocaleString("ar-EG")}
+                        </td>
+                        <td className="p-3 text-muted-foreground font-mono">
+                          {s.end_at
+                            ? new Date(s.end_at).toLocaleString("ar-EG")
+                            : "— نشطة حالياً —"}
+                        </td>
+                        <td className="p-3 font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                          {s.orders_count || 0} طلب ({Number(s.total_sales || 0).toLocaleString()}{" "}
+                          {s.currency || "ج.م"})
+                        </td>
+                        <td className="p-3">
+                          <span
+                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                              s.status === "open"
+                                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
+                                : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                            }`}
+                          >
+                            {s.status === "open" ? "مفتوحة" : "مغلقة"}
                           </span>
-                          <span className="inline-flex items-center gap-1 text-primary">
-                            فتح الواجهة
-                            <ArrowUpRight size={14} aria-hidden="true" />
-                          </span>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
+                        </td>
+                        <td className="p-3 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setViewingClosedShift(s)}
+                              className="h-7 px-2 text-xs font-bold cursor-pointer"
+                            >
+                              <FileSpreadsheet size={13} className="ml-1 text-emerald-600" />
+                              تقرير الوردية
+                            </Button>
+                            {canCloseShifts && !isCashier && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  setSelectedShiftForAudit(s);
+                                  setIsShiftAuditLogOpen(true);
+                                }}
+                                className="h-7 px-2 text-xs font-bold text-indigo-600 cursor-pointer"
+                              >
+                                سجل التدقيق
+                              </Button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
         </div>
       )}
 
@@ -986,7 +1051,6 @@ function RestaurantHubPage() {
         initialShiftType="restaurant"
       />
 
-      {/* Edit Shift Modal (Modeled after Park Management) */}
       {editingShift && (
         <Dialog open={editingShift !== null} onOpenChange={() => setEditingShift(null)}>
           <DialogContent className="sm:max-w-[450px] rounded-3xl text-right" dir="rtl">
@@ -1062,7 +1126,6 @@ function RestaurantHubPage() {
         </Dialog>
       )}
 
-      {/* Delete Shift Confirmation Modal */}
       {deletingShift && (
         <Dialog open={deletingShift !== null} onOpenChange={() => setDeletingShift(null)}>
           <DialogContent className="sm:max-w-[450px] rounded-3xl text-right" dir="rtl">
@@ -1100,4 +1163,3 @@ function RestaurantHubPage() {
     </div>
   );
 }
-

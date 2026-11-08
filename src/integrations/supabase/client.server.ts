@@ -46,24 +46,28 @@ function createSupabaseFetch(supabaseKey: string): typeof fetch {
   };
 }
 
+function isServiceRoleKeyValid(key: string | undefined | null): key is string {
+  if (!key || typeof key !== "string") return false;
+  const trimmed = key.trim();
+  if (!trimmed) return false;
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return false;
+  if (trimmed.startsWith("sb_publishable_")) return false;
+  return true;
+}
+
 function createSupabaseAdminClient() {
   const DEFAULT_SUPABASE_URL = "https://myqtvbfibvgxkqwxvuru.supabase.co";
   const rawUrlCandidates = [process.env.SUPABASE_URL, process.env.VITE_SUPABASE_URL];
   const SUPABASE_URL = rawUrlCandidates.find(isValidHttpUrl) || DEFAULT_SUPABASE_URL;
 
-  let SUPABASE_SERVICE_ROLE_KEY =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_PUBLISHABLE_KEY ||
-    process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-    "sb_publishable_srgqLn2ZvysGKh47yCQ0Kg_IW02yjDf";
-
-  if (
-    !SUPABASE_SERVICE_ROLE_KEY ||
-    SUPABASE_SERVICE_ROLE_KEY.startsWith("http://") ||
-    SUPABASE_SERVICE_ROLE_KEY.startsWith("https://")
-  ) {
-    SUPABASE_SERVICE_ROLE_KEY = "sb_publishable_srgqLn2ZvysGKh47yCQ0Kg_IW02yjDf";
+  const rawServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!isServiceRoleKeyValid(rawServiceKey)) {
+    throw new Error(
+      "SUPABASE_SERVICE_ROLE_KEY is missing or invalid. Privileged server operations require a valid server-side service role key and cannot fall back to a publishable key.",
+    );
   }
+
+  const SUPABASE_SERVICE_ROLE_KEY = rawServiceKey.trim();
 
   return createClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     global: {

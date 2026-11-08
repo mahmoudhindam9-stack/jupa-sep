@@ -6662,73 +6662,16 @@ export class ERPStore {
     });
   }
 
-  createMallContract(shopId, updates, treasuryId) {
+  createMallContract(shopId, updates, _treasuryId?) {
+    // Mall contracts are independent administrative records and must NOT
+    // automatically generate financial transactions, journal entries, or alter balances.
     this.updateMallShop(shopId, updates);
-    const contract = updates.contract;
-    if (contract && treasuryId) {
-      const treasury = this.state.treasuries.find((t) => t.id === treasuryId);
-      if (treasury) {
-        const treasuryAccountCode =
-          treasury.account_code ||
-          (treasury.type === "bank"
-            ? "102000"
-            : treasury.branch_id === "branch-2"
-              ? "101001"
-              : "101000");
-        const totalCollected = (contract.deposit_amount || 0) + (contract.advance_payment || 0);
-        if (totalCollected > 0) {
-          const shopStr = this.getShopDescriptionString(shopId);
-          const curr = (contract.currency || treasury.currency || "USD").toUpperCase();
-          const rate = this.getExchangeRate(curr);
-          const entryDesc = `تحصيل تأمين ومقدم عقد إيجار - ${shopStr}`;
-          const lines = [
-            {
-              account_code: treasuryAccountCode,
-              debit: totalCollected,
-              credit: 0,
-              currency: curr,
-              rate: rate,
-              description: `تحصيل تأمين ومقدم إيجار بخزينة ${treasury.name_ar} من ${shopStr}`,
-            },
-          ];
-          if (contract.deposit_amount > 0)
-            lines.push({
-              account_code: "201100",
-              debit: 0,
-              credit: contract.deposit_amount,
-              currency: curr,
-              rate: rate,
-              description: `أمانة تأمين عقد إيجار - ${shopStr}`,
-            });
-          if (contract.advance_payment > 0)
-            lines.push({
-              account_code: "201200",
-              debit: 0,
-              credit: contract.advance_payment,
-              currency: curr,
-              rate: rate,
-              description: `مقدم عقد إيجار محصل لحساب عقد - ${shopStr}`,
-            });
-          this.addJournalEntry(
-            entryDesc,
-            lines,
-            `CNTR-${Date.now().toString().slice(-6)}`,
-            curr,
-            contract.start_date,
-          );
-          this.addTreasuryTransaction(
-            treasuryId,
-            "sales",
-            totalCollected,
-            curr,
-            entryDesc,
-            `CNTR-${Date.now().toString().slice(-6)}`,
-            "cash",
-            null,
-          );
-        }
-      }
-    }
+    this.logAction(
+      "ADMIN",
+      "حفظ عقد إيجار محل",
+      `تم حفظ/تجديد عقد المحل رقم ${shopId} كسجل تعاقدي مستقل بدون قيود مالية تلقائية`,
+      "CREATE",
+    );
   }
   updateMallShop(id, updates) {
     this.state.mallShops = (this.state.mallShops || []).map((s) =>
@@ -7001,7 +6944,9 @@ export class ERPStore {
       "UPDATE",
     );
   }
-  terminateMallContract(record, treasuryId) {
+  terminateMallContract(record, _treasuryId?) {
+    // Terminating a mall contract ONLY updates the contract archive and shop occupancy status.
+    // It must NEVER automatically generate financial transactions, journal entries, or alter balances.
     const termRecord = {
       ...record,
       id: "term-" + Date.now(),
@@ -7017,79 +6962,11 @@ export class ERPStore {
       shop.phone = "";
       shop.contract = void 0;
     }
-    let treasuryAccountCode = "101000";
-    if (treasuryId) {
-      const treasury = this.state.treasuries.find((t) => t.id === treasuryId);
-      if (treasury)
-        treasuryAccountCode =
-          treasury.account_code ||
-          (treasury.type === "bank"
-            ? "102000"
-            : treasury.branch_id === "branch-2"
-              ? "101001"
-              : "101000");
-    }
-    const shopStr = this.getShopDescriptionString(record.shop_id || record.shop_number);
-    const refundAmount = record.refund_amount || 0;
-    const depositAmount = record.deposit_amount || 0;
-
-    const entryDesc = `فسخ عقد إيجار ${shopStr} وتسوية التأمين والمقدم`;
-
-    if (refundAmount > 0 && treasuryId)
-      this.addTreasuryTransaction(
-        treasuryId,
-        "withdrawal",
-        refundAmount,
-        "USD",
-        `رد تأمين لفسخ عقد إيجار - ${shopStr}`,
-        `TERM-${record.shop_number}`,
-        "cash",
-        null,
-      );
-    if (depositAmount > 0 || refundAmount > 0) {
-      const lines = [];
-      if (depositAmount > 0)
-        lines.push({
-          account_code: "201100",
-          debit: depositAmount,
-          credit: 0,
-          description: `تسوية أمانة تأمين عقد - ${shopStr}`,
-        });
-      if (refundAmount > 0)
-        lines.push({
-          account_code: treasuryAccountCode,
-          debit: 0,
-          credit: refundAmount,
-          description: `صرف رد التأمين نقداً من خزينة ${treasuryAccountCode} لـ ${shopStr}`,
-        });
-      const diff = depositAmount - refundAmount;
-      if (diff > 0)
-        lines.push({
-          account_code: "401000",
-          debit: 0,
-          credit: diff,
-          description: `إثبات تسوية متبقي التأمين كإيراد عند فسخ عقد ${shopStr}`,
-        });
-      else if (diff < 0)
-        lines.push({
-          account_code: "501000",
-          debit: Math.abs(diff),
-          credit: 0,
-          description: `إثبات الفارق كمصروف تسوية عند فسخ عقد ${shopStr}`,
-        });
-      this.addJournalEntry(
-        entryDesc,
-        lines,
-        `TERM-${record.shop_number}`,
-        "USD",
-        record.termination_date,
-      );
-    }
     this.saveState();
     this.logAction(
       "ADMIN",
       "فسخ عقد إيجار محل",
-      `تم فسخ عقد المحل #${record.shop_number} وأرشفة العقد ورد التأمين بقيمة ${record.refund_amount} USD`,
+      `تم فسخ عقد المحل #${record.shop_number} وأرشفة العقد كسجل مستقل بدون قيود مالية تلقائية`,
       "UPDATE",
     );
   }
