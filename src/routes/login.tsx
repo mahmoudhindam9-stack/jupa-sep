@@ -245,15 +245,13 @@ function LoginPage() {
       const timeoutPromise = new Promise<boolean>((resolve) =>
         window.setTimeout(() => resolve(false), 1500),
       );
+      // Restore only a real Supabase session on hosted deployments.
+      // Keep the browser's saved identifier intact, but never treat that
+      // identifier alone as proof of authentication or redirect to a blank admin shell.
+      if (storedLocalUser) setUsername(storedLocalUser);
       void Promise.race([continueWithHostedSession(), timeoutPromise])
-        .then((restored) => {
-          if (!restored) {
-            checkStoredLocalSession();
-          }
-        })
         .catch((cause) => {
-          console.warn("Hosted session restoration failed, checking local session.", cause);
-          checkStoredLocalSession();
+          console.warn("Hosted session restoration failed; showing the login form.", cause);
         });
       return;
     }
