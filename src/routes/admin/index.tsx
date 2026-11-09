@@ -106,18 +106,54 @@ function AdminDashboard() {
   const { formatPrice } = useSettings();
   const location = useLocation();
   const tabParam = extractTabParam(location.search, (location as any).searchStr);
+  const rawSearchStr =
+    (location as any).searchStr ??
+    (typeof window !== "undefined" ? window.location.search : "");
+  const sectionParam = useMemo(() => {
+    try {
+      const sp = new URLSearchParams(rawSearchStr);
+      const sec = sp.get("section");
+      if (sec === "definitions" || sec === "operations" || sec === "reports") {
+        return sec;
+      }
+    } catch {
+      // ignore
+    }
+    return "operations" as const;
+  }, [rawSearchStr]);
 
   const [activeTab, setActiveTab] = useState(tabParam || "grid");
+  const [auditSection, setAuditSection] = useState<"definitions" | "operations" | "reports">(
+    sectionParam,
+  );
+  const [activeAuditDefTool, setActiveAuditDefTool] = useState<"shift_rules" | "audit_rules">(
+    "shift_rules",
+  );
+  const [activeAuditOpTool, setActiveAuditOpTool] = useState<"shifts" | "operations_log">(
+    tabParam === "audit_logs" ? "operations_log" : "shifts",
+  );
+  const [activeAuditReportTool, setActiveAuditReportTool] = useState<
+    "shift_summary" | "audit_summary"
+  >("shift_summary");
   const [isAuditOperationsOpen, setIsAuditOperationsOpen] = useState(false);
   const [isShiftAuditModalOpen, setIsShiftAuditModalOpen] = useState(false);
 
   useEffect(() => {
     if (tabParam) {
       setActiveTab(tabParam);
+      if (tabParam === "audit_logs") {
+        setActiveAuditOpTool("operations_log");
+      } else if (tabParam === "shift_audit" || tabParam === "shifts") {
+        setActiveAuditOpTool("shifts");
+      }
     } else {
       setActiveTab("grid");
     }
   }, [tabParam]);
+
+  useEffect(() => {
+    setAuditSection(sectionParam);
+  }, [sectionParam]);
 
   useSyncedSubTab("/admin", activeTab, setActiveTab, "grid");
 
@@ -766,47 +802,8 @@ function AdminDashboard() {
 
   return (
     <div className="space-y-6 pb-12 text-right">
-      {/* Top action & back bar when viewing sub-tabs */}
-      {activeTab !== "grid" && (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60 pb-3">
-          <Button
-            variant="outline"
-            onClick={() => setActiveTab("grid")}
-            className="gap-2 font-black rounded-xl text-xs py-2 px-4 border-primary/30 text-primary hover:bg-primary/10 w-fit"
-          >
-            <ArrowRight size={16} />
-            العودة إلى شبكة الأقسام الرئيسية
-          </Button>
-
-          <div className="flex items-center gap-2">
-            {erpState.branches.length > 1 && (
-              <div className="flex items-center gap-1.5 bg-muted p-1 rounded-xl border border-border">
-                <span className="text-xs font-bold text-muted-foreground px-2">الفرع:</span>
-                {erpState.branches.map((b) => (
-                  <Button
-                    key={b.id}
-                    size="sm"
-                    variant={currentBranch.id === b.id ? "default" : "ghost"}
-                    onClick={() => handleBranchChange(b.id)}
-                    className="text-xs font-bold rounded-lg h-7 px-2.5"
-                  >
-                    {b.name_ar}
-                  </Button>
-                ))}
-              </div>
-            )}
-            <Link to="/admin/reports">
-              <Button variant="outline" size="sm" className="gap-1.5 rounded-xl text-xs font-bold">
-                <FileBarChart size={14} />
-                التقارير
-              </Button>
-            </Link>
-          </div>
-        </div>
-      )}
-
-      {/* Subtle branch switcher when viewing main grid */}
-      {activeTab === "grid" && erpState.branches.length > 1 && (
+      {/* Subtle branch switcher when multiple branches exist */}
+      {erpState.branches.length > 1 && (
         <div className="flex items-center justify-between gap-3 pb-2">
           <div className="flex items-center gap-1.5 bg-muted p-1 rounded-xl border border-border">
             <span className="text-xs font-bold text-muted-foreground px-2">الفرع الحالي:</span>
@@ -1922,17 +1919,262 @@ function AdminDashboard() {
           </div>
         )}
 
-        {/* TAB 5: SHIFT AUDIT LOGS (Supabase) */}
-        {activeTab === "shift_audit" && (
-          <div data-tab-panel="shift_audit" className="space-y-6 mt-4">
-            <ShiftAuditLogViewer />
-          </div>
-        )}
+        {/* TAB 5 & 6 MERGED: SHIFT AUDIT & OPERATIONS LOG (تدقيق الورديات وسجل العمليات - 3 أقسام) */}
+        {(activeTab === "shift_audit" || activeTab === "audit_logs" || activeTab === "shifts") && (
+          <div data-tab-panel="shift_audit" className="space-y-4 mt-4" dir="rtl">
+            {/* ============================================================== */}
+            {/* SECTION 1: DEFINITIONS (التعريفات)                             */}
+            {/* ============================================================== */}
+            {auditSection === "definitions" && (
+              <div className="space-y-4 animate-in fade-in duration-200">
+                <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card p-2 shadow-2xs print:hidden">
+                  <button
+                    type="button"
+                    onClick={() => setActiveAuditDefTool("shift_rules")}
+                    className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
+                      activeAuditDefTool === "shift_rules"
+                        ? "bg-primary text-primary-foreground shadow-xs"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    }`}
+                  >
+                    <ClipboardList className="h-4 w-4" />
+                    <span>قنوات وضوابط تدقيق الورديات (المطعم والحديقة)</span>
+                  </button>
 
-        {/* TAB 6: AUDIT OPERATIONS LOG (سجل العمليات والرقابة العامة) */}
-        {activeTab === "audit_logs" && (
-          <div data-tab-panel="audit_logs" className="space-y-6 mt-4">
-            <AuditOperationsView logs={erpState.auditLogs || []} />
+                  <button
+                    type="button"
+                    onClick={() => setActiveAuditDefTool("audit_rules")}
+                    className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
+                      activeAuditDefTool === "audit_rules"
+                        ? "bg-primary text-primary-foreground shadow-xs"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    }`}
+                  >
+                    <History className="h-4 w-4" />
+                    <span>إعدادات وقواعد سجل العمليات والرقابة</span>
+                  </button>
+                </div>
+
+                {activeAuditDefTool === "shift_rules" ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Card className="rounded-2xl border border-border bg-card shadow-xs">
+                      <CardHeader className="pb-3 border-b border-border/50">
+                        <CardTitle className="text-sm font-black text-foreground flex items-center justify-between">
+                          <span>قناة ورديات المطعم (Restaurant POS Shifts)</span>
+                          <Badge className="bg-emerald-500/15 text-emerald-600 border border-emerald-500/30 text-xs">
+                            مربوط تلقائياً
+                          </Badge>
+                        </CardTitle>
+                        <CardDescription className="text-xs">
+                          قواعد فتح وإغلاق ومطابقة ورديات كاشير المطعم مع الخزينة الرئيسية
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="pt-4 space-y-3 text-xs">
+                        <div className="flex items-center justify-between py-1.5 border-b border-border/40">
+                          <span className="text-muted-foreground font-bold">إجمالي الورديات المسجلة:</span>
+                          <span className="font-mono font-black text-foreground">
+                            {(erpStore.getRestaurantShifts() || []).length} وردية
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between py-1.5 border-b border-border/40">
+                          <span className="text-muted-foreground font-bold">طريقة المطابقة الدفترية:</span>
+                          <span className="font-bold text-emerald-600">مطابقة آلية مع مبيعات الكاشير</span>
+                        </div>
+                        <div className="pt-2 flex justify-end">
+                          <Link to="/admin/restaurant" search={{ tab: "operations" }}>
+                            <Button size="sm" variant="outline" className="rounded-xl text-xs font-bold gap-1.5">
+                              <span>فتح شاشة ورديات المطعم</span>
+                              <ArrowRight size={14} className="rotate-180" />
+                            </Button>
+                          </Link>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="rounded-2xl border border-border bg-card shadow-xs">
+                      <CardHeader className="pb-3 border-b border-border/50">
+                        <CardTitle className="text-sm font-black text-foreground flex items-center justify-between">
+                          <span>قناة ورديات تذاكر الحديقة (Park POS Shifts)</span>
+                          <Badge className="bg-emerald-500/15 text-emerald-600 border border-emerald-500/30 text-xs">
+                            مربوط تلقائياً
+                          </Badge>
+                        </CardTitle>
+                        <CardDescription className="text-xs">
+                          قواعد فتح وإغلاق ومطابقة ورديات شباك تذاكر الحديقة بعملتي USD و SSP
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="pt-4 space-y-3 text-xs">
+                        <div className="flex items-center justify-between py-1.5 border-b border-border/40">
+                          <span className="text-muted-foreground font-bold">إجمالي الورديات المسجلة:</span>
+                          <span className="font-mono font-black text-foreground">
+                            {(erpStore.getParkShifts() || []).length} وردية
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between py-1.5 border-b border-border/40">
+                          <span className="text-muted-foreground font-bold">طريقة المطابقة الدفترية:</span>
+                          <span className="font-bold text-emerald-600">مطابقة متعددة العملات (USD / SSP)</span>
+                        </div>
+                        <div className="pt-2 flex justify-end">
+                          <Link to="/admin/park" search={{ tab: "operations" }}>
+                            <Button size="sm" variant="outline" className="rounded-xl text-xs font-bold gap-1.5">
+                              <span>فتح شاشة ورديات الحديقة</span>
+                              <ArrowRight size={14} className="rotate-180" />
+                            </Button>
+                          </Link>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                ) : (
+                  <Card className="rounded-2xl border border-border bg-card shadow-xs">
+                    <CardHeader className="pb-3 border-b border-border/50">
+                      <CardTitle className="text-sm font-black text-foreground">
+                        تصنيفات وقواعد سجل العمليات والرقابة العامة
+                      </CardTitle>
+                      <CardDescription className="text-xs">
+                        الأقسام المشمولة بالرصد التلقائي ومستويات الأهمية الرقابية
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="pt-4 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                      <div className="rounded-xl border border-border p-3.5 bg-muted/20 space-y-1">
+                        <div className="font-black text-sky-600">عمليات اعتيادية (Info)</div>
+                        <p className="text-muted-foreground leading-relaxed">
+                          تسجيل الدخول، إنشاء الفواتير، إضافة الأصناف، والحركات اليومية المعتادة.
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-border p-3.5 bg-muted/20 space-y-1">
+                        <div className="font-black text-amber-600">عمليات تنبيهية (Warning)</div>
+                        <p className="text-muted-foreground leading-relaxed">
+                          تعديل الأسعار، التسويات المخزنية، إغلاق الخزائن، واسترجاع حالة الورديات.
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-border p-3.5 bg-muted/20 space-y-1">
+                        <div className="font-black text-rose-600">عمليات حساسة (Critical)</div>
+                        <p className="text-muted-foreground leading-relaxed">
+                          حذف السندات أو القيود، تصفير البيانات، تعديل صلاحيات المستخدمين، والمرتجعات المالية.
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            )}
+
+            {/* ============================================================== */}
+            {/* SECTION 2: OPERATIONS (العمليات)                               */}
+            {/* ============================================================== */}
+            {auditSection === "operations" && (
+              <div className="space-y-4 animate-in fade-in duration-200">
+                <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card p-2 shadow-2xs print:hidden">
+                  <button
+                    type="button"
+                    onClick={() => setActiveAuditOpTool("shifts")}
+                    className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
+                      activeAuditOpTool === "shifts"
+                        ? "bg-primary text-primary-foreground shadow-xs"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    }`}
+                  >
+                    <ClipboardList className="h-4 w-4" />
+                    <span>تدقيق ومطابقة الورديات (المطعم والحديقة)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveAuditOpTool("operations_log")}
+                    className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
+                      activeAuditOpTool === "operations_log"
+                        ? "bg-primary text-primary-foreground shadow-xs"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    }`}
+                  >
+                    <History className="h-4 w-4" />
+                    <span>سجل العمليات والرقابة المباشر</span>
+                    <Badge
+                      variant="secondary"
+                      className="bg-black/15 text-current text-[10px] px-1.5 py-0 font-mono"
+                    >
+                      {(erpState.auditLogs || []).length}
+                    </Badge>
+                  </button>
+                </div>
+
+                {activeAuditOpTool === "shifts" ? (
+                  <ShiftAuditLogViewer showHeaderTitle={false} />
+                ) : (
+                  <AuditOperationsView logs={erpState.auditLogs || []} />
+                )}
+              </div>
+            )}
+
+            {/* ============================================================== */}
+            {/* SECTION 3: REPORTS (التقارير)                                  */}
+            {/* ============================================================== */}
+            {auditSection === "reports" && (
+              <div className="space-y-4 animate-in fade-in duration-200">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                  <Card className="rounded-2xl border border-border bg-card p-4 shadow-2xs">
+                    <div className="text-xs font-bold text-muted-foreground">إجمالي ورديات المطعم</div>
+                    <div className="text-2xl font-black text-foreground mt-1 font-mono">
+                      {(erpStore.getRestaurantShifts() || []).length}
+                    </div>
+                  </Card>
+                  <Card className="rounded-2xl border border-border bg-card p-4 shadow-2xs">
+                    <div className="text-xs font-bold text-muted-foreground">إجمالي ورديات الحديقة</div>
+                    <div className="text-2xl font-black text-emerald-600 mt-1 font-mono">
+                      {(erpStore.getParkShifts() || []).length}
+                    </div>
+                  </Card>
+                  <Card className="rounded-2xl border border-border bg-card p-4 shadow-2xs">
+                    <div className="text-xs font-bold text-muted-foreground">الورديات المفتوحة الآن</div>
+                    <div className="text-2xl font-black text-amber-600 mt-1 font-mono">
+                      {(erpStore.getRestaurantShifts() || []).filter((s) => s.status === "open").length +
+                        (erpStore.getParkShifts() || []).filter((s) => s.status === "open").length}
+                    </div>
+                  </Card>
+                  <Card className="rounded-2xl border border-border bg-card p-4 shadow-2xs">
+                    <div className="text-xs font-bold text-muted-foreground">إجمالي العمليات المرصودة</div>
+                    <div className="text-2xl font-black text-primary mt-1 font-mono">
+                      {(erpState.auditLogs || []).length}
+                    </div>
+                  </Card>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card p-2 shadow-2xs print:hidden">
+                  <button
+                    type="button"
+                    onClick={() => setActiveAuditReportTool("shift_summary")}
+                    className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
+                      activeAuditReportTool === "shift_summary"
+                        ? "bg-primary text-primary-foreground shadow-xs"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    }`}
+                  >
+                    <FileBarChart className="h-4 w-4" />
+                    <span>تقرير وسجل تدقيق الورديات الشامل</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveAuditReportTool("audit_summary")}
+                    className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
+                      activeAuditReportTool === "audit_summary"
+                        ? "bg-primary text-primary-foreground shadow-xs"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    }`}
+                  >
+                    <Printer className="h-4 w-4" />
+                    <span>تقرير وطباعة سجل العمليات الرقابي</span>
+                  </button>
+                </div>
+
+                {activeAuditReportTool === "shift_summary" ? (
+                  <ShiftAuditLogViewer showHeaderTitle={false} compact={true} />
+                ) : (
+                  <AuditOperationsView logs={erpState.auditLogs || []} />
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

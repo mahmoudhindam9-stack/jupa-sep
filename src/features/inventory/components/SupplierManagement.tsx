@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useMemo, useEffect } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { erpStore, Supplier } from "@/shared/services/erpStore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +39,7 @@ import {
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 export function SupplierManagement() {
+  const navigate = useNavigate();
   const [erpState, setErpState] = useState(erpStore.getState());
   const { toast } = useToast();
   const [search, setSearch] = useState("");
@@ -562,11 +564,16 @@ export function SupplierManagement() {
                       <Button
                         size="sm"
                         variant="default"
-                        className="h-8 rounded-lg text-xs font-bold gap-1 bg-primary text-primary-foreground shadow-xs"
-                        onClick={() => openTransactionDialog(s, "payment")}
+                        className="h-8 rounded-lg text-xs font-bold gap-1 bg-primary text-primary-foreground shadow-xs cursor-pointer"
+                        onClick={() =>
+                          navigate({
+                            to: "/admin/ledger",
+                            search: { tab: "vouchers", dept: "restaurant" } as any,
+                          })
+                        }
                       >
                         <Receipt size={13} />
-                        تسجيل حركة
+                        <span>سند صرف / فاتورة (المالية)</span>
                       </Button>
                       <Button
                         size="icon"

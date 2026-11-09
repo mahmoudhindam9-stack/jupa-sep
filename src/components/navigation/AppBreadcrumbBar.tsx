@@ -62,7 +62,9 @@ export function AppBreadcrumbBar({
   const navigate = useNavigate();
 
   const pathname = location.pathname;
-  const searchStr = typeof window !== "undefined" ? window.location.search : "";
+  const searchStr =
+    (location as any).searchStr ??
+    (typeof window !== "undefined" ? window.location.search : "");
 
   const isRootDashboard =
     (pathname === "/admin" || pathname === "/admin/") &&

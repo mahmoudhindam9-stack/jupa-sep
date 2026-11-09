@@ -870,17 +870,17 @@ const PERMISSION_CATEGORIES: PermissionCategory[] = [
   },
   {
     id: "dept_shift_audit",
-    name: "7. مربع قسم: تدقيق الورديات",
-    shortTitle: "تدقيق الورديات",
-    desc: "مراجعة ومطابقة إغلاقات ورديات الكاشير في المطعم والحديقة مع أرصدة الخزائن الفعلية",
+    name: "7. مربع قسم: تدقيق الورديات وسجل العمليات",
+    shortTitle: "تدقيق الورديات وسجل العمليات",
+    desc: "مراجعة ومطابقة إغلاقات ورديات الكاشير في المطعم والحديقة وسجل الرقابة الأمنية وتتبع جميع العمليات بالنظام",
     mainPageKey: "page_shift_audit",
-    headerGradient: "from-amber-500/20 via-yellow-500/10 to-transparent border-amber-500/30",
-    accentBadge: "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30",
+    headerGradient: "from-teal-500/20 via-emerald-500/10 to-transparent border-teal-500/30",
+    accentBadge: "bg-teal-500/15 text-teal-700 dark:text-teal-300 border-teal-500/30",
     permissions: [
       {
         key: "page_shift_audit",
-        name: "الدخول إلى صفحة تدقيق الورديات",
-        desc: "إظهار مربع قسم تدقيق الورديات في الشاشة الرئيسية والسماح بالدخول إليه",
+        name: "الدخول إلى قسم تدقيق الورديات وسجل العمليات",
+        desc: "إظهار مربع قسم تدقيق الورديات وسجل العمليات في الشاشة الرئيسية والسماح بالدخول إليه",
         kind: "main",
       },
       {
@@ -895,27 +895,16 @@ const PERMISSION_CATEGORIES: PermissionCategory[] = [
         desc: "إظهار صفحة كشف فروقات الصندوق واعتماد تسوية الورديات",
         kind: "page",
       },
-    ],
-  },
-  {
-    id: "dept_audit_logs",
-    name: "8. مربع قسم: سجل العمليات",
-    shortTitle: "سجل العمليات",
-    desc: "الرقابة الأمنية الشاملة وسجل تتبع جميع الحركات والتعديلات والعمليات الحساسة بالنظام",
-    mainPageKey: "page_audit_logs",
-    headerGradient: "from-slate-500/20 via-zinc-500/10 to-transparent border-slate-500/30",
-    accentBadge: "bg-slate-500/15 text-slate-700 dark:text-slate-300 border-slate-500/30",
-    permissions: [
       {
         key: "page_audit_logs",
-        name: "الدخول إلى صفحة سجل العمليات",
-        desc: "إظهار مربع قسم سجل العمليات في الشاشة الرئيسية والسماح بالدخول إليه",
-        kind: "main",
+        name: "الدخول إلى تبويب سجل العمليات والرقابة المباشر",
+        desc: "السماح باستعراض سجل العمليات والأحداث الرقابية داخل قسم تدقيق الورديات وسجل العمليات",
+        kind: "page",
       },
       {
         key: "system_audit_logs",
-        name: "الدخول إلى صفحة تصفية وتصدير سجلات الرقابة الأمنية",
-        desc: "إظهار صفحة البحث في سجلات الأمان حسب المستخدم أو نوع العملية وتصديرها",
+        name: "تصفية وتصدير سجلات الرقابة الأمنية",
+        desc: "إظهار أدوات البحث والتصفية في سجلات الأمان حسب المستخدم أو نوع العملية وتصديرها",
         kind: "page",
       },
       {
@@ -928,7 +917,7 @@ const PERMISSION_CATEGORIES: PermissionCategory[] = [
   },
   {
     id: "dept_developer",
-    name: "9. مربع قسم: خيارات المطور والنسخ الاحتياطي",
+    name: "8. مربع قسم: خيارات المطور والنسخ الاحتياطي",
     shortTitle: "خيارات المطور والنسخ الاحتياطي",
     desc: "استوديو المطور Pro، النسخ الاحتياطي واستعادة البيانات، تحديثات GitHub، قاعدة بيانات أكسس، وإعدادات الفروع",
     mainPageKey: "page_developer",

@@ -80,6 +80,7 @@ import { RestocashLogo } from "@/components/RestocashLogo";
 import { ParkShiftLauncherModal } from "@/components/mall/ParkShiftLauncherModal";
 import { ParkShiftClosingReportModal } from "@/components/mall/ParkShiftClosingReportModal";
 import { ParkCashierTreasuryModal } from "./ParkCashierTreasuryModal";
+import { useSettings } from "@/hooks/use-settings";
 
 export { ParkShiftLauncherModal, ParkShiftClosingReportModal, ParkCashierTreasuryModal };
 
@@ -137,11 +138,12 @@ export function ParkTicketsPOSView({ onClosePOS }: ParkTicketsPOSViewProps) {
   const currentIdentity = getCurrentUserIdentitySync();
   const isCashier = currentIdentity.isCashier;
   const canCloseShifts = canCurrentUserCloseShift();
+  const { currency: globalPosCurrency, changeCurrency: setGlobalPosCurrency, exchangeRates } =
+    useSettings();
   const state = erpStore.getState();
   const ticketItems = erpStore.getParkTicketItems().filter((t) => t.is_active);
   const customers = erpStore.getParkCustomers();
   const activeShift = erpStore.getActiveParkShift();
-  const baseSspRate = erpStore.getExchangeRate("SSP");
 
   // Filtering & Search state
   const [search, setSearch] = useState("");
@@ -152,9 +154,32 @@ export function ParkTicketsPOSView({ onClosePOS }: ParkTicketsPOSViewProps) {
   // Cart State
   const [cartItems, setCartItems] = useState<ParkTicketCartItem[]>([]);
 
-  console.log("ParkTicketsPOS rendering, cartItems:", cartItems);
-  const [currency, setCurrency] = useState<"USD" | "SSP">("USD");
+  const [currency, setCurrencyState] = useState<"USD" | "SSP" | "EGP">(
+    (globalPosCurrency as "USD" | "SSP" | "EGP") || "USD",
+  );
+
+  useEffect(() => {
+    if (globalPosCurrency && globalPosCurrency !== currency) {
+      setCurrencyState(globalPosCurrency as "USD" | "SSP" | "EGP");
+    }
+  }, [globalPosCurrency]);
+
+  const setCurrency = (nextCurr: "USD" | "SSP" | "EGP") => {
+    setCurrencyState(nextCurr);
+    setGlobalPosCurrency(nextCurr);
+  };
+
+  const baseSspRate = useMemo(() => {
+    if (currency === "USD") return 1;
+    return Number(erpStore.getExchangeRate(currency) || exchangeRates[currency] || 1);
+  }, [currency, exchangeRates]);
+
   const [customSspRate, setCustomSspRate] = useState<number>(baseSspRate);
+
+  useEffect(() => {
+    setCustomSspRate(baseSspRate);
+  }, [baseSspRate, currency]);
+
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "visa" | "bank_transfer" | "credit">(
     "cash",
   );
@@ -187,20 +212,21 @@ export function ParkTicketsPOSView({ onClosePOS }: ParkTicketsPOSViewProps) {
     return cartItems.reduce((sum, item) => sum + item.price_usd * item.quantity, 0);
   }, [cartItems]);
 
-  const effectiveRate = currency === "SSP" ? customSspRate : 1;
+  const effectiveRate =
+    currency === "USD" ? 1 : Number(customSspRate) > 0 ? Number(customSspRate) : baseSspRate;
   const totalPayableInCurrency = useMemo(() => {
-    if (currency === "SSP") {
-      return Math.round(subtotalUsd * customSspRate);
+    if (currency !== "USD") {
+      return Math.round(subtotalUsd * effectiveRate);
     }
     return subtotalUsd;
-  }, [subtotalUsd, currency, customSspRate]);
+  }, [subtotalUsd, currency, effectiveRate]);
 
-  // Rate warning check
+  // Rate warning check (±10%)
   const isRateWarning = useMemo(() => {
-    if (currency !== "SSP") return false;
-    const diffRatio = Math.abs(customSspRate - baseSspRate) / baseSspRate;
+    if (currency === "USD" || baseSspRate <= 0) return false;
+    const diffRatio = Math.abs(effectiveRate - baseSspRate) / baseSspRate;
     return diffRatio > 0.1; // >10% deviation
-  }, [currency, customSspRate, baseSspRate]);
+  }, [currency, effectiveRate, baseSspRate]);
 
   // Filtered ticket items
   const filteredTickets = useMemo(() => {
@@ -429,9 +455,9 @@ export function ParkTicketsPOSView({ onClosePOS }: ParkTicketsPOSViewProps) {
   }, [cartItems]);
 
   const formatTicketPrice = (usd: number) => {
-    if (currency === "SSP") {
-      const ssp = Math.round(usd * customSspRate);
-      return `${ssp.toLocaleString()} SSP`;
+    if (currency !== "USD") {
+      const converted = Math.round(usd * effectiveRate);
+      return `${converted.toLocaleString()} ${currency}`;
     }
     return `$${usd.toFixed(2)} USD`;
   };
@@ -591,18 +617,29 @@ export function ParkTicketsPOSView({ onClosePOS }: ParkTicketsPOSViewProps) {
             >
               جنيه (SSP)
             </button>
+            <button
+              type="button"
+              onClick={() => setCurrency("EGP")}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                currency === "EGP"
+                  ? "bg-primary text-primary-foreground shadow"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              جنيه مصري (EGP)
+            </button>
           </div>
 
-          {currency === "SSP" && (
+          {currency !== "USD" && (
             <div className="flex items-center gap-1.5 bg-slate-800/80 px-2.5 py-1 rounded-xl border border-slate-700 text-xs">
               <span className="text-slate-400 font-bold">$1 =</span>
               <input
                 type="number"
                 value={customSspRate}
-                onChange={(e) => setCustomSspRate(Number(e.target.value) || baseSspRate)}
+                onChange={(e) => setCustomSspRate(Number(e.target.value) || 0)}
                 className="w-16 bg-slate-900 text-white font-bold text-center rounded-lg border border-slate-700 px-1 py-0.5 text-xs outline-none focus:border-primary"
               />
-              <span className="text-slate-400 font-bold">SSP</span>
+              <span className="text-slate-400 font-bold">{currency}</span>
             </div>
           )}
         </div>
@@ -935,9 +972,6 @@ export function ParkTicketsPOSView({ onClosePOS }: ParkTicketsPOSViewProps) {
                     {formatTicketPrice(subtotalUsd)}
                   </span>
                 </div>
-                <p className="text-[10px] text-muted-foreground font-medium">
-                  يتم تحديد العملة وطريقة الدفع وطباعة التذاكر عند الضغط على إتمام الطلب.
-                </p>
               </div>
 
               {/* Big Action Checkout Button */}
@@ -979,274 +1013,261 @@ export function ParkTicketsPOSView({ onClosePOS }: ParkTicketsPOSViewProps) {
         </div>
       )}
 
-      {/* DETAILED CHECKOUT MODAL (RESTANT POS STYLE CHECKOUT FLOW) */}
+      {/* DETAILED CHECKOUT MODAL (COMPACT SINGLE-VIEWPORT 2-COLUMN LAYOUT) */}
       <Dialog open={isCheckoutModalOpen} onOpenChange={setIsCheckoutModalOpen}>
-        <DialogContent className="sm:max-w-[550px] rounded-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-3xl rounded-3xl p-5">
+          <DialogHeader className="pb-2 border-b border-border/60">
             <DialogTitle className="text-base font-black flex items-center gap-2 text-teal-600">
               <CreditCard size={18} />
               تفاصيل إتمام وتأكيد طلب التذاكر
             </DialogTitle>
-            <DialogDescription className="text-xs">
-              حدد طريقة الدفع، والعملة، ورقم التأكيد والمعلومات المطلوبة لإصدار التذاكر والطباعة.
-            </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-2">
-            {/* CURRENCY & EXCHANGE RATE SELECTOR */}
-            <div className="p-3.5 rounded-2xl bg-teal-500/5 border border-teal-500/20 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black text-foreground flex items-center gap-1.5">
-                  <DollarSign size={15} className="text-teal-600" />
-                  عملة التحصيل وإسعار الفاتورة:
-                </span>
-                <div className="flex items-center gap-1 bg-background p-1 rounded-xl border border-border">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-2">
+            {/* Right Column: Currency & Exchange Rate + Payment Method + Conditional Inputs */}
+            <div className="space-y-3">
+              {/* CURRENCY & EXCHANGE RATE (المعامل) */}
+              <div className="p-3 rounded-2xl bg-teal-500/5 border border-teal-500/20 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-foreground flex items-center gap-1.5">
+                    <DollarSign size={14} className="text-teal-600" />
+                    عملة الطلب:
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded-xl bg-teal-600/15 text-teal-700 dark:text-teal-300 font-black text-xs border border-teal-500/30">
+                    {currency === "USD"
+                      ? "دولار أمريكي (USD $)"
+                      : currency === "SSP"
+                        ? "جنيه ج.س (SSP)"
+                        : "جنيه مصري (EGP)"}
+                  </span>
+                </div>
+
+                {currency !== "USD" && (
+                  <div className="space-y-1.5 pt-1.5 border-t border-teal-500/10">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold text-foreground">
+                        المعامل ($1 = {baseSspRate} {currency}):
+                      </span>
+                      <div className="flex items-center gap-1 w-[130px]">
+                        <Input
+                          type="number"
+                          step="any"
+                          min="0.0001"
+                          value={customSspRate}
+                          onChange={(e) => setCustomSspRate(parseFloat(e.target.value) || 0)}
+                          className="h-8 rounded-xl font-bold text-xs text-center"
+                        />
+                        <span className="text-[11px] font-bold text-muted-foreground">
+                          {currency}
+                        </span>
+                      </div>
+                    </div>
+
+                    {isRateWarning && (
+                      <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400 text-[11px] font-bold flex items-start gap-1.5">
+                        <AlertCircle size={13} className="shrink-0 mt-0.5" />
+                        <span>
+                          تنبيه: المعامل الجديد ({effectiveRate}) يتخطى 10% من المعامل الرئيسي (
+                          {baseSspRate})
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* PAYMENT METHOD SELECTOR */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-black text-foreground block">طريقة الدفع:</label>
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={() => setCurrency("USD")}
-                    className={`px-3 py-1 rounded-lg text-xs font-black transition cursor-pointer ${
-                      currency === "USD"
-                        ? "bg-teal-600 text-white shadow-xs"
-                        : "text-muted-foreground hover:text-foreground"
+                    onClick={() => setPaymentMethod("cash")}
+                    className={`p-2.5 rounded-xl border text-center font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                      paymentMethod === "cash"
+                        ? "border-teal-600 bg-teal-600/10 text-teal-700 dark:text-teal-300 ring-2 ring-teal-600/30 font-black"
+                        : "border-border bg-card text-muted-foreground hover:border-muted-foreground"
                     }`}
                   >
-                    دولار ($)
+                    <DollarSign size={15} />
+                    <span>نقدي</span>
                   </button>
+
                   <button
                     type="button"
-                    onClick={() => setCurrency("SSP")}
-                    className={`px-3 py-1 rounded-lg text-xs font-black transition cursor-pointer ${
-                      currency === "SSP"
-                        ? "bg-teal-600 text-white shadow-xs"
-                        : "text-muted-foreground hover:text-foreground"
+                    onClick={() => setPaymentMethod("visa")}
+                    className={`p-2.5 rounded-xl border text-center font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                      paymentMethod === "visa"
+                        ? "border-teal-600 bg-teal-600/10 text-teal-700 dark:text-teal-300 ring-2 ring-teal-600/30 font-black"
+                        : "border-border bg-card text-muted-foreground hover:border-muted-foreground"
                     }`}
                   >
-                    جنيه (SSP)
+                    <CreditCard size={15} />
+                    <span>فيزا / بطاقة</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod("bank_transfer")}
+                    className={`p-2.5 rounded-xl border text-center font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                      paymentMethod === "bank_transfer"
+                        ? "border-teal-600 bg-teal-600/10 text-teal-700 dark:text-teal-300 ring-2 ring-teal-600/30 font-black"
+                        : "border-border bg-card text-muted-foreground hover:border-muted-foreground"
+                    }`}
+                  >
+                    <Building2 size={15} />
+                    <span>تحويل بنكي</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod("credit")}
+                    className={`p-2.5 rounded-xl border text-center font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                      paymentMethod === "credit"
+                        ? "border-teal-600 bg-teal-600/10 text-teal-700 dark:text-teal-300 ring-2 ring-teal-600/30 font-black"
+                        : "border-border bg-card text-muted-foreground hover:border-muted-foreground"
+                    }`}
+                  >
+                    <Briefcase size={15} />
+                    <span>آجل (حساب)</span>
                   </button>
                 </div>
               </div>
 
-              {currency === "SSP" && (
-                <div className="space-y-2 pt-2 border-t border-teal-500/10">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-bold text-foreground">
-                      سعر الصرف المعتمد ($1 =):
-                    </span>
-                    <div className="flex items-center gap-1 w-[140px]">
-                      <Input
-                        type="number"
-                        value={customSspRate}
-                        onChange={(e) => setCustomSspRate(Number(e.target.value) || baseSspRate)}
-                        className="h-8 rounded-xl font-bold text-xs text-center"
-                      />
-                      <span className="text-[11px] font-bold text-muted-foreground">SSP</span>
-                    </div>
-                  </div>
+              {/* CONDITIONAL PAYMENT INPUTS */}
+              {paymentMethod === "visa" && (
+                <div className="space-y-1 bg-amber-500/5 p-2.5 rounded-xl border border-amber-500/20">
+                  <label className="text-xs font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1">
+                    <span>رقم تأكيد عملية الفيزا *</span>
+                  </label>
+                  <Input
+                    placeholder="أدخل رقم التأكيد / الإيصال الخاص بالبطاقة..."
+                    value={referenceNumber}
+                    onChange={(e) => setReferenceNumber(e.target.value)}
+                    className="h-8 rounded-xl font-mono text-xs"
+                  />
+                </div>
+              )}
 
-                  {isRateWarning && (
-                    <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400 text-[11px] font-bold flex items-start gap-1.5">
-                      <AlertCircle size={14} className="shrink-0 mt-0.5" />
-                      <span>
-                        تنبيه: سعر الصرف المدخل يختلف بأكثر من 10% عن سعر الصرف الرسمي النظامي ($1 ={" "}
-                        {baseSspRate} SSP)!
-                      </span>
-                    </div>
-                  )}
+              {paymentMethod === "bank_transfer" && (
+                <div className="space-y-1 bg-blue-500/5 p-2.5 rounded-xl border border-blue-500/20">
+                  <label className="text-xs font-bold text-blue-800 dark:text-blue-300 flex items-center gap-1">
+                    <span>رقم التحويل البنكي / العملية *</span>
+                  </label>
+                  <Input
+                    placeholder="أدخل مرجع عملية التحويل البنكي..."
+                    value={referenceNumber}
+                    onChange={(e) => setReferenceNumber(e.target.value)}
+                    className="h-8 rounded-xl font-mono text-xs"
+                  />
+                </div>
+              )}
+
+              {paymentMethod === "credit" && (
+                <div className="space-y-1.5 bg-purple-500/5 p-2.5 rounded-xl border border-purple-500/20">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-purple-800 dark:text-purple-300">
+                      اختيار العميل للبيع الآجل *
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setIsQuickAddCustomerOpen(true)}
+                      className="text-[11px] text-purple-600 hover:underline font-bold flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus size={12} />
+                      عميل جديد
+                    </button>
+                  </div>
+                  <Select value={selectedCustomerId} onValueChange={setSelectedCustomerId}>
+                    <SelectTrigger className="h-8 rounded-xl text-xs font-bold">
+                      <SelectValue placeholder="اختر العميل من القائمة..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {customers.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name_ar} {c.company ? `(${c.company})` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               )}
             </div>
 
-            {/* PAYMENT METHOD SELECTOR */}
-            <div className="space-y-2">
-              <label className="text-xs font-black text-foreground block">طريقة الدفع:</label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod("cash")}
-                  className={`p-3 rounded-2xl border text-center font-bold text-xs transition cursor-pointer flex flex-col items-center gap-1.5 ${
-                    paymentMethod === "cash"
-                      ? "border-teal-600 bg-teal-600/10 text-teal-700 dark:text-teal-300 ring-2 ring-teal-600/30 font-black"
-                      : "border-border bg-card text-muted-foreground hover:border-muted-foreground"
-                  }`}
-                >
-                  <DollarSign size={18} />
-                  <span>نقدي</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod("visa")}
-                  className={`p-3 rounded-2xl border text-center font-bold text-xs transition cursor-pointer flex flex-col items-center gap-1.5 ${
-                    paymentMethod === "visa"
-                      ? "border-teal-600 bg-teal-600/10 text-teal-700 dark:text-teal-300 ring-2 ring-teal-600/30 font-black"
-                      : "border-border bg-card text-muted-foreground hover:border-muted-foreground"
-                  }`}
-                >
-                  <CreditCard size={18} />
-                  <span>فيزا / بطاقة</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod("bank_transfer")}
-                  className={`p-3 rounded-2xl border text-center font-bold text-xs transition cursor-pointer flex flex-col items-center gap-1.5 ${
-                    paymentMethod === "bank_transfer"
-                      ? "border-teal-600 bg-teal-600/10 text-teal-700 dark:text-teal-300 ring-2 ring-teal-600/30 font-black"
-                      : "border-border bg-card text-muted-foreground hover:border-muted-foreground"
-                  }`}
-                >
-                  <Building2 size={18} />
-                  <span>تحويل بنكي</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod("credit")}
-                  className={`p-3 rounded-2xl border text-center font-bold text-xs transition cursor-pointer flex flex-col items-center gap-1.5 ${
-                    paymentMethod === "credit"
-                      ? "border-teal-600 bg-teal-600/10 text-teal-700 dark:text-teal-300 ring-2 ring-teal-600/30 font-black"
-                      : "border-border bg-card text-muted-foreground hover:border-muted-foreground"
-                  }`}
-                >
-                  <Briefcase size={18} />
-                  <span>آجل (حساب)</span>
-                </button>
-              </div>
-            </div>
-
-            {/* CONDITIONAL PAYMENT INPUTS */}
-            {paymentMethod === "visa" && (
-              <div className="space-y-1 bg-amber-500/5 p-3.5 rounded-2xl border border-amber-500/20">
-                <label className="text-xs font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1">
-                  <span>رقم تأكيد عملية الفيزا *</span>
-                  <span className="text-[10px] text-rose-500 font-normal">(مطلوب إجباري)</span>
-                </label>
-                <Input
-                  placeholder="أدخل رقم التأكيد / الإيصال الخاص بالبطاقة..."
-                  value={referenceNumber}
-                  onChange={(e) => setReferenceNumber(e.target.value)}
-                  className="h-9 rounded-xl font-mono text-xs"
-                />
-              </div>
-            )}
-
-            {paymentMethod === "bank_transfer" && (
-              <div className="space-y-1 bg-blue-500/5 p-3.5 rounded-2xl border border-blue-500/20">
-                <label className="text-xs font-bold text-blue-800 dark:text-blue-300 flex items-center gap-1">
-                  <span>رقم التحويل البنكي / العملية *</span>
-                  <span className="text-[10px] text-rose-500 font-normal">(مطلوب إجباري)</span>
-                </label>
-                <Input
-                  placeholder="أدخل مرجع عملية التحويل البنكي..."
-                  value={referenceNumber}
-                  onChange={(e) => setReferenceNumber(e.target.value)}
-                  className="h-9 rounded-xl font-mono text-xs"
-                />
-              </div>
-            )}
-
-            {paymentMethod === "credit" && (
-              <div className="space-y-2 bg-purple-500/5 p-3.5 rounded-2xl border border-purple-500/20">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-purple-800 dark:text-purple-300">
-                    اختيار العميل للبيع الآجل *
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setIsQuickAddCustomerOpen(true)}
-                    className="text-[11px] text-purple-600 hover:underline font-bold flex items-center gap-1 cursor-pointer"
-                  >
-                    <Plus size={12} />
-                    عميل جديد
-                  </button>
+            {/* Left Column: Date/Time + Notes + Total Payable + Confirm Buttons */}
+            <div className="flex flex-col justify-between space-y-3">
+              <div className="space-y-3">
+                {/* DATE & TIME SYSTEM CONTROLS */}
+                <div className="grid grid-cols-2 gap-2.5 p-2.5 rounded-2xl bg-muted/30 border border-border">
+                  <div>
+                    <label className="text-[11px] font-bold text-muted-foreground block mb-1">
+                      تاريخ الفاتورة:
+                    </label>
+                    <Input
+                      type="date"
+                      value={txDate}
+                      onChange={(e) => setTxDate(e.target.value)}
+                      className="h-8 text-xs font-bold rounded-xl"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-bold text-muted-foreground block mb-1">
+                      وقت الفاتورة:
+                    </label>
+                    <Input
+                      type="time"
+                      value={txTime}
+                      onChange={(e) => setTxTime(e.target.value)}
+                      className="h-8 text-xs font-bold rounded-xl"
+                    />
+                  </div>
                 </div>
-                <Select value={selectedCustomerId} onValueChange={setSelectedCustomerId}>
-                  <SelectTrigger className="h-9 rounded-xl text-xs font-bold">
-                    <SelectValue placeholder="اختر العميل من القائمة..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {customers.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name_ar} {c.company ? `(${c.company})` : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
 
-            {/* DATE & TIME SYSTEM CONTROLS (REQUIREMENT 7) */}
-            <div className="grid grid-cols-2 gap-3 p-3 rounded-2xl bg-muted/30 border border-border">
-              <div>
-                <label className="text-[11px] font-bold text-muted-foreground block mb-1">
-                  تاريخ الفاتورة المعاملة:
-                </label>
-                <Input
-                  type="date"
-                  value={txDate}
-                  onChange={(e) => setTxDate(e.target.value)}
-                  className="h-9 text-xs font-bold rounded-xl"
-                />
+                <div>
+                  <label className="text-xs font-bold text-foreground block mb-1">
+                    ملاحظات الفاتورة (اختياري):
+                  </label>
+                  <Input
+                    placeholder="أدخل أي ملاحظات خاصة على الفاتورة..."
+                    value={overallNotes}
+                    onChange={(e) => setOverallNotes(e.target.value)}
+                    className="h-8 text-xs font-medium rounded-xl"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="text-[11px] font-bold text-muted-foreground block mb-1">
-                  وقت الفاتورة المعاملة:
-                </label>
-                <Input
-                  type="time"
-                  value={txTime}
-                  onChange={(e) => setTxTime(e.target.value)}
-                  className="h-9 text-xs font-bold rounded-xl"
-                />
-              </div>
-            </div>
 
-            <div>
-              <label className="text-xs font-bold text-foreground block mb-1">
-                ملاحظات الفاتورة العام (اختياري):
-              </label>
-              <Input
-                placeholder="أدخل أي ملاحظات خاصة على الفاتورة..."
-                value={overallNotes}
-                onChange={(e) => setOverallNotes(e.target.value)}
-                className="h-9 text-xs font-medium rounded-xl"
-              />
-            </div>
+              <div className="space-y-3">
+                {/* TOTAL PAYABLE BOX */}
+                <div className="p-3.5 rounded-2xl bg-teal-600/10 text-teal-900 dark:text-teal-100 border border-teal-600/20 flex items-center justify-between">
+                  <span className="text-xs font-black">إجمالي المستحق للدفع:</span>
+                  <span className="text-xl font-black text-teal-600 dark:text-teal-400">
+                    {currency === "USD"
+                      ? `$${totalPayableInCurrency.toFixed(2)} USD`
+                      : `${totalPayableInCurrency.toLocaleString()} ${currency}`}
+                  </span>
+                </div>
 
-            {/* TOTAL PAYABLE BOX */}
-            <div className="p-3.5 rounded-2xl bg-teal-600/10 text-teal-900 dark:text-teal-100 border border-teal-600/20 flex items-center justify-between">
-              <div>
-                <span className="text-xs font-black block">إجمالي المستحق للدفع:</span>
-                <span className="text-[10px] text-muted-foreground font-medium">
-                  شامل القيود المحاسبية التلقائية
-                </span>
+                <div className="flex items-center justify-between gap-2 pt-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsCheckoutModalOpen(false)}
+                    className="rounded-xl h-10 px-4 font-bold"
+                  >
+                    إلغاء
+                  </Button>
+
+                  <Button
+                    onClick={handleProcessSale}
+                    className="flex-1 bg-teal-600 hover:bg-teal-700 text-white font-black text-xs rounded-xl gap-2 cursor-pointer h-10 px-5"
+                  >
+                    <Printer size={16} />
+                    إتمام الطلب وإصدار التذاكر
+                  </Button>
+                </div>
               </div>
-              <span className="text-2xl font-black text-teal-600 dark:text-teal-400">
-                {currency === "USD"
-                  ? `$${totalPayableInCurrency.toFixed(2)} USD`
-                  : `${totalPayableInCurrency.toLocaleString()} SSP`}
-              </span>
             </div>
           </div>
-
-          <DialogFooter className="gap-2 sm:justify-between">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsCheckoutModalOpen(false)}
-              className="rounded-xl"
-            >
-              إلغاء
-            </Button>
-
-            <Button
-              onClick={handleProcessSale}
-              className="bg-teal-600 hover:bg-teal-700 text-white font-black text-xs rounded-xl gap-2 cursor-pointer h-10 px-5"
-            >
-              <Printer size={16} />
-              إتمام الطلب وإصدار التذاكر
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -2080,63 +2101,58 @@ export function ParkTicketPricesModal({
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="sm:max-w-[760px] rounded-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-3">
-              <div>
+        <DialogContent className="sm:max-w-4xl rounded-3xl p-4 sm:p-5">
+          <DialogHeader className="pb-2 border-b border-border/60">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
                 <DialogTitle className="text-base font-black flex items-center gap-2 text-teal-600">
                   <Settings size={18} />
-                  إدارة أسعار وتذاكر الدخول
+                  أسعار وتصنيفات التذاكر
                 </DialogTitle>
-                <DialogDescription className="text-xs mt-0.5">
-                  إضافة، تعديل، وحذف أنواع وأسعار تذاكر الحديقة والمرافق وتحديثها فوراً بنقاط البيع.
-                </DialogDescription>
+                <Badge variant="outline" className="h-7 px-2.5 font-bold text-xs rounded-xl">
+                  {items.length} تذكرة
+                </Badge>
               </div>
 
-              <Button
-                onClick={handleOpenAdd}
-                className="bg-teal-600 hover:bg-teal-700 text-white font-black rounded-xl text-xs gap-1.5 cursor-pointer shadow-xs h-9 px-3.5 self-start sm:self-auto"
-              >
-                <Plus size={15} />
-                إضافة نوع تذكرة جديد
-              </Button>
+              <div className="flex items-center gap-2">
+                <div className="relative w-48 sm:w-56">
+                  <Search size={13} className="absolute right-2.5 top-2.5 text-muted-foreground" />
+                  <Input
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="بحث عن تذكرة بالاسم..."
+                    className="pr-8 h-8 text-xs rounded-xl bg-card"
+                  />
+                </div>
+                <Button
+                  onClick={handleOpenAdd}
+                  className="bg-teal-600 hover:bg-teal-700 text-white font-black rounded-xl text-xs gap-1.5 cursor-pointer shadow-xs h-8 px-3"
+                >
+                  <Plus size={14} />
+                  إضافة تذكرة
+                </Button>
+              </div>
             </div>
           </DialogHeader>
 
-          <div className="space-y-3 py-2 text-xs">
-            {/* Search Filter Bar */}
-            <div className="flex items-center justify-between gap-2">
-              <div className="relative flex-1">
-                <Search size={14} className="absolute right-3 top-2.5 text-muted-foreground" />
-                <Input
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="بحث عن تذكرة بالاسم..."
-                  className="pr-9 h-9 text-xs rounded-xl bg-card"
-                />
-              </div>
-              <Badge variant="outline" className="h-9 px-3 font-bold text-xs rounded-xl">
-                إجمالي التذاكر: {items.length}
-              </Badge>
-            </div>
-
-            {/* Table of items */}
+          <div className="py-1 text-xs">
+            {/* Compact Table of items */}
             <div className="overflow-x-auto border border-border rounded-2xl bg-card">
               <table className="w-full text-right border-collapse text-xs">
                 <thead>
                   <tr className="bg-muted/60 border-b border-border font-black text-muted-foreground">
-                    <th className="p-3">اسم التذكرة</th>
-                    <th className="p-3 text-center">التصنيف</th>
-                    <th className="p-3 text-center">الأفراد</th>
-                    <th className="p-3 text-center">السعر الرسمي ($)</th>
-                    <th className="p-3 text-center">الحالة</th>
-                    <th className="p-3 text-center">إجراءات</th>
+                    <th className="py-2 px-3">اسم التذكرة</th>
+                    <th className="py-2 px-3 text-center">التصنيف</th>
+                    <th className="py-2 px-3 text-center">الأفراد</th>
+                    <th className="py-2 px-3 text-center">السعر الرسمي ($)</th>
+                    <th className="py-2 px-3 text-center">الحالة</th>
+                    <th className="py-2 px-3 text-center">إجراءات</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
                   {filteredItems.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="p-8 text-center text-muted-foreground">
+                      <td colSpan={6} className="p-6 text-center text-muted-foreground">
                         لا توجد تذاكر مطابقة لخيارات البحث
                       </td>
                     </tr>
@@ -2145,44 +2161,44 @@ export function ParkTicketPricesModal({
                       const typeInfo = getTypeLabel(it.type);
                       return (
                         <tr key={it.id} className="hover:bg-muted/30 transition-colors">
-                          <td className="p-3">
-                            <div className="font-bold text-foreground">{it.name_ar}</div>
+                          <td className="py-2 px-3">
+                            <span className="font-bold text-foreground">{it.name_ar}</span>
                             {it.name_en && (
-                              <div className="text-[10px] text-muted-foreground font-sans">
-                                {it.name_en}
-                              </div>
+                              <span className="text-[10px] text-muted-foreground font-sans mr-2">
+                                ({it.name_en})
+                              </span>
                             )}
                           </td>
-                          <td className="p-3 text-center">
+                          <td className="py-2 px-3 text-center">
                             <span
-                              className={`px-2 py-0.5 rounded-md text-[11px] font-bold border ${typeInfo.color}`}
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${typeInfo.color}`}
                             >
                               {typeInfo.label}
                             </span>
                           </td>
-                          <td className="p-3 text-center font-bold">
-                            <span className="bg-muted px-2 py-1 rounded-lg">
+                          <td className="py-2 px-3 text-center font-bold">
+                            <span className="bg-muted px-2 py-0.5 rounded-lg text-[11px]">
                               {it.persons_count || 1} فرد
                             </span>
                           </td>
-                          <td className="p-3 text-center">
+                          <td className="py-2 px-3 text-center">
                             <div className="flex items-center justify-center gap-1">
-                              <span className="font-mono font-black text-teal-600 text-sm">$</span>
+                              <span className="font-mono font-black text-teal-600 text-xs">$</span>
                               <Input
                                 type="number"
                                 min="0"
                                 step="1"
                                 value={it.price_usd}
                                 onChange={(e) => handlePriceChange(it.id, Number(e.target.value))}
-                                className="h-8 w-20 text-center font-mono font-black text-xs rounded-xl"
+                                className="h-7 w-18 text-center font-mono font-black text-xs rounded-xl"
                               />
                             </div>
                           </td>
-                          <td className="p-3 text-center">
+                          <td className="py-2 px-3 text-center">
                             <button
                               type="button"
                               onClick={() => handleToggleActive(it)}
-                              className={`px-2.5 py-1 rounded-full text-[11px] font-black cursor-pointer transition border ${
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-black cursor-pointer transition border ${
                                 it.is_active
                                   ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-300"
                                   : "bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-300"
@@ -2191,16 +2207,15 @@ export function ParkTicketPricesModal({
                               {it.is_active ? "● مفعلة" : "○ معطلة"}
                             </button>
                           </td>
-                          <td className="p-3 text-center">
+                          <td className="py-2 px-3 text-center">
                             <div className="flex items-center justify-center gap-1">
                               <Button
                                 size="sm"
                                 variant="outline"
                                 onClick={() => handleOpenEdit(it)}
-                                className="h-8 px-2.5 text-xs text-blue-700 bg-blue-50 hover:bg-blue-100 border-blue-200 dark:border-blue-900 rounded-xl cursor-pointer gap-1"
-                                title="تعديل بيانات التذكرة"
+                                className="h-7 px-2 text-[11px] text-blue-700 bg-blue-50 hover:bg-blue-100 border-blue-200 dark:border-blue-900 rounded-xl cursor-pointer gap-1"
                               >
-                                <Edit2 size={12} />
+                                <Edit2 size={11} />
                                 تعديل
                               </Button>
 
@@ -2208,10 +2223,9 @@ export function ParkTicketPricesModal({
                                 size="sm"
                                 variant="outline"
                                 onClick={() => setDeletingItem(it)}
-                                className="h-8 px-2.5 text-xs text-rose-600 bg-rose-50 hover:bg-rose-100 border-rose-200 dark:border-rose-900 rounded-xl cursor-pointer gap-1"
-                                title="حذف التذكرة"
+                                className="h-7 px-2 text-[11px] text-rose-600 bg-rose-50 hover:bg-rose-100 border-rose-200 dark:border-rose-900 rounded-xl cursor-pointer gap-1"
                               >
-                                <Trash2 size={12} />
+                                <Trash2 size={11} />
                                 حذف
                               </Button>
                             </div>
@@ -2225,10 +2239,10 @@ export function ParkTicketPricesModal({
             </div>
           </div>
 
-          <DialogFooter className="border-t border-border pt-3">
+          <DialogFooter className="border-t border-border pt-2">
             <Button
               onClick={onClose}
-              className="bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-black px-6"
+              className="bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-black px-5 h-9 text-xs"
             >
               حفظ وإغلاق
             </Button>
@@ -2245,48 +2259,45 @@ export function ParkTicketPricesModal({
                 {editingItem ? <Edit2 size={18} /> : <Plus size={18} />}
                 {editingItem ? "تعديل بيانات التذكرة" : "إضافة نوع تذكرة جديد"}
               </DialogTitle>
-              <DialogDescription className="text-xs">
-                {editingItem
-                  ? "قم بتعديل بيانات التذكرة والسعر والأفراد المشمولين ثم اضغط حفظ التعديلات."
-                  : "أدخل تفاصيل التذكرة الجديدة والسعر بالدولار لإدراجها في شاشات المبيعات."}
-              </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-3.5 py-3 text-xs">
-              <div className="space-y-1.5">
-                <Label className="font-bold text-foreground">
-                  اسم التذكرة (بالعربية) <span className="text-rose-500">*</span>
-                </Label>
-                <Input
-                  required
-                  value={formData.name_ar}
-                  onChange={(e) => setFormData({ ...formData, name_ar: e.target.value })}
-                  placeholder="مثال: تذكرة دخول فردية - أيام عادية"
-                  className="rounded-xl h-9 text-xs"
-                />
-              </div>
+            <div className="space-y-3 py-2 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="font-bold text-foreground">
+                    اسم التذكرة (بالعربية) <span className="text-rose-500">*</span>
+                  </Label>
+                  <Input
+                    required
+                    value={formData.name_ar}
+                    onChange={(e) => setFormData({ ...formData, name_ar: e.target.value })}
+                    placeholder="تذكرة دخول فردية"
+                    className="rounded-xl h-8 text-xs"
+                  />
+                </div>
 
-              <div className="space-y-1.5">
-                <Label className="font-bold text-foreground">
-                  اسم التذكرة (بالإنجليزية - اختياري)
-                </Label>
-                <Input
-                  value={formData.name_en}
-                  onChange={(e) => setFormData({ ...formData, name_en: e.target.value })}
-                  placeholder="e.g. Single Entrance Ticket - Regular"
-                  className="rounded-xl h-9 text-xs font-sans text-left"
-                  dir="ltr"
-                />
+                <div className="space-y-1">
+                  <Label className="font-bold text-foreground">
+                    اسم التذكرة (بالإنجليزية - اختياري)
+                  </Label>
+                  <Input
+                    value={formData.name_en}
+                    onChange={(e) => setFormData({ ...formData, name_en: e.target.value })}
+                    placeholder="Single Entrance Ticket"
+                    className="rounded-xl h-8 text-xs font-sans text-left"
+                    dir="ltr"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
+                <div className="space-y-1">
                   <Label className="font-bold text-foreground">نوع / تصنيف التذكرة</Label>
                   <Select
                     value={formData.type}
                     onValueChange={(val: any) => setFormData({ ...formData, type: val })}
                   >
-                    <SelectTrigger className="h-9 rounded-xl text-xs">
+                    <SelectTrigger className="h-8 rounded-xl text-xs">
                       <SelectValue placeholder="اختر النوع" />
                     </SelectTrigger>
                     <SelectContent className="z-[70]">
@@ -2299,7 +2310,7 @@ export function ParkTicketPricesModal({
                   </Select>
                 </div>
 
-                <div className="space-y-1.5">
+                <div className="space-y-1">
                   <Label className="font-bold text-foreground">عدد الأفراد المشمولين</Label>
                   <Input
                     type="number"
@@ -2312,18 +2323,18 @@ export function ParkTicketPricesModal({
                         persons_count: Math.max(1, Number(e.target.value)),
                       })
                     }
-                    className="rounded-xl h-9 text-xs font-mono font-bold text-center"
+                    className="rounded-xl h-8 text-xs font-mono font-bold text-center"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3 items-center">
-                <div className="space-y-1.5">
+                <div className="space-y-1">
                   <Label className="font-bold text-foreground">
                     السعر الرسمي بالدولار ($) <span className="text-rose-500">*</span>
                   </Label>
                   <div className="relative">
-                    <span className="absolute right-3 top-2.5 font-bold text-teal-600 font-mono">
+                    <span className="absolute right-3 top-2 font-bold text-teal-600 font-mono">
                       $
                     </span>
                     <Input
@@ -2335,18 +2346,13 @@ export function ParkTicketPricesModal({
                       onChange={(e) =>
                         setFormData({ ...formData, price_usd: Number(e.target.value) })
                       }
-                      className="rounded-xl h-9 text-xs pr-7 font-mono font-black"
+                      className="rounded-xl h-8 text-xs pr-7 font-mono font-black"
                     />
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between border border-border p-2.5 rounded-xl bg-muted/40 mt-4">
-                  <div className="space-y-0.5">
-                    <Label className="font-bold text-xs cursor-pointer">حالة التفعيل</Label>
-                    <div className="text-[10px] text-muted-foreground">
-                      {formData.is_active ? "متاحة للبيع" : "معطلة مؤقتاً"}
-                    </div>
-                  </div>
+                <div className="flex items-center justify-between border border-border p-2 rounded-xl bg-muted/40 mt-4">
+                  <Label className="font-bold text-xs cursor-pointer">حالة التفعيل</Label>
                   <Switch
                     checked={formData.is_active}
                     onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })}
@@ -2355,21 +2361,21 @@ export function ParkTicketPricesModal({
               </div>
             </div>
 
-            <DialogFooter className="border-t border-border pt-3 flex gap-2">
+            <DialogFooter className="border-t border-border pt-2 flex gap-2">
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => setIsFormOpen(false)}
-                className="rounded-xl font-bold text-xs h-9"
+                className="rounded-xl font-bold text-xs h-8"
               >
                 إلغاء
               </Button>
               <Button
                 type="submit"
-                className="bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-black text-xs h-9 px-5 gap-1.5 shadow-sm cursor-pointer"
+                className="bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-black text-xs h-8 px-5 gap-1.5 shadow-sm cursor-pointer"
               >
                 <Check size={14} />
-                {editingItem ? "تأكيد وحفظ التعديلات" : "تأكيد إضافة التذكرة"}
+                {editingItem ? "حفظ التعديلات" : "إضافة التذكرة"}
               </Button>
             </DialogFooter>
           </form>
@@ -2378,21 +2384,12 @@ export function ParkTicketPricesModal({
 
       {/* DELETE CONFIRMATION DIALOG */}
       <Dialog open={Boolean(deletingItem)} onOpenChange={(open) => !open && setDeletingItem(null)}>
-        <DialogContent className="sm:max-w-[420px] rounded-3xl z-[60]">
+        <DialogContent className="sm:max-w-[400px] rounded-3xl z-[60]">
           <DialogHeader>
             <DialogTitle className="text-base font-black flex items-center gap-2 text-rose-600">
               <AlertCircle size={18} />
-              تأكيد حذف التذكرة
+              تأكيد حذف التذكرة ({deletingItem?.name_ar})
             </DialogTitle>
-            <DialogDescription className="text-xs pt-1 text-foreground leading-relaxed">
-              هل أنت متأكد من رغبتك في حذف تذكرة{" "}
-              <strong className="text-rose-600 font-black">"{deletingItem?.name_ar}"</strong> (سعر:
-              ${deletingItem?.price_usd})؟
-              <br />
-              <span className="text-muted-foreground text-[11px] mt-1 block">
-                ملاحظة: لن تظهر هذه التذكرة بعد الآن في شاشة نقاط البيع وإصدار التذاكر.
-              </span>
-            </DialogDescription>
           </DialogHeader>
 
           <DialogFooter className="border-t border-border pt-3 flex gap-2">
@@ -2400,17 +2397,17 @@ export function ParkTicketPricesModal({
               type="button"
               variant="outline"
               onClick={() => setDeletingItem(null)}
-              className="rounded-xl font-bold text-xs h-9"
+              className="rounded-xl font-bold text-xs h-8"
             >
-              تراجع وإلغاء
+              إلغاء
             </Button>
             <Button
               type="button"
               onClick={handleConfirmDelete}
-              className="bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-black text-xs h-9 px-5 gap-1.5 shadow-sm cursor-pointer"
+              className="bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-black text-xs h-8 px-5 gap-1.5 shadow-sm cursor-pointer"
             >
               <Trash2 size={14} />
-              نعم، تأكيد الحذف
+              تأكيد الحذف
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2475,9 +2472,6 @@ export function ParkRefundModal({
             <RotateCcw size={18} />
             إرجاع / استرداد تذكرة دخول
           </DialogTitle>
-          <DialogDescription className="text-xs">
-            سيتم عكس القيد المحاسبي بالكامل وتعديل رصيد الخزينة التشغيلية.
-          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3 py-2 text-xs">

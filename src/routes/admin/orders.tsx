@@ -249,121 +249,69 @@ function OrdersPage() {
   })();
 
   return (
-    <div className="p-6 space-y-6 font-cairo bg-slate-50 min-h-screen">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-3xl shadow-xs border border-border/60">
-        <div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+    <div className="p-4 space-y-3 font-cairo bg-slate-50 min-h-screen">
+      {/* Compact Single-Row Header, Filter & Actions */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white px-4 py-3 rounded-2xl shadow-xs border border-border/60">
+        <div className="flex items-center gap-3 flex-wrap">
+          <h1 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
             إدارة ومتابعة الطلبات
           </h1>
-        </div>
-        <ViewModeToggle mode={viewMode} onChange={setViewMode} />
-      </div>
-
-      {/* Stats Bar */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <div className="bg-white p-4 rounded-2xl border border-border/60 shadow-xs flex items-center gap-3">
-          <div className="p-3 bg-rose-50 text-rose-500 rounded-xl">
-            <Clock size={20} />
-          </div>
-          <div>
-            <div className="text-xs text-muted-foreground font-bold">قيد الانتظار</div>
-            <div className="text-xl font-black text-rose-600">{stats.pending}</div>
-          </div>
+          <Badge variant="outline" className="font-mono text-xs font-bold">
+            {orders.length} طلب
+          </Badge>
         </div>
 
-        <div className="bg-white p-4 rounded-2xl border border-border/60 shadow-xs flex items-center gap-3">
-          <div className="p-3 bg-blue-50 text-blue-500 rounded-xl">
-            <ChefHat size={20} />
-          </div>
-          <div>
-            <div className="text-xs text-muted-foreground font-bold">جاري التحضير</div>
-            <div className="text-xl font-black text-blue-600">{stats.preparing}</div>
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-border/60 shadow-xs flex items-center gap-3">
-          <div className="p-3 bg-emerald-50 text-emerald-500 rounded-xl">
-            <CheckCircle size={20} />
-          </div>
-          <div>
-            <div className="text-xs text-muted-foreground font-bold">جاهز للتسليم</div>
-            <div className="text-xl font-black text-emerald-600">{stats.ready}</div>
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-border/60 shadow-xs flex items-center gap-3">
-          <div className="p-3 bg-purple-50 text-purple-500 rounded-xl">
-            <CheckCircle size={20} />
-          </div>
-          <div>
-            <div className="text-xs text-muted-foreground font-bold">مكتمل</div>
-            <div className="text-xl font-black text-purple-600">{stats.completedCount}</div>
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-border/60 shadow-xs flex items-center gap-3 col-span-2 md:col-span-1">
-          <div className="p-3 bg-amber-50 text-amber-500 rounded-xl">
-            <TrendingUp size={20} />
-          </div>
-          <div>
-            <div className="text-xs text-muted-foreground font-bold">إجمالي الإيرادات</div>
-            <div className="text-xl font-black text-emerald-600">
-              {stats.revenue.toLocaleString("en-US", { minimumFractionDigits: 2 })} $
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Filter & Bulk Delete */}
-      <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-border/60 shadow-xs">
-        <div className="flex items-center gap-3">
-          <Label className="text-xs font-bold shrink-0">فلترة بالحالة:</Label>
-          <select
-            className="h-9 rounded-xl border border-input bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-primary text-right"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-          >
-            <option value="">جميع الحالات</option>
-            {Object.entries(statusLabels).map(([k, v]) => (
-              <option key={k} value={k}>
-                {v}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="destructive"
-              size="sm"
-              className="gap-2 font-bold rounded-xl shadow-xs"
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Label className="text-xs font-bold shrink-0">الحالة:</Label>
+            <select
+              className="h-8 rounded-xl border border-input bg-background px-2.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-primary text-right"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
             >
-              <Trash2 size={15} />
-              حذف جميع الطلبات
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent className="text-right rounded-3xl font-cairo">
-            <AlertDialogHeader>
-              <AlertDialogTitle className="font-black text-right">
-                هل أنت متأكد من حذف جميع الطلبات؟
-              </AlertDialogTitle>
-              <AlertDialogDescription className="text-right">
-                سيتم حذف كافة الطلبات من قاعدة البيانات نهائياً. لا يمكن التراجع عن هذا الإجراء.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter className="gap-2">
-              <AlertDialogCancel className="rounded-xl">إلغاء</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={() => deleteAllOrders.mutate()}
-                className="bg-destructive hover:bg-destructive/90 rounded-xl text-white"
+              <option value="">جميع الحالات</option>
+              {Object.entries(statusLabels).map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <ViewModeToggle mode={viewMode} onChange={setViewMode} />
+
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="destructive"
+                size="sm"
+                className="h-8 px-3 gap-1.5 font-bold rounded-xl shadow-xs text-xs"
               >
-                نعم، احذف الكل
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+                <Trash2 size={14} />
+                حذف الكل
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent className="text-right rounded-3xl font-cairo">
+              <AlertDialogHeader>
+                <AlertDialogTitle className="font-black text-right">
+                  هل أنت متأكد من حذف جميع الطلبات؟
+                </AlertDialogTitle>
+                <AlertDialogDescription className="text-right">
+                  سيتم حذف كافة الطلبات من قاعدة البيانات نهائياً.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter className="gap-2">
+                <AlertDialogCancel className="rounded-xl">إلغاء</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => deleteAllOrders.mutate()}
+                  className="bg-destructive hover:bg-destructive/90 rounded-xl text-white"
+                >
+                  نعم، احذف الكل
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
       </div>
 
       {/* Orders Grid / List */}

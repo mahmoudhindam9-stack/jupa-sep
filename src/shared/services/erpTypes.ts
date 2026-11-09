@@ -646,7 +646,7 @@ export interface ParkTicketTransaction {
   items: ParkTicketCartItem[];
   subtotal_usd: number;
   total_usd: number;
-  currency: "USD" | "SSP";
+  currency: "USD" | "SSP" | "EGP";
   exchange_rate: number;
   total_paid_in_currency: number;
   payment_method: "cash" | "visa" | "bank_transfer" | "credit";

@@ -1054,80 +1054,14 @@ function CaptainPage() {
         </div>
       </div>
 
-      <main className="flex-1 max-w-7xl mx-auto w-full p-4 overflow-auto space-y-4">
-        {/* Unified Box for Call Captain & Bill Request Notifications */}
-        <section
-          aria-label="إشعارات استدعاء الكابتن وطلب الفاتورة"
-          className={`rounded-2xl border-2 p-3.5 sm:p-4 transition-all shadow-xs ${
-            assistanceAlerts.length > 0
-              ? "bg-amber-50/90 border-amber-400 ring-2 ring-amber-400/20"
-              : "bg-card border-border"
-          }`}
-        >
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <div
-                className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                  assistanceAlerts.length > 0
-                    ? "bg-amber-500 text-white animate-pulse shadow-xs"
-                    : "bg-slate-100 text-slate-600"
-                }`}
-              >
-                <BellRing size={18} />
-              </div>
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h2 className="font-black text-sm sm:text-base text-slate-900">
-                    {lang === "ar"
-                      ? "إشعارات استدعاء الكابتن وطلب الفاتورة"
-                      : "Captain Call & Bill Request Alerts"}
-                  </h2>
-                  {assistanceAlerts.length > 0 && (
-                    <span className="px-2 py-0.5 rounded-full text-[11px] font-black bg-rose-600 text-white">
-                      {assistanceAlerts.length} {lang === "ar" ? "تنبيه نشط" : "Active"}
-                    </span>
-                  )}
-                </div>
-                <p className="text-[11px] font-semibold text-slate-500">
-                  {lang === "ar"
-                    ? "تظهر هنا فوراً طلبات استدعاء الكابتن وطلبات الفاتورة المرسلة من باركود الطاولات"
-                    : "Live table assistance calls and bill requests from customer QR menus"}
-                </p>
-              </div>
-            </div>
-
+      <main className="flex-1 max-w-7xl mx-auto w-full p-3 sm:p-4 overflow-auto space-y-3">
+        {assistanceAlerts.length > 0 && (
+          <div className="rounded-xl border border-amber-400 bg-amber-50/90 px-3 py-2 flex flex-wrap items-center justify-between gap-2 shadow-2xs">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-black bg-amber-100 text-amber-900 border border-amber-300">
-                <BellRing size={13} className="text-amber-700" />
-                <span>
-                  {lang === "ar" ? "استدعاء الكابتن:" : "Captain Calls:"}{" "}
-                  {assistanceAlerts.filter((a) => a.request_type === "call_captain").length}
-                </span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-black bg-amber-500 text-white">
+                <BellRing size={13} />
+                <span>{assistanceAlerts.length}</span>
               </span>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-black bg-indigo-100 text-indigo-900 border border-indigo-300">
-                <Receipt size={13} className="text-indigo-700" />
-                <span>
-                  {lang === "ar" ? "طلب الفاتورة:" : "Bill Requests:"}{" "}
-                  {assistanceAlerts.filter((a) => a.request_type === "request_bill").length}
-                </span>
-              </span>
-
-              {assistanceAlerts.length > 0 && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleClearAllAssistanceAlerts}
-                  className="h-8 text-xs font-black bg-white hover:bg-emerald-50 text-emerald-700 border-emerald-300 gap-1"
-                >
-                  <CheckCircle2 size={14} />
-                  {lang === "ar" ? "تمت الاستجابة للكل" : "Dismiss All"}
-                </Button>
-              )}
-            </div>
-          </div>
-
-          {assistanceAlerts.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 mt-3 pt-3 border-t border-amber-200/80">
               {assistanceAlerts.map((alert) => {
                 const isBill = alert.request_type === "request_bill";
                 const matchedTable =
@@ -1136,115 +1070,52 @@ function CaptainPage() {
                       t.id === alert.table_id ||
                       Number(t.number) === Number(alert.table_number),
                   ) || null;
-                const timeStr = (() => {
-                  try {
-                    return new Date(alert.created_at).toLocaleTimeString("ar-EG", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    });
-                  } catch {
-                    return "";
-                  }
-                })();
-
                 return (
                   <div
                     key={alert.id}
-                    className={`rounded-xl p-3 border-2 bg-white shadow-2xs flex flex-col justify-between gap-2.5 ${
-                      isBill ? "border-indigo-300" : "border-amber-300"
-                    }`}
+                    className="inline-flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-bold shadow-2xs"
                   >
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-black ${
-                            isBill
-                              ? "bg-indigo-100 text-indigo-900 border border-indigo-200"
-                              : "bg-amber-100 text-amber-900 border border-amber-200"
-                          }`}
-                        >
-                          {isBill ? <Receipt size={13} /> : <BellRing size={13} />}
-                          <span>
-                            {isBill
-                              ? lang === "ar"
-                                ? "طلب الفاتورة / الحساب 🧾"
-                                : "Requesting Bill 🧾"
-                              : lang === "ar"
-                                ? "استدعاء الكابتن 🔔"
-                                : "Calling Captain 🔔"}
-                          </span>
-                        </span>
-
-                        {timeStr && (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500">
-                            <Clock size={11} />
-                            <span>{timeStr}</span>
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-1.5 flex-wrap text-xs font-black text-slate-900">
-                        <span className="bg-slate-900 text-white px-2 py-0.5 rounded-md">
-                          طاولة #{alert.table_number}
-                        </span>
-                        {alert.zone && (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
-                            <MapPin size={11} />
-                            <span>{alert.zone}</span>
-                          </span>
-                        )}
-                        {alert.customer_name && (
-                          <span className="text-[11px] font-bold text-slate-600">
-                            ({alert.customer_name})
-                          </span>
-                        )}
-                      </div>
-
-                      <p className="text-xs font-bold text-slate-700 leading-snug">
-                        {alert.notes}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
-                      {matchedTable && (
-                        <button
-                          type="button"
-                          onClick={() => setSelectedTable(matchedTable)}
-                          className="flex-1 h-8 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-black transition cursor-pointer"
-                        >
-                          {lang === "ar"
-                            ? `فتح طاولة #${matchedTable.number}`
-                            : `Open Table #${matchedTable.number}`}
-                        </button>
-                      )}
+                    <span className="font-black text-slate-900">طاولة #{alert.table_number}</span>
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-black ${
+                        isBill ? "bg-indigo-100 text-indigo-900" : "bg-amber-100 text-amber-900"
+                      }`}
+                    >
+                      {isBill ? "طلب فاتورة" : "استدعاء"}
+                    </span>
+                    {matchedTable && (
                       <button
                         type="button"
-                        onClick={() => handleDismissAssistanceAlert(alert.id)}
-                        className="flex-1 h-8 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black flex items-center justify-center gap-1 transition cursor-pointer"
+                        onClick={() => setSelectedTable(matchedTable)}
+                        className="px-2 py-0.5 rounded bg-slate-900 text-white text-[10px] font-black cursor-pointer"
                       >
-                        <CheckCircle2 size={13} />
-                        <span>{lang === "ar" ? "تمت الاستجابة" : "Handled"}</span>
+                        فتح
                       </button>
-                    </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleDismissAssistanceAlert(alert.id)}
+                      className="px-2 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-black cursor-pointer"
+                    >
+                      تم
+                    </button>
                   </div>
                 );
               })}
             </div>
-          ) : (
-            <div className="mt-2.5 pt-2.5 border-t border-border/60 flex items-center justify-between text-xs font-bold text-slate-500">
-              <span>
-                {lang === "ar"
-                  ? "لا توجد طلبات استدعاء كابتن أو طلب فاتورة معلقة حالياً."
-                  : "No pending captain calls or bill requests right now."}
-              </span>
-              <span className="text-[11px] text-emerald-700 font-extrabold">
-                {lang === "ar" ? "متصل ومباشر ●" : "Live Sync ●"}
-              </span>
-            </div>
-          )}
-        </section>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleClearAllAssistanceAlerts}
+              className="h-7 text-[11px] font-black bg-white hover:bg-emerald-50 text-emerald-700 border-emerald-300 gap-1"
+            >
+              <CheckCircle2 size={12} />
+              {lang === "ar" ? "إغلاق الكل" : "Dismiss All"}
+            </Button>
+          </div>
+        )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
           {(tablesQuery.data ?? []).map((t) => {
             const activeOrder = tableOrders.find(
               (o) =>
@@ -1627,12 +1498,12 @@ function CaptainPage() {
       <Dialog open={isQrModalOpen} onOpenChange={setIsQrModalOpen}>
         <DialogContent
           dir={lang === "ar" ? "rtl" : "ltr"}
-          className="sm:max-w-lg bg-white p-4 sm:p-5 max-h-[92vh] overflow-y-auto"
+          className="sm:max-w-3xl bg-white p-4 rounded-2xl"
         >
           <DialogHeader className={lang === "ar" ? "text-right" : "text-left"}>
-            <DialogTitle className="flex items-center gap-2 text-lg">
-              <QrCode className="text-indigo-600" />
-              {lang === "ar" ? "إصدار باركود الطلب الذاتي للعملاء" : "Self-Ordering QR Code"}
+            <DialogTitle className="flex items-center gap-2 text-base font-black">
+              <QrCode className="text-indigo-600" size={18} />
+              {lang === "ar" ? "باركود الطلب الذاتي" : "Self-Ordering QR Code"}
             </DialogTitle>
           </DialogHeader>
 
@@ -1665,350 +1536,271 @@ function CaptainPage() {
             if (qrWelcomeMessage.trim()) params.set("welcome", qrWelcomeMessage.trim());
 
             const isLovableHost = cleanBaseUrl.includes(".lovable.app");
-            // On Vercel (which has SPA rewrites in vercel.json), /menu?... opens the customer menu directly.
-            // On Lovable static hosts, /?page=menu&... avoids 404 and routes straight to /menu.
             const qrUrl = isLovableHost
               ? `${cleanBaseUrl}/?${params.toString()}`
               : `${cleanBaseUrl}/menu?${params.toString()}`;
             const directPreviewPath = `/menu?${params.toString()}`;
 
             return (
-              <>
-                <div className="space-y-3 py-1 print:hidden">
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <Label
-                        className={
-                          lang === "ar"
-                            ? "text-right block text-xs font-bold text-slate-700"
-                            : "text-left block text-xs font-bold text-slate-700"
-                        }
-                      >
-                        {lang === "ar"
-                          ? "رابط منصة Vercel (النطاق العام لصفحة طلبات العملاء)"
-                          : "Vercel Domain (Public Customer Menu URL)"}
-                      </Label>
-                      {typeof window !== "undefined" &&
-                        window.location.origin &&
-                        !window.location.origin.includes("localhost") && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const orig = window.location.origin.replace(/\/+$/, "");
-                              setCustomBaseUrl(orig);
-                              window.localStorage.setItem("restocash_qr_base_url_v1", orig);
-                            }}
-                            className="text-[11px] font-bold text-indigo-600 hover:underline cursor-pointer"
-                          >
-                            {lang === "ar" ? "استخدام الرابط الحالي" : "Use current domain"}
-                          </button>
-                        )}
-                    </div>
-                    <Input
-                      value={customBaseUrl}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setCustomBaseUrl(val);
-                        if (typeof window !== "undefined") {
-                          window.localStorage.setItem(
-                            "restocash_qr_base_url_v1",
-                            val.trim().replace(/\/+$/, ""),
-                          );
-                        }
-                      }}
-                      placeholder="https://your-project.vercel.app"
-                      className={`h-10 text-xs font-mono ${lang === "ar" ? "text-right" : "text-left"}`}
-                    />
-                    <p className="text-[11px] text-slate-500 font-medium break-all">
-                      {lang === "ar"
-                        ? `الرابط النهائي للباركود على Vercel: ${qrUrl}`
-                        : `Final QR URL on Vercel: ${qrUrl}`}
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <Label
-                        className={
-                          lang === "ar"
-                            ? "text-right block text-xs font-bold text-slate-700"
-                            : "text-left block text-xs font-bold text-slate-700"
-                        }
-                      >
-                        {lang === "ar" ? "رقم الطاولة" : "Table Number"}
-                      </Label>
-                      <select
-                        value={qrTableId}
-                        onChange={(e) => setQrTableId(e.target.value)}
-                        className={`w-full h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 ${lang === "ar" ? "text-right" : "text-left"}`}
-                      >
-                        <option value="">
-                          {lang === "ar"
-                            ? "-- بدون طاولة محددة (سفري / عام) --"
-                            : "-- No specific table (Takeaway / General) --"}
-                        </option>
-                        {tablesList.map((t) => (
-                          <option key={t.id} value={t.id}>
-                            #{t.number} — {t.name || `طاولة ${t.number}`}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label
-                        className={
-                          lang === "ar"
-                            ? "text-right block text-xs font-bold text-slate-700"
-                            : "text-left block text-xs font-bold text-slate-700"
-                        }
-                      >
-                        {lang === "ar"
-                          ? "مكان الطاولة / القسم (يظهر للكابتن)"
-                          : "Table Location / Zone"}
-                      </Label>
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
+                  <div className="md:col-span-7 space-y-2.5 print:hidden">
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <Label className="text-xs font-bold text-slate-700">
+                          {lang === "ar" ? "رابط المنصة" : "Domain URL"}
+                        </Label>
+                        {typeof window !== "undefined" &&
+                          window.location.origin &&
+                          !window.location.origin.includes("localhost") && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const orig = window.location.origin.replace(/\/+$/, "");
+                                setCustomBaseUrl(orig);
+                                window.localStorage.setItem("restocash_qr_base_url_v1", orig);
+                              }}
+                              className="text-[11px] font-bold text-indigo-600 hover:underline cursor-pointer"
+                            >
+                              {lang === "ar" ? "استخدام الرابط الحالي" : "Use current domain"}
+                            </button>
+                          )}
+                      </div>
                       <Input
-                        list="captain-qr-zones"
-                        value={qrZone}
-                        onChange={(e) => setQrZone(e.target.value)}
-                        placeholder={lang === "ar" ? "مثال: الصالة الداخلية، التراس..." : "e.g. Indoor Hall, Terrace"}
-                        className={`h-10 text-xs font-semibold ${lang === "ar" ? "text-right" : "text-left"}`}
-                      />
-                      <datalist id="captain-qr-zones">
-                        <option value="الصالة الداخلية" />
-                        <option value="التراس الخارجي" />
-                        <option value="قسم العائلات" />
-                        <option value="الحديقة" />
-                        <option value="VIP" />
-                      </datalist>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="space-y-1.5">
-                      <Label
-                        className={
-                          lang === "ar"
-                            ? "text-right block text-xs font-bold text-slate-700"
-                            : "text-left block text-xs font-bold text-slate-700"
-                        }
-                      >
-                        {lang === "ar"
-                          ? "لغة صفحة طلب العملاء"
-                          : "Customer Menu Language"}
-                      </Label>
-                      <select
-                        value={qrMenuLang}
-                        onChange={(e) => {
-                          const nextLang = e.target.value as "ar" | "en";
-                          setQrMenuLang(nextLang);
-                          if (
-                            nextLang === "en" &&
-                            qrWelcomeMessage === "أهلاً بك! يمكنك الطلب الآن."
-                          ) {
-                            setQrWelcomeMessage("Welcome! Scan to order directly.");
-                          } else if (
-                            nextLang === "ar" &&
-                            qrWelcomeMessage === "Welcome! Scan to order directly."
-                          ) {
-                            setQrWelcomeMessage("أهلاً بك! يمكنك الطلب الآن.");
-                          }
-                        }}
-                        className={`w-full h-10 rounded-lg border border-slate-300 bg-white px-3 text-xs sm:text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 ${lang === "ar" ? "text-right" : "text-left"}`}
-                      >
-                        <option value="ar">العربية (Arabic - RTL)</option>
-                        <option value="en">الإنجليزية (English - LTR)</option>
-                      </select>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label
-                        className={
-                          lang === "ar"
-                            ? "text-right block text-xs font-bold text-slate-700"
-                            : "text-left block text-xs font-bold text-slate-700"
-                        }
-                      >
-                        {lang === "ar" ? "عملة العرض للعميل" : "Customer Display Currency"}
-                      </Label>
-                      <select
-                        value={qrCurrency}
-                        onChange={(e) => {
-                          const nextCurr = e.target.value;
-                          setQrCurrency(nextCurr);
-                          if (nextCurr === "USD") {
-                            setQrExchangeRate("1");
-                          } else if (nextCurr === "EGP") {
-                            setQrExchangeRate(String(exchangeRates?.EGP || 50));
-                          } else if (nextCurr === "SSP") {
-                            setQrExchangeRate(String(exchangeRates?.SSP || 100));
-                          }
-                        }}
-                        className={`w-full h-10 rounded-lg border border-slate-300 bg-white px-3 text-xs sm:text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 ${lang === "ar" ? "text-right" : "text-left"}`}
-                      >
-                        <option value="USD">دولار أمريكي (USD $ — السعر الرئيسي)</option>
-                        <option value="EGP">جنيه مصري (EGP)</option>
-                        <option value="SSP">جنيه جنوب السودان (SSP)</option>
-                        <option value="SAR">ريال سعودي (SAR)</option>
-                        <option value="AED">درهم إماراتي (AED)</option>
-                        <option value="EUR">يورو (EUR)</option>
-                      </select>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label
-                        className={
-                          lang === "ar"
-                            ? "text-right block text-xs font-bold text-indigo-800"
-                            : "text-left block text-xs font-bold text-indigo-800"
-                        }
-                      >
-                        {lang === "ar"
-                          ? "المعامل الحالي (مقابل 1 دولار $)"
-                          : "Multiplier / Rate (per 1 USD $)"}
-                      </Label>
-                      <Input
-                        type="number"
-                        step="any"
-                        min="0.0001"
-                        disabled={qrCurrency === "USD"}
-                        value={qrCurrency === "USD" ? "1" : qrExchangeRate}
+                        value={customBaseUrl}
                         onChange={(e) => {
                           const val = e.target.value;
-                          setQrExchangeRate(val);
-                          const num = parseFloat(val);
-                          if (!isNaN(num) && num > 0 && (qrCurrency === "EGP" || qrCurrency === "SSP")) {
-                            updateExchangeRate(qrCurrency, num);
+                          setCustomBaseUrl(val);
+                          if (typeof window !== "undefined") {
+                            window.localStorage.setItem(
+                              "restocash_qr_base_url_v1",
+                              val.trim().replace(/\/+$/, ""),
+                            );
                           }
                         }}
-                        placeholder="1"
-                        className="h-10 text-sm font-black font-mono text-center border-indigo-300 bg-indigo-50/40 focus:ring-indigo-500"
+                        placeholder="https://your-project.vercel.app"
+                        className="h-8 text-xs font-mono"
                       />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs font-bold text-slate-700">
+                          {lang === "ar" ? "رقم الطاولة" : "Table"}
+                        </Label>
+                        <select
+                          value={qrTableId}
+                          onChange={(e) => setQrTableId(e.target.value)}
+                          className="w-full h-8 rounded-lg border border-slate-300 bg-white px-2 text-xs font-semibold"
+                        >
+                          <option value="">
+                            {lang === "ar" ? "-- عام / سفري --" : "-- General --"}
+                          </option>
+                          {tablesList.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              #{t.number} — {t.name || `طاولة ${t.number}`}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label className="text-xs font-bold text-slate-700">
+                          {lang === "ar" ? "القسم" : "Zone"}
+                        </Label>
+                        <Input
+                          list="captain-qr-zones"
+                          value={qrZone}
+                          onChange={(e) => setQrZone(e.target.value)}
+                          placeholder={lang === "ar" ? "الصالة الداخلية" : "Indoor Hall"}
+                          className="h-8 text-xs font-semibold"
+                        />
+                        <datalist id="captain-qr-zones">
+                          <option value="الصالة الداخلية" />
+                          <option value="التراس الخارجي" />
+                          <option value="قسم العائلات" />
+                          <option value="الحديقة" />
+                          <option value="VIP" />
+                        </datalist>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs font-bold text-slate-700">
+                          {lang === "ar" ? "اللغة" : "Language"}
+                        </Label>
+                        <select
+                          value={qrMenuLang}
+                          onChange={(e) => {
+                            const nextLang = e.target.value as "ar" | "en";
+                            setQrMenuLang(nextLang);
+                            if (
+                              nextLang === "en" &&
+                              qrWelcomeMessage === "أهلاً بك! يمكنك الطلب الآن."
+                            ) {
+                              setQrWelcomeMessage("Welcome! Scan to order directly.");
+                            } else if (
+                              nextLang === "ar" &&
+                              qrWelcomeMessage === "Welcome! Scan to order directly."
+                            ) {
+                              setQrWelcomeMessage("أهلاً بك! يمكنك الطلب الآن.");
+                            }
+                          }}
+                          className="w-full h-8 rounded-lg border border-slate-300 bg-white px-2 text-xs font-semibold"
+                        >
+                          <option value="ar">العربية</option>
+                          <option value="en">English</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label className="text-xs font-bold text-slate-700">
+                          {lang === "ar" ? "العملة" : "Currency"}
+                        </Label>
+                        <select
+                          value={qrCurrency}
+                          onChange={(e) => {
+                            const nextCurr = e.target.value;
+                            setQrCurrency(nextCurr);
+                            if (nextCurr === "USD") {
+                              setQrExchangeRate("1");
+                            } else if (nextCurr === "EGP") {
+                              setQrExchangeRate(String(exchangeRates?.EGP || 50));
+                            } else if (nextCurr === "SSP") {
+                              setQrExchangeRate(String(exchangeRates?.SSP || 100));
+                            }
+                          }}
+                          className="w-full h-8 rounded-lg border border-slate-300 bg-white px-2 text-xs font-semibold"
+                        >
+                          <option value="USD">USD $</option>
+                          <option value="EGP">EGP</option>
+                          <option value="SSP">SSP</option>
+                          <option value="SAR">SAR</option>
+                          <option value="AED">AED</option>
+                          <option value="EUR">EUR</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label className="text-xs font-bold text-indigo-800">
+                          {lang === "ar" ? "المعامل" : "Rate"}
+                        </Label>
+                        <Input
+                          type="number"
+                          step="any"
+                          min="0.0001"
+                          disabled={qrCurrency === "USD"}
+                          value={qrCurrency === "USD" ? "1" : qrExchangeRate}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setQrExchangeRate(val);
+                            const num = parseFloat(val);
+                            if (!isNaN(num) && num > 0 && (qrCurrency === "EGP" || qrCurrency === "SSP")) {
+                              updateExchangeRate(qrCurrency, num);
+                            }
+                          }}
+                          className="h-8 text-xs font-black font-mono text-center border-indigo-300 bg-indigo-50/40"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 items-end">
+                      <div className="space-y-1">
+                        <Label className="text-xs font-bold text-slate-700">
+                          {lang === "ar" ? "رسالة الترحيب" : "Welcome"}
+                        </Label>
+                        <Input
+                          value={qrWelcomeMessage}
+                          onChange={(e) => setQrWelcomeMessage(e.target.value)}
+                          className="h-8 text-xs"
+                        />
+                      </div>
+                      <label className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg px-2.5 h-8 cursor-pointer">
+                        <span className="text-[11px] font-bold text-slate-700">
+                          {lang === "ar" ? "تبديل اللغة للعميل" : "Language Switch"}
+                        </span>
+                        <input
+                          type="checkbox"
+                          checked={qrAllowLangSwitch}
+                          onChange={(e) => setQrAllowLangSwitch(e.target.checked)}
+                          className="h-3.5 w-3.5 accent-indigo-600 rounded"
+                        />
+                      </label>
                     </div>
                   </div>
 
-                  <div className="rounded-xl bg-indigo-50/70 border border-indigo-200 px-3 py-2 text-[11px] font-bold text-indigo-950 flex items-center justify-between gap-2">
-                    <span>
-                      {lang === "ar"
-                        ? `قاعدة التسعير: السعر الرئيسي للمنيو بالدولار (USD) × المعامل (${effectiveQrRate}) = السعر في صفحة العميل (${qrCurrency})`
-                        : `Base Menu Price (USD) × Multiplier (${effectiveQrRate}) = Customer Price (${qrCurrency})`}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
-                    <span className="text-xs font-bold text-slate-700">
-                      {lang === "ar"
-                        ? "السماح للعميل بتبديل اللغة (عربي / EN) داخل صفحة الطلب"
-                        : "Allow customer to switch language (AR / EN) inside menu"}
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={qrAllowLangSwitch}
-                      onChange={(e) => setQrAllowLangSwitch(e.target.checked)}
-                      className="h-4 w-4 accent-indigo-600 rounded cursor-pointer"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label
-                      className={
-                        lang === "ar"
-                          ? "text-right block text-xs font-bold text-slate-700"
-                          : "text-left block text-xs font-bold text-slate-700"
-                      }
-                    >
-                      {lang === "ar" ? "رسالة الترحيب" : "Welcome Message"}
-                    </Label>
-                    <Input
-                      value={qrWelcomeMessage}
-                      onChange={(e) => setQrWelcomeMessage(e.target.value)}
-                      className={`h-10 text-sm ${lang === "ar" ? "text-right" : "text-left"}`}
-                    />
-                  </div>
-                </div>
-
-                <div
-                  className="flex flex-col items-center justify-center p-4 bg-slate-50 rounded-2xl border border-slate-200 my-1"
-                  id="print-qr-area"
-                >
-                  <h3 className="text-base font-black text-slate-800 mb-1 text-center">
-                    {qrWelcomeMessage ||
-                      (qrMenuLang === "en" ? "Welcome!" : "أهلاً بك!")}
-                  </h3>
-                  {(displayedTableNumber || qrZone) && (
-                    <p className="text-sm font-bold text-indigo-700 mb-3" id="print-table-number">
-                      {[
-                        displayedTableNumber
-                          ? qrMenuLang === "en"
-                            ? `Table #${displayedTableNumber}`
-                            : `طاولة رقم ${displayedTableNumber}`
-                          : "",
-                        qrZone,
-                      ]
-                        .filter(Boolean)
-                        .join(" — ")}
-                    </p>
-                  )}
-                  {!displayedTableNumber && !qrZone && <div className="mb-3" />}
-
                   <div
-                    className="bg-white p-3 rounded-2xl shadow-xs border border-slate-200"
-                    id="print-qr-svg"
+                    className="md:col-span-5 flex flex-col items-center justify-center p-3 bg-slate-50 rounded-xl border border-slate-200"
+                    id="print-qr-area"
                   >
-                    <QRCodeSVG value={qrUrl} size={170} level={"M"} includeMargin={true} />
+                    <h3 className="text-xs font-black text-slate-800 mb-0.5 text-center">
+                      {qrWelcomeMessage || (qrMenuLang === "en" ? "Welcome!" : "أهلاً بك!")}
+                    </h3>
+                    {(displayedTableNumber || qrZone) && (
+                      <p className="text-xs font-bold text-indigo-700 mb-2" id="print-table-number">
+                        {[
+                          displayedTableNumber
+                            ? qrMenuLang === "en"
+                              ? `Table #${displayedTableNumber}`
+                              : `طاولة رقم ${displayedTableNumber}`
+                            : "",
+                          qrZone,
+                        ]
+                          .filter(Boolean)
+                          .join(" — ")}
+                      </p>
+                    )}
+                    <div
+                      className="bg-white p-2 rounded-xl shadow-xs border border-slate-200"
+                      id="print-qr-svg"
+                    >
+                      <QRCodeSVG value={qrUrl} size={135} level={"M"} includeMargin={true} />
+                    </div>
+                    <div className="flex items-center gap-1.5 w-full mt-2 print:hidden">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          if (typeof navigator !== "undefined" && navigator.clipboard) {
+                            navigator.clipboard.writeText(qrUrl);
+                            toast({
+                              title: lang === "ar" ? "تم نسخ رابط الباركود" : "QR Link Copied",
+                            });
+                          }
+                        }}
+                        className="flex-1 h-7 text-[11px] font-bold rounded-lg px-2"
+                      >
+                        {lang === "ar" ? "نسخ الرابط" : "Copy Link"}
+                      </Button>
+                      <Link
+                        to={directPreviewPath as any}
+                        className="flex-1 inline-flex items-center justify-center h-7 px-2 text-[11px] font-bold rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
+                      >
+                        {lang === "ar" ? "معاينة" : "Preview"}
+                      </Link>
+                    </div>
                   </div>
-                  <p className="text-[11px] font-bold text-slate-500 mt-3 text-center">
-                    {qrMenuLang === "en"
-                      ? "Scan QR code with your phone camera to order directly"
-                      : "قم بمسح الباركود بكاميرا الهاتف للطلب المباشر"}
-                  </p>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2 print:hidden">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      if (typeof navigator !== "undefined" && navigator.clipboard) {
-                        navigator.clipboard.writeText(qrUrl);
-                        toast({
-                          title: lang === "ar" ? "تم نسخ رابط الباركود" : "QR Link Copied",
-                          description: qrUrl,
-                        });
-                      }
-                    }}
-                    className="flex-1 h-9 text-xs font-bold rounded-xl"
-                  >
-                    {lang === "ar" ? "نسخ رابط الباركود" : "Copy QR Link"}
-                  </Button>
-                  <Link
-                    to={directPreviewPath as any}
-                    className="flex-1 inline-flex items-center justify-center h-9 px-3 text-xs font-bold rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors"
-                  >
-                    {lang === "ar" ? "معاينة صفحة العميل الآن" : "Preview Customer Page"}
-                  </Link>
-                </div>
-
-                <DialogFooter className="sm:justify-between mt-2 pt-2 border-t border-slate-100 flex-row gap-2">
+                <DialogFooter className="sm:justify-between pt-2 border-t border-slate-100 flex-row gap-2">
                   <Button
                     variant="outline"
                     onClick={() => setIsQrModalOpen(false)}
-                    className="print:hidden flex-1 sm:flex-none h-10 rounded-xl"
+                    className="print:hidden h-8 text-xs rounded-xl"
                   >
                     {lang === "ar" ? "إغلاق" : "Close"}
                   </Button>
                   <Button
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2 print:hidden flex-1 sm:flex-none h-10 rounded-xl"
-                    onClick={() => {
-                      window.print();
-                    }}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white gap-1.5 print:hidden h-8 text-xs rounded-xl"
+                    onClick={() => window.print()}
                   >
-                    <Printer size={16} />
-                    {lang === "ar" ? "طباعة الباركود" : "Print QR Code"}
+                    <Printer size={14} />
+                    {lang === "ar" ? "طباعة الباركود" : "Print QR"}
                   </Button>
                 </DialogFooter>
-              </>
+              </div>
             );
           })()}
         </DialogContent>

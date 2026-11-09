@@ -5,7 +5,6 @@ import { extractTabParam, useSyncedSubTab } from "@/components/navigation/naviga
 import { toast } from "sonner";
 import {
   Trees,
-  Ticket,
   Plus,
   Landmark,
   Users,
@@ -15,14 +14,15 @@ import {
   Search,
   FileSpreadsheet,
   RotateCcw,
-  FileBarChart,
   Eye,
   Play,
   Edit,
   Trash2,
   ShoppingBag,
   UserCheck,
-  Store,
+  Lock,
+  ArrowUpRight,
+  Wallet,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { erpStore } from "@/shared/services/erpStore";
@@ -40,7 +40,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -56,6 +55,7 @@ import {
   ParkShiftLauncherModal,
   ParkShiftClosingReportModal,
 } from "@/components/mall/ParkTicketsPOS";
+import { ParkCashierTreasuryManagerView } from "@/components/mall/ParkCashierTreasuryManagerView";
 import { ShiftAuditLogViewerModal } from "@/components/admin/ShiftAuditLogViewerModal";
 
 export const Route = createFileRoute("/admin/park")({
@@ -104,7 +104,20 @@ function ParkManagementPage() {
   }, [tabParam, navigate]);
 
   useEffect(() => {
-    void shiftAuditService.syncOpenShiftsFromSupabase(erpStore);
+    const runShiftSync = () => {
+      shiftAuditService.syncShiftsWithAuditLogs(
+        erpStore.getParkShifts(),
+        erpStore.getRestaurantShifts(),
+      );
+      void shiftAuditService.syncOpenShiftsFromSupabase(erpStore);
+    };
+    runShiftSync();
+    window.addEventListener("storage", runShiftSync);
+    window.addEventListener("focus", runShiftSync);
+    return () => {
+      window.removeEventListener("storage", runShiftSync);
+      window.removeEventListener("focus", runShiftSync);
+    };
   }, []);
 
   const currentIdentity = useMemo(
@@ -117,16 +130,17 @@ function ParkManagementPage() {
     () => (isCashier ? erpStore.getCashierOpenParkShift() : null),
     [isCashier, state.parkShifts, state.parkActiveShift, currentIdentity],
   );
+  const activeParkShift = erpStore.getActiveParkShift();
 
   useSyncedSubTab("/admin/park", activeTab, setActiveTab as any, "operations");
 
-  const handleTabChange = (newTab: ParkSectionTab) => {
-    setActiveTab(newTab);
-    navigate({ to: "/admin/park", search: { tab: newTab } as any });
-  };
-
-  // POS full screen view
+  // POS full screen view & Cashier Treasury Manager view
   const [isParkPosOpen, setIsParkPosOpen] = useState(false);
+  const [isParkCashierTreasuryOpen, setIsParkCashierTreasuryOpen] = useState(false);
+
+  useEffect(() => {
+    setIsParkCashierTreasuryOpen(false);
+  }, [activeTab]);
 
   // Modals state
   const [isParkRefundModalOpen, setIsParkRefundModalOpen] = useState(false);
@@ -138,8 +152,8 @@ function ParkManagementPage() {
   const [isParkPricesModalOpen, setIsParkPricesModalOpen] = useState(false);
   const [isParkShiftCloseModalOpen, setIsParkShiftCloseModalOpen] = useState(false);
   const [isParkShiftLauncherOpen, setIsParkShiftLauncherOpen] = useState(false);
-  const [isShiftClosingReportOpen, setIsShiftClosingReportOpen] = useState(false);
-  const [selectedShiftForReport, setSelectedShiftForReport] = useState<any>(null);
+  const [closingShift, setClosingShift] = useState<any>(null);
+  const [viewingClosedShift, setViewingClosedShift] = useState<any>(null);
   const [isShiftAuditLogOpen, setIsShiftAuditLogOpen] = useState(false);
   const [selectedShiftForAudit, setSelectedShiftForAudit] = useState<any>(null);
 
@@ -147,26 +161,24 @@ function ParkManagementPage() {
   const [editingShift, setEditingShift] = useState<any>(null);
   const [editShiftNumber, setEditShiftNumber] = useState("");
   const [editCashierName, setEditCashierName] = useState("");
+  const [editOpeningBalance, setEditOpeningBalance] = useState("");
   const [editNotes, setEditNotes] = useState("");
   const [deletingShift, setDeletingShift] = useState<any>(null);
 
   const handleSaveShiftEdit = () => {
     if (!editingShift) return;
-    if (!editShiftNumber.trim()) {
-      toast.error("رقم أو اسم الوردية لا يمكن أن يكون فارغاً");
-      return;
-    }
-    if (!editCashierName.trim()) {
-      toast.error("اسم الكاشير المسؤول لا يمكن أن يكون فارغاً");
+    if (!editShiftNumber.trim() || !editCashierName.trim()) {
+      toast.error("يرجى إدخال اسم الوردية واسم الكاشير");
       return;
     }
     try {
       erpStore.updateParkShift(editingShift.id, {
         shift_number: editShiftNumber.trim(),
         cashier_name: editCashierName.trim(),
+        opening_balance: Number(editOpeningBalance) || 0,
         notes: editNotes.trim() || undefined,
       });
-      toast.success("تم تحديث بيانات الوردية بنجاح");
+      toast.success("تم تحديث بيانات الوردية");
       setEditingShift(null);
     } catch (err: any) {
       toast.error(err.message || "فشل تعديل بيانات الوردية");
@@ -177,7 +189,7 @@ function ParkManagementPage() {
     if (!deletingShift) return;
     try {
       erpStore.deleteParkShift(deletingShift.id);
-      toast.success(`تم حذف ${deletingShift.shift_number || "الوردية"} من النظام`);
+      toast.success(`تم حذف ${deletingShift.shift_number || "الوردية"}`);
       setDeletingShift(null);
     } catch (err: any) {
       toast.error(err.message || "فشل حذف الوردية");
@@ -206,15 +218,18 @@ function ParkManagementPage() {
     return transactions.filter((tx: any) => {
       const matchSearch =
         !txSearch ||
-        String(tx.transaction_number || "").includes(txSearch) ||
+        String(tx.transaction_number || tx.tx_number || "").includes(txSearch) ||
         String(tx.customer_name || "").includes(txSearch) ||
-        String(tx.cashier_name || "").includes(txSearch);
+        String(tx.cashier_name || tx.created_by || "").includes(txSearch);
       return matchSearch;
     });
   }, [transactions, txSearch]);
 
   const totalRevenue = useMemo(() => {
-    return transactions.reduce((acc: number, tx: any) => acc + (tx.total_amount_usd || 0), 0);
+    return transactions.reduce(
+      (acc: number, tx: any) => acc + (tx.total_usd || tx.total_amount_usd || 0),
+      0,
+    );
   }, [transactions]);
 
   const totalTickets = useMemo(() => {
@@ -228,25 +243,150 @@ function ParkManagementPage() {
     return shifts.filter((s: any) => s.status === "open");
   }, [shifts, isCashier, cashierActiveShift]);
 
+  const closedShifts = useMemo(() => {
+    return shifts.filter((s: any) => s.status === "closed");
+  }, [shifts]);
+
   const handleExportExcel = () => {
     try {
       const rows = filteredTransactions.map((tx: any) => ({
-        "رقم الحركة": tx.transaction_number || tx.id,
+        "رقم الحركة": tx.transaction_number || tx.tx_number || tx.id,
         "التاريخ والوقت": new Date(tx.created_at).toLocaleString("ar-EG"),
         العميل: tx.customer_name || "عميل نقدي",
-        الكاشير: tx.cashier_name || "كاشير عام",
+        الكاشير: tx.cashier_name || tx.created_by || "كاشير عام",
         "طريقة الدفع": tx.payment_method || "نقدي",
-        "المبلغ بالدولار": tx.total_amount_usd || 0,
+        "المبلغ بالدولار": tx.total_usd || tx.total_amount_usd || 0,
         الحالة: tx.status === "refunded" ? "مسترجع" : "مكتمل",
       }));
       const ws = XLSX.utils.json_to_sheet(rows);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "عمليات الحديقة");
       XLSX.writeFile(wb, `park_transactions_${new Date().toISOString().slice(0, 10)}.xlsx`);
-      toast.success("تم تصدير ملف الإكسل بنجاح");
+      toast.success("تم تصدير ملف الإكسل");
     } catch {
       toast.error("حدث خطأ أثناء تصدير ملف الإكسل");
     }
+  };
+
+  type ActionCardItem = {
+    title: string;
+    icon: any;
+    color: string;
+    badge: string;
+    onClick: () => void;
+  };
+
+  const definitionCards: ActionCardItem[] = [
+    {
+      title: "أسعار وتصنيفات التذاكر",
+      icon: Settings,
+      color: "from-purple-500/20 to-indigo-500/20 text-purple-600 dark:text-purple-400",
+      badge: "التذاكر",
+      onClick: () => setIsParkPricesModalOpen(true),
+    },
+    {
+      title: "دليل عملاء الحديقة",
+      icon: Users,
+      color: "from-teal-500/20 to-emerald-500/20 text-teal-600 dark:text-teal-400",
+      badge: "العملاء",
+      onClick: () => setIsParkCustomersModalOpen(true),
+    },
+    {
+      title: "إعدادات الخزائن التشغيلية",
+      icon: Landmark,
+      color: "from-blue-500/20 to-cyan-500/20 text-blue-600 dark:text-blue-400",
+      badge: `${operationalTreasuries.length} خزينة`,
+      onClick: () => setIsParkTreasuriesModalOpen(true),
+    },
+  ];
+
+  const operationCards: ActionCardItem[] = [
+    {
+      title: "فتح وردية جديدة",
+      icon: Plus,
+      color: "from-teal-500/20 to-emerald-500/20 text-teal-600 dark:text-teal-400",
+      badge: `${openShifts.length} نشطة`,
+      onClick: () => setIsParkShiftLauncherOpen(true),
+    },
+    {
+      title: "معاينة صفحة الكاشير",
+      icon: Eye,
+      color: "from-blue-500/20 to-indigo-500/20 text-blue-600 dark:text-blue-400",
+      badge: "POS",
+      onClick: () => setIsParkPosOpen(true),
+    },
+    ...(!isCashier || canCloseShifts
+      ? [
+          {
+            title: "شاشة الكاشير والخزينة",
+            icon: Wallet,
+            color: "from-emerald-500/25 to-teal-500/25 text-emerald-600 dark:text-emerald-400",
+            badge: "الخزينة",
+            onClick: () => setIsParkCashierTreasuryOpen(true),
+          },
+        ]
+      : []),
+  ];
+
+  const renderCards = (items: ActionCardItem[]) => {
+    if (viewMode === "list") {
+      return (
+        <div className="space-y-2.5">
+          {items.map((module) => {
+            const Icon = module.icon;
+            return (
+              <Card
+                key={module.title}
+                onClick={module.onClick}
+                className="group flex items-center justify-between gap-4 rounded-2xl border border-border/80 bg-card p-4 shadow-xs transition hover:border-primary/50 hover:shadow-md cursor-pointer"
+              >
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className={`rounded-xl bg-gradient-to-br p-2.5 ${module.color}`}>
+                    <Icon size={20} />
+                  </div>
+                  <span className="text-base font-black text-foreground group-hover:text-primary transition truncate">
+                    {module.title}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <span className="rounded-full border border-border/60 bg-muted px-2.5 py-1 text-xs font-bold text-primary">
+                    {module.badge}
+                  </span>
+                  <ArrowUpRight size={16} className="text-primary" />
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      );
+    }
+
+    return (
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {items.map((module) => {
+          const Icon = module.icon;
+          return (
+            <Card
+              key={module.title}
+              onClick={module.onClick}
+              className="group flex items-center justify-between gap-4 rounded-2xl border border-border/80 bg-card p-5 shadow-xs transition-all duration-200 hover:border-primary/50 hover:shadow-md cursor-pointer"
+            >
+              <div className="flex items-center gap-3.5 min-w-0">
+                <div className={`rounded-2xl bg-gradient-to-br p-3 shadow-inner ${module.color}`}>
+                  <Icon size={22} />
+                </div>
+                <h3 className="text-base font-black text-foreground group-hover:text-primary transition truncate">
+                  {module.title}
+                </h3>
+              </div>
+              <span className="rounded-full border border-border/60 bg-muted px-2.5 py-1 text-[11px] font-bold text-muted-foreground shrink-0">
+                {module.badge}
+              </span>
+            </Card>
+          );
+        })}
+      </div>
+    );
   };
 
   if (isParkPosOpen) {
@@ -254,232 +394,62 @@ function ParkManagementPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto w-full pb-12" dir="rtl">
+    <div className="mx-auto max-w-7xl space-y-6 pb-12" dir="rtl">
       {/* Compact Single-Row Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3 shadow-xs">
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/12 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25">
-              <Trees size={18} />
-            </div>
-            <h1 className="text-lg sm:text-xl font-black text-foreground">إدارة الحديقة</h1>
+      <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3 shadow-xs">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/12 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25">
+            <Trees size={18} />
           </div>
-
-          <div className="inline-flex items-center gap-1 rounded-xl bg-muted/60 p-1 border border-border/70">
-            <button
-              type="button"
-              data-testid="park-tab-definitions"
-              onClick={() => handleTabChange("definitions")}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-black text-xs transition cursor-pointer ${
-                activeTab === "definitions"
-                  ? "bg-primary text-primary-foreground shadow-2xs"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Settings size={14} />
-              <span>التعريفات</span>
-            </button>
-            <button
-              type="button"
-              data-testid="park-tab-operations"
-              onClick={() => handleTabChange("operations")}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-black text-xs transition cursor-pointer ${
-                activeTab === "operations"
-                  ? "bg-primary text-primary-foreground shadow-2xs"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Store size={14} />
-              <span>العمليات</span>
-            </button>
-            <button
-              type="button"
-              data-testid="park-tab-reports"
-              onClick={() => handleTabChange("reports")}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-black text-xs transition cursor-pointer ${
-                activeTab === "reports"
-                  ? "bg-primary text-primary-foreground shadow-2xs"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <FileBarChart size={14} />
-              <span>التقارير</span>
-            </button>
-          </div>
+          <h1 className="text-lg sm:text-xl font-black text-foreground">إدارة الحديقة</h1>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2">
           <ViewModeToggle mode={viewMode} onChange={setViewMode} />
-          <Button
-            onClick={() => setIsParkPosOpen(true)}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs h-8 px-3.5 rounded-xl gap-1.5 shadow-xs cursor-pointer"
-          >
-            <Ticket size={14} />
-            <span>نقطة بيع التذاكر (POS)</span>
-          </Button>
-          {(!isCashier || !cashierActiveShift) && (
-            <Button
-              onClick={() => setIsParkShiftLauncherOpen(true)}
-              variant="outline"
-              className="font-bold text-xs h-8 px-3 rounded-xl gap-1.5 cursor-pointer"
-            >
-              <Plus size={14} />
-              <span>فتح وردية</span>
-            </Button>
-          )}
-          <Button
-            variant="outline"
-            onClick={() =>
-              navigate({ to: "/admin/ledger", search: { tab: "vouchers", dept: "park" } as any })
-            }
-            className="font-bold text-xs h-8 px-3 rounded-xl gap-1.5 border-indigo-500/30 text-indigo-600 dark:text-indigo-400 cursor-pointer"
-          >
-            <Landmark size={14} />
-            <span>الإدارة المالية</span>
-          </Button>
         </div>
       </div>
 
       {/* SECTION 1: DEFINITIONS (التعريفات) */}
       {activeTab === "definitions" && (
-        <div className="space-y-6 animate-in fade-in duration-200">
-          {/* Master Data Actions */}
-          <div
-            className={viewMode === "grid" ? "grid grid-cols-1 sm:grid-cols-3 gap-4" : "space-y-3"}
-          >
-            <Card
-              onClick={() => setIsParkPricesModalOpen(true)}
-              className="group cursor-pointer rounded-2xl border border-border/80 bg-card p-5 hover:border-purple-500/40 hover:shadow-md transition flex items-center justify-between gap-4"
-            >
-              <div className="flex items-center gap-3.5">
-                <div className="rounded-xl bg-purple-500/15 text-purple-600 dark:text-purple-400 p-3">
-                  <Settings size={22} />
-                </div>
-                <h3 className="font-black text-base text-foreground group-hover:text-purple-600 transition-colors">
-                  أسعار وتصنيفات التذاكر
-                </h3>
-              </div>
-              <Badge variant="outline" className="font-bold">
-                تعديل الأسعار
-              </Badge>
-            </Card>
-
-            <Card
-              onClick={() => setIsParkCustomersModalOpen(true)}
-              className="group cursor-pointer rounded-2xl border border-border/80 bg-card p-5 hover:border-teal-500/40 hover:shadow-md transition flex items-center justify-between gap-4"
-            >
-              <div className="flex items-center gap-3.5">
-                <div className="rounded-xl bg-teal-500/15 text-teal-600 dark:text-teal-400 p-3">
-                  <Users size={22} />
-                </div>
-                <h3 className="font-black text-base text-foreground group-hover:text-teal-600 transition-colors">
-                  دليل عملاء الحديقة
-                </h3>
-              </div>
-              <Badge variant="outline" className="font-bold">
-                إدارة العملاء
-              </Badge>
-            </Card>
-
-            <Card
-              onClick={() => setIsParkTreasuriesModalOpen(true)}
-              className="group cursor-pointer rounded-2xl border border-border/80 bg-card p-5 hover:border-blue-500/40 hover:shadow-md transition flex items-center justify-between gap-4"
-            >
-              <div className="flex items-center gap-3.5">
-                <div className="rounded-xl bg-blue-500/15 text-blue-600 dark:text-blue-400 p-3">
-                  <Landmark size={22} />
-                </div>
-                <h3 className="font-black text-base text-foreground group-hover:text-blue-600 transition-colors">
-                  إعدادات الخزائن التشغيلية ({operationalTreasuries.length})
-                </h3>
-              </div>
-              <Badge variant="outline" className="font-bold">
-                إدارة الخزائن
-              </Badge>
-            </Card>
-          </div>
-
-          {/* Operational Treasuries List/Grid */}
-          <Card className="border border-border shadow-xs rounded-2xl">
-            <CardHeader className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60">
-              <CardTitle className="text-base font-black">
-                الخزائن التشغيلية للحديقة ({operationalTreasuries.length})
-              </CardTitle>
-              <Button
-                onClick={() => setIsParkTreasuriesModalOpen(true)}
-                size="sm"
-                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs gap-1.5 cursor-pointer"
-              >
-                إدارة أوعية الخزائن
-              </Button>
-            </CardHeader>
-            <CardContent className="p-5">
-              {viewMode === "grid" ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {operationalTreasuries.map((tr: any) => (
-                    <div
-                      key={tr.id}
-                      className="bg-muted/40 border border-border p-4 rounded-2xl space-y-2 text-right"
-                    >
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-bold text-xs text-foreground">{tr.name_ar}</h4>
-                        <Badge variant="outline" className="text-[10px]">
-                          {tr.currency || "USD"}
-                        </Badge>
-                      </div>
-                      <p className="text-lg font-black font-mono text-emerald-600 dark:text-emerald-400">
-                        {Number(tr.balance || 0).toLocaleString()} {tr.currency || "USD"}
-                      </p>
-                      <p className="text-[11px] text-muted-foreground">
-                        المسؤول: {tr.responsible_cashier || "كاشير مناوب"}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="space-y-2.5">
-                  {operationalTreasuries.map((tr: any) => (
-                    <div
-                      key={tr.id}
-                      className="flex items-center justify-between gap-4 bg-muted/40 border border-border p-3.5 rounded-xl text-right"
-                    >
-                      <div className="flex items-center gap-3">
-                        <Landmark size={18} className="text-blue-600" />
-                        <span className="font-bold text-sm text-foreground">{tr.name_ar}</span>
-                        <span className="text-xs text-muted-foreground">
-                          ({tr.responsible_cashier || "كاشير مناوب"})
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-black font-mono text-emerald-600 dark:text-emerald-400">
-                          {Number(tr.balance || 0).toLocaleString()} {tr.currency || "USD"}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+        <div className="space-y-5 animate-in fade-in duration-200">
+          {renderCards(definitionCards)}
         </div>
       )}
 
       {/* SECTION 2: OPERATIONS (العمليات) */}
-      {activeTab === "operations" && (
+      {activeTab === "operations" &&
+        (isParkCashierTreasuryOpen ? (
+          <ParkCashierTreasuryManagerView
+            shifts={rawShifts}
+            transactions={transactions}
+            onBack={() => setIsParkCashierTreasuryOpen(false)}
+            onCloseShift={(shift) => {
+              erpStore.setActiveParkShift(shift.id);
+              setClosingShift(shift);
+            }}
+            onViewShiftReport={(shift) => {
+              setViewingClosedShift(shift);
+            }}
+            onReviewTransaction={(tx) => {
+              setSelectedTxForDetails(tx);
+              setIsParkTxDetailsModalOpen(true);
+            }}
+            onRefundTransaction={(tx) => {
+              setSelectedTxForRefund(tx);
+              setIsParkRefundModalOpen(true);
+            }}
+          />
+        ) : (
         <div className="space-y-6 animate-in fade-in duration-200">
-          {/* Open Shifts Section */}
-          {openShifts.length > 0 ? (
+          {/* Active Open Shifts */}
+          {openShifts.length > 0 && (
             <div className="space-y-3">
               {openShifts.map((shift: any) => {
+                const isSessionActive = activeParkShift?.id === shift.id;
                 const shiftTxs = (transactions || []).filter(
                   (t: any) => t.shift_id === shift.id || t.shift_number === shift.shift_number,
                 );
                 const completedTxs = shiftTxs.filter((t: any) => t.status === "completed");
-                const refundedTxs = shiftTxs.filter((t: any) => t.status === "refunded");
-                const shiftRevenueUsd = completedTxs.reduce(
-                  (s: number, t: any) => s + (t.total_usd || t.total_amount_usd || 0),
-                  0,
-                );
 
                 return (
                   <div
@@ -489,14 +459,14 @@ function ParkManagementPage() {
                     <div className="space-y-1.5 text-right flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="font-black text-sm text-foreground">
-                          {shift.shift_number || `وردية تذاكر #${shift.auto_shift_number || "1"}`}
+                          {shift.shift_number}
                         </h3>
                         <span className="inline-flex items-center bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700/60 text-xs font-bold px-2.5 py-0.5 rounded-full">
                           وردية مفتوحة
                         </span>
-                        {shift.currency && (
-                          <span className="inline-flex items-center border border-border/80 bg-muted/40 text-muted-foreground text-[11px] font-mono px-2.5 py-0.5 rounded-full">
-                            {shift.currency}
+                        {isSessionActive && (
+                          <span className="inline-flex items-center bg-teal-500/10 text-teal-700 dark:text-teal-300 border border-teal-300 dark:border-teal-700/60 text-[11px] font-bold px-2.5 py-0.5 rounded-full">
+                            نشطة الآن
                           </span>
                         )}
                       </div>
@@ -504,7 +474,7 @@ function ParkManagementPage() {
                       <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
                         <span className="flex items-center gap-1 font-bold text-foreground">
                           <UserCheck size={14} className="text-teal-600" />
-                          الكاشير: {shift.cashier_name}
+                          {shift.cashier_name}
                         </span>
                         <span>•</span>
                         <span className="flex items-center gap-1 font-mono">
@@ -516,13 +486,12 @@ function ParkManagementPage() {
                         <span>•</span>
                         <span className="flex items-center gap-1 text-teal-600 dark:text-teal-400 font-black">
                           <ShoppingBag size={14} />
-                          {completedTxs.length} مبيعات (${shiftRevenueUsd.toLocaleString()})
-                          {refundedTxs.length > 0 && ` (${refundedTxs.length} مرتجع)`}
+                          {completedTxs.length} مبيعات
                         </span>
                       </div>
                     </div>
 
-                    <div className="flex flex-col items-start md:items-end gap-2.5 shrink-0">
+                    <div className="flex items-center gap-2 flex-wrap shrink-0">
                       <Button
                         size="sm"
                         onClick={() => {
@@ -536,8 +505,8 @@ function ParkManagementPage() {
                         <span>دخول الوردية</span>
                       </Button>
 
-                      {!isCashier && (
-                        <div className="flex items-center gap-2">
+                      {canCloseShifts && !isCashier && (
+                        <>
                           <Button
                             size="sm"
                             variant="outline"
@@ -545,9 +514,10 @@ function ParkManagementPage() {
                               setEditingShift(shift);
                               setEditShiftNumber(shift.shift_number);
                               setEditCashierName(shift.cashier_name);
-                              setEditNotes(shift.notes || "");
+                              setEditOpeningBalance(String(shift.opening_balance || 0));
+                              setEditNotes(shift.notes || shift.opening_notes || "");
                             }}
-                            className="rounded-full text-xs font-bold px-3 py-1 flex items-center gap-1 cursor-pointer h-7"
+                            className="rounded-full text-xs font-bold px-3 py-1 flex items-center gap-1 cursor-pointer h-8"
                           >
                             <Edit size={13} className="text-blue-600" />
                             <span>تعديل</span>
@@ -555,113 +525,186 @@ function ParkManagementPage() {
 
                           <Button
                             size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              erpStore.setActiveParkShift(shift.id);
+                              setClosingShift(shift);
+                            }}
+                            className="text-rose-700 dark:text-rose-300 rounded-full text-xs font-bold px-3 py-1 flex items-center gap-1 cursor-pointer h-8"
+                          >
+                            <Lock size={12} className="text-rose-600" />
+                            <span>إغلاق</span>
+                          </Button>
+
+                          <Button
+                            size="sm"
                             variant="ghost"
                             onClick={() => setDeletingShift(shift)}
-                            className="text-rose-500 hover:text-rose-700 p-1.5 h-7 w-7 rounded-full cursor-pointer"
-                            title="حذف الوردية"
+                            className="text-rose-500 hover:text-rose-700 p-1.5 h-8 w-8 rounded-full cursor-pointer"
                           >
                             <Trash2 size={15} />
                           </Button>
-                        </div>
+                        </>
                       )}
                     </div>
                   </div>
                 );
               })}
             </div>
-          ) : (
-            <div className="p-4 sm:p-5 rounded-2xl border border-dashed border-teal-500/30 bg-card shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
-              <h3 className="font-black text-sm text-foreground">لا توجد وردية مفتوحة حالياً</h3>
-              <Button
-                onClick={() => setIsParkShiftLauncherOpen(true)}
-                className="bg-[#00897b] hover:bg-[#00796b] text-white rounded-full font-black text-xs px-5 py-2 shadow-xs flex items-center gap-1.5 cursor-pointer h-9 shrink-0"
-              >
-                <Plus size={15} />
-                <span>فتح وردية جديدة</span>
-              </Button>
-            </div>
           )}
 
-          {/* Operational Action Cards */}
-          <div
-            className={viewMode === "grid" ? "grid grid-cols-1 sm:grid-cols-3 gap-4" : "space-y-3"}
-          >
-            <Card
-              onClick={() => setIsParkPosOpen(true)}
-              className="group cursor-pointer rounded-2xl border border-border/80 bg-card p-5 hover:border-emerald-500/50 hover:shadow-md transition flex items-center justify-between gap-4"
-            >
-              <div className="flex items-center gap-3.5">
-                <div className="rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 p-3">
-                  <Ticket size={22} />
-                </div>
-                <h3 className="font-black text-base text-foreground group-hover:text-emerald-600 transition-colors">
-                  نقطة بيع التذاكر (POS)
-                </h3>
-              </div>
-              <Badge variant="outline" className="font-bold">
-                فتح الشباك
-              </Badge>
-            </Card>
+          {/* Operational Action Cards (Single Open Shift Box + Single Preview POS Box + Cashier Treasury) */}
+          {renderCards(operationCards)}
+        </div>
+        ))}
 
-            <Card
-              onClick={() => setIsParkShiftLauncherOpen(true)}
-              className="group cursor-pointer rounded-2xl border border-border/80 bg-card p-5 hover:border-teal-500/50 hover:shadow-md transition flex items-center justify-between gap-4"
-            >
-              <div className="flex items-center gap-3.5">
-                <div className="rounded-xl bg-teal-500/15 text-teal-600 dark:text-teal-400 p-3">
-                  <Plus size={22} />
-                </div>
-                <h3 className="font-black text-base text-foreground group-hover:text-teal-600 transition-colors">
-                  فتح وردية كاشير جديدة
-                </h3>
-              </div>
-              <Badge variant="outline" className="font-bold">
-                {openShifts.length} نشطة
-              </Badge>
-            </Card>
-
-            {canCloseShifts && (
-              <Card
-                onClick={() => setIsParkShiftCloseModalOpen(true)}
-                className="group cursor-pointer rounded-2xl border border-border/80 bg-card p-5 hover:border-rose-500/50 hover:shadow-md transition flex items-center justify-between gap-4"
-              >
-                <div className="flex items-center gap-3.5">
-                  <div className="rounded-xl bg-rose-500/15 text-rose-600 dark:text-rose-400 p-3">
-                    <History size={22} />
-                  </div>
-                  <h3 className="font-black text-base text-foreground group-hover:text-rose-600 transition-colors">
-                    إغلاق وتسوية وردية الكاشير
-                  </h3>
-                </div>
-                <Badge variant="outline" className="font-bold">
-                  إغلاق وردية
+      {/* SECTION 3: REPORTS (التقارير) */}
+      {activeTab === "reports" && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start animate-in fade-in duration-200">
+          <Card className="border border-border shadow-xs rounded-2xl flex flex-col max-h-[calc(100vh-200px)]">
+            <CardHeader className="p-3.5 flex flex-row items-center justify-between gap-2 border-b border-border/60 shrink-0">
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-sm sm:text-base font-black">تقارير الورديات</CardTitle>
+                <Badge variant="outline" className="font-mono text-xs">
+                  {shifts.length} وردية
                 </Badge>
-              </Card>
-            )}
-          </div>
+              </div>
+              {!isCashier && (
+                <Button
+                  onClick={() => {
+                    setSelectedShiftForAudit(null);
+                    setIsShiftAuditLogOpen(true);
+                  }}
+                  variant="outline"
+                  size="sm"
+                  className="font-bold rounded-xl text-xs gap-1.5 border-indigo-500/30 text-indigo-600 dark:text-indigo-400 cursor-pointer h-8"
+                >
+                  <History size={13} />
+                  سجل التدقيق
+                </Button>
+              )}
+            </CardHeader>
+            <CardContent className="p-0 overflow-auto flex-1">
+              <table className="w-full text-right text-xs">
+                <thead className="bg-muted/50 border-b border-border text-muted-foreground font-bold sticky top-0">
+                  <tr>
+                    <th className="p-2.5">الوردية</th>
+                    <th className="p-2.5">الكاشير</th>
+                    <th className="p-2.5">المبيعات</th>
+                    <th className="p-2.5">الحالة</th>
+                    <th className="p-2.5 text-center">التقرير</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/60">
+                  {shifts.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="text-center py-8 text-muted-foreground">
+                        لا توجد تقارير ورديات مسجلة
+                      </td>
+                    </tr>
+                  ) : (
+                    shifts.map((s: any) => {
+                      const shiftTxs = (transactions || []).filter(
+                        (t: any) =>
+                          (t.shift_id === s.id || t.shift_number === s.shift_number) &&
+                          t.status !== "refunded",
+                      );
+                      const shiftUsdTotal = shiftTxs.reduce(
+                        (acc: number, t: any) =>
+                          acc + Number(t.total_usd || t.total_amount_usd || 0),
+                        0,
+                      );
+                      return (
+                        <tr key={s.id} className="hover:bg-muted/30 transition">
+                          <td className="p-2.5">
+                            <div className="font-black text-foreground">{s.shift_number}</div>
+                            <div className="font-mono text-[10px] text-indigo-600 dark:text-indigo-400">
+                              {s.auto_shift_number || s.id.slice(0, 8)}
+                            </div>
+                          </td>
+                          <td className="p-2.5 font-bold text-foreground">{s.cashier_name}</td>
+                          <td className="p-2.5 font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                            {shiftTxs.length} (${shiftUsdTotal.toLocaleString()})
+                          </td>
+                          <td className="p-2.5">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                s.status === "open"
+                                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
+                                  : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                              }`}
+                            >
+                              {s.status === "open" ? "مفتوحة" : "مغلقة"}
+                            </span>
+                          </td>
+                          <td className="p-2.5 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => setViewingClosedShift(s)}
+                                className="h-7 px-2 text-[11px] font-bold cursor-pointer"
+                              >
+                                <FileSpreadsheet size={12} className="ml-1 text-emerald-600" />
+                                التقرير
+                              </Button>
+                              {canCloseShifts && !isCashier && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    setSelectedShiftForAudit(s);
+                                    setIsShiftAuditLogOpen(true);
+                                  }}
+                                  className="h-7 px-2 text-[11px] font-bold text-indigo-600 cursor-pointer"
+                                >
+                                  تدقيق
+                                </Button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
 
           {/* Tickets & Transactions Table */}
-          <Card className="border border-border shadow-xs rounded-2xl">
-            <CardHeader className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60">
-              <CardTitle className="text-base font-black">
-                سجل تذاكر وعمليات الدخول ({filteredTransactions.length})
+          <Card className="border border-border shadow-xs rounded-2xl flex flex-col max-h-[calc(100vh-200px)]">
+            <CardHeader className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/60 shrink-0">
+              <CardTitle className="text-sm sm:text-base font-black">
+                سجل تذاكر الدخول ({filteredTransactions.length})
               </CardTitle>
-              <div className="relative w-full sm:w-72">
-                <Search size={15} className="absolute right-3 top-2.5 text-muted-foreground" />
-                <Input
-                  value={txSearch}
-                  onChange={(e) => setTxSearch(e.target.value)}
-                  placeholder="ابحث برقم الحركة، الكاشير، العميل..."
-                  className="pr-9 h-9 text-xs rounded-xl"
-                />
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <div className="relative w-44">
+                  <Search size={14} className="absolute right-2.5 top-2 text-muted-foreground" />
+                  <Input
+                    value={txSearch}
+                    onChange={(e) => setTxSearch(e.target.value)}
+                    placeholder="بحث..."
+                    className="pr-8 h-8 text-xs rounded-xl"
+                  />
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleExportExcel}
+                  className="rounded-xl text-xs font-bold gap-1 h-8 px-2.5 cursor-pointer"
+                >
+                  <FileSpreadsheet size={13} />
+                  Excel
+                </Button>
               </div>
             </CardHeader>
-            <CardContent className="p-0 overflow-x-auto">
+            <CardContent className="p-0 overflow-auto flex-1">
               <table className="w-full text-right text-xs">
                 <thead className="bg-muted/50 border-b border-border text-muted-foreground font-bold">
                   <tr>
                     <th className="p-3">رقم الحركة</th>
-                    <th className="p-3">التوقيت والتاريخ</th>
+                    <th className="p-3">التاريخ</th>
                     <th className="p-3">العميل</th>
                     <th className="p-3">الكاشير</th>
                     <th className="p-3">طريقة الدفع</th>
@@ -681,7 +724,7 @@ function ParkManagementPage() {
                     filteredTransactions.map((tx: any) => (
                       <tr key={tx.id} className="hover:bg-muted/30 transition">
                         <td className="p-3 font-mono font-bold text-foreground">
-                          {tx.transaction_number || tx.id.slice(0, 8)}
+                          {tx.transaction_number || tx.tx_number || tx.id.slice(0, 8)}
                         </td>
                         <td className="p-3 text-muted-foreground font-mono">
                           {new Date(tx.created_at).toLocaleString("ar-EG")}
@@ -690,19 +733,19 @@ function ParkManagementPage() {
                           {tx.customer_name || "عميل نقدي"}
                         </td>
                         <td className="p-3 text-muted-foreground">
-                          {tx.cashier_name || "كاشير عام"}
+                          {tx.cashier_name || tx.created_by || "كاشير عام"}
                         </td>
                         <td className="p-3 font-medium">
                           <Badge variant="outline" className="text-[10px] font-bold">
                             {tx.payment_method === "cash"
                               ? "كاش"
-                              : tx.payment_method === "card"
+                              : tx.payment_method === "card" || tx.payment_method === "visa"
                                 ? "بطاقة"
                                 : tx.payment_method || "نقدي"}
                           </Badge>
                         </td>
                         <td className="p-3 font-mono font-black text-emerald-600 dark:text-emerald-400">
-                          ${Number(tx.total_amount_usd || 0).toLocaleString()}
+                          ${Number(tx.total_usd || tx.total_amount_usd || 0).toLocaleString()}
                         </td>
                         <td className="p-3">
                           <span
@@ -741,246 +784,6 @@ function ParkManagementPage() {
                               >
                                 <RotateCcw size={13} className="ml-1" />
                                 استرجاع
-                              </Button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </CardContent>
-          </Card>
-
-          {/* Shifts Table */}
-          <Card className="border border-border shadow-xs rounded-2xl">
-            <CardHeader className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60">
-              <CardTitle className="text-base font-black">
-                ورديات كاشير الحديقة ({shifts.length})
-              </CardTitle>
-              {(!isCashier || !cashierActiveShift) && (
-                <Button
-                  onClick={() => setIsParkShiftLauncherOpen(true)}
-                  size="sm"
-                  className="bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl text-xs gap-1.5"
-                >
-                  <Plus size={14} />
-                  فتح وردية جديدة
-                </Button>
-              )}
-            </CardHeader>
-            <CardContent className="p-0 overflow-x-auto">
-              <table className="w-full text-right text-xs">
-                <thead className="bg-muted/50 border-b border-border text-muted-foreground font-bold">
-                  <tr>
-                    <th className="p-3">{isCashier ? "اسم الوردية" : "رقم الوردية"}</th>
-                    <th className="p-3">الكاشير المسؤول</th>
-                    <th className="p-3">وقت الفتح</th>
-                    <th className="p-3">وقت الإغلاق</th>
-                    <th className="p-3">الخزينة التشغيلية</th>
-                    <th className="p-3">الحالة</th>
-                    <th className="p-3 text-center">إجراءات</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/60">
-                  {shifts.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="text-center py-10 text-muted-foreground">
-                        لا توجد ورديات مسجلة بعد
-                      </td>
-                    </tr>
-                  ) : (
-                    shifts.map((s: any) => (
-                      <tr key={s.id} className="hover:bg-muted/30 transition">
-                        <td className="p-3 font-bold">
-                          {isCashier ? s.shift_number : s.shift_number || s.id.slice(0, 8)}
-                        </td>
-                        <td className="p-3 font-bold text-foreground">{s.cashier_name}</td>
-                        <td className="p-3 text-muted-foreground font-mono">
-                          {new Date(s.opened_at || s.start_at).toLocaleString("ar-EG")}
-                        </td>
-                        <td className="p-3 text-muted-foreground font-mono">
-                          {s.closed_at || s.end_at
-                            ? new Date(s.closed_at || s.end_at).toLocaleString("ar-EG")
-                            : "— نشطة حالياً —"}
-                        </td>
-                        <td className="p-3 font-medium">
-                          {s.treasury_name || "الخزينة التشغيلية"}
-                        </td>
-                        <td className="p-3">
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              s.status === "open"
-                                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
-                                : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                            }`}
-                          >
-                            {s.status === "open" ? "مفتوحة" : "مغلقة"}
-                          </span>
-                        </td>
-                        <td className="p-3 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            {s.status === "open" && (
-                              <Button
-                                size="sm"
-                                onClick={() => {
-                                  erpStore.setActiveParkShift(s.id);
-                                  toast.success(`تم الدخول إلى ${s.shift_number}`);
-                                  setIsParkPosOpen(true);
-                                }}
-                                className="h-7 px-2.5 text-xs font-black bg-teal-600 hover:bg-teal-700 text-white rounded-lg gap-1"
-                              >
-                                <Play size={12} />
-                                دخول الوردية
-                              </Button>
-                            )}
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                setSelectedShiftForReport(s);
-                                setIsShiftClosingReportOpen(true);
-                              }}
-                              className="h-7 px-2 text-xs font-bold"
-                            >
-                              تقرير الوردية
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* SECTION 3: REPORTS (التقارير) */}
-      {activeTab === "reports" && (
-        <div className="space-y-6 animate-in fade-in duration-200">
-          <div className="flex items-center justify-end">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleExportExcel}
-              className="rounded-xl text-xs font-bold gap-1.5 cursor-pointer"
-            >
-              <FileSpreadsheet size={14} />
-              تصدير التذاكر إلى Excel
-            </Button>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <Card className="border border-border p-5 rounded-2xl">
-              <p className="text-xs text-muted-foreground font-bold">إجمالي مبيعات التذاكر</p>
-              <h3 className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-2 font-mono">
-                ${totalRevenue.toLocaleString()}
-              </h3>
-            </Card>
-            <Card className="border border-border p-5 rounded-2xl">
-              <p className="text-xs text-muted-foreground font-bold">إجمالي التذاكر الصادرة</p>
-              <h3 className="text-2xl font-black text-foreground mt-2 font-mono">
-                {totalTickets.toLocaleString()} تذكرة
-              </h3>
-            </Card>
-            <Card className="border border-border p-5 rounded-2xl">
-              <p className="text-xs text-muted-foreground font-bold">الورديات المنفذة</p>
-              <h3 className="text-2xl font-black text-indigo-600 mt-2 font-mono">
-                {shifts.length} وردية
-              </h3>
-            </Card>
-          </div>
-
-          <Card className="border border-border shadow-xs rounded-2xl">
-            <CardHeader className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60">
-              <CardTitle className="text-base font-black">
-                تقارير ورديات الحديقة وسجل التدقيق
-              </CardTitle>
-              {!isCashier && (
-                <Button
-                  onClick={() => {
-                    setSelectedShiftForAudit(null);
-                    setIsShiftAuditLogOpen(true);
-                  }}
-                  variant="outline"
-                  size="sm"
-                  className="font-bold rounded-xl text-xs gap-1.5 border-indigo-500/30 text-indigo-600 dark:text-indigo-400 cursor-pointer"
-                >
-                  <History size={14} />
-                  سجل التدقيق الشامل
-                </Button>
-              )}
-            </CardHeader>
-            <CardContent className="p-0 overflow-x-auto">
-              <table className="w-full text-right text-xs">
-                <thead className="bg-muted/50 border-b border-border text-muted-foreground font-bold">
-                  <tr>
-                    <th className="p-3">رقم الوردية</th>
-                    <th className="p-3">الكاشير المسؤول</th>
-                    <th className="p-3">وقت الفتح</th>
-                    <th className="p-3">وقت الإغلاق</th>
-                    <th className="p-3">الحالة</th>
-                    <th className="p-3 text-center">التقرير والتدقيق</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/60">
-                  {shifts.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="text-center py-10 text-muted-foreground">
-                        لا توجد تقارير ورديات مسجلة بعد
-                      </td>
-                    </tr>
-                  ) : (
-                    shifts.map((s: any) => (
-                      <tr key={s.id} className="hover:bg-muted/30 transition">
-                        <td className="p-3 font-bold">{s.shift_number || s.id.slice(0, 8)}</td>
-                        <td className="p-3 font-bold text-foreground">{s.cashier_name}</td>
-                        <td className="p-3 text-muted-foreground font-mono">
-                          {new Date(s.opened_at || s.start_at).toLocaleString("ar-EG")}
-                        </td>
-                        <td className="p-3 text-muted-foreground font-mono">
-                          {s.closed_at || s.end_at
-                            ? new Date(s.closed_at || s.end_at).toLocaleString("ar-EG")
-                            : "— نشطة حالياً —"}
-                        </td>
-                        <td className="p-3">
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              s.status === "open"
-                                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
-                                : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                            }`}
-                          >
-                            {s.status === "open" ? "مفتوحة" : "مغلقة"}
-                          </span>
-                        </td>
-                        <td className="p-3 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                setSelectedShiftForReport(s);
-                                setIsShiftClosingReportOpen(true);
-                              }}
-                              className="h-7 px-2 text-xs font-bold"
-                            >
-                              تقرير الوردية
-                            </Button>
-                            {!isCashier && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => {
-                                  setSelectedShiftForAudit(s);
-                                  setIsShiftAuditLogOpen(true);
-                                }}
-                                className="h-7 px-2 text-xs font-bold text-indigo-600"
-                              >
-                                سجل التدقيق
                               </Button>
                             )}
                           </div>
@@ -1031,42 +834,46 @@ function ParkManagementPage() {
           canCloseShifts
             ? (shift) => {
                 setIsParkShiftLauncherOpen(false);
-                setSelectedShiftForReport(shift);
-                setIsShiftClosingReportOpen(true);
+                setClosingShift(shift);
               }
             : undefined
         }
       />
-      <ParkShiftClosingReportModal
-        isOpen={isShiftClosingReportOpen}
-        onClose={() => setIsShiftClosingReportOpen(false)}
-        viewOnlyShift={selectedShiftForReport}
-        shiftToClose={canCloseShifts ? selectedShiftForReport : undefined}
-      />
+
+      {closingShift && (
+        <ParkShiftClosingReportModal
+          isOpen={!!closingShift}
+          onClose={() => setClosingShift(null)}
+          shiftToClose={closingShift}
+          onShiftClosed={() => setClosingShift(null)}
+        />
+      )}
+
+      {viewingClosedShift && (
+        <ParkShiftClosingReportModal
+          isOpen={!!viewingClosedShift}
+          onClose={() => setViewingClosedShift(null)}
+          viewOnlyShift={viewingClosedShift}
+        />
+      )}
+
       <ShiftAuditLogViewerModal
         isOpen={isShiftAuditLogOpen}
         onClose={() => setIsShiftAuditLogOpen(false)}
         initialShiftId={selectedShiftForAudit?.id}
-        initialShiftType="PARK"
+        initialShiftType="park"
       />
 
-      {/* Edit Shift Modal */}
       {editingShift && (
         <Dialog open={editingShift !== null} onOpenChange={() => setEditingShift(null)}>
-          <DialogContent className="sm:max-w-[450px] rounded-3xl text-right">
+          <DialogContent className="sm:max-w-[420px] rounded-3xl text-right" dir="rtl">
             <DialogHeader className="text-right">
-              <DialogTitle className="text-base font-black flex items-center gap-2 text-foreground">
-                <Edit size={18} className="text-blue-600" />
-                تعديل بيانات جلسة الوردية
-              </DialogTitle>
-              <DialogDescription className="text-xs">
-                تعديل رقم ومسمى الوردية أو اسم الكاشير المسؤول
-              </DialogDescription>
+              <DialogTitle className="text-base font-black">تعديل بيانات الوردية</DialogTitle>
             </DialogHeader>
 
             <div className="space-y-3 py-2 text-xs">
               <div>
-                <Label className="font-bold mb-1 block">رقم / مسمى الوردية:</Label>
+                <Label className="font-bold mb-1 block">اسم الوردية</Label>
                 <Input
                   value={editShiftNumber}
                   onChange={(e) => setEditShiftNumber(e.target.value)}
@@ -1075,7 +882,7 @@ function ParkManagementPage() {
               </div>
 
               <div>
-                <Label className="font-bold mb-1 block">اسم الكاشير المسؤول:</Label>
+                <Label className="font-bold mb-1 block">الكاشير المسؤول</Label>
                 <Input
                   value={editCashierName}
                   onChange={(e) => setEditCashierName(e.target.value)}
@@ -1084,12 +891,22 @@ function ParkManagementPage() {
               </div>
 
               <div>
-                <Label className="font-bold mb-1 block">ملاحظات الوردية:</Label>
+                <Label className="font-bold mb-1 block">الرصيد الافتتاحي (USD $)</Label>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  value={editOpeningBalance}
+                  onChange={(e) => setEditOpeningBalance(e.target.value)}
+                  className="rounded-xl h-9 font-mono font-bold"
+                />
+              </div>
+
+              <div>
+                <Label className="font-bold mb-1 block">ملاحظات</Label>
                 <Input
                   value={editNotes}
                   onChange={(e) => setEditNotes(e.target.value)}
                   className="rounded-xl h-9"
-                  placeholder="ملاحظات..."
                 />
               </div>
             </div>
@@ -1106,28 +923,23 @@ function ParkManagementPage() {
               <Button
                 size="sm"
                 onClick={handleSaveShiftEdit}
-                className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold"
+                className="bg-primary text-primary-foreground rounded-xl font-bold"
               >
-                حفظ التعديلات
+                حفظ
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
       )}
 
-      {/* Delete Shift Confirmation Modal */}
       {deletingShift && (
         <Dialog open={deletingShift !== null} onOpenChange={() => setDeletingShift(null)}>
-          <DialogContent className="sm:max-w-[450px] rounded-3xl text-right">
+          <DialogContent className="sm:max-w-[400px] rounded-3xl text-right">
             <DialogHeader className="text-right">
               <DialogTitle className="text-base font-black flex items-center gap-2 text-rose-600">
                 <Trash2 size={18} />
-                تأكيد حذف الوردية
+                <span>تأكيد حذف الوردية ({deletingShift.shift_number})</span>
               </DialogTitle>
-              <DialogDescription className="text-xs text-rose-600/80">
-                هل أنت متأكد من حذف الوردية ({deletingShift.shift_number})؟ لا يمكن التراجع عن هذا
-                الإجراء.
-              </DialogDescription>
             </DialogHeader>
 
             <DialogFooter className="gap-2 sm:justify-between pt-3">

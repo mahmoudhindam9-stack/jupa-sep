@@ -104,6 +104,7 @@ class ShiftAuditService {
         // Keep latest 500 records locally to prevent unbounded growth
         const trimmed = this.localLogs.slice(0, 500);
         localStorage.setItem(LOCAL_STORAGE_AUDIT_KEY, JSON.stringify(trimmed));
+        window.dispatchEvent(new CustomEvent("shift_audit_updated"));
       } catch (err) {
         console.warn("Failed to save local shift audit logs:", err);
       }
@@ -587,9 +588,9 @@ class ShiftAuditService {
   }
 
   /**
-   * Synchronizes open shifts from Supabase shift_audit_logs into erpStore
-   * so that if a cashier opens a shift, logs out, or switches browsers,
-   * their open shift is automatically detected and restored.
+   * Synchronizes open and closed shifts from Supabase shift_audit_logs into erpStore
+   * so that if a cashier or manager opens, updates, closes, or deletes a shift,
+   * all pages (Restaurant, Park, and Shift Audit) remain in full sync.
    */
   async syncOpenShiftsFromSupabase(erpStoreInstance: any): Promise<boolean> {
     if (!erpStoreInstance || !erpStoreInstance.state) return false;
@@ -613,48 +614,163 @@ class ShiftAuditService {
       }
 
       let changed = false;
-      const existingRestIds = new Set(
-        (erpStoreInstance.state.restaurantShifts || []).map((s: any) => s.id),
-      );
-      const existingParkIds = new Set(
-        (erpStoreInstance.state.parkShifts || []).map((s: any) => s.id),
-      );
 
       for (const [shiftId, history] of byShiftId.entries()) {
         const latest = history[history.length - 1];
-        const openLog = history.find((h) => h.action === "OPEN" || h.action === "AUTO_CREATE") || latest;
-        const isClosedOrDeleted =
-          latest.action === "CLOSE" ||
-          latest.action === "DELETE" ||
-          latest.status_after === "closed" ||
-          latest.status_after === "deleted";
+        const openLog =
+          history.find((h) => h.action === "OPEN" || h.action === "AUTO_CREATE") || history[0];
+        const closeLog = [...history].reverse().find((h) => h.action === "CLOSE");
+        const shiftType = (latest.shift_type || openLog.shift_type || "restaurant").toLowerCase();
 
-        if (isClosedOrDeleted) {
-          // If local state still thinks it's open, mark it closed
-          if (latest.shift_type === "restaurant") {
-            const localShift = (erpStoreInstance.state.restaurantShifts || []).find(
-              (s: any) => s.id === shiftId,
+        const isDeleted = latest.action === "DELETE" || latest.status_after === "deleted";
+        if (isDeleted) {
+          if (shiftType === "restaurant") {
+            const beforeLen = (erpStoreInstance.state.restaurantShifts || []).length;
+            erpStoreInstance.state.restaurantShifts = (
+              erpStoreInstance.state.restaurantShifts || []
+            ).filter((s: any) => s.id !== shiftId);
+            if ((erpStoreInstance.state.restaurantShifts || []).length !== beforeLen) {
+              changed = true;
+            }
+            if (erpStoreInstance.state.restaurantActiveShift?.id === shiftId) {
+              erpStoreInstance.state.restaurantActiveShift = null;
+              changed = true;
+            }
+          } else if (shiftType === "park") {
+            const beforeLen = (erpStoreInstance.state.parkShifts || []).length;
+            erpStoreInstance.state.parkShifts = (erpStoreInstance.state.parkShifts || []).filter(
+              (s: any) => s.id !== shiftId,
             );
-            if (localShift && localShift.status === "open" && latest.action === "CLOSE") {
+            if ((erpStoreInstance.state.parkShifts || []).length !== beforeLen) {
+              changed = true;
+            }
+            if (erpStoreInstance.state.parkActiveShift?.id === shiftId) {
+              erpStoreInstance.state.parkActiveShift = null;
+              changed = true;
+            }
+          }
+          continue;
+        }
+
+        const isClosed =
+          latest.action === "CLOSE" ||
+          (latest.status_after === "closed" && latest.action !== "OPEN" && latest.action !== "RESUME");
+        const openMeta = (openLog.metadata || {}) as Record<string, any>;
+        const closeMeta = (closeLog?.metadata || latest.metadata || {}) as Record<string, any>;
+
+        // Collect latest UPDATE metadata if any
+        const updateLogs = history.filter((h) => h.action === "UPDATE");
+        const mergedUpdateMeta = updateLogs.reduce(
+          (acc, u) => ({ ...acc, ...(u.metadata || {}) }),
+          {} as Record<string, any>,
+        );
+
+        const resolvedShiftNumber =
+          mergedUpdateMeta.shift_number || latest.shift_number || openLog.shift_number;
+        const resolvedCashierName =
+          mergedUpdateMeta.cashier_name ||
+          latest.cashier_name ||
+          openLog.cashier_name ||
+          (shiftType === "park" ? "أمين الصندوق" : "كاشير المطعم");
+        const resolvedOpeningBalance =
+          mergedUpdateMeta.opening_balance !== undefined
+            ? Number(mergedUpdateMeta.opening_balance)
+            : Number(openMeta.opening_balance || 0);
+        const resolvedNotes =
+          mergedUpdateMeta.notes ?? openMeta.notes ?? openMeta.opening_notes ?? undefined;
+
+        if (shiftType === "restaurant") {
+          const localShift = (erpStoreInstance.state.restaurantShifts || []).find(
+            (s: any) => s.id === shiftId,
+          );
+          if (localShift) {
+            if (isClosed && localShift.status === "open") {
               localShift.status = "closed";
               localShift.end_at =
-                (latest.metadata as any)?.end_at ||
+                closeMeta.end_at ||
+                closeLog?.client_timestamp ||
                 latest.client_timestamp ||
                 latest.created_at ||
                 new Date().toISOString();
+              if (closeMeta.orders_count !== undefined)
+                localShift.orders_count = Number(closeMeta.orders_count);
+              if (closeMeta.total_sales !== undefined)
+                localShift.total_sales = Number(closeMeta.total_sales);
+              if (closeMeta.total_refunds !== undefined)
+                localShift.total_refunds = Number(closeMeta.total_refunds);
+              if (closeMeta.net_total !== undefined)
+                localShift.net_total = Number(closeMeta.net_total);
               if (erpStoreInstance.state.restaurantActiveShift?.id === shiftId) {
                 erpStoreInstance.state.restaurantActiveShift = null;
               }
               changed = true;
+            } else if (!isClosed && localShift.status === "closed" && latest.status_after === "open") {
+              localShift.status = "open";
+              localShift.end_at = undefined;
+              changed = true;
             }
-          } else if (latest.shift_type === "park") {
-            const localShift = (erpStoreInstance.state.parkShifts || []).find(
-              (s: any) => s.id === shiftId,
-            );
-            if (localShift && localShift.status === "open" && latest.action === "CLOSE") {
+            if (resolvedShiftNumber && localShift.shift_number !== resolvedShiftNumber) {
+              localShift.shift_number = resolvedShiftNumber;
+              changed = true;
+            }
+            if (resolvedCashierName && localShift.cashier_name !== resolvedCashierName) {
+              localShift.cashier_name = resolvedCashierName;
+              changed = true;
+            }
+          } else {
+            const reconstructedRestShift = {
+              id: shiftId,
+              auto_shift_number: openLog.auto_shift_number || latest.auto_shift_number || undefined,
+              shift_number: resolvedShiftNumber,
+              start_at:
+                openMeta.start_at ||
+                openLog.client_timestamp ||
+                openLog.created_at ||
+                new Date().toISOString(),
+              end_at: isClosed
+                ? closeMeta.end_at ||
+                  closeLog?.client_timestamp ||
+                  latest.client_timestamp ||
+                  latest.created_at ||
+                  new Date().toISOString()
+                : undefined,
+              status: (isClosed ? "closed" : "open") as "open" | "closed",
+              cashier_name: resolvedCashierName,
+              cashier_id: openLog.cashier_id || openMeta.cashier_id || openLog.user_id || undefined,
+              cashier_username: openMeta.cashier_username || openLog.performed_by || undefined,
+              cashier_type: openMeta.cashier_type || "account",
+              currency: openMeta.currency || "USD",
+              exchange_rate: Number(openMeta.exchange_rate || 1),
+              opening_balance: resolvedOpeningBalance,
+              opening_notes: resolvedNotes,
+              notes: resolvedNotes,
+              generated_journal_refs: closeMeta.generated_journal_refs || [],
+              orders_count: Number(closeMeta.orders_count || 0),
+              total_sales: Number(closeMeta.total_sales || 0),
+              total_tax: 0,
+              total_discount: 0,
+              total_service_fee: 0,
+              total_delivery_fee: 0,
+              total_refunds: Number(closeMeta.total_refunds || 0),
+              net_total: Number(closeMeta.net_total || 0),
+              payment_breakdown: closeMeta.payment_breakdown || { cash: 0, card: 0, wallet: 0 },
+            };
+            erpStoreInstance.state.restaurantShifts = [
+              reconstructedRestShift,
+              ...(erpStoreInstance.state.restaurantShifts || []),
+            ];
+            changed = true;
+          }
+        } else if (shiftType === "park") {
+          const localShift = (erpStoreInstance.state.parkShifts || []).find(
+            (s: any) => s.id === shiftId,
+          );
+          if (localShift) {
+            if (isClosed && localShift.status === "open") {
               localShift.status = "closed";
               localShift.end_at =
-                (latest.metadata as any)?.end_at ||
+                closeMeta.end_at ||
+                closeLog?.client_timestamp ||
                 latest.client_timestamp ||
                 latest.created_at ||
                 new Date().toISOString();
@@ -662,76 +778,53 @@ class ShiftAuditService {
                 erpStoreInstance.state.parkActiveShift = null;
               }
               changed = true;
+            } else if (!isClosed && localShift.status === "closed" && latest.status_after === "open") {
+              localShift.status = "open";
+              localShift.end_at = undefined;
+              changed = true;
             }
+            if (resolvedShiftNumber && localShift.shift_number !== resolvedShiftNumber) {
+              localShift.shift_number = resolvedShiftNumber;
+              changed = true;
+            }
+            if (resolvedCashierName && localShift.cashier_name !== resolvedCashierName) {
+              localShift.cashier_name = resolvedCashierName;
+              changed = true;
+            }
+          } else {
+            const reconstructedParkShift = {
+              id: shiftId,
+              auto_shift_number: openLog.auto_shift_number || latest.auto_shift_number || undefined,
+              shift_number: resolvedShiftNumber,
+              start_at:
+                openMeta.start_at ||
+                openLog.client_timestamp ||
+                openLog.created_at ||
+                new Date().toISOString(),
+              end_at: isClosed
+                ? closeMeta.end_at ||
+                  closeLog?.client_timestamp ||
+                  latest.client_timestamp ||
+                  latest.created_at ||
+                  new Date().toISOString()
+                : undefined,
+              status: (isClosed ? "closed" : "open") as "open" | "closed",
+              cashier_name: resolvedCashierName,
+              cashier_id: openLog.cashier_id || openMeta.cashier_id || openLog.user_id || undefined,
+              cashier_username: openMeta.cashier_username || openLog.performed_by || undefined,
+              cashier_type: openMeta.cashier_type || "account",
+              currency: openMeta.currency || "USD",
+              exchange_rate: Number(openMeta.exchange_rate || 1),
+              opening_balance: resolvedOpeningBalance,
+              opening_notes: resolvedNotes,
+              notes: resolvedNotes,
+            };
+            erpStoreInstance.state.parkShifts = [
+              reconstructedParkShift,
+              ...(erpStoreInstance.state.parkShifts || []),
+            ];
+            changed = true;
           }
-          continue;
-        }
-
-        const meta = (openLog.metadata || {}) as Record<string, any>;
-        if (openLog.shift_type === "restaurant" && !existingRestIds.has(shiftId)) {
-          const reconstructedRestShift = {
-            id: shiftId,
-            auto_shift_number: openLog.auto_shift_number || undefined,
-            shift_number: openLog.shift_number,
-            start_at:
-              meta.start_at ||
-              openLog.client_timestamp ||
-              openLog.created_at ||
-              new Date().toISOString(),
-            status: "open" as const,
-            cashier_name: openLog.cashier_name || "كاشير المطعم",
-            cashier_id: openLog.cashier_id || meta.cashier_id || openLog.user_id || undefined,
-            cashier_username: meta.cashier_username || openLog.performed_by || undefined,
-            cashier_type: meta.cashier_type || "account",
-            currency: meta.currency || "EGP",
-            exchange_rate: Number(meta.exchange_rate || 1),
-            opening_balance: Number(meta.opening_balance || 0),
-            opening_notes: meta.opening_notes || meta.notes || undefined,
-            notes: meta.notes || meta.opening_notes || undefined,
-            generated_journal_refs: [],
-            orders_count: 0,
-            total_sales: 0,
-            total_tax: 0,
-            total_discount: 0,
-            total_service_fee: 0,
-            total_delivery_fee: 0,
-            total_refunds: 0,
-            net_total: 0,
-            payment_breakdown: { cash: 0, card: 0, wallet: 0 },
-          };
-          erpStoreInstance.state.restaurantShifts = [
-            reconstructedRestShift,
-            ...(erpStoreInstance.state.restaurantShifts || []),
-          ];
-          existingRestIds.add(shiftId);
-          changed = true;
-        } else if (openLog.shift_type === "park" && !existingParkIds.has(shiftId)) {
-          const reconstructedParkShift = {
-            id: shiftId,
-            auto_shift_number: openLog.auto_shift_number || undefined,
-            shift_number: openLog.shift_number,
-            start_at:
-              meta.start_at ||
-              openLog.client_timestamp ||
-              openLog.created_at ||
-              new Date().toISOString(),
-            status: "open" as const,
-            cashier_name: openLog.cashier_name || "أمين الصندوق",
-            cashier_id: openLog.cashier_id || meta.cashier_id || openLog.user_id || undefined,
-            cashier_username: meta.cashier_username || openLog.performed_by || undefined,
-            cashier_type: meta.cashier_type || "account",
-            currency: meta.currency || "USD",
-            exchange_rate: Number(meta.exchange_rate || 1),
-            opening_balance: Number(meta.opening_balance || 0),
-            opening_notes: meta.opening_notes || meta.notes || undefined,
-            notes: meta.notes || meta.opening_notes || undefined,
-          };
-          erpStoreInstance.state.parkShifts = [
-            reconstructedParkShift,
-            ...(erpStoreInstance.state.parkShifts || []),
-          ];
-          existingParkIds.add(shiftId);
-          changed = true;
         }
       }
 
@@ -741,6 +834,24 @@ class ShiftAuditService {
           erpStoreInstance.state.restaurantActiveShift =
             erpStoreInstance.getCashierOpenRestaurantShift();
           erpStoreInstance.state.parkActiveShift = erpStoreInstance.getCashierOpenParkShift();
+        } else {
+          if (
+            !erpStoreInstance.state.restaurantActiveShift ||
+            erpStoreInstance.state.restaurantActiveShift.status !== "open"
+          ) {
+            erpStoreInstance.state.restaurantActiveShift =
+              (erpStoreInstance.state.restaurantShifts || []).find(
+                (s: any) => s.status === "open",
+              ) || null;
+          }
+          if (
+            !erpStoreInstance.state.parkActiveShift ||
+            erpStoreInstance.state.parkActiveShift.status !== "open"
+          ) {
+            erpStoreInstance.state.parkActiveShift =
+              (erpStoreInstance.state.parkShifts || []).find((s: any) => s.status === "open") ||
+              null;
+          }
         }
         erpStoreInstance.saveState?.();
         erpStoreInstance.notify?.();

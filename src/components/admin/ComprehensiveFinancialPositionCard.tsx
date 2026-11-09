@@ -315,76 +315,57 @@ export function ComprehensiveFinancialPositionCard() {
   };
 
   return (
-    <Card className="rounded-3xl border-2 border-primary/30 bg-card shadow-xl overflow-hidden relative">
-      {/* Decorative Gradient Background Header */}
-      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-6 sm:p-8 relative overflow-hidden">
-        <div className="absolute -left-12 -top-12 w-48 h-48 bg-primary/20 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge className="bg-amber-400/20 text-amber-300 border border-amber-400/30 text-xs font-black px-3 py-1 rounded-full flex items-center gap-1.5 backdrop-blur">
-                <Scale size={14} />
-                المركز المالي الموحد المستقل ERP
-              </Badge>
-              <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                مزامنة حية ({lastSyncTime})
-              </Badge>
-              {accountingSummary.isBalanced ? (
-                <Badge className="bg-emerald-600 text-white font-bold px-3 py-1 text-xs flex items-center gap-1">
-                  <CheckCircle2 size={13} /> الميزانية متزنة (الأصول = الخصوم + الملكية)
-                </Badge>
-              ) : (
-                <Badge className="bg-rose-600 text-white font-bold px-3 py-1 text-xs flex items-center gap-1">
-                  <AlertCircle size={13} /> فارق اتزان
-                </Badge>
-              )}
-            </div>
-
-            <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight flex items-center gap-2.5">
-              <TrendingUp className="text-primary" size={28} />
-              المركز المالي الشامل (الميزانية وقائمة الدخل الموحدة)
-            </h2>
-            <p className="text-slate-300 text-xs sm:text-sm font-medium leading-relaxed max-w-3xl">
-              تجميع وتزامن لحظي لكافة المستجدات المالية في المول التجاري، حديقة الألعاب، المطعم
-              ونقاط البيع، سندات المقبوضات والمدفوعات، ودفتر اليومية العامة ودليل الحسابات.
-            </p>
+    <Card className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden relative">
+      <div className="border-b border-border bg-muted/20 px-5 py-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary border border-primary/20">
+            <TrendingUp size={18} />
           </div>
+          <h2 className="text-base sm:text-lg font-black text-foreground">
+            المركز المالي الشامل ومؤشرات القطاعات
+          </h2>
+          {accountingSummary.isBalanced ? (
+            <Badge className="bg-emerald-600 text-white font-bold px-2.5 py-0.5 text-[11px] flex items-center gap-1">
+              <CheckCircle2 size={12} /> الميزانية متزنة
+            </Badge>
+          ) : (
+            <Badge className="bg-rose-600 text-white font-bold px-2.5 py-0.5 text-[11px] flex items-center gap-1">
+              <AlertCircle size={12} /> فارق اتزان
+            </Badge>
+          )}
+        </div>
 
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <Button
-              onClick={handleManualSync}
-              variant="outline"
-              size="sm"
-              className="bg-white/10 hover:bg-white/20 text-white border-white/20 font-bold text-xs h-9 rounded-xl backdrop-blur transition active:scale-95"
-            >
-              <RefreshCw size={14} className="ml-1.5" />
-              تحديث المزامنة
-            </Button>
-            <Button
-              onClick={handleExportExcel}
-              variant="outline"
-              size="sm"
-              className="bg-emerald-600/80 hover:bg-emerald-600 text-white border-emerald-500 font-bold text-xs h-9 rounded-xl backdrop-blur transition active:scale-95"
-            >
-              <FileSpreadsheet size={14} className="ml-1.5" />
-              تصدير Excel
-            </Button>
-            <Button
-              onClick={handlePrint}
-              variant="outline"
-              size="sm"
-              className="bg-indigo-600/80 hover:bg-indigo-600 text-white border-indigo-500 font-bold text-xs h-9 rounded-xl backdrop-blur transition active:scale-95"
-            >
-              <Printer size={14} className="ml-1.5" />
-              طباعة التقرير
-            </Button>
-          </div>
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <Button
+            onClick={handleManualSync}
+            variant="outline"
+            size="sm"
+            className="font-bold text-xs h-8 rounded-xl cursor-pointer"
+          >
+            <RefreshCw size={14} className="ml-1" />
+            تحديث الأرصدة
+          </Button>
+          <Button
+            onClick={handleExportExcel}
+            variant="outline"
+            size="sm"
+            className="border-emerald-500/40 text-emerald-700 dark:text-emerald-300 font-bold text-xs h-8 rounded-xl cursor-pointer"
+          >
+            <FileSpreadsheet size={14} className="ml-1" />
+            تصدير Excel
+          </Button>
+          <Button
+            onClick={handlePrint}
+            size="sm"
+            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-8 rounded-xl cursor-pointer"
+          >
+            <Printer size={14} className="ml-1" />
+            طباعة المركز المالي
+          </Button>
         </div>
       </div>
 
-      <CardContent className="p-6 space-y-6">
+      <CardContent className="p-5 space-y-5">
         {/* 1. Core Financial Position KPIs */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card className="border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/50 dark:bg-emerald-950/20 shadow-sm">

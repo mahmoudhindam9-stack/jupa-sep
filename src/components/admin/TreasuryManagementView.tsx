@@ -273,521 +273,357 @@ export function TreasuryManagementView() {
 
   return (
     <div className="space-y-6">
-      {/* Top Quick Print & Reports Shortcut Bar */}
-      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-4 rounded-3xl border border-indigo-500/30 shadow-lg flex flex-col xl:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-3 text-right">
-          <div className="w-12 h-12 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shrink-0 shadow-inner">
-            <Printer size={24} />
-          </div>
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="font-black text-base text-white">
-                مركز إدارة الخزائن والتقارير الموحدة (منفرد / مجمع / رصيد فترة)
-              </h3>
-              <Badge className="bg-indigo-500/30 text-indigo-200 border-indigo-400/30 text-[10px] font-black">
-                طباعة موحدة & ربط تلقائي بالحسابات
-              </Badge>
+      <div className="space-y-6">
+        {/* Active Treasuries List */}
+        <Card className="border border-border shadow-sm rounded-2xl">
+          <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <CardTitle className="text-base font-black">
+                الحسابات النقدية والبنكية النشطة للفرع ({branchTreasuries.length})
+              </CardTitle>
             </div>
-            <p className="text-xs text-slate-300 font-semibold">
-              طباعة تقرير لكل خزينة لوحدها أو تقرير مجمع، اختيار قيود وحركات بعينها، طباعة الرصيد من تاريخ إلى تاريخ، وإنشاء خزينة مع حسابها الشجري تلقائياً
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 flex-wrap shrink-0 w-full xl:w-auto justify-end">
-          <Button
-            onClick={() => {
-              setReportInitialTreasuryId("all");
-              setReportInitialType("combined");
-              setIsTreasuryReportModalOpen(true);
-            }}
-            className="flex-1 sm:flex-none bg-cyan-600 hover:bg-cyan-700 text-white font-black text-xs h-10 px-4 rounded-2xl flex items-center justify-center gap-2 shadow-md transition"
-          >
-            <Wallet size={16} />
-            <span>تقرير مجمع للخزائن</span>
-          </Button>
-
-          <Button
-            onClick={() => {
-              setReportInitialTreasuryId("all");
-              setReportInitialType("document");
-              setIsTreasuryReportModalOpen(true);
-            }}
-            className="flex-1 sm:flex-none bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-600 hover:to-blue-700 text-white font-black text-xs h-10 px-4 rounded-2xl flex items-center justify-center gap-2 shadow-md transition"
-          >
-            <Printer size={16} />
-            <span>طباعة الحركات / تحديد قيود / رصيد فترة</span>
-          </Button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-          {/* Active Treasuries List */}
-          <Card className="border border-border shadow-sm rounded-2xl">
-            <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div>
-                <CardTitle className="text-base font-black">
-                  الحسابات النقدية والبنكية النشطة للفرع ({branchTreasuries.length})
-                </CardTitle>
-                <CardDescription>
-                  فتح وإغلاق الخزائن وطباعة تقرير كل خزينة لوحدها أو رصيدها خلال فترة محددة
-                </CardDescription>
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setReportInitialTreasuryId("all");
-                  setReportInitialType("combined");
-                  setIsTreasuryReportModalOpen(true);
-                }}
-                className="font-bold text-xs rounded-xl gap-1.5"
-              >
-                <Scale size={14} className="text-indigo-600" />
-                <span>مقارنة وطباعة أرصدة كافة الخزائن</span>
-              </Button>
-            </CardHeader>
-            <CardContent className="p-4 space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {branchTreasuries.map((tr) => {
-                  const bd = getTreasuryFullBreakdown(tr);
-                  return (
-                    <div
-                      key={tr.id}
-                      onClick={() => {
-                        setReportInitialTreasuryId(tr.id);
-                        setReportInitialType("document");
-                        setIsTreasuryReportModalOpen(true);
-                      }}
-                      className="border border-border/80 p-4 rounded-2xl flex flex-col justify-between bg-card hover:border-primary/80 hover:shadow-md transition gap-3 cursor-pointer group relative overflow-hidden"
-                    >
-                      <div className="flex items-start justify-between border-b border-border/50 pb-3">
-                        <div className="space-y-1 text-right">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="bg-blue-600/10 text-blue-700 dark:text-blue-300 text-[10px] font-black px-2.5 py-0.5 rounded-md border border-blue-500/30 font-mono">
-                              حساب شجري:{" "}
-                              {tr.account_code || (tr.id === "tr-1" ? "13010130" : "13010100")}
-                            </span>
-                            <span className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-[9px] font-black px-2 py-0.5 rounded-full">
-                              {tr.type === "cash" ? "خزينة كاش" : "حساب بنكي آمن"}
-                            </span>
-                            <span className="bg-primary/10 text-primary text-[9px] font-black px-2 py-0.5 rounded-full border border-primary/20">
-                              {tr.currency === "MULTI" ? "متعدد العملات (Multi)" : tr.currency}
-                            </span>
-                          </div>
-                          <h4 className="font-black text-base text-slate-900 dark:text-slate-100 mt-1 flex items-center gap-1.5">
-                            <span>{tr.name_ar}</span>
-                            <ArrowUpRight
-                              size={14}
-                              className="text-primary opacity-0 group-hover:opacity-100 transition-opacity"
-                            />
-                          </h4>
-                          <p className="text-xs text-muted-foreground font-semibold flex items-center gap-1">
-                            <UserIcon size={12} className="text-slate-400" />
-                            <span>الأمين: {tr.responsible_employee || "غير محدد"}</span>
-                          </p>
-                        </div>
-                        <div className="text-left shrink-0">
-                          <span
-                            className={`text-[10px] px-2.5 py-1 rounded-full font-black inline-block ${
-                              tr.is_open
-                                ? "text-emerald-700 bg-emerald-50 dark:bg-emerald-950/50 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800"
-                                : "text-rose-700 bg-rose-50 dark:bg-rose-950/50 dark:text-rose-400 border border-rose-200 dark:border-rose-800"
-                            }`}
-                          >
-                            {tr.is_open ? "● مفتوحة للاستلام" : "■ مغلقة"}
+            <Button
+              size="sm"
+              onClick={() => {
+                setReportInitialTreasuryId("all");
+                setReportInitialType("combined");
+                setIsTreasuryReportModalOpen(true);
+              }}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl gap-1.5 cursor-pointer"
+            >
+              <Printer size={14} />
+              <span>تقرير وحركات الخزائن</span>
+            </Button>
+          </CardHeader>
+          <CardContent className="p-4 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {branchTreasuries.map((tr) => {
+                const bd = getTreasuryFullBreakdown(tr);
+                return (
+                  <div
+                    key={tr.id}
+                    onClick={() => {
+                      setReportInitialTreasuryId(tr.id);
+                      setReportInitialType("document");
+                      setIsTreasuryReportModalOpen(true);
+                    }}
+                    className="border border-border/80 p-4 rounded-2xl flex flex-col justify-between bg-card hover:border-primary/80 hover:shadow-md transition gap-3 cursor-pointer group relative overflow-hidden"
+                  >
+                    <div className="flex items-start justify-between border-b border-border/50 pb-3">
+                      <div className="space-y-1 text-right">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="bg-blue-600/10 text-blue-700 dark:text-blue-300 text-[10px] font-black px-2.5 py-0.5 rounded-md border border-blue-500/30 font-mono">
+                            حساب شجري:{" "}
+                            {tr.account_code || (tr.id === "tr-1" ? "13010130" : "13010100")}
+                          </span>
+                          <span className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-[9px] font-black px-2 py-0.5 rounded-full">
+                            {tr.type === "cash" ? "خزينة كاش" : "حساب بنكي آمن"}
+                          </span>
+                          <span className="bg-primary/10 text-primary text-[9px] font-black px-2 py-0.5 rounded-full border border-primary/20">
+                            {tr.currency === "MULTI" ? "متعدد العملات (Multi)" : tr.currency}
                           </span>
                         </div>
+                        <h4 className="font-black text-base text-slate-900 dark:text-slate-100 mt-1 flex items-center gap-1.5">
+                          <span>{tr.name_ar}</span>
+                          <ArrowUpRight
+                            size={14}
+                            className="text-primary opacity-0 group-hover:opacity-100 transition-opacity"
+                          />
+                        </h4>
+                        <p className="text-xs text-muted-foreground font-semibold flex items-center gap-1">
+                          <UserIcon size={12} className="text-slate-400" />
+                          <span>الأمين: {tr.responsible_employee || "غير محدد"}</span>
+                        </p>
                       </div>
-
-                      {/* Balances */}
-                      <div className="bg-muted/30 border border-border/60 rounded-xl p-3 space-y-1.5 text-xs font-mono">
-                        <div className="flex items-center justify-between text-slate-700 dark:text-slate-300">
-                          <span className="font-sans font-bold flex items-center gap-1.5 text-[11px]">
-                            <Coins size={13} className="text-emerald-500" />
-                            نقدي (EGP):
-                          </span>
-                          <span className="font-black text-emerald-600 dark:text-emerald-400">
-                            {bd.cashEGP.toLocaleString()} EGP
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between text-slate-700 dark:text-slate-300">
-                          <span className="font-sans font-bold flex items-center gap-1.5 text-[11px]">
-                            <Coins size={13} className="text-green-500" />
-                            نقدي (USD):
-                          </span>
-                          <span className="font-black text-green-600 dark:text-green-400">
-                            {bd.cashUSD.toLocaleString()} USD
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between text-slate-700 dark:text-slate-300">
-                          <span className="font-sans font-bold flex items-center gap-1.5 text-[11px]">
-                            <Coins size={13} className="text-amber-500" />
-                            نقدي (SSP):
-                          </span>
-                          <span className="font-black text-amber-600 dark:text-amber-400">
-                            {bd.cashSSP.toLocaleString()} SSP
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Individual Treasury Print & Period Balance Actions */}
-                      <div className="grid grid-cols-2 gap-2">
-                        <Button
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setReportInitialTreasuryId(tr.id);
-                            setReportInitialType("document");
-                            setIsTreasuryReportModalOpen(true);
-                          }}
-                          className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-black text-xs h-9 rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition active:scale-95"
+                      <div className="text-left shrink-0">
+                        <span
+                          className={`text-[10px] px-2.5 py-1 rounded-full font-black inline-block ${
+                            tr.is_open
+                              ? "text-emerald-700 bg-emerald-50 dark:bg-emerald-950/50 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800"
+                              : "text-rose-700 bg-rose-50 dark:bg-rose-950/50 dark:text-rose-400 border border-rose-200 dark:border-rose-800"
+                          }`}
                         >
-                          <Printer size={14} />
-                          <span>تقرير الخزينة منفردة</span>
-                        </Button>
-
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setReportInitialTreasuryId(tr.id);
-                            setReportInitialType("combined");
-                            setIsTreasuryReportModalOpen(true);
-                          }}
-                          className="bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border-indigo-300 dark:bg-indigo-950/80 dark:text-indigo-300 dark:border-indigo-800 text-xs h-9 font-bold rounded-xl flex items-center justify-center gap-1.5 transition active:scale-95"
-                        >
-                          <Scale size={14} className="text-indigo-600 dark:text-indigo-400" />
-                          <span>الرصيد في فترة</span>
-                        </Button>
-                      </div>
-
-                      <div
-                        onClick={(e) => e.stopPropagation()}
-                        className="border-t border-border/60 pt-2.5 flex items-center justify-between gap-2"
-                      >
-                        <div className="flex gap-1.5">
-                          <Button
-                            size="sm"
-                            variant={tr.is_open ? "destructive" : "default"}
-                            onClick={() => setTreasuryToggleStatusDialog(tr)}
-                            className="text-[11px] font-bold h-7 py-0 px-2.5 rounded-lg"
-                          >
-                            {tr.is_open ? "إغلاق" : "فتح"}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setTreasuryToDelete(tr)}
-                            className="text-[11px] font-bold h-7 py-0 px-2.5 rounded-lg text-destructive hover:bg-destructive/10"
-                          >
-                            حذف
-                          </Button>
-                        </div>
-                        <span className="text-[11px] font-bold text-muted-foreground">
-                          الرصيد الإجمالي: {tr.balance.toLocaleString()} {tr.currency}
+                          {tr.is_open ? "● مفتوحة للاستلام" : "■ مغلقة"}
                         </span>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
 
-              {/* Add New Treasury Form with Automatic Chart of Accounts Creation */}
-              <div className="bg-muted/40 p-4 rounded-2xl border border-indigo-500/30 mt-4 text-right space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h4 className="font-black text-sm text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                    <Plus size={16} className="text-indigo-600" />
-                    <span>تأسيس خزينة أو حساب بنكي جديد (مع إنشاء الحساب المحاسبي تلقائياً):</span>
-                  </h4>
-                  <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 text-[10px] font-bold">
-                    يدعم التوليد التلقائي في شجرة الحسابات
-                  </Badge>
-                </div>
-
-                <form onSubmit={handleAddTreasury} className="space-y-3">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                    <div className="text-right">
-                      <Label className="text-[11px] font-bold">اسم الخزينة / الحساب البنكي *</Label>
-                      <Input
-                        className="mt-1 h-9 text-xs font-bold text-right"
-                        value={newTreasuryForm.name_ar}
-                        onChange={(e) =>
-                          setNewTreasuryForm((s) => ({ ...s, name_ar: e.target.value }))
-                        }
-                        placeholder="مثال: خزينة المبيعات المسائية USD"
-                        required
-                      />
-                    </div>
-
-                    <div className="text-right">
-                      <Label className="text-[11px] font-bold">أمين الخزينة / المسؤول</Label>
-                      <Input
-                        className="mt-1 h-9 text-xs font-bold text-right"
-                        value={newTreasuryForm.responsible_employee}
-                        onChange={(e) =>
-                          setNewTreasuryForm((s) => ({
-                            ...s,
-                            responsible_employee: e.target.value,
-                          }))
-                        }
-                        placeholder="مثال: أحمد علي"
-                      />
-                    </div>
-
-                    <div className="text-right">
-                      <Label className="text-[11px] font-bold">نوع الخزينة والعملة</Label>
-                      <div className="grid grid-cols-2 gap-1.5 mt-1">
-                        <select
-                          className="h-9 rounded-md border border-input bg-background px-2 text-xs font-bold focus:outline-none text-right"
-                          value={newTreasuryForm.type}
-                          onChange={(e) =>
-                            setNewTreasuryForm((s) => ({
-                              ...s,
-                              type: e.target.value as "cash" | "bank",
-                              account_code: "",
-                            }))
-                          }
-                        >
-                          <option value="cash">خزينة كاش</option>
-                          <option value="bank">حساب بنكي</option>
-                        </select>
-                        <select
-                          className="h-9 rounded-md border border-input bg-background px-2 text-xs font-bold focus:outline-none text-right"
-                          value={newTreasuryForm.currency}
-                          onChange={(e) =>
-                            setNewTreasuryForm((s) => ({ ...s, currency: e.target.value }))
-                          }
-                        >
-                          <option value="EGP">EGP</option>
-                          <option value="USD">USD</option>
-                          <option value="SSP">SSP</option>
-                          <option value="MULTI">MULTI</option>
-                        </select>
+                    {/* Balances */}
+                    <div className="bg-muted/30 border border-border/60 rounded-xl p-3 space-y-1.5 text-xs font-mono">
+                      <div className="flex items-center justify-between text-slate-700 dark:text-slate-300">
+                        <span className="font-sans font-bold flex items-center gap-1.5 text-[11px]">
+                          <Coins size={13} className="text-emerald-500" />
+                          نقدي (EGP):
+                        </span>
+                        <span className="font-black text-emerald-600 dark:text-emerald-400">
+                          {bd.cashEGP.toLocaleString()} EGP
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-slate-700 dark:text-slate-300">
+                        <span className="font-sans font-bold flex items-center gap-1.5 text-[11px]">
+                          <Coins size={13} className="text-green-500" />
+                          نقدي (USD):
+                        </span>
+                        <span className="font-black text-green-600 dark:text-green-400">
+                          {bd.cashUSD.toLocaleString()} USD
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-slate-700 dark:text-slate-300">
+                        <span className="font-sans font-bold flex items-center gap-1.5 text-[11px]">
+                          <Coins size={13} className="text-amber-500" />
+                          نقدي (SSP):
+                        </span>
+                        <span className="font-black text-amber-600 dark:text-amber-400">
+                          {bd.cashSSP.toLocaleString()} SSP
+                        </span>
                       </div>
                     </div>
 
-                    <div className="text-right">
-                      <Label className="text-[11px] font-bold">الرصيد الافتتاحي</Label>
-                      <Input
-                        type="text"
-                        inputMode="decimal"
-                        className="mt-1 h-9 text-xs font-mono font-bold text-right"
-                        value={newTreasuryForm.balance}
+                    {/* Individual Treasury Print & Period Balance Actions */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setReportInitialTreasuryId(tr.id);
+                          setReportInitialType("document");
+                          setIsTreasuryReportModalOpen(true);
+                        }}
+                        className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-black text-xs h-9 rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition active:scale-95"
+                      >
+                        <Printer size={14} />
+                        <span>تقرير الخزينة منفردة</span>
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setReportInitialTreasuryId(tr.id);
+                          setReportInitialType("combined");
+                          setIsTreasuryReportModalOpen(true);
+                        }}
+                        className="bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border-indigo-300 dark:bg-indigo-950/80 dark:text-indigo-300 dark:border-indigo-800 text-xs h-9 font-bold rounded-xl flex items-center justify-center gap-1.5 transition active:scale-95"
+                      >
+                        <Scale size={14} className="text-indigo-600 dark:text-indigo-400" />
+                        <span>الرصيد في فترة</span>
+                      </Button>
+                    </div>
+
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className="border-t border-border/60 pt-2.5 flex items-center justify-between gap-2"
+                    >
+                      <div className="flex gap-1.5">
+                        <Button
+                          size="sm"
+                          variant={tr.is_open ? "destructive" : "default"}
+                          onClick={() => setTreasuryToggleStatusDialog(tr)}
+                          className="text-[11px] font-bold h-7 py-0 px-2.5 rounded-lg"
+                        >
+                          {tr.is_open ? "إغلاق" : "فتح"}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setTreasuryToDelete(tr)}
+                          className="text-[11px] font-bold h-7 py-0 px-2.5 rounded-lg text-destructive hover:bg-destructive/10"
+                        >
+                          حذف
+                        </Button>
+                      </div>
+                      <span className="text-[11px] font-bold text-muted-foreground">
+                        الرصيد الإجمالي: {tr.balance.toLocaleString()} {tr.currency}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Add New Treasury Form with Automatic Chart of Accounts Creation */}
+            <div className="bg-muted/40 p-4 rounded-2xl border border-indigo-500/30 mt-4 text-right space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h4 className="font-black text-sm text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <Plus size={16} className="text-indigo-600" />
+                  <span>تأسيس خزينة أو حساب بنكي جديد (مع إنشاء الحساب المحاسبي تلقائياً):</span>
+                </h4>
+                <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 text-[10px] font-bold">
+                  يدعم التوليد التلقائي في شجرة الحسابات
+                </Badge>
+              </div>
+
+              <form onSubmit={handleAddTreasury} className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="text-right">
+                    <Label className="text-[11px] font-bold">اسم الخزينة / الحساب البنكي *</Label>
+                    <Input
+                      className="mt-1 h-9 text-xs font-bold text-right"
+                      value={newTreasuryForm.name_ar}
+                      onChange={(e) =>
+                        setNewTreasuryForm((s) => ({ ...s, name_ar: e.target.value }))
+                      }
+                      placeholder="مثال: خزينة المبيعات المسائية USD"
+                      required
+                    />
+                  </div>
+
+                  <div className="text-right">
+                    <Label className="text-[11px] font-bold">أمين الخزينة / المسؤول</Label>
+                    <Input
+                      className="mt-1 h-9 text-xs font-bold text-right"
+                      value={newTreasuryForm.responsible_employee}
+                      onChange={(e) =>
+                        setNewTreasuryForm((s) => ({
+                          ...s,
+                          responsible_employee: e.target.value,
+                        }))
+                      }
+                      placeholder="مثال: أحمد علي"
+                    />
+                  </div>
+
+                  <div className="text-right">
+                    <Label className="text-[11px] font-bold">نوع الخزينة والعملة</Label>
+                    <div className="grid grid-cols-2 gap-1.5 mt-1">
+                      <select
+                        className="h-9 rounded-md border border-input bg-background px-2 text-xs font-bold focus:outline-none text-right"
+                        value={newTreasuryForm.type}
                         onChange={(e) =>
-                          setNewTreasuryForm((s) => ({ ...s, balance: e.target.value }))
+                          setNewTreasuryForm((s) => ({
+                            ...s,
+                            type: e.target.value as "cash" | "bank",
+                            account_code: "",
+                          }))
                         }
-                        placeholder="0.00"
-                      />
+                      >
+                        <option value="cash">خزينة كاش</option>
+                        <option value="bank">حساب بنكي</option>
+                      </select>
+                      <select
+                        className="h-9 rounded-md border border-input bg-background px-2 text-xs font-bold focus:outline-none text-right"
+                        value={newTreasuryForm.currency}
+                        onChange={(e) =>
+                          setNewTreasuryForm((s) => ({ ...s, currency: e.target.value }))
+                        }
+                      >
+                        <option value="EGP">EGP</option>
+                        <option value="USD">USD</option>
+                        <option value="SSP">SSP</option>
+                        <option value="MULTI">MULTI</option>
+                      </select>
                     </div>
                   </div>
 
-                  {/* Account Creation / Linking Bar */}
-                  <div className="bg-background/90 border border-border rounded-xl p-3 grid grid-cols-1 lg:grid-cols-12 gap-3 items-center">
-                    <div className="lg:col-span-6 flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-black text-foreground">
-                        أسلوب ربط شجرة الحسابات:
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setNewTreasuryForm((s) => ({
-                            ...s,
-                            accountMode: "auto",
-                            account_code: "",
-                          }))
-                        }
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition ${
-                          newTreasuryForm.accountMode === "auto"
-                            ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
-                            : "bg-muted/40 text-muted-foreground border-border"
-                        }`}
-                      >
-                        <Sparkles size={13} />
-                        <span>إنشاء حساب جديد تلقائياً ({suggestedAccountCode})</span>
-                      </button>
+                  <div className="text-right">
+                    <Label className="text-[11px] font-bold">الرصيد الافتتاحي</Label>
+                    <Input
+                      type="text"
+                      inputMode="decimal"
+                      className="mt-1 h-9 text-xs font-mono font-bold text-right"
+                      value={newTreasuryForm.balance}
+                      onChange={(e) =>
+                        setNewTreasuryForm((s) => ({ ...s, balance: e.target.value }))
+                      }
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
 
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setNewTreasuryForm((s) => ({
-                            ...s,
-                            accountMode: "existing",
-                            account_code: "",
-                          }))
-                        }
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition ${
-                          newTreasuryForm.accountMode === "existing"
-                            ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
-                            : "bg-muted/40 text-muted-foreground border-border"
-                        }`}
-                      >
-                        <Link2 size={13} />
-                        <span>ربط بحساب موجود</span>
-                      </button>
-                    </div>
+                {/* Account Creation / Linking Bar */}
+                <div className="bg-background/90 border border-border rounded-xl p-3 grid grid-cols-1 lg:grid-cols-12 gap-3 items-center">
+                  <div className="lg:col-span-6 flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-black text-foreground">
+                      أسلوب ربط شجرة الحسابات:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setNewTreasuryForm((s) => ({
+                          ...s,
+                          accountMode: "auto",
+                          account_code: "",
+                        }))
+                      }
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition ${
+                        newTreasuryForm.accountMode === "auto"
+                          ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
+                          : "bg-muted/40 text-muted-foreground border-border"
+                      }`}
+                    >
+                      <Sparkles size={13} />
+                      <span>إنشاء حساب جديد تلقائياً ({suggestedAccountCode})</span>
+                    </button>
 
-                    <div className="lg:col-span-4">
-                      {newTreasuryForm.accountMode === "auto" ? (
-                        <div className="flex items-center gap-2">
-                          <span className="text-[11px] font-bold text-muted-foreground shrink-0">
-                            رقم الحساب الجديد:
-                          </span>
-                          <Input
-                            className="h-8 text-xs font-mono font-bold text-center"
-                            value={newTreasuryForm.account_code || suggestedAccountCode}
-                            onChange={(e) =>
-                              setNewTreasuryForm((s) => ({ ...s, account_code: e.target.value }))
-                            }
-                            placeholder={suggestedAccountCode}
-                          />
-                        </div>
-                      ) : (
-                        <select
-                          className="w-full h-8 rounded-md border border-input bg-background px-2 text-xs font-bold text-right"
-                          value={newTreasuryForm.account_code}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setNewTreasuryForm((s) => ({
+                          ...s,
+                          accountMode: "existing",
+                          account_code: "",
+                        }))
+                      }
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition ${
+                        newTreasuryForm.accountMode === "existing"
+                          ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
+                          : "bg-muted/40 text-muted-foreground border-border"
+                      }`}
+                    >
+                      <Link2 size={13} />
+                      <span>ربط بحساب موجود</span>
+                    </button>
+                  </div>
+
+                  <div className="lg:col-span-4">
+                    {newTreasuryForm.accountMode === "auto" ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-bold text-muted-foreground shrink-0">
+                          رقم الحساب الجديد:
+                        </span>
+                        <Input
+                          className="h-8 text-xs font-mono font-bold text-center"
+                          value={newTreasuryForm.account_code || suggestedAccountCode}
                           onChange={(e) =>
                             setNewTreasuryForm((s) => ({ ...s, account_code: e.target.value }))
                           }
-                          required={newTreasuryForm.accountMode === "existing"}
-                        >
-                          <option value="">-- اختر الحساب من الدليل المحاسبي --</option>
-                          {availableAccountsToLink.map((acc) => (
-                            <option key={acc.code} value={acc.code}>
-                              {acc.code} - {acc.name_ar}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                    </div>
-
-                    <div className="lg:col-span-2">
-                      <Button
-                        type="submit"
-                        size="sm"
-                        className="w-full font-black h-9 text-xs bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl"
+                          placeholder={suggestedAccountCode}
+                        />
+                      </div>
+                    ) : (
+                      <select
+                        className="w-full h-8 rounded-md border border-input bg-background px-2 text-xs font-bold text-right"
+                        value={newTreasuryForm.account_code}
+                        onChange={(e) =>
+                          setNewTreasuryForm((s) => ({ ...s, account_code: e.target.value }))
+                        }
+                        required={newTreasuryForm.accountMode === "existing"}
                       >
-                        + تأسيس الخزينة والحساب
-                      </Button>
-                    </div>
+                        <option value="">-- اختر الحساب من الدليل المحاسبي --</option>
+                        {availableAccountsToLink.map((acc) => (
+                          <option key={acc.code} value={acc.code}>
+                            {acc.code} - {acc.name_ar}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                   </div>
-                </form>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
 
-        {/* Quick Transactions Form Panel */}
-        <div className="bg-card border border-border p-5 rounded-2xl space-y-4">
-          <h3 className="font-bold text-base text-primary flex items-center gap-1">
-            <ArrowLeftRight size={18} />
-            حركات ومناقلات نقدية سريعة
-          </h3>
-          <p className="text-xs text-muted-foreground font-semibold">
-            تسجيل حركة إيداع أو سحب نقدي مباشر أو مناقلة نقدية داخلية بين صناديق الفروع.
-          </p>
-
-          <form onSubmit={handleTreasuryAction} className="space-y-4">
-            <div>
-              <Label className="text-xs font-bold">نوع الإجراء</Label>
-              <select
-                className="w-full mt-1.5 h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary text-right"
-                value={treasuryForm.actionType}
-                onChange={(e) =>
-                  setTreasuryForm((s) => ({ ...s, actionType: e.target.value as any }))
-                }
-              >
-                <option value="deposit">إيداع كاش مباشر (+)</option>
-                <option value="withdrawal">سحب كاش مباشر (-)</option>
-                <option value="transfer">تحويل مالي بين الخزائن</option>
-              </select>
+                  <div className="lg:col-span-2">
+                    <Button
+                      type="submit"
+                      size="sm"
+                      className="w-full font-black h-9 text-xs bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl"
+                    >
+                      + تأسيس الخزينة والحساب
+                    </Button>
+                  </div>
+                </div>
+              </form>
             </div>
-
-            <div>
-              <Label className="text-xs font-bold">الخزينة المستهدفة (المصدر)</Label>
-              <select
-                className="w-full mt-1.5 h-9 rounded-md border border-input bg-background px-3 text-sm text-right"
-                value={treasuryForm.treasury_id}
-                onChange={(e) => setTreasuryForm((s) => ({ ...s, treasury_id: e.target.value }))}
-                required
-              >
-                <option value="">اختر خزينة</option>
-                {branchTreasuries
-                  .filter((t) => t.is_open)
-                  .map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name_ar} (رصيد: {t.balance.toLocaleString()}{" "}
-                      {getTreasuryDisplayCurrency(t)})
-                    </option>
-                  ))}
-              </select>
-            </div>
-
-            {treasuryForm.actionType === "transfer" && (
-              <div>
-                <Label className="text-xs font-bold">الخزينة المستقبلة (إلى)</Label>
-                <select
-                  className="w-full mt-1.5 h-9 rounded-md border border-input bg-background px-3 text-sm text-right"
-                  value={treasuryForm.target_treasury_id}
-                  onChange={(e) =>
-                    setTreasuryForm((s) => ({ ...s, target_treasury_id: e.target.value }))
-                  }
-                  required
-                >
-                  <option value="">اختر خزينة مستلمة</option>
-                  {branchTreasuries.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name_ar}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            <div className="grid grid-cols-3 gap-2">
-              <div className="col-span-2">
-                <Label className="text-xs font-bold">المبلغ النقدي</Label>
-                <Input
-                  className="mt-1.5 font-mono"
-                  type="text"
-                  inputMode="decimal"
-                  value={treasuryForm.amount}
-                  onChange={(e) => setTreasuryForm((s) => ({ ...s, amount: e.target.value }))}
-                  placeholder="مثال: 5000"
-                  required
-                />
-              </div>
-              <div>
-                <Label className="text-xs font-bold">العملة</Label>
-                <select
-                  className="w-full mt-1.5 h-9 rounded-md border border-input bg-background px-2 text-sm text-right focus:outline-none focus:ring-1 focus:ring-primary font-bold"
-                  value={treasuryForm.currency}
-                  onChange={(e) => setTreasuryForm((s) => ({ ...s, currency: e.target.value }))}
-                >
-                  <option value="EGP">EGP</option>
-                  <option value="USD">USD</option>
-                  <option value="SSP">SSP</option>
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <Label className="text-xs font-bold">البيان والسبب</Label>
-              <Input
-                className="mt-1.5"
-                value={treasuryForm.note}
-                onChange={(e) => setTreasuryForm((s) => ({ ...s, note: e.target.value }))}
-                placeholder="إيداع مبيعات، عهدة عمال، إيداع رأسمال.."
-              />
-            </div>
-
-            <Button type="submit" className="w-full font-bold">
-              تأكيد الإجراء على الحساب
-            </Button>
-          </form>
-        </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Treasury Report Modal */}

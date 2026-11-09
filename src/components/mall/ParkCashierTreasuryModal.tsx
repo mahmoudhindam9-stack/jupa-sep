@@ -113,68 +113,78 @@ export function ParkCashierTreasuryModal({ isOpen, onClose, onOpenCloseShift }: 
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[900px] max-h-[85vh] overflow-y-auto rounded-3xl">
-        <DialogHeader>
-          <DialogTitle className="text-lg font-black flex items-center gap-2 text-primary">
-            <Landmark size={20} />
-            <span>خزينة الكاشير - وردية #{activeShift?.shift_number}</span>
-          </DialogTitle>
+      <DialogContent className="sm:max-w-3xl p-4 sm:p-5 rounded-3xl">
+        <DialogHeader className="pb-2 border-b border-border/60">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <DialogTitle className="text-base font-black flex items-center gap-2 text-primary">
+              <Landmark size={18} />
+              <span>خزينة الكاشير - وردية #{activeShift?.shift_number}</span>
+            </DialogTitle>
+
+            {activeShift && (
+              <div className="flex items-center gap-1.5">
+                <Button
+                  onClick={handlePrintReport}
+                  variant="outline"
+                  size="sm"
+                  className="rounded-xl text-xs font-bold gap-1.5 h-8 px-3"
+                >
+                  <Printer size={13} /> طباعة التقرير
+                </Button>
+                {canCloseShift && onOpenCloseShift && (
+                  <Button
+                    onClick={() => {
+                      onClose();
+                      onOpenCloseShift();
+                    }}
+                    variant="destructive"
+                    size="sm"
+                    className="rounded-xl text-xs font-bold gap-1.5 h-8 px-3"
+                  >
+                    <Lock size={13} /> إغلاق الوردية
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
         </DialogHeader>
 
         {activeShift ? (
-          <div className="space-y-6 mt-2">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-card border border-border p-4 rounded-2xl">
-                <span className="text-xs text-muted-foreground font-bold block mb-1">
+          <div className="space-y-3 mt-1">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-card border border-border p-3 rounded-2xl">
+                <span className="text-[11px] text-muted-foreground font-bold block mb-0.5">
                   إجمالي الخزينة (USD)
                 </span>
-                <span className="text-xl font-black text-emerald-600">
+                <span className="text-lg font-black text-emerald-600">
                   {formatTicketPrice(totalUsd)}
                 </span>
               </div>
-              <div className="bg-card border border-border p-4 rounded-2xl">
-                <span className="text-xs text-muted-foreground font-bold block mb-1">
+              <div className="bg-card border border-border p-3 rounded-2xl">
+                <span className="text-[11px] text-muted-foreground font-bold block mb-0.5">
                   إجمالي الخزينة (SSP)
                 </span>
-                <span className="text-xl font-black text-teal-600">
+                <span className="text-lg font-black text-teal-600">
                   {totalSsp.toLocaleString()} SSP
                 </span>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <Button
-                onClick={handlePrintReport}
-                variant="outline"
-                className="rounded-xl text-xs font-bold gap-2"
-              >
-                <Printer size={14} /> طباعة التقرير
-              </Button>
-              {canCloseShift && onOpenCloseShift && (
-                <Button
-                  onClick={() => {
-                    onClose();
-                    onOpenCloseShift();
-                  }}
-                  variant="destructive"
-                  className="rounded-xl text-xs font-bold gap-2"
-                >
-                  <Lock size={14} /> إغلاق الوردية
-                </Button>
-              )}
-            </div>
-
             <div className="border border-border rounded-2xl overflow-hidden bg-card">
-              <div className="overflow-x-auto">
+              <div className="max-h-56 overflow-y-auto">
                 <table className="w-full text-right text-xs">
-                  <thead className="bg-muted/50 border-b border-border">
+                  <thead className="bg-muted/50 border-b border-border sticky top-0">
                     <tr>
-                      <th className="p-3 font-black text-muted-foreground">رقم الفاتورة</th>
-                      <th className="p-3 font-black text-muted-foreground">الوقت</th>
-                      <th className="p-3 font-black text-muted-foreground">طريقة الدفع</th>
-                      <th className="p-3 font-black text-muted-foreground">المبلغ</th>
-                      <th className="p-3 font-black text-muted-foreground text-center">الحالة</th>
-                      <th className="p-3 font-black text-muted-foreground text-center">إجراءات</th>
+                      <th className="py-2 px-3 font-black text-muted-foreground">رقم الفاتورة</th>
+                      <th className="py-2 px-3 font-black text-muted-foreground">الوقت</th>
+                      <th className="py-2 px-3 font-black text-muted-foreground">طريقة الدفع</th>
+                      <th className="py-2 px-3 font-black text-muted-foreground">المبلغ</th>
+                      <th className="py-2 px-3 font-black text-muted-foreground text-center">
+                        الحالة
+                      </th>
+                      <th className="py-2 px-3 font-black text-muted-foreground text-center">
+                        إجراءات
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">

@@ -1157,7 +1157,7 @@ export const DEFAULT_SUPPLIERS: Supplier[] = ORACLE_MIGRATION_ACCOUNTS.filter(
 
 export const LEGACY_DEFAULT_USER_IDS = new Set(["u-manager", "u-cashier", "u-owner-mahmoud"]);
 
-export const DEFAULT_COMPLIANT_ADMIN_PASSWORD = "";
+export const DEFAULT_COMPLIANT_ADMIN_PASSWORD = "Admin@12345";
 
 export const ROOT_DEFAULT_ADMIN: SystemUser = {
   id: "u-admin",
@@ -1167,6 +1167,7 @@ export const ROOT_DEFAULT_ADMIN: SystemUser = {
   email: "admin@restocash.com",
   phone: "01000000000",
   role: "super_admin",
+  password: DEFAULT_COMPLIANT_ADMIN_PASSWORD,
   permissions: {
     super_admin_full_access: true,
     orders: true,
@@ -1215,6 +1216,7 @@ export const OWNER_DEFAULT_ADMIN: SystemUser = {
   email: "mahmoudhindam9@gmail.com",
   phone: "01000000000",
   role: "super_admin",
+  password: DEFAULT_COMPLIANT_ADMIN_PASSWORD,
   permissions: {
     ...ROOT_DEFAULT_ADMIN.permissions,
   },
@@ -1320,7 +1322,7 @@ export function ensureCurrentManagedUsers(
 
     const resolvedPassword = isCompliantPasswordValue(user.password)
       ? String(user.password)
-      : undefined;
+      : DEFAULT_COMPLIANT_ADMIN_PASSWORD;
 
     const validRoles = new Set([
       "super_admin",

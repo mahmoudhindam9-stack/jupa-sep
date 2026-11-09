@@ -41,6 +41,7 @@ import {
   Play,
   UserCheck,
   Eye,
+  AlertCircle,
   type LucideIcon,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -49,6 +50,7 @@ import { convertToInventoryUnit, cleanTableId } from "@/shared/utils/inventoryUt
 import { erpStore, RestaurantShift } from "@/shared/services/erpStore";
 import { RestaurantShiftLauncherModal } from "@/components/restaurant/RestaurantShiftLauncherModal";
 import { RestaurantShiftClosingReportModal } from "@/components/restaurant/RestaurantShiftClosingReportModal";
+import { RestaurantCashierTreasuryModal } from "@/components/restaurant/RestaurantCashierTreasuryModal";
 import { printerService } from "@/shared/services/printerService";
 import * as XLSX from "xlsx";
 import { useSettings, translations } from "@/hooks/use-settings";
@@ -169,6 +171,7 @@ function Index() {
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
   const [isShiftLauncherOpen, setIsShiftLauncherOpen] = useState(false);
   const [closingShift, setClosingShift] = useState<RestaurantShift | null>(null);
+  const [isCashierTreasuryModalOpen, setIsCashierTreasuryModalOpen] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -203,6 +206,40 @@ function Index() {
   const [authNumber, setAuthNumber] = useState("");
   const [mobileNumber, setMobileNumber] = useState("");
   const [selectedContainer, setSelectedContainer] = useState<string>("");
+
+  const mainCurrencyRate = useMemo(() => {
+    if (currency === "USD") return 1;
+    return Number(erpStore.getExchangeRate(currency) || exchangeRates[currency] || 1);
+  }, [currency, exchangeRates]);
+
+  const [checkoutExchangeRate, setCheckoutExchangeRate] = useState<number>(mainCurrencyRate);
+
+  useEffect(() => {
+    setCheckoutExchangeRate(mainCurrencyRate);
+  }, [mainCurrencyRate, currency, checkoutOpen]);
+
+  const effectiveCheckoutRate =
+    currency === "USD" ? 1 : Number(checkoutExchangeRate) > 0 ? Number(checkoutExchangeRate) : mainCurrencyRate;
+
+  const isCheckoutRateWarning = useMemo(() => {
+    if (currency === "USD" || mainCurrencyRate <= 0) return false;
+    return Math.abs(effectiveCheckoutRate - mainCurrencyRate) / mainCurrencyRate > 0.1;
+  }, [currency, effectiveCheckoutRate, mainCurrencyRate]);
+
+  const formatCheckoutPrice = (amountUsd: number) => {
+    const num = Number(amountUsd || 0);
+    const converted = currency === "USD" ? num : num * effectiveCheckoutRate;
+    const formatted = converted.toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+    if (lang === "ar") {
+      if (currency === "EGP") return `${formatted} ج.م`;
+      if (currency === "USD") return `${formatted} $`;
+      if (currency === "SSP") return `${formatted} ج.ج.س`;
+    }
+    return `${formatted} ${currency}`;
+  };
 
   useEffect(() => {
     const treasury = erpStore.getState().treasuries.find((t) => t.id === selectedTreasury);
@@ -749,8 +786,10 @@ function Index() {
 
       if (currency && currency !== "EGP")
         finalNotes += (finalNotes ? " | " : "") + "العملة: " + currency;
+      if (currency !== "USD")
+        finalNotes += (finalNotes ? " | " : "") + "المعامل: " + effectiveCheckoutRate;
 
-      const rate = exchangeRates[currency] || 1;
+      const rate = currency === "USD" ? 1 : effectiveCheckoutRate;
       const finalSubtotal = currency === "EGP" ? subTotal : subTotal / rate;
       const finalDiscount = currency === "EGP" ? discountAmount : discountAmount / rate;
       const finalServiceFee = currency === "EGP" ? dineInServiceAmount : dineInServiceAmount / rate;
@@ -1310,13 +1349,14 @@ function Index() {
               </button>
             )}
 
-            <Link
-              to="/cashier-treasury"
-              className="inline-flex items-center gap-1.5 bg-emerald-500/10 hover:bg-emerald-500/15 border border-emerald-500/30 rounded-lg px-3 h-8 transition text-xs font-bold text-emerald-700 dark:text-emerald-300 whitespace-nowrap shrink-0"
+            <button
+              type="button"
+              onClick={() => setIsCashierTreasuryModalOpen(true)}
+              className="inline-flex items-center gap-1.5 bg-emerald-500/10 hover:bg-emerald-500/15 border border-emerald-500/30 rounded-lg px-3 h-8 transition text-xs font-bold text-emerald-700 dark:text-emerald-300 whitespace-nowrap shrink-0 cursor-pointer"
             >
               <Wallet size={14} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
               <span>{lang === "ar" ? "خزينة الكاشير" : "Cashier Treasury"}</span>
-            </Link>
+            </button>
 
             <AlertDialog>
               <AlertDialogTrigger asChild>
@@ -1554,356 +1594,412 @@ function Index() {
       )}
 
       {checkoutOpen && (
-        <Modal onClose={() => setCheckoutOpen(false)}>
-          <div className="p-4 sm:p-6 md:p-8">
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="text-xl font-black">
+        <Modal onClose={() => setCheckoutOpen(false)} maxWidth="max-w-3xl">
+          <div className="p-4 sm:p-5">
+            <div className="flex items-center justify-between mb-3 pb-2.5 border-b border-border/60">
+              <h3 className="text-base font-black">
                 {lang === "ar" ? "تفاصيل إتمام الطلب" : "Checkout Details"}
               </h3>
               <button
                 onClick={() => setCheckoutOpen(false)}
-                className="w-9 h-9 rounded-full hover:bg-muted flex items-center justify-center"
+                className="w-8 h-8 rounded-full hover:bg-muted flex items-center justify-center"
               >
-                <X size={18} />
+                <X size={16} />
               </button>
             </div>
 
-            {/* Order Type */}
-            <div className="mb-4">
-              <Label className="text-sm font-bold block mb-1.5">{t.order_type}</Label>
-              <div className="grid grid-cols-3 gap-2">
-                {orderTypeOptions.map((ot) => {
-                  const Icon = ot.icon;
-                  const label =
-                    ot.key === "dine_in"
-                      ? t.dine_in
-                      : ot.key === "takeaway"
-                        ? t.takeaway
-                        : t.delivery;
-                  return (
-                    <button
-                      key={ot.key}
-                      onClick={() => setOrderType(ot.key)}
-                      className={`flex flex-col items-center gap-1 py-2 rounded-xl border text-xs font-bold transition ${
-                        orderType === ot.key
-                          ? "border-primary bg-primary/5 text-primary"
-                          : "border-border hover:border-primary/40"
-                      }`}
-                    >
-                      <Icon size={16} />
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Payment Method */}
-            <div className="mb-4">
-              <Label className="text-sm font-bold block mb-1.5">{t.payment_method}</Label>
-              <div className="grid grid-cols-3 gap-3">
-                <PayOption
-                  icon={<Banknote size={22} />}
-                  label={t.cash}
-                  active={payment === "cash"}
-                  onClick={() => setPayment("cash")}
-                />
-                <PayOption
-                  icon={<CreditCard size={22} />}
-                  label={t.card}
-                  active={payment === "card"}
-                  onClick={() => setPayment("card")}
-                />
-                <PayOption
-                  icon={<Smartphone size={22} />}
-                  label={t.wallet}
-                  active={payment === "wallet"}
-                  onClick={() => setPayment("wallet")}
-                />
-              </div>
-            </div>
-
-            {/* Currency & Extra Details */}
-            <div className="mb-4 space-y-3">
-              <div>
-                <Label className="text-sm font-bold block mb-1.5">
-                  {lang === "ar" ? "عملة الدفع" : "Payment Currency"}
-                </Label>
-                <select
-                  value={currency}
-                  onChange={(e) => changeCurrency(e.target.value as any)}
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm font-bold focus:outline-none"
-                >
-                  <option value="EGP">{lang === "ar" ? "جنيه مصري (EGP)" : "EGP"}</option>
-                  <option value="USD">{lang === "ar" ? "دولار أمريكي (USD)" : "USD"}</option>
-                  <option value="SSP">{lang === "ar" ? "جنيه ج.س (SSP)" : "SSP"}</option>
-                </select>
-              </div>
-
-              {payment === "card" && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Right Column: Order Type, Table, Payment Method, Currency & Exchange Rate */}
+              <div className="space-y-3">
+                {/* Order Type */}
                 <div>
-                  <Label className="text-sm font-bold block mb-1.5">AUTH#</Label>
-                  <input
-                    type="text"
-                    value={authNumber}
-                    onChange={(e) => setAuthNumber(e.target.value)}
-                    placeholder="Enter AUTH Number"
-                    className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:border-primary"
-                  />
-                </div>
-              )}
-
-              {payment === "wallet" && (
-                <div>
-                  <Label className="text-sm font-bold block mb-1.5">رقم الموبايل</Label>
-                  <input
-                    type="text"
-                    value={mobileNumber}
-                    onChange={(e) => setMobileNumber(e.target.value)}
-                    placeholder="Enter Mobile Number"
-                    className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:border-primary"
-                  />
-                </div>
-              )}
-            </div>
-            {/* Table Selection */}
-            {orderType === "dine_in" && (
-              <div className="mb-4">
-                <Label className="text-sm font-bold">{t.table}</Label>
-                <select
-                  className="w-full mt-1 h-10 rounded-xl border border-input bg-background px-3 text-sm focus:outline-none focus:border-primary cursor-pointer"
-                  value={selectedTable}
-                  onChange={(e) => setSelectedTable(e.target.value)}
-                >
-                  <option value="">{t.choose_table}</option>
-                  {allTables.map((tItem) => (
-                    <option key={tItem.id} value={tItem.id}>
-                      {tItem.name ||
-                        (lang === "ar" ? `طاولة ${tItem.number}` : `Table ${tItem.number}`)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {/* Additions Section */}
-            <div className="mb-4">
-              <Label className="text-sm font-bold block mb-1.5">{t.additions}</Label>
-              <div className="grid grid-cols-2 gap-2">
-                {additionsList.map((add) => {
-                  const label = lang === "ar" ? add.label_ar : add.label_en;
-                  const checked = selectedAdditions.includes(add.id);
-                  return (
-                    <button
-                      key={add.id}
-                      onClick={() => {
-                        setSelectedAdditions((prev) =>
-                          checked ? prev.filter((id) => id !== add.id) : [...prev, add.id],
-                        );
-                      }}
-                      className={`flex items-center justify-between p-2.5 rounded-xl border text-xs font-bold transition ${
-                        checked
-                          ? "border-primary bg-primary/5 text-primary"
-                          : "border-border hover:border-primary/40 bg-card text-muted-foreground"
-                      } ${lang === "ar" ? "text-right" : "text-left"}`}
-                    >
-                      <span>{label}</span>
-                      <span className="text-[10px] opacity-85">+{formatPrice(add.price)}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Special Notes Section */}
-            <div className="mb-4">
-              <Label className="text-sm font-bold">{t.order_notes}</Label>
-              <textarea
-                className="w-full mt-1 rounded-xl border border-input bg-background p-3 text-sm focus:outline-none focus:border-primary"
-                rows={2}
-                value={orderNotes}
-                onChange={(e) => setOrderNotes(e.target.value)}
-                placeholder={t.notes_placeholder}
-              />
-            </div>
-
-            {/* Discount, Tax & Service Charges Section */}
-            <div className="mb-4 space-y-3 p-3.5 rounded-2xl bg-muted/40 border border-border/70">
-              <span className="text-xs font-bold text-muted-foreground block mb-1">
-                {lang === "ar" ? "تعديل الخصم والضريبة والخدمات" : "Discounts, Taxes & Services"}
-              </span>
-
-              {/* Discount Controls */}
-              <div className="flex items-center justify-between gap-2">
-                <Label className="text-xs font-bold shrink-0">
-                  {lang === "ar" ? "الخصم المباشر:" : "Discount:"}
-                </Label>
-                <div className="flex items-center gap-1.5 flex-1 justify-end">
-                  <div className="flex rounded-lg border border-input p-0.5 bg-background text-[11px] font-bold">
-                    <button
-                      type="button"
-                      onClick={() => setDiscountType("percent")}
-                      className={`px-2 py-0.5 rounded-md transition ${discountType === "percent" ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground"}`}
-                    >
-                      %
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDiscountType("fixed")}
-                      className={`px-2 py-0.5 rounded-md transition ${discountType === "fixed" ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground"}`}
-                    >
-                      {currency}
-                    </button>
+                  <Label className="text-xs font-bold block mb-1">{t.order_type}</Label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {orderTypeOptions.map((ot) => {
+                      const Icon = ot.icon;
+                      const label =
+                        ot.key === "dine_in"
+                          ? t.dine_in
+                          : ot.key === "takeaway"
+                            ? t.takeaway
+                            : t.delivery;
+                      return (
+                        <button
+                          key={ot.key}
+                          onClick={() => setOrderType(ot.key)}
+                          className={`flex items-center justify-center gap-1.5 py-2 rounded-xl border text-xs font-bold transition ${
+                            orderType === ot.key
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-border hover:border-primary/40"
+                          }`}
+                        >
+                          <Icon size={14} />
+                          {label}
+                        </button>
+                      );
+                    })}
                   </div>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={discountValue}
-                    onChange={(e) => setDiscountValue(Math.max(0, parseFloat(e.target.value) || 0))}
-                    className="w-20 h-8 rounded-lg border border-input bg-background px-2 text-xs font-mono font-bold text-center"
-                    placeholder="0"
-                  />
                 </div>
-              </div>
 
-              {/* Dine-in Service Charge Control */}
-              {orderType === "dine_in" && (
-                <div className="flex items-center justify-between gap-2 border-t border-border/50 pt-2">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="enable-dinein-service"
-                      checked={enableDineInService}
-                      onChange={(e) => handleEnableDineInServiceChange(e.target.checked)}
-                      className="rounded border-input text-primary focus:ring-primary w-3.5 h-3.5"
-                    />
-                    <Label
-                      htmlFor="enable-dinein-service"
-                      className="text-xs font-bold cursor-pointer"
+                {/* Table Selection */}
+                {orderType === "dine_in" && (
+                  <div>
+                    <Label className="text-xs font-bold">{t.table}</Label>
+                    <select
+                      className="w-full mt-1 h-9 rounded-xl border border-input bg-background px-2.5 text-xs font-bold focus:outline-none focus:border-primary cursor-pointer"
+                      value={selectedTable}
+                      onChange={(e) => setSelectedTable(e.target.value)}
                     >
-                      {lang === "ar" ? "خدمة الصالة (%):" : "Dine-in Service (%):"}
+                      <option value="">{t.choose_table}</option>
+                      {allTables.map((tItem) => (
+                        <option key={tItem.id} value={tItem.id}>
+                          {tItem.name ||
+                            (lang === "ar" ? `طاولة ${tItem.number}` : `Table ${tItem.number}`)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Payment Method */}
+                <div>
+                  <Label className="text-xs font-bold block mb-1">{t.payment_method}</Label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <PayOption
+                      icon={<Banknote size={18} />}
+                      label={t.cash}
+                      active={payment === "cash"}
+                      onClick={() => setPayment("cash")}
+                    />
+                    <PayOption
+                      icon={<CreditCard size={18} />}
+                      label={t.card}
+                      active={payment === "card"}
+                      onClick={() => setPayment("card")}
+                    />
+                    <PayOption
+                      icon={<Smartphone size={18} />}
+                      label={t.wallet}
+                      active={payment === "wallet"}
+                      onClick={() => setPayment("wallet")}
+                    />
+                  </div>
+                </div>
+
+                {payment === "card" && (
+                  <div>
+                    <Label className="text-xs font-bold block mb-1">AUTH#</Label>
+                    <input
+                      type="text"
+                      value={authNumber}
+                      onChange={(e) => setAuthNumber(e.target.value)}
+                      placeholder="Enter AUTH Number"
+                      className="w-full h-8 rounded-xl border border-input bg-background px-2.5 text-xs focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                )}
+
+                {payment === "wallet" && (
+                  <div>
+                    <Label className="text-xs font-bold block mb-1">رقم الموبايل</Label>
+                    <input
+                      type="text"
+                      value={mobileNumber}
+                      onChange={(e) => setMobileNumber(e.target.value)}
+                      placeholder="Enter Mobile Number"
+                      className="w-full h-8 rounded-xl border border-input bg-background px-2.5 text-xs focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                )}
+
+                {/* Currency & Exchange Rate (المعامل) */}
+                <div className="p-2.5 rounded-xl bg-primary/5 border border-primary/20 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-bold">
+                      {lang === "ar" ? "عملة الطلب" : "Order Currency"}
                     </Label>
+                    <span className="px-2.5 py-0.5 rounded-lg bg-primary/10 text-primary font-black text-xs border border-primary/20">
+                      {currency === "USD"
+                        ? "دولار أمريكي (USD $)"
+                        : currency === "SSP"
+                          ? "جنيه ج.س (SSP)"
+                          : "جنيه مصري (EGP)"}
+                    </span>
                   </div>
-                  {enableDineInService && (
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.5"
-                      value={dineInServiceRate}
-                      onChange={(e) =>
-                        handleDineInServiceRateChange(parseFloat(e.target.value) || 0)
-                      }
-                      className="w-20 h-8 rounded-lg border border-input bg-background px-2 text-xs font-mono font-bold text-center"
-                      placeholder="12"
-                    />
+
+                  {currency !== "USD" && (
+                    <div className="space-y-1.5 pt-1.5 border-t border-primary/15">
+                      <div className="flex items-center justify-between gap-2">
+                        <Label className="text-[11px] font-bold">
+                          {lang === "ar"
+                            ? `المعامل ($1 = ${mainCurrencyRate} ${currency}):`
+                            : `Exchange Rate ($1 = ${mainCurrencyRate} ${currency}):`}
+                        </Label>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            step="any"
+                            min="0.0001"
+                            value={checkoutExchangeRate}
+                            onChange={(e) =>
+                              setCheckoutExchangeRate(parseFloat(e.target.value) || 0)
+                            }
+                            className="w-24 h-8 rounded-lg border border-input bg-background px-2 text-xs font-mono font-bold text-center focus:outline-none focus:border-primary"
+                          />
+                          <span className="text-[11px] font-bold text-muted-foreground">
+                            {currency}
+                          </span>
+                        </div>
+                      </div>
+
+                      {isCheckoutRateWarning && (
+                        <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400 text-[11px] font-bold flex items-start gap-1.5">
+                          <AlertCircle size={13} className="shrink-0 mt-0.5" />
+                          <span>
+                            تنبيه: المعامل الجديد ({effectiveCheckoutRate}) يتخطى 10% من المعامل
+                            الرئيسي ({mainCurrencyRate})
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
-              )}
 
-              {/* Delivery Fee Control */}
-              {orderType === "delivery" && (
-                <div className="flex items-center justify-between gap-2 border-t border-border/50 pt-2">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="enable-delivery-fee"
-                      checked={enableDeliveryFee}
-                      onChange={(e) => handleEnableDeliveryFeeChange(e.target.checked)}
-                      className="rounded border-input text-primary focus:ring-primary w-3.5 h-3.5"
-                    />
-                    <Label
-                      htmlFor="enable-delivery-fee"
-                      className="text-xs font-bold cursor-pointer"
-                    >
-                      {lang === "ar"
-                        ? `رسوم التوصيل (${currency}):`
-                        : `Delivery Fee (${currency}):`}
-                    </Label>
+                {/* Additions Section */}
+                <div>
+                  <Label className="text-xs font-bold block mb-1">{t.additions}</Label>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {additionsList.map((add) => {
+                      const label = lang === "ar" ? add.label_ar : add.label_en;
+                      const checked = selectedAdditions.includes(add.id);
+                      return (
+                        <button
+                          key={add.id}
+                          onClick={() => {
+                            setSelectedAdditions((prev) =>
+                              checked ? prev.filter((id) => id !== add.id) : [...prev, add.id],
+                            );
+                          }}
+                          className={`flex items-center justify-between p-2 rounded-lg border text-[11px] font-bold transition ${
+                            checked
+                              ? "border-primary bg-primary/5 text-primary"
+                              : "border-border hover:border-primary/40 bg-card text-muted-foreground"
+                          } ${lang === "ar" ? "text-right" : "text-left"}`}
+                        >
+                          <span className="truncate">{label}</span>
+                          <span className="text-[10px] opacity-85 shrink-0">
+                            +{formatPrice(add.price)}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
-                  {enableDeliveryFee && (
+                </div>
+              </div>
+
+              {/* Left Column: Notes, Discounts/Taxes/Service, Totals & Confirm Button */}
+              <div className="flex flex-col justify-between space-y-3">
+                <div className="space-y-2.5">
+                  {/* Special Notes Section */}
+                  <div>
+                    <Label className="text-xs font-bold">{t.order_notes}</Label>
                     <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      value={deliveryFeeValue}
-                      onChange={(e) => handleDeliveryFeeChange(parseFloat(e.target.value) || 0)}
-                      className="w-20 h-8 rounded-lg border border-input bg-background px-2 text-xs font-mono font-bold text-center"
-                      placeholder="20"
+                      type="text"
+                      className="w-full mt-1 h-8 rounded-xl border border-input bg-background px-2.5 text-xs focus:outline-none focus:border-primary"
+                      value={orderNotes}
+                      onChange={(e) => setOrderNotes(e.target.value)}
+                      placeholder={t.notes_placeholder}
                     />
+                  </div>
+
+                  {/* Discount, Tax & Service Charges Section */}
+                  <div className="space-y-2 p-2.5 rounded-xl bg-muted/40 border border-border/70">
+                    {/* Discount Controls */}
+                    <div className="flex items-center justify-between gap-2">
+                      <Label className="text-xs font-bold shrink-0">
+                        {lang === "ar" ? "الخصم المباشر:" : "Discount:"}
+                      </Label>
+                      <div className="flex items-center gap-1.5 flex-1 justify-end">
+                        <div className="flex rounded-lg border border-input p-0.5 bg-background text-[11px] font-bold">
+                          <button
+                            type="button"
+                            onClick={() => setDiscountType("percent")}
+                            className={`px-2 py-0.5 rounded-md transition ${discountType === "percent" ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground"}`}
+                          >
+                            %
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDiscountType("fixed")}
+                            className={`px-2 py-0.5 rounded-md transition ${discountType === "fixed" ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground"}`}
+                          >
+                            {currency}
+                          </button>
+                        </div>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={discountValue}
+                          onChange={(e) =>
+                            setDiscountValue(Math.max(0, parseFloat(e.target.value) || 0))
+                          }
+                          className="w-16 h-7 rounded-lg border border-input bg-background px-1.5 text-xs font-mono font-bold text-center"
+                          placeholder="0"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Dine-in Service Charge Control */}
+                    {orderType === "dine_in" && (
+                      <div className="flex items-center justify-between gap-2 border-t border-border/50 pt-1.5">
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="checkbox"
+                            id="enable-dinein-service"
+                            checked={enableDineInService}
+                            onChange={(e) => handleEnableDineInServiceChange(e.target.checked)}
+                            className="rounded border-input text-primary focus:ring-primary w-3.5 h-3.5"
+                          />
+                          <Label
+                            htmlFor="enable-dinein-service"
+                            className="text-xs font-bold cursor-pointer"
+                          >
+                            {lang === "ar" ? "خدمة الصالة (%):" : "Dine-in Service (%):"}
+                          </Label>
+                        </div>
+                        {enableDineInService && (
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.5"
+                            value={dineInServiceRate}
+                            onChange={(e) =>
+                              handleDineInServiceRateChange(parseFloat(e.target.value) || 0)
+                            }
+                            className="w-16 h-7 rounded-lg border border-input bg-background px-1.5 text-xs font-mono font-bold text-center"
+                            placeholder="12"
+                          />
+                        )}
+                      </div>
+                    )}
+
+                    {/* Delivery Fee Control */}
+                    {orderType === "delivery" && (
+                      <div className="flex items-center justify-between gap-2 border-t border-border/50 pt-1.5">
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="checkbox"
+                            id="enable-delivery-fee"
+                            checked={enableDeliveryFee}
+                            onChange={(e) => handleEnableDeliveryFeeChange(e.target.checked)}
+                            className="rounded border-input text-primary focus:ring-primary w-3.5 h-3.5"
+                          />
+                          <Label
+                            htmlFor="enable-delivery-fee"
+                            className="text-xs font-bold cursor-pointer"
+                          >
+                            {lang === "ar"
+                              ? `رسوم التوصيل (${currency}):`
+                              : `Delivery Fee (${currency}):`}
+                          </Label>
+                        </div>
+                        {enableDeliveryFee && (
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={deliveryFeeValue}
+                            onChange={(e) =>
+                              handleDeliveryFeeChange(parseFloat(e.target.value) || 0)
+                            }
+                            className="w-16 h-7 rounded-lg border border-input bg-background px-1.5 text-xs font-mono font-bold text-center"
+                            placeholder="20"
+                          />
+                        )}
+                      </div>
+                    )}
+
+                    {/* Tax Rate Info */}
+                    <div className="flex items-center justify-between gap-2 border-t border-border/50 pt-1.5 text-[11px] text-muted-foreground">
+                      <span>{lang === "ar" ? "ضريبة القيمة المضافة:" : "VAT Rate:"}</span>
+                      <span className="font-mono font-bold text-foreground">
+                        {enableTax ? `${taxRatePercent}%` : lang === "ar" ? "معطلة" : "Disabled"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2.5">
+                  <div className="rounded-xl bg-muted p-3 space-y-1.5 font-mono text-xs">
+                    <Row label={t.subtotal} value={formatCheckoutPrice(subTotal)} />
+                    {discountAmount > 0 && (
+                      <div className="flex justify-between text-xs font-bold text-emerald-600">
+                        <span>
+                          {lang === "ar" ? "الخصم" : "Discount"} (
+                          {discountType === "percent" ? `${discountValue}%` : currency}):
+                        </span>
+                        <span>-{formatCheckoutPrice(discountAmount)}</span>
+                      </div>
+                    )}
+                    {dineInServiceAmount > 0 && (
+                      <Row
+                        label={
+                          lang === "ar"
+                            ? `خدمة الصالة (${dineInServiceRate}%)`
+                            : `Dine-in Service (${dineInServiceRate}%)`
+                        }
+                        value={`+${formatCheckoutPrice(dineInServiceAmount)}`}
+                      />
+                    )}
+                    {deliveryServiceAmount > 0 && (
+                      <Row
+                        label={lang === "ar" ? "خدمة التوصيل" : "Delivery Fee"}
+                        value={`+${formatCheckoutPrice(deliveryServiceAmount)}`}
+                      />
+                    )}
+                    {enableTax && (
+                      <Row
+                        label={`${t.tax} (${taxRatePercent}%)`}
+                        value={formatCheckoutPrice(tax)}
+                      />
+                    )}
+                    <div className="h-px border-t border-dashed border-border my-1" />
+                    <div className="flex justify-between items-baseline font-sans">
+                      <span className="font-bold text-xs">{t.total}</span>
+                      <span className="text-lg font-black text-primary">
+                        {formatCheckoutPrice(total)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {placeOrder.isError && (
+                    <p className="text-xs text-destructive">
+                      {lang === "ar" ? "تعذر حفظ الطلب:" : "Could not place order:"}{" "}
+                      {(placeOrder.error as Error).message}
+                    </p>
                   )}
+                  <button
+                    disabled={
+                      placeOrder.isPending ||
+                      (orderType === "dine_in" && !selectedTable) ||
+                      (payment === "card" && !authNumber) ||
+                      (payment === "wallet" && !mobileNumber)
+                    }
+                    onClick={() => placeOrder.mutate()}
+                    className="w-full py-3 rounded-xl text-primary-foreground font-bold text-sm disabled:opacity-60 flex items-center justify-center gap-2 shadow-lg cursor-pointer"
+                    style={{
+                      background: "var(--gradient-primary)",
+                      boxShadow: "var(--shadow-elegant)",
+                    }}
+                  >
+                    {placeOrder.isPending ? <Loader2 size={16} className="animate-spin" /> : null}
+                    {t.confirm_order}
+                  </button>
                 </div>
-              )}
-
-              {/* Tax Rate Info */}
-              <div className="flex items-center justify-between gap-2 border-t border-border/50 pt-2 text-xs text-muted-foreground">
-                <span>
-                  {lang === "ar" ? "ضريبة القيمة المضافة المسجلة:" : "Registered VAT Rate:"}
-                </span>
-                <span className="font-mono font-bold text-foreground">
-                  {enableTax ? `${taxRatePercent}%` : lang === "ar" ? "معطلة" : "Disabled"}
-                </span>
               </div>
             </div>
-
-            <div className="rounded-2xl bg-muted p-4 space-y-2 mb-6 font-mono">
-              <Row label={t.subtotal} value={formatPrice(subTotal)} />
-              {discountAmount > 0 && (
-                <div className="flex justify-between text-xs font-bold text-emerald-600">
-                  <span>
-                    {lang === "ar" ? "الخصم" : "Discount"} (
-                    {discountType === "percent" ? `${discountValue}%` : currency}):
-                  </span>
-                  <span>-{formatPrice(discountAmount)}</span>
-                </div>
-              )}
-              {dineInServiceAmount > 0 && (
-                <Row
-                  label={
-                    lang === "ar"
-                      ? `خدمة الصالة (${dineInServiceRate}%)`
-                      : `Dine-in Service (${dineInServiceRate}%)`
-                  }
-                  value={`+${formatPrice(dineInServiceAmount)}`}
-                />
-              )}
-              {deliveryServiceAmount > 0 && (
-                <Row
-                  label={lang === "ar" ? "خدمة التوصيل" : "Delivery Fee"}
-                  value={`+${formatPrice(deliveryServiceAmount)}`}
-                />
-              )}
-              {enableTax && (
-                <Row label={`${t.tax} (${taxRatePercent}%)`} value={formatPrice(tax)} />
-              )}
-              <div className="h-px border-t border-dashed border-border my-1" />
-              <div className="flex justify-between items-baseline font-sans">
-                <span className="font-bold">{t.total}</span>
-                <span className="text-xl font-black text-primary">{formatPrice(total)}</span>
-              </div>
-            </div>
-
-            {placeOrder.isError && (
-              <p className="text-sm text-destructive mb-3">
-                {lang === "ar" ? "تعذر حفظ الطلب:" : "Could not place order:"}{" "}
-                {(placeOrder.error as Error).message}
-              </p>
-            )}
-            <button
-              disabled={
-                placeOrder.isPending ||
-                (orderType === "dine_in" && !selectedTable) ||
-                (payment === "card" && !authNumber) ||
-                (payment === "wallet" && !mobileNumber)
-              }
-              onClick={() => placeOrder.mutate()}
-              className="w-full py-4 rounded-2xl text-primary-foreground font-bold disabled:opacity-60 flex items-center justify-center gap-2 shadow-lg"
-              style={{ background: "var(--gradient-primary)", boxShadow: "var(--shadow-elegant)" }}
-            >
-              {placeOrder.isPending ? <Loader2 size={18} className="animate-spin" /> : null}
-              {t.confirm_order}
-            </button>
           </div>
         </Modal>
       )}
@@ -2301,6 +2397,16 @@ function Index() {
           </div>
         </Modal>
       )}
+
+      <RestaurantCashierTreasuryModal
+        isOpen={isCashierTreasuryModalOpen}
+        onClose={() => setIsCashierTreasuryModalOpen(false)}
+        onOpenShiftClose={
+          canCloseShifts && activeRestaurantShift
+            ? () => setClosingShift(activeRestaurantShift)
+            : undefined
+        }
+      />
     </div>
   );
 }
@@ -2365,14 +2471,22 @@ function PayOption({
   );
 }
 
-function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+function Modal({
+  children,
+  onClose,
+  maxWidth = "max-w-md",
+}: {
+  children: React.ReactNode;
+  onClose: () => void;
+  maxWidth?: string;
+}) {
   return (
     <div
       className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in"
       onClick={onClose}
     >
       <div
-        className="bg-card rounded-3xl w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl"
+        className={`bg-card rounded-3xl w-full ${maxWidth} max-h-[92vh] overflow-y-auto shadow-2xl`}
         style={{ boxShadow: "var(--shadow-elegant)" }}
         onClick={(e) => e.stopPropagation()}
       >

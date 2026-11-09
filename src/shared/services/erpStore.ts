@@ -7931,7 +7931,11 @@ export class ERPStore {
         return this.state.parkActiveShift;
       }
     }
-    return null;
+    const fallbackOpen = (this.state.parkShifts || []).find((s) => s.status === "open") || null;
+    if (fallbackOpen) {
+      this.state.parkActiveShift = fallbackOpen;
+    }
+    return fallbackOpen;
   }
 
   setActiveParkShift(shiftId: string): ParkShift {
@@ -8281,7 +8285,7 @@ export class ERPStore {
 
   processParkTicketSale(saleData: {
     items: ParkTicketCartItem[];
-    currency: "USD" | "SSP";
+    currency: "USD" | "SSP" | "EGP";
     exchange_rate?: number;
     payment_method: "cash" | "visa" | "bank_transfer" | "credit";
     reference_number?: string;
@@ -8305,9 +8309,9 @@ export class ERPStore {
     );
     const curr = saleData.currency || "USD";
     const baseRate = this.getExchangeRate(curr);
-    const rate = curr === "SSP" ? Number(saleData.exchange_rate || baseRate) : 1;
+    const rate = curr !== "USD" ? Number(saleData.exchange_rate || baseRate) : 1;
 
-    const totalPaidInCurrency = curr === "SSP" ? Math.round(subtotalUsd * rate) : subtotalUsd;
+    const totalPaidInCurrency = curr !== "USD" ? Math.round(subtotalUsd * rate) : subtotalUsd;
 
     let customerName = "";
     if (saleData.payment_method === "credit") {
@@ -8809,7 +8813,12 @@ export class ERPStore {
         return this.state.restaurantActiveShift;
       }
     }
-    return null;
+    const fallbackOpen =
+      (this.state.restaurantShifts || []).find((s) => s.status === "open") || null;
+    if (fallbackOpen) {
+      this.state.restaurantActiveShift = fallbackOpen;
+    }
+    return fallbackOpen;
   }
 
   setActiveRestaurantShift(shiftId: string): RestaurantShift {
@@ -8910,11 +8919,13 @@ export class ERPStore {
         ? payload.shift_number.trim()
         : `وردية مطعم #${(this.state.restaurantShifts?.length || 0) + 1} - ${new Date().toLocaleDateString("ar-EG")}`;
 
-    const chosenCurrency = (payload.currency || "EGP").toUpperCase();
+    const chosenCurrency = (payload.currency || "USD").toUpperCase();
     const chosenRate =
-      payload.exchange_rate && Number(payload.exchange_rate) > 0
-        ? Number(payload.exchange_rate)
-        : this.getExchangeRate(chosenCurrency);
+      chosenCurrency === "USD"
+        ? 1
+        : payload.exchange_rate && Number(payload.exchange_rate) > 0
+          ? Number(payload.exchange_rate)
+          : this.getExchangeRate(chosenCurrency);
     const openingBalance = Number(payload.opening_balance || 0);
     const openingNotes = payload.opening_notes ?? payload.notes;
 
@@ -9084,8 +9095,8 @@ export class ERPStore {
         cashier_id: identity.userId || undefined,
         cashier_username: identity.username || undefined,
         cashier_type: identity.isCashier ? "account" : "hr",
-        currency: "EGP",
-        exchange_rate: this.getExchangeRate("EGP"),
+        currency: "USD",
+        exchange_rate: 1,
         opening_balance: 0,
         generated_journal_refs: [],
         orders_count: 0,

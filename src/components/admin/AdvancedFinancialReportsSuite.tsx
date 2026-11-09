@@ -1199,53 +1199,45 @@ export function AdvancedFinancialReportsSuite({
 
   return (
     <div className="space-y-6" dir="rtl">
-      {/* Top Suite Navigation Header */}
+      {/* Top Suite Action Toolbar */}
       {!compactHeader && (
-        <div className="rounded-2xl border border-primary/25 bg-gradient-to-l from-primary/10 via-card to-card p-5 shadow-sm">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <span className="p-2 rounded-xl bg-primary text-primary-foreground shadow-xs">
-                  <Scale size={20} />
-                </span>
-                <h2 className="text-lg sm:text-xl font-black text-foreground">
-                  منظومة التقارير المالية والتحليلات المحاسبية الاحترافية
-                </h2>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                تفصيل الحالة الحسابية لكل حساب • مقارنات بين الحسابات واختيار حسابات بعينها • ميزان
-                مراجعة عام ومختصر • القوائم المالية الختامية مع الطباعة المباشرة وتصدير Excel
-              </p>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3 shadow-xs print:hidden">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-primary/10 text-primary">
+              <Scale size={18} />
             </div>
+            <h2 className="text-base sm:text-lg font-black text-foreground">
+              القوائم المالية وميزان المراجعة والتحليلات
+            </h2>
+          </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                size="sm"
-                onClick={handlePrintGeneralTrialBalance}
-                className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs rounded-xl gap-1.5"
-              >
-                <Printer size={14} />
-                طباعة ميزان مراجعة عام
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handlePrintSummaryTrialBalance}
-                className="font-bold text-xs rounded-xl gap-1.5"
-              >
-                <Printer size={14} />
-                طباعة ميزان مختصر
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => handlePrintFinancialStatements("all")}
-                className="font-bold text-xs rounded-xl gap-1.5 border-emerald-500/40 text-emerald-700 dark:text-emerald-300"
-              >
-                <Printer size={14} />
-                طباعة القوائم الختامية
-              </Button>
-            </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              onClick={handlePrintGeneralTrialBalance}
+              className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs rounded-xl gap-1.5 h-8"
+            >
+              <Printer size={14} />
+              طباعة ميزان مراجعة عام
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handlePrintSummaryTrialBalance}
+              className="font-bold text-xs rounded-xl gap-1.5 h-8"
+            >
+              <Printer size={14} />
+              طباعة ميزان مختصر
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => handlePrintFinancialStatements("all")}
+              className="font-bold text-xs rounded-xl gap-1.5 border-emerald-500/40 text-emerald-700 dark:text-emerald-300 h-8"
+            >
+              <Printer size={14} />
+              طباعة القوائم الختامية
+            </Button>
           </div>
         </div>
       )}

@@ -184,6 +184,8 @@ interface VouchersLedgerSectionProps {
   autoOpenNewModal?: boolean;
   onModalClosed?: () => void;
   onNavigateToJournal?: (ref?: string) => void;
+  mode?: "operations" | "reports" | "full";
+  onOpenReports?: () => void;
 }
 
 export function VouchersLedgerSection({
@@ -191,6 +193,8 @@ export function VouchersLedgerSection({
   autoOpenNewModal = false,
   onModalClosed,
   onNavigateToJournal,
+  mode = "full",
+  onOpenReports,
 }: VouchersLedgerSectionProps = {}) {
   const [viewMode, setViewMode] = useViewMode("vouchers_ledger", "list");
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
@@ -1117,137 +1121,234 @@ export function VouchersLedgerSection({
 
   return (
     <div className="space-y-4 font-['Tajawal']" dir="rtl">
-      {/* Compact Action Header Bar (No decorative hero banners) */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
-            <Receipt className="w-5 h-5" />
-          </div>
-          <div>
-            <h2 className="text-lg font-black text-slate-900">
-              إدارة السندات والعمليات المالية الموحدة
-            </h2>
-            <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
-              <span>المول التجاري</span>
-              <span>•</span>
-              <span>الحديقة والملاهي</span>
-              <span>•</span>
-              <span>المطعم والمشتريات</span>
+      {mode === "operations" ? (
+        /* OPERATIONS MODE: Clean Voucher Issuance Workspace */
+        <div className="bg-card rounded-2xl border border-border p-5 shadow-xs space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                <Receipt className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-base sm:text-lg font-black text-foreground">
+                  إصدار وتسجيل السندات المالية وفواتير المشتريات
+                </h2>
+                <p className="text-xs text-muted-foreground font-semibold">
+                  إصدار سند قبض أو سند صرف أو فاتورة مشتريات مع ترحيل فوري للخزينة ودفتر اليومية
+                </p>
+              </div>
             </div>
-          </div>
-        </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <ViewModeToggle mode={viewMode} onChange={setViewMode} />
-          <button
-            type="button"
-            onClick={() => handleOpenCreateModal("receipt")}
-            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
-          >
-            <ArrowDownLeft className="w-4 h-4" />
-            سند قبض جديد
-          </button>
-          <button
-            type="button"
-            onClick={() => handleOpenCreateModal("payment")}
-            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-black text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
-          >
-            <ArrowUpRight className="w-4 h-4" />
-            سند صرف / فاتورة مشتريات
-          </button>
-          <button
-            type="button"
-            onClick={handlePrintAllFiltered}
-            className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
-          >
-            <Printer className="w-4 h-4" />
-            طباعة السجل
-          </button>
-        </div>
-      </div>
+            {onOpenReports && (
+              <button
+                type="button"
+                onClick={onOpenReports}
+                className="px-3.5 py-2 bg-muted hover:bg-muted/80 text-foreground border border-border rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <FileText className="w-4 h-4 text-primary" />
+                تفقد سجل السندات في التقارير ({metrics.totalCount})
+              </button>
+            )}
+          </div>
 
-      {/* Compact KPI Summary Strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="bg-white rounded-xl p-3.5 border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-[11px] font-bold text-slate-500">السندات النشطة</p>
-            <h3 className="text-xl font-black text-slate-900 mt-0.5">{metrics.totalCount}</h3>
-            <p className="text-[11px] text-slate-500 mt-0.5">
-              قبض: <b className="text-emerald-600">{metrics.receiptsCount}</b> | صرف:{" "}
-              <b className="text-rose-600">{metrics.paymentsCount}</b>
-            </p>
-          </div>
-          <div className="w-9 h-9 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center">
-            <FileText className="w-4 h-4" />
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl p-3.5 border border-emerald-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-[11px] font-bold text-emerald-700">إجمالي سندات القبض</p>
-            <div className="flex flex-wrap gap-1 mt-1">
-              {Object.entries(metrics.receiptsByCurr).length === 0 ? (
-                <span className="text-sm font-black text-slate-400">0.00</span>
-              ) : (
-                Object.entries(metrics.receiptsByCurr).map(([curr, val]) => (
-                  <span
-                    key={curr}
-                    className="px-2 py-0.5 bg-emerald-50 text-emerald-800 rounded text-xs font-black border border-emerald-200"
-                  >
-                    {val.toLocaleString()} {curr}
-                  </span>
-                ))
-              )}
-            </div>
-          </div>
-          <div className="w-9 h-9 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
-            <TrendingUp className="w-4 h-4" />
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl p-3.5 border border-rose-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-[11px] font-bold text-rose-700">إجمالي سندات الصرف</p>
-            <div className="flex flex-wrap gap-1 mt-1">
-              {Object.entries(metrics.paymentsByCurr).length === 0 ? (
-                <span className="text-sm font-black text-slate-400">0.00</span>
-              ) : (
-                Object.entries(metrics.paymentsByCurr).map(([curr, val]) => (
-                  <span
-                    key={curr}
-                    className="px-2 py-0.5 bg-rose-50 text-rose-800 rounded text-xs font-black border border-rose-200"
-                  >
-                    {val.toLocaleString()} {curr}
-                  </span>
-                ))
-              )}
-            </div>
-          </div>
-          <div className="w-9 h-9 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center">
-            <TrendingDown className="w-4 h-4" />
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl p-3.5 border border-indigo-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-[11px] font-bold text-indigo-700">صافي التدفق (مقوم بالدولار)</p>
-            <h3
-              className={`text-xl font-black mt-0.5 font-mono ${
-                metrics.netBaseUSD >= 0 ? "text-emerald-600" : "text-rose-600"
-              }`}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <button
+              type="button"
+              onClick={() => handleOpenCreateModal("receipt")}
+              className="group p-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10 text-right flex items-center justify-between gap-3 transition-all cursor-pointer"
             >
-              {metrics.netBaseUSD >= 0 ? "+" : ""}$
-              {metrics.netBaseUSD.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-            </h3>
-          </div>
-          <div className="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
-            <DollarSign className="w-4 h-4" />
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+                  <ArrowDownLeft className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="font-black text-sm text-foreground">تسجيل سند قبض جديد</div>
+                  <div className="text-[11px] font-bold text-muted-foreground mt-0.5">
+                    تحصيل إيرادات أو مقبوضات للخزينة
+                  </div>
+                </div>
+              </div>
+              <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">
+                إصدار ←
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleOpenCreateModal("payment")}
+              className="group p-4 rounded-2xl border border-rose-500/30 bg-rose-500/5 hover:bg-rose-500/10 text-right flex items-center justify-between gap-3 transition-all cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-xl bg-rose-600 text-white flex items-center justify-center shadow-xs">
+                  <ArrowUpRight className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="font-black text-sm text-foreground">تسجيل سند صرف جديد</div>
+                  <div className="text-[11px] font-bold text-muted-foreground mt-0.5">
+                    صرف مصروفات تشغيلية أو إدارية
+                  </div>
+                </div>
+              </div>
+              <span className="text-xs font-black text-rose-600 dark:text-rose-400">
+                إصدار ←
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                handleOpenCreateModal("payment");
+                handleDepartmentChange("restaurant");
+                handleCategoryChange("شراء خامات ومواد");
+              }}
+              className="group p-4 rounded-2xl border border-amber-500/30 bg-amber-500/5 hover:bg-amber-500/10 text-right flex items-center justify-between gap-3 transition-all cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-xl bg-amber-600 text-white flex items-center justify-center shadow-xs">
+                  <ShoppingBag className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="font-black text-sm text-foreground">فاتورة مشتريات وموردين</div>
+                  <div className="text-[11px] font-bold text-muted-foreground mt-0.5">
+                    شراء أصناف مخزنية وربط حساب المورد
+                  </div>
+                </div>
+              </div>
+              <span className="text-xs font-black text-amber-600 dark:text-amber-400">
+                إصدار ←
+              </span>
+            </button>
           </div>
         </div>
-      </div>
+      ) : (
+        <>
+          {/* REPORTS / FULL MODE: Vouchers Inspection & Register Header */}
+          <div className="bg-card rounded-2xl border border-border p-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                <Receipt className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-base sm:text-lg font-black text-foreground">
+                  تفقد وسجل سندات الدفع والقبض ({filteredVouchers.length})
+                </h2>
+                <p className="text-xs text-muted-foreground font-semibold">
+                  مراجعة، فلترة، طباعة، وتدقيق كافة سندات القبض والصرف والقيود المرتبطة بها
+                </p>
+              </div>
+            </div>
 
-      {/* Department Quick Filter Pills + Search & Filters */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <ViewModeToggle mode={viewMode} onChange={setViewMode} />
+              <button
+                type="button"
+                onClick={() => handleOpenCreateModal("receipt")}
+                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-xs flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+              >
+                <ArrowDownLeft className="w-4 h-4" />
+                سند قبض جديد
+              </button>
+              <button
+                type="button"
+                onClick={() => handleOpenCreateModal("payment")}
+                className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-black text-xs flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+              >
+                <ArrowUpRight className="w-4 h-4" />
+                سند صرف جديد
+              </button>
+              <button
+                type="button"
+                onClick={handlePrintAllFiltered}
+                className="px-3.5 py-2 bg-muted hover:bg-muted/80 text-foreground border border-border rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <Printer className="w-4 h-4" />
+                طباعة سجل السندات
+              </button>
+            </div>
+          </div>
+
+          {/* Compact KPI Summary Strip */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="bg-card rounded-xl p-3.5 border border-border shadow-xs flex items-center justify-between">
+              <div>
+                <p className="text-[11px] font-bold text-muted-foreground">السندات النشطة</p>
+                <h3 className="text-xl font-black text-foreground mt-0.5">{metrics.totalCount}</h3>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  قبض: <b className="text-emerald-600">{metrics.receiptsCount}</b> | صرف:{" "}
+                  <b className="text-rose-600">{metrics.paymentsCount}</b>
+                </p>
+              </div>
+              <div className="w-9 h-9 rounded-lg bg-muted text-foreground flex items-center justify-center">
+                <FileText className="w-4 h-4" />
+              </div>
+            </div>
+
+            <div className="bg-card rounded-xl p-3.5 border border-emerald-200 dark:border-emerald-800/50 shadow-xs flex items-center justify-between">
+              <div>
+                <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400">إجمالي سندات القبض</p>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {Object.entries(metrics.receiptsByCurr).length === 0 ? (
+                    <span className="text-sm font-black text-muted-foreground">0.00</span>
+                  ) : (
+                    Object.entries(metrics.receiptsByCurr).map(([curr, val]) => (
+                      <span
+                        key={curr}
+                        className="px-2 py-0.5 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 rounded text-xs font-black border border-emerald-500/20"
+                      >
+                        {val.toLocaleString()} {curr}
+                      </span>
+                    ))
+                  )}
+                </div>
+              </div>
+              <div className="w-9 h-9 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
+                <TrendingUp className="w-4 h-4" />
+              </div>
+            </div>
+
+            <div className="bg-card rounded-xl p-3.5 border border-rose-200 dark:border-rose-800/50 shadow-xs flex items-center justify-between">
+              <div>
+                <p className="text-[11px] font-bold text-rose-700 dark:text-rose-400">إجمالي سندات الصرف</p>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {Object.entries(metrics.paymentsByCurr).length === 0 ? (
+                    <span className="text-sm font-black text-muted-foreground">0.00</span>
+                  ) : (
+                    Object.entries(metrics.paymentsByCurr).map(([curr, val]) => (
+                      <span
+                        key={curr}
+                        className="px-2 py-0.5 bg-rose-500/10 text-rose-700 dark:text-rose-300 rounded text-xs font-black border border-rose-500/20"
+                      >
+                        {val.toLocaleString()} {curr}
+                      </span>
+                    ))
+                  )}
+                </div>
+              </div>
+              <div className="w-9 h-9 rounded-lg bg-rose-500/10 text-rose-600 flex items-center justify-center">
+                <TrendingDown className="w-4 h-4" />
+              </div>
+            </div>
+
+            <div className="bg-card rounded-xl p-3.5 border border-indigo-200 dark:border-indigo-800/50 shadow-xs flex items-center justify-between">
+              <div>
+                <p className="text-[11px] font-bold text-indigo-700 dark:text-indigo-400">صافي التدفق (مقوم بالدولار)</p>
+                <h3
+                  className={`text-xl font-black mt-0.5 font-mono ${
+                    metrics.netBaseUSD >= 0 ? "text-emerald-600" : "text-rose-600"
+                  }`}
+                >
+                  {metrics.netBaseUSD >= 0 ? "+" : ""}$
+                  {metrics.netBaseUSD.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                </h3>
+              </div>
+              <div className="w-9 h-9 rounded-lg bg-indigo-500/10 text-indigo-600 flex items-center justify-center">
+                <DollarSign className="w-4 h-4" />
+              </div>
+            </div>
+          </div>
+
+          {/* Department Quick Filter Pills + Search & Filters */}
+          <div className="bg-card rounded-2xl border border-border p-4 shadow-xs space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100">
           <div className="flex flex-wrap items-center gap-1.5">
             {(
@@ -1771,6 +1872,8 @@ export function VouchersLedgerSection({
           </div>
         </div>
       )}
+        </>
+      )}
 
       {/* UNIFIED FINANCIAL DOCUMENT MODAL (CREATE & EDIT) */}
       {isAddModalOpen && (
@@ -1811,9 +1914,10 @@ export function VouchersLedgerSection({
                   setIsAddModalOpen(false);
                   setEditingVoucher(null);
                 }}
-                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white font-bold cursor-pointer"
+                className="px-3.5 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 flex items-center gap-1.5 text-white text-xs font-black cursor-pointer"
               >
-                ✕
+                <span>خروج</span>
+                <span>✕</span>
               </button>
             </div>
 
@@ -2352,16 +2456,6 @@ export function VouchersLedgerSection({
 
               {/* Actions */}
               <div className="pt-3 border-t border-slate-200 flex flex-wrap items-center justify-end gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsAddModalOpen(false);
-                    setEditingVoucher(null);
-                  }}
-                  className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs cursor-pointer"
-                >
-                  إلغاء
-                </button>
                 <button
                   type="button"
                   onClick={() => handleSaveDocument(true)}

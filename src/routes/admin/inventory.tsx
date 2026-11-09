@@ -135,31 +135,42 @@ function InventoryPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const tabParam = extractTabParam(location.search, (location as any).searchStr);
-  const [invSectionFilter, setInvSectionFilter] = useState<
-    "all" | "definitions" | "operations" | "reports"
-  >(() =>
-    tabParam === "definitions" || tabParam === "operations"
-      ? tabParam
-      : "all",
+
+  const resolveInvSection = (raw?: string | null): "definitions" | "operations" | "reports" => {
+    if (
+      raw === "definitions" ||
+      raw === "stock" ||
+      raw === "items" ||
+      raw === "warehouses" ||
+      raw === "suppliers" ||
+      raw === "settings"
+    ) {
+      return "definitions";
+    }
+    if (raw === "reports") {
+      return "reports";
+    }
+    return "operations";
+  };
+
+  const resolveInvTool = (raw?: string | null): string => {
+    if (!raw || raw === "grid" || raw === "operations") return "purchases";
+    if (raw === "definitions" || raw === "items") return "stock";
+    if (raw === "reports") return "reports";
+    return raw;
+  };
+
+  const [invSection, setInvSection] = useState<"definitions" | "operations" | "reports">(() =>
+    resolveInvSection(tabParam),
   );
-  const [activeTab, setActiveTab] = useState(() => {
-    if (!tabParam || tabParam === "definitions" || tabParam === "operations") return "grid";
-    return tabParam;
-  });
+  const [activeTab, setActiveTab] = useState(() => resolveInvTool(tabParam));
 
   useEffect(() => {
-    if (!tabParam || tabParam === "grid") {
-      setInvSectionFilter("all");
-      setActiveTab("grid");
-    } else if (tabParam === "definitions" || tabParam === "operations") {
-      setInvSectionFilter(tabParam);
-      setActiveTab("grid");
-    } else {
-      setActiveTab(tabParam);
-    }
+    setInvSection(resolveInvSection(tabParam));
+    setActiveTab(resolveInvTool(tabParam));
   }, [tabParam]);
 
-  useSyncedSubTab("/admin/inventory", activeTab, setActiveTab, "grid");
+  useSyncedSubTab("/admin/inventory", activeTab, setActiveTab, "purchases");
   const [search, setSearch] = useState("");
   const [filterLowStock, setFilterLowStock] = useState(false);
 
@@ -293,7 +304,7 @@ function InventoryPage() {
     | "stock_adjustment"
     | "inventory_count"
     | "opening_balance"
-  >("goods_receipt");
+  >("stock_adjustment");
   const [docNotes, setDocNotes] = useState("");
   const [docItems, setDocItems] = useState<
     { inventory_id: string; quantity: number; unit_cost: number; counted_quantity?: number }[]
@@ -414,65 +425,22 @@ function InventoryPage() {
 
       const data = await inventoryService.upsertInventoryItem(payload, editing?.id);
 
-      // Generate unique sequential transaction number & timestamps
       const txNumber = "TX-INV-" + Date.now().toString().slice(-6);
       const systemTimestamp = new Date().toISOString();
       const txDate = form.transaction_date || new Date().toISOString().split("T")[0];
       const txTime = form.transaction_time || new Date().toTimeString().slice(0, 5);
 
-      const selectedTreasury =
-        erpState.treasuries.find((t) => t.id === form.treasury_id) || erpState.treasuries[0];
       const selectedSupplier =
         erpState.suppliers.find((s) => s.id === form.preferred_supplier_id) ||
         erpState.suppliers[0];
 
       const rate = form.currency === "USD" ? 1 : Number(form.exchange_rate) || 1;
-      const totalAmount =
-        Number(form.cost) * (Number(form.quantity) > 0 ? Number(form.quantity) : 1);
-
-      // Create General Ledger Journal Entry
-      const inventoryAccCode = "11050100"; // المخزون - خامات ومستلزمات
-      const creditAccCode =
-        selectedTreasury?.account_code || selectedSupplier?.account_code || "101000";
-
-      let journalRef = "";
-      try {
-        const je = erpStore.addJournalEntry(
-          `معاملة ${editing ? "تعديل" : "إضافة"} صنف مخزني: ${form.name_ar} (رقم المعاملة: ${txNumber})`,
-          [
-            {
-              account_code: inventoryAccCode,
-              debit: totalAmount > 0 ? totalAmount : Number(form.cost),
-              credit: 0,
-              currency: form.currency,
-              rate: rate,
-              description: `مخزون خامات - ${form.name_ar}`,
-            },
-            {
-              account_code: creditAccCode,
-              debit: 0,
-              credit: totalAmount > 0 ? totalAmount : Number(form.cost),
-              currency: form.currency,
-              rate: rate,
-              description: `مدفوعات/استحقاق صنف - ${form.name_ar}`,
-            },
-          ],
-          undefined,
-          form.currency,
-          txDate,
-        );
-        journalRef = je.reference || je.id;
-      } catch (e) {
-        console.warn("Journal entry creation notice:", e);
-        journalRef = "JV-" + txNumber;
-      }
-
       const costNum = Number(form.cost) || 0;
       const avgCostNum = Number(form.average_cost) > 0 ? Number(form.average_cost) : costNum;
       const lastCostNum =
         Number(form.last_purchase_price) > 0 ? Number(form.last_purchase_price) : costNum;
 
-      // Save extended item data
+      // Save extended item definition data (linked to supplier account in Chart of Accounts)
       erpStore.saveExtendedItem(data.id, {
         item_code: form.item_code || "INV-" + data.id.substring(0, 5).toUpperCase(),
         barcode: form.barcode || "622" + Math.floor(Math.random() * 1000000000),
@@ -486,49 +454,16 @@ function InventoryPage() {
         status: (form.status || "active") as "active" | "inactive",
         currency: form.currency,
         exchange_rate: rate,
-        treasury_id: form.treasury_id,
-        treasury_name: selectedTreasury?.name_ar || "",
         transaction_date: txDate,
         transaction_time: txTime,
         system_timestamp: systemTimestamp,
         tx_number: txNumber,
-        journal_entry_ref: journalRef,
-      });
-
-      // Record inventory transaction in ERP store
-      erpStore.recordInventoryDocTransaction({
-        inventory_id: data.id,
-        type: editing ? "adjustment" : "in",
-        quantity: Number(form.quantity),
-        note: `معاملة ${editing ? "تعديل" : "إضافة"} صنف | خزينة: ${selectedTreasury?.name_ar || "الرئيسية"} | مورد: ${selectedSupplier?.name_ar || "عام"} | قيد: ${journalRef} | كود المعاملة: ${txNumber}`,
-        currency: form.currency,
-        exchange_rate: rate,
-        treasury_id: form.treasury_id,
-        treasury_name: selectedTreasury?.name_ar,
-        supplier_id: form.preferred_supplier_id,
-        supplier_name: selectedSupplier?.name_ar,
-        supplier_account_code: selectedSupplier?.account_code,
-        transaction_date: txDate,
-        transaction_time: txTime,
-        system_timestamp: systemTimestamp,
-        tx_number: txNumber,
-        journal_entry_ref: journalRef,
-      });
-
-      setSaveSuccessNotification({
-        open: true,
-        itemName: form.name_ar,
-        journalRef: journalRef,
-        txNumber: txNumber,
-        treasuryName: selectedTreasury?.name_ar || "الخزينة الرئيسية",
-        amount: totalAmount > 0 ? totalAmount : Number(form.cost),
-        currency: form.currency,
       });
 
       erpStore.logAction(
         "ADMIN",
-        editing ? "تحديث صنف بالمخزن" : "إضافة صنف للمخزن",
-        `تم ${editing ? "تعديل" : "إنشاء"} صنف ${form.name_ar} بكمية ${form.quantity} مع قيد يومية #${journalRef}`,
+        editing ? "تحديث بطاقة صنف بالمخزن" : "تعريف صنف جديد بالمخزن",
+        `تم ${editing ? "تعديل" : "تعريف"} بطاقة الصنف ${form.name_ar} وربطها بالمورد ${selectedSupplier?.name_ar || "عام"}`,
       );
       return data;
     },
@@ -1346,453 +1281,224 @@ function InventoryPage() {
 
   return (
     <div className="space-y-6 text-right">
-      {/* Top Bar - Frozen Sticky Header with Clear Department Title */}
-      {activeTab === "grid" ? (
-        <div className="flex items-center justify-between gap-3 pt-2 flex-wrap">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-foreground">المخزون والمستودعات</h1>
-          </div>
-          <div className="flex items-center gap-2">
-            <ViewModeToggle mode={hubViewMode} onChange={setHubViewMode} />
-            <span className="bg-emerald-500/10 text-emerald-600 text-xs px-2.5 py-1 rounded-full font-bold">
-              {currentBranch.name_ar}
-            </span>
-          </div>
+      {/* Header Bar */}
+      <div className="flex items-center justify-between gap-3 pt-2 pb-3 border-b border-border/60 flex-wrap">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-black text-foreground">
+            {invSection === "definitions"
+              ? "إدارة المخزون — التعريفات (الأصناف والمخازن والموردين)"
+              : invSection === "reports"
+                ? "إدارة المخزون — التقارير والجرد الذكي"
+                : "إدارة المخزون — العمليات والتوريد والحركات"}
+          </h1>
         </div>
-      ) : (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 pb-2 border-b border-border/60">
-          <Button
-            variant="outline"
-            onClick={() => setActiveTab("grid")}
-            className="gap-2 font-black rounded-xl text-xs py-2 px-4 border-primary/30 text-primary hover:bg-primary/10 w-fit cursor-pointer"
-          >
-            <ArrowRight size={16} />
-            العودة إلى لوحة المخازن
-          </Button>
-
-          <div className="flex items-center gap-1.5 overflow-x-auto">
-            <Button
-              size="sm"
-              variant={activeTab === "warehouses" ? "default" : "outline"}
-              onClick={() => setActiveTab("warehouses")}
-              className="rounded-xl font-bold text-xs h-8"
-            >
-              المستودعات
-            </Button>
-            <Button
-              size="sm"
-              variant={activeTab === "stock" ? "default" : "outline"}
-              onClick={() => setActiveTab("stock")}
-              className="rounded-xl font-bold text-xs h-8"
-            >
-              الأصناف ({stats.totalItems})
-            </Button>
-            <Button
-              size="sm"
-              variant={activeTab === "transfers" ? "default" : "outline"}
-              onClick={() => setActiveTab("transfers")}
-              className="rounded-xl font-bold text-xs h-8"
-            >
-              التحويلات
-            </Button>
-            <Button
-              size="sm"
-              variant={activeTab === "purchases" ? "default" : "outline"}
-              onClick={() => setActiveTab("purchases")}
-              className="rounded-xl font-bold text-xs h-8"
-            >
-              المشتريات
-            </Button>
-            <Button
-              size="sm"
-              variant={activeTab === "suppliers" ? "default" : "outline"}
-              onClick={() => setActiveTab("suppliers")}
-              className="rounded-xl font-bold text-xs h-8"
-            >
-              الموردين
-            </Button>
-            <Button
-              size="sm"
-              variant={activeTab === "transactions" ? "default" : "outline"}
-              onClick={() => setActiveTab("transactions")}
-              className="rounded-xl font-bold text-xs h-8"
-            >
-              الحركات
-            </Button>
-            <Button
-              size="sm"
-              variant={activeTab === "waste" ? "default" : "outline"}
-              onClick={() => setActiveTab("waste")}
-              className="rounded-xl font-bold text-xs h-8"
-            >
-              التوالف
-            </Button>
-            <Button
-              size="sm"
-              variant={activeTab === "reports" ? "default" : "outline"}
-              onClick={() => setActiveTab("reports")}
-              className="rounded-xl font-bold text-xs h-8"
-            >
-              التقارير
-            </Button>
-          </div>
+        <div className="flex items-center gap-2">
+          <span className="bg-emerald-500/10 text-emerald-600 text-xs px-2.5 py-1 rounded-full font-bold">
+            {currentBranch.name_ar}
+          </span>
         </div>
-      )}
+      </div>
 
-      {/* Grid View */}
-      {activeTab === "grid" && (
-        <div className="space-y-6">
-          {/* Role and permission warning; role changes are managed only from Users & Permissions. */}
-          {userProfileQuery.data &&
-            (!userProfileQuery.data.profile ||
-              !["admin", "manager"].includes(userProfileQuery.data.profile.role)) && (
-              <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex gap-3 items-start">
-                <div className="p-2 bg-amber-500/10 text-amber-600 rounded-xl shrink-0">
-                  <AlertTriangle size={20} />
-                </div>
-                <div>
-                  <h3 className="font-bold text-sm text-amber-800 dark:text-amber-400">
-                    صلاحيات محدودة في المخزن
-                  </h3>
-                  <p className="text-xs text-amber-700/80 dark:text-amber-400/80 mt-1 leading-relaxed">
-                    {userProfileQuery.data.profile
-                      ? `حسابك مسجل بدور ${roleLabels[userProfileQuery.data.profile.role] || userProfileQuery.data.profile.role}. اطلب من مسؤول النظام مراجعة صلاحية المخزون من صفحة المستخدمين والصلاحيات.`
-                      : "لا يوجد ملف مستخدم مرتبط بحساب الدخول الحالي. لا يمكن منح الصلاحيات تلقائيًا من هذه الصفحة؛ اطلب من مسؤول النظام مراجعة حسابك في صفحة المستخدمين."}
-                  </p>
-                  <Link
-                    to="/admin/users"
-                    className="inline-flex mt-2 text-xs font-bold underline underline-offset-4"
-                  >
-                    فتح صفحة المستخدمين والصلاحيات
-                  </Link>
-                </div>
-              </div>
-            )}
-
-          {/* Stats Dashboard Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-card border border-border p-5 rounded-2xl flex items-center justify-between shadow-xs">
-              <div className="space-y-1">
-                <span className="text-xs text-muted-foreground block">إجمالي الأصناف بالمخازن</span>
-                <span className="text-2xl font-black block">{stats.totalItems} أصناف</span>
-              </div>
-              <div className="p-3 bg-primary/10 text-primary rounded-xl">
-                <Layers size={20} />
-              </div>
+      {/* Role and permission warning */}
+      {userProfileQuery.data &&
+        (!userProfileQuery.data.profile ||
+          !["admin", "manager"].includes(userProfileQuery.data.profile.role)) && (
+          <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex gap-3 items-start">
+            <div className="p-2 bg-amber-500/10 text-amber-600 rounded-xl shrink-0">
+              <AlertTriangle size={20} />
             </div>
-
-            <div
-              className={`bg-card border p-5 rounded-2xl flex items-center justify-between shadow-xs transition-all ${stats.lowStockItems > 0 ? "border-destructive/30 bg-destructive/5" : "border-border"}`}
-            >
-              <div className="space-y-1">
-                <span className="text-xs text-muted-foreground block">أصناف منخفضة المخزون</span>
-                <span
-                  className={`text-2xl font-black block ${stats.lowStockItems > 0 ? "text-destructive animate-pulse" : "text-foreground"}`}
-                >
-                  {stats.lowStockItems} تنبيهات
-                </span>
-              </div>
-              <div
-                className={`p-3 rounded-xl ${stats.lowStockItems > 0 ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground"}`}
+            <div>
+              <h3 className="font-bold text-sm text-amber-800 dark:text-amber-400">
+                صلاحيات محدودة في المخزن
+              </h3>
+              <p className="text-xs text-amber-700/80 dark:text-amber-400/80 mt-1 leading-relaxed">
+                {userProfileQuery.data.profile
+                  ? `حسابك مسجل بدور ${roleLabels[userProfileQuery.data.profile.role] || userProfileQuery.data.profile.role}. اطلب من مسؤول النظام مراجعة صلاحية المخزون من صفحة المستخدمين والصلاحيات.`
+                  : "لا يوجد ملف مستخدم مرتبط بحساب الدخول الحالي. لا يمكن منح الصلاحيات تلقائيًا من هذه الصفحة؛ اطلب من مسؤول النظام مراجعة حسابك في صفحة المستخدمين."}
+              </p>
+              <Link
+                to="/admin/users"
+                className="inline-flex mt-2 text-xs font-bold underline underline-offset-4"
               >
-                <TrendingDown size={20} />
-              </div>
-            </div>
-
-            <div className="bg-card border border-border p-5 rounded-2xl flex items-center justify-between shadow-xs">
-              <div className="space-y-1">
-                <span className="text-xs text-muted-foreground block">
-                  تقييم المخزون الحالي (جرد دفتري)
-                </span>
-                <span className="text-2xl font-black block text-emerald-600 dark:text-emerald-500">
-                  {formatPrice(stats.totalValue)}
-                </span>
-              </div>
+                فتح صفحة المستخدمين والصلاحيات
+              </Link>
             </div>
           </div>
+        )}
 
-          {/* Inventory Modules (Grid or List) */}
-          <section aria-labelledby="inventory-modules-heading" className="space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h2
-                  id="inventory-modules-heading"
-                  className="flex items-center gap-2 text-base font-black text-foreground ml-2"
-                >
-                  <Building2 size={18} className="text-primary" aria-hidden="true" />
-                  أقسام إدارة المخازن والتوريد
-                </h2>
-                <div className="inline-flex items-center rounded-xl bg-muted p-1 border border-border/60 gap-1">
-                  {(
-                    [
-                      { id: "all", label: "الكل" },
-                      { id: "definitions", label: "التعريفات" },
-                      { id: "operations", label: "العمليات" },
-                      { id: "reports", label: "التقارير" },
-                    ] as const
-                  ).map((sec) => (
-                    <button
-                      key={sec.id}
-                      type="button"
-                      onClick={() => {
-                        if (sec.id === "reports") {
-                          setActiveTab("reports");
-                          navigate({ to: "/admin/inventory", search: { tab: "reports" } });
-                        } else {
-                          setInvSectionFilter(sec.id);
-                          setActiveTab("grid");
-                          navigate({
-                            to: "/admin/inventory",
-                            search: sec.id === "all" ? {} : { tab: sec.id },
-                          });
-                        }
-                      }}
-                      className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                        invSectionFilter === sec.id
-                          ? "bg-primary text-primary-foreground shadow-xs"
-                          : "text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      {sec.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <ViewModeToggle mode={hubViewMode} onChange={setHubViewMode} />
-            </div>
-
-            {(() => {
-              const allModules = [
-                // 1. التعريفات (Definitions)
-                {
-                  id: "warehouses",
-                  section: "definitions",
-                  title: "إدارة المخازن والفروع",
-                  badge: "التعريفات",
-                  icon: Building2,
-                  colorClass: "text-blue-600 dark:text-blue-400 bg-blue-500/15",
-                  onClick: () => setActiveTab("warehouses"),
-                },
-                {
-                  id: "stock",
-                  section: "definitions",
-                  title: "الأصناف المخزنية والباركود",
-                  badge: `${stats.totalItems} صنف`,
-                  icon: Layers3,
-                  colorClass: "text-indigo-600 dark:text-indigo-400 bg-indigo-500/15",
-                  onClick: () => setActiveTab("stock"),
-                },
-                {
-                  id: "suppliers",
-                  section: "definitions",
-                  title: "إدارة الشركات والموردين",
-                  badge: "التعريفات",
-                  icon: Users2,
-                  colorClass: "text-purple-600 dark:text-purple-400 bg-purple-500/15",
-                  onClick: () => setActiveTab("suppliers"),
-                },
-                {
-                  id: "settings",
-                  section: "definitions",
-                  title: "إعدادات المخزن والربط",
-                  badge: "التعريفات",
-                  icon: Settings,
-                  colorClass: "text-slate-600 dark:text-slate-400 bg-slate-500/15",
-                  onClick: () => setActiveTab("settings"),
-                },
-                {
-                  id: "new_item",
-                  section: "definitions",
-                  title: "إضافة صنف مخزني جديد",
-                  badge: "صنف جديد",
-                  icon: Plus,
-                  colorClass: "bg-primary text-primary-foreground",
-                  onClick: openAddInventoryModal,
-                },
-                // 2. العمليات (Operations)
-                {
-                  id: "unified_purchases_voucher",
-                  section: "operations",
-                  title: "مستندات الشراء الموحدة (صرف للموردين)",
-                  badge: "الإدارة المالية",
-                  icon: DollarSign,
-                  colorClass: "text-emerald-600 dark:text-emerald-400 bg-emerald-500/15",
-                  onClick: () =>
-                    navigate({
-                      to: "/admin/ledger",
-                      search: { tab: "vouchers", dept: "restaurant" },
-                    }),
-                },
-                {
-                  id: "purchases",
-                  section: "operations",
-                  title: "فواتير وأوامر التوريد المخزني",
-                  badge: "العمليات",
-                  icon: FileText,
-                  colorClass: "text-emerald-600 dark:text-emerald-400 bg-emerald-500/15",
-                  onClick: () => setActiveTab("purchases"),
-                },
-                {
-                  id: "transfers",
-                  section: "operations",
-                  title: "التحويلات بين المخازن",
-                  badge: "العمليات",
-                  icon: Truck,
-                  colorClass: "text-amber-600 dark:text-amber-400 bg-amber-500/15",
-                  onClick: () => setActiveTab("transfers"),
-                },
-                {
-                  id: "transactions",
-                  section: "operations",
-                  title: "سجل حركات المخزن والتسويات",
-                  badge: "العمليات",
-                  icon: RefreshCw,
-                  colorClass: "text-teal-600 dark:text-teal-400 bg-teal-500/15",
-                  onClick: () => setActiveTab("transactions"),
-                },
-                {
-                  id: "expiry",
-                  section: "operations",
-                  title: "صلاحية وتتبع الدفعات",
-                  badge: "العمليات",
-                  icon: Calendar,
-                  colorClass: "text-cyan-600 dark:text-cyan-400 bg-cyan-500/15",
-                  onClick: () => setActiveTab("expiry"),
-                },
-                {
-                  id: "waste",
-                  section: "operations",
-                  title: "الهالك والفاقد والتسويات",
-                  badge: "العمليات",
-                  icon: AlertTriangle,
-                  colorClass: "text-rose-600 dark:text-rose-400 bg-rose-500/15",
-                  onClick: () => setActiveTab("waste"),
-                },
-                // 3. التقارير (Reports)
-                {
-                  id: "reports",
-                  section: "reports",
-                  title: "تقارير المخزون والجرد الذكي",
-                  badge: "التقارير",
-                  icon: FileText,
-                  colorClass: "text-violet-600 dark:text-violet-400 bg-violet-500/15",
-                  onClick: () => setActiveTab("reports"),
-                },
-              ];
-
-              const modules =
-                invSectionFilter === "all"
-                  ? allModules
-                  : allModules.filter((m) => m.section === invSectionFilter);
-
-              if (hubViewMode === "list") {
-                return (
-                  <div className="flex flex-col gap-2">
-                    {modules.map((m) => {
-                      const IconComp = m.icon;
-                      return (
-                        <div
-                          key={m.id}
-                          onClick={m.onClick}
-                          className="group cursor-pointer rounded-xl border border-border/80 bg-card hover:border-primary/40 p-3.5 flex items-center justify-between gap-4 transition-all hover:shadow-md"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className={`rounded-xl p-2.5 ${m.colorClass}`}>
-                              <IconComp size={20} />
-                            </div>
-                            <h3 className="font-black text-sm text-foreground">{m.title}</h3>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
-                              {m.badge}
-                            </span>
-                            <span className="text-xs font-bold text-primary">فتح ←</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              }
-
-              return (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {modules.map((m) => {
-                    const IconComp = m.icon;
-                    return (
-                      <Card
-                        key={m.id}
-                        onClick={m.onClick}
-                        className="group cursor-pointer rounded-2xl border border-border/80 bg-card hover:border-primary/40 transition-all duration-200 hover:shadow-lg"
-                      >
-                        <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4">
-                          <div className="flex items-center gap-3">
-                            <div className={`rounded-xl p-2.5 shadow-xs ${m.colorClass}`}>
-                              <IconComp size={22} />
-                            </div>
-                            <h3 className="font-black text-sm text-foreground">{m.title}</h3>
-                          </div>
-                          <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground shrink-0">
-                            {m.badge}
-                          </span>
-                        </CardHeader>
-                      </Card>
-                    );
-                  })}
-                </div>
-              );
-            })()}
-          </section>
+      {/* Section Sub-Tools Bar */}
+      {invSection === "definitions" && (
+        <div className="flex flex-wrap items-center justify-between gap-2 bg-card border border-border/80 p-2.5 rounded-2xl shadow-xs">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant={activeTab === "stock" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setActiveTab("stock")}
+              className="rounded-xl font-black text-xs gap-1.5 cursor-pointer"
+            >
+              <Layers3 size={15} />
+              الأصناف المخزنية والباركود ({stats.totalItems})
+            </Button>
+            <Button
+              type="button"
+              variant={activeTab === "warehouses" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setActiveTab("warehouses")}
+              className="rounded-xl font-black text-xs gap-1.5 cursor-pointer"
+            >
+              <Building2 size={15} />
+              إدارة المخازن والفروع
+            </Button>
+            <Button
+              type="button"
+              variant={activeTab === "suppliers" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setActiveTab("suppliers")}
+              className="rounded-xl font-black text-xs gap-1.5 cursor-pointer"
+            >
+              <Users2 size={15} />
+              سجل الشركات والموردين
+            </Button>
+            <Button
+              type="button"
+              variant={activeTab === "settings" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setActiveTab("settings")}
+              className="rounded-xl font-black text-xs gap-1.5 cursor-pointer"
+            >
+              <Settings size={15} />
+              إعدادات المخزن والربط
+            </Button>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            onClick={openAddInventoryModal}
+            className="rounded-xl font-black text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+          >
+            <Plus size={15} />
+            إضافة صنف مخزني جديد
+          </Button>
         </div>
       )}
 
-      {activeTab !== "grid" && (
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="bg-muted p-1 rounded-xl flex flex-wrap gap-1 h-auto">
-            <TabsTrigger
-              value="warehouses"
-              className="rounded-lg font-bold py-2 px-3 bg-primary/10 text-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+      {invSection === "operations" && (
+        <div className="flex flex-wrap items-center justify-between gap-2 bg-card border border-border/80 p-2.5 rounded-2xl shadow-xs">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant={activeTab === "purchases" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setActiveTab("purchases")}
+              className="rounded-xl font-black text-xs gap-1.5 cursor-pointer"
             >
-              <Building2 size={16} className="ml-1.5 inline" />
-              إدارة المخازن والربط
-            </TabsTrigger>
-            <TabsTrigger value="stock" className="rounded-lg font-bold py-2 px-3">
-              <Layers3 size={16} className="ml-1.5 inline" />
-              إدارة الأصناف والباركود
-            </TabsTrigger>
-            <TabsTrigger value="transactions" className="rounded-lg font-bold py-2 px-3">
-              <RefreshCw size={16} className="ml-1.5 inline" />
+              <Truck size={15} />
+              أوامر التوريد والمشتريات
+            </Button>
+            <Button
+              type="button"
+              variant={activeTab === "transfers" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setActiveTab("transfers")}
+              className="rounded-xl font-black text-xs gap-1.5 cursor-pointer"
+            >
+              <ArrowUpRight size={15} />
+              التحويلات بين المخازن
+            </Button>
+            <Button
+              type="button"
+              variant={activeTab === "transactions" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setActiveTab("transactions")}
+              className="rounded-xl font-black text-xs gap-1.5 cursor-pointer"
+            >
+              <RefreshCw size={15} />
               تسجيل الحركات والتسويات
-            </TabsTrigger>
-            <TabsTrigger value="expiry" className="rounded-lg font-bold py-2 px-3">
-              <Calendar size={16} className="ml-1.5 inline" />
-              صلاحية وتتبع الدفعات
-            </TabsTrigger>
-            <TabsTrigger value="purchases" className="rounded-lg font-bold py-2 px-3">
-              <Truck size={16} className="ml-1.5 inline" />
-              المشتريات والتوريد
-            </TabsTrigger>
-            <TabsTrigger value="suppliers" className="rounded-lg font-bold py-2 px-3">
-              <Users2 size={16} className="ml-1.5 inline" />
-              الموردين
-            </TabsTrigger>
-            <TabsTrigger value="waste" className="rounded-lg font-bold py-2 px-3">
-              <AlertTriangle size={16} className="ml-1.5 inline text-rose-500" />
+            </Button>
+            <Button
+              type="button"
+              variant={activeTab === "waste" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setActiveTab("waste")}
+              className="rounded-xl font-black text-xs gap-1.5 cursor-pointer"
+            >
+              <AlertTriangle size={15} />
               التوالف والهالك
-            </TabsTrigger>
-            <TabsTrigger value="transfers" className="rounded-lg font-bold py-2 px-3">
-              <ArrowUpRight size={16} className="ml-1.5 inline" />
-              التحويلات المخزنية
-            </TabsTrigger>
-            <TabsTrigger value="reports" className="rounded-lg font-bold py-2 px-3">
-              <FileText size={16} className="ml-1.5 inline" />
-              التقارير والجرد الذكي
-            </TabsTrigger>
-            <TabsTrigger value="settings" className="rounded-lg font-bold py-2 px-3">
-              <Settings size={16} className="ml-1.5 inline" />
-              إعدادات المخزن
-            </TabsTrigger>
-          </TabsList>
+            </Button>
+            <Button
+              type="button"
+              variant={activeTab === "expiry" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setActiveTab("expiry")}
+              className="rounded-xl font-black text-xs gap-1.5 cursor-pointer"
+            >
+              <Calendar size={15} />
+              صلاحية وتتبع الدفعات
+            </Button>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              navigate({
+                to: "/admin/ledger",
+                search: { tab: "vouchers", dept: "restaurant" },
+              })
+            }
+            className="rounded-xl font-black text-xs gap-1.5 border-emerald-500/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 cursor-pointer"
+          >
+            <DollarSign size={15} />
+            سندات صرف الموردين
+          </Button>
+        </div>
+      )}
+
+      {invSection === "reports" && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="bg-card border border-border p-5 rounded-2xl flex items-center justify-between shadow-xs">
+            <div className="space-y-1">
+              <span className="text-xs text-muted-foreground block">إجمالي الأصناف بالمخازن</span>
+              <span className="text-2xl font-black block">{stats.totalItems} أصناف</span>
+            </div>
+            <div className="p-3 bg-primary/10 text-primary rounded-xl">
+              <Layers size={20} />
+            </div>
+          </div>
+
+          <div
+            className={`bg-card border p-5 rounded-2xl flex items-center justify-between shadow-xs transition-all ${stats.lowStockItems > 0 ? "border-destructive/30 bg-destructive/5" : "border-border"}`}
+          >
+            <div className="space-y-1">
+              <span className="text-xs text-muted-foreground block">أصناف منخفضة المخزون</span>
+              <span
+                className={`text-2xl font-black block ${stats.lowStockItems > 0 ? "text-destructive animate-pulse" : "text-foreground"}`}
+              >
+                {stats.lowStockItems} تنبيهات
+              </span>
+            </div>
+            <div
+              className={`p-3 rounded-xl ${stats.lowStockItems > 0 ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground"}`}
+            >
+              <TrendingDown size={20} />
+            </div>
+          </div>
+
+          <div className="bg-card border border-border p-5 rounded-2xl flex items-center justify-between shadow-xs">
+            <div className="space-y-1">
+              <span className="text-xs text-muted-foreground block">
+                تقييم المخزون الحالي (جرد دفتري)
+              </span>
+              <span className="text-2xl font-black block text-emerald-600 dark:text-emerald-500">
+                {formatPrice(stats.totalValue)}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
 
           <TabsContent value="warehouses" className="space-y-4 mt-4">
             <WarehouseManagement />
@@ -2197,25 +1903,7 @@ function InventoryPage() {
                   )}
 
                   <div>
-                    <Label className="text-xs font-bold text-primary">
-                      الخزينة / الحساب النقدي للمدفوعات *
-                    </Label>
-                    <select
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring mt-1.5 font-bold text-right"
-                      value={form.treasury_id}
-                      onChange={(e) => setForm((s) => ({ ...s, treasury_id: e.target.value }))}
-                    >
-                      {erpState.treasuries.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name_ar} (الرصيد: {formatPrice(t.balance, t.currency as any)}) [كود:{" "}
-                          {t.account_code || t.id}]
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <Label className="text-xs font-bold">المورد ورقم الحساب المحاسبي *</Label>
+                    <Label className="text-xs font-bold">المورد المفضل ورقم الحساب المحاسبي *</Label>
                     <select
                       className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring mt-1.5 font-bold text-right"
                       value={form.preferred_supplier_id}
@@ -2548,10 +2236,8 @@ function InventoryPage() {
                         setDocItems([]); // Clear draft items when type changes
                       }}
                     >
-                      <option value="goods_receipt">إذن استلام بضاعة (Goods Receipt)</option>
-                      <option value="goods_issue">إذن صرف بضاعة (Goods Issue)</option>
-                      <option value="stock_transfer">إذن تحويل مخزني (Stock Transfer)</option>
                       <option value="stock_adjustment">إذن تسوية جردية (Stock Adjustment)</option>
+                      <option value="stock_transfer">إذن تحويل مخزني داخلي (Stock Transfer)</option>
                       <option value="inventory_count">محضر جرد مخزني (Inventory Count)</option>
                       <option value="opening_balance">رصيد أول المدة (Opening Balance)</option>
                     </select>
@@ -3261,26 +2947,9 @@ function InventoryPage() {
             </div>
           </TabsContent>
 
-          {/* New Purchasing Tab */}
+          {/* Purchasing Tab */}
           <TabsContent value="purchases" className="space-y-6 mt-4">
-            <Tabs defaultValue="orders" className="w-full">
-              <TabsList className="bg-muted/50 p-1 rounded-xl w-fit mb-4">
-                <TabsTrigger value="orders" className="rounded-lg text-xs font-bold px-6">
-                  أوامر الشراء
-                </TabsTrigger>
-                <TabsTrigger value="suppliers" className="rounded-lg text-xs font-bold px-6">
-                  إدارة الموردين
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="orders">
-                <PurchaseManagement />
-              </TabsContent>
-
-              <TabsContent value="suppliers">
-                <SupplierManagement />
-              </TabsContent>
-            </Tabs>
+            <PurchaseManagement />
           </TabsContent>
 
           <TabsContent value="suppliers" className="space-y-4 mt-4">
@@ -4721,7 +4390,6 @@ function InventoryPage() {
             </div>
           </TabsContent>
         </Tabs>
-      )}
 
       {/* Selected Document Details Modal */}
       {selectedDocId &&

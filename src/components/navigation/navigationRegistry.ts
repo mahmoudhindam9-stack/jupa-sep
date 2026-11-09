@@ -98,6 +98,7 @@ export function isRestaurantScreenPath(pathname?: string): boolean {
   return (
     p.startsWith("/admin/restaurant") ||
     p.startsWith("/pos") ||
+    p.startsWith("/cashier-treasury") ||
     p.startsWith("/captain") ||
     p.startsWith("/oven") ||
     p.startsWith("/admin/menu") ||
@@ -131,6 +132,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
     matchDepartment: (pathname, searchStr) =>
       pathname.startsWith("/admin/restaurant") ||
       pathname.startsWith("/pos") ||
+      pathname.startsWith("/cashier-treasury") ||
       pathname.startsWith("/captain") ||
       pathname.startsWith("/oven") ||
       pathname.startsWith("/admin/menu") ||
@@ -171,6 +173,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         icon: Activity,
         matchPath: (p, s) =>
           p.startsWith("/pos") ||
+          p.startsWith("/cashier-treasury") ||
           p.startsWith("/captain") ||
           p.startsWith("/oven") ||
           p.startsWith("/admin/delivery") ||
@@ -317,7 +320,6 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
     matchDepartment: (pathname, searchStr) =>
       pathname.startsWith("/admin/ledger") ||
       pathname.startsWith("/admin/expenses") ||
-      pathname.startsWith("/cashier-treasury") ||
       pathname.startsWith("/admin/receipts") ||
       (pathname === "/admin" &&
         (searchStr.includes("tab=treasury_control") ||
@@ -345,7 +347,6 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "operations" },
         icon: Activity,
         matchPath: (p, s) =>
-          p.startsWith("/cashier-treasury") ||
           p.startsWith("/admin/expenses") ||
           (p === "/admin" &&
             (s.includes("tab=treasury_control") ||
@@ -498,8 +499,8 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
   },
   {
     id: "shift_audit",
-    labelAr: "تدقيق الورديات",
-    labelEn: "Shift Audit",
+    labelAr: "تدقيق الورديات وسجل العمليات",
+    labelEn: "Shift Audit & Operations Log",
     to: "/admin",
     search: { tab: "shift_audit" },
     icon: ClipboardCheck,
@@ -508,94 +509,63 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
       "shift_audit",
       "manage_park_shifts",
       "restaurant_open_shift",
+      "page_audit_logs",
+      "audit_logs",
+      "system_audit_logs",
       "super_admin_full_access",
     ],
     matchDepartment: (pathname, searchStr) =>
       pathname.startsWith("/admin/shifts") ||
+      pathname.startsWith("/admin/audit") ||
       (pathname === "/admin" &&
         (searchStr.includes("tab=shift_audit") ||
+          searchStr.includes("tab=audit_logs") ||
           searchStr.includes("tab=shifts"))),
     children: [
       {
         id: "shift-definitions",
         labelAr: "التعريفات",
         labelEn: "Definitions",
-        to: "/admin/shifts",
-        search: { tab: "definitions" },
+        to: "/admin",
+        search: { tab: "shift_audit", section: "definitions" },
         icon: FolderCog,
         matchPath: (p, s) =>
-          p.startsWith("/admin/shifts") && s.includes("tab=definitions"),
+          p === "/admin" &&
+          (s.includes("tab=shift_audit") || s.includes("tab=audit_logs")) &&
+          s.includes("section=definitions"),
       },
       {
         id: "shift-operations",
         labelAr: "العمليات",
         labelEn: "Operations",
         to: "/admin",
-        search: { tab: "shift_audit" },
+        search: { tab: "shift_audit", section: "operations" },
         icon: Activity,
         matchPath: (p, s) =>
-          (p === "/admin" &&
-            (s.includes("tab=shift_audit") || s.includes("tab=shifts"))) ||
-          (p.startsWith("/admin/shifts") &&
-            (!s.includes("tab=") || s.includes("tab=operations"))),
+          p === "/admin" &&
+          (s.includes("tab=shift_audit") ||
+            s.includes("tab=audit_logs") ||
+            s.includes("tab=shifts")) &&
+          !s.includes("section=definitions") &&
+          !s.includes("section=reports"),
       },
       {
         id: "shift-reports",
         labelAr: "التقارير",
         labelEn: "Reports",
-        to: "/admin/shifts",
-        search: { tab: "reports" },
-        icon: FileBarChart,
-        matchPath: (p, s) =>
-          p.startsWith("/admin/shifts") && s.includes("tab=reports"),
-      },
-    ],
-  },
-  {
-    id: "audit_logs",
-    labelAr: "سجل العمليات",
-    labelEn: "Audit Logs",
-    to: "/admin",
-    search: { tab: "audit_logs" },
-    icon: BarChart3,
-    permissionKeys: ["page_audit_logs", "audit_logs", "system_audit_logs"],
-    matchDepartment: (pathname, searchStr) =>
-      pathname.startsWith("/admin/audit") ||
-      (pathname === "/admin" && searchStr.includes("tab=audit_logs")),
-    children: [
-      {
-        id: "audit-definitions",
-        labelAr: "التعريفات",
-        labelEn: "Definitions",
-        to: "/admin/system-update",
-        search: { tab: "access" },
-        icon: FolderCog,
-        matchPath: (p, s) =>
-          p.startsWith("/admin/system-update") && s.includes("tab=access"),
-      },
-      {
-        id: "audit-operations",
-        labelAr: "العمليات",
-        labelEn: "Operations",
         to: "/admin",
-        search: { tab: "audit_logs" },
-        icon: Activity,
-        matchPath: (p, s) =>
-          p === "/admin" && s.includes("tab=audit_logs"),
-      },
-      {
-        id: "audit-reports",
-        labelAr: "التقارير",
-        labelEn: "Reports",
-        to: "/admin/audit",
+        search: { tab: "shift_audit", section: "reports" },
         icon: FileBarChart,
-        matchPath: (p) => p.startsWith("/admin/audit"),
+        matchPath: (p, s) =>
+          p === "/admin" &&
+          (s.includes("tab=shift_audit") || s.includes("tab=audit_logs")) &&
+          s.includes("section=reports"),
       },
     ],
   },
   {
     id: "system",
-    labelAr: "المطور والنسخ الاحتياطي",
+    labelAr: "خيارات المطور والنسخ الاحتياطي",
     labelEn: "Developer & System",
     to: "/admin/system-update",
     icon: RefreshCw,
@@ -607,7 +577,8 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
     ],
     matchDepartment: (pathname) =>
       pathname.startsWith("/admin/system-update") ||
-      pathname.startsWith("/admin/studio"),
+      pathname.startsWith("/admin/studio") ||
+      pathname.startsWith("/admin/developer-studio"),
     children: [
       {
         id: "sys-definitions",
@@ -618,9 +589,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         icon: FolderCog,
         matchPath: (p, s) =>
           p.startsWith("/admin/system-update") &&
-          (s.includes("tab=definitions") ||
-            s.includes("tab=system") ||
-            s.includes("tab=access")),
+          (s.includes("tab=definitions") || s.includes("tab=access")),
       },
       {
         id: "sys-operations",
@@ -631,9 +600,11 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         icon: Activity,
         matchPath: (p, s) =>
           p.startsWith("/admin/studio") ||
+          p.startsWith("/admin/developer-studio") ||
           (p.startsWith("/admin/system-update") &&
             (!s.includes("tab=") ||
               s.includes("tab=operations") ||
+              s.includes("tab=system") ||
               s.includes("tab=sync"))),
       },
       {

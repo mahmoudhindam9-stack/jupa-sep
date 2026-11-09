@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { RestocashLogo } from "@/components/RestocashLogo";
@@ -104,9 +105,23 @@ function LoginPage() {
   const { lang } = useSettings();
   const navigate = useNavigate();
   const [isMounted, setIsMounted] = useState(false);
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [rememberMe, setRememberMe] = useState(true);
+  const [username, setUsername] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return localStorage.getItem("remember_me") !== "false"
+      ? localStorage.getItem("restocash_saved_username") || ""
+      : "";
+  });
+  const [password, setPassword] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return localStorage.getItem("remember_me") !== "false"
+      ? localStorage.getItem("restocash_saved_password") || ""
+      : "";
+  });
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(() => {
+    if (typeof window === "undefined") return true;
+    return localStorage.getItem("remember_me") !== "false";
+  });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [hasLocalAccounts, setHasLocalAccounts] = useState(true);
@@ -118,10 +133,20 @@ function LoginPage() {
   const [bootstrapEmail, setBootstrapEmail] = useState("");
   const [bootstrapPassword, setBootstrapPassword] = useState("");
   const [bootstrapConfirm, setBootstrapConfirm] = useState("");
+  const [showBootstrapPassword, setShowBootstrapPassword] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     setIsMounted(true);
+    const savedRemember = localStorage.getItem("remember_me") !== "false";
+    setRememberMe(savedRemember);
+    if (savedRemember) {
+      const savedUser = localStorage.getItem("restocash_saved_username");
+      const savedPass = localStorage.getItem("restocash_saved_password");
+      if (savedUser) setUsername(savedUser);
+      if (savedPass) setPassword(savedPass);
+    }
+
     const currentLocalUsers = localLoginUsers();
     setHasLocalAccounts(currentLocalUsers.length > 0);
 
@@ -162,12 +187,14 @@ function LoginPage() {
     const hosted = isHostedDeployment();
     const storedLocalUser =
       localStorage.getItem("restocash_auth_user") || sessionStorage.getItem("restocash_auth_user");
+    const storedRole =
+      localStorage.getItem("restocash_user_role") || sessionStorage.getItem("restocash_user_role");
 
     const checkStoredLocalSession = () => {
       if (!storedLocalUser) return false;
       const active = storedLocalUser.trim().toLowerCase();
       const storedUsername = active.split("@")[0];
-      const exists = localLoginUsers().some((user) => {
+      const matchedUser = localLoginUsers().find((user) => {
         const candidate = String(user.username || "")
           .trim()
           .toLowerCase();
@@ -184,15 +211,17 @@ function LoginPage() {
         active === "admin" ||
         storedUsername === "admin" ||
         active.startsWith("admin@") ||
-        active.includes("admin");
-      if (exists || isAdmin) {
+        active.includes("admin") ||
+        storedRole === "admin" ||
+        storedRole === "super_admin";
+      if (matchedUser || isAdmin || Boolean(storedRole)) {
+        const effectiveUsername = matchedUser
+          ? String(matchedUser.username).trim().toLowerCase()
+          : storedUsername;
+        erpStore.setCurrentUser(effectiveUsername);
         navigate({ to: redirectTo as any });
         return true;
       }
-      localStorage.removeItem("restocash_auth_user");
-      localStorage.removeItem("restocash_user_role");
-      sessionStorage.removeItem("restocash_auth_user");
-      sessionStorage.removeItem("restocash_user_role");
       return false;
     };
 
@@ -218,10 +247,13 @@ function LoginPage() {
           : hasAnyEnabledPermission(profile.permissions)
             ? profile.permissions
             : getDefaultPermissionsForRole(activeRole);
-      const storage =
-        localStorage.getItem("remember_me") === "false" ? sessionStorage : localStorage;
-      storage.setItem("restocash_auth_user", session.user.email || activeUsername);
-      storage.setItem("restocash_user_role", activeRole);
+      const isRemembered = localStorage.getItem("remember_me") !== "false";
+      if (isRemembered) {
+        localStorage.setItem("restocash_auth_user", session.user.email || activeUsername);
+        localStorage.setItem("restocash_user_role", activeRole);
+      }
+      sessionStorage.setItem("restocash_auth_user", session.user.email || activeUsername);
+      sessionStorage.setItem("restocash_user_role", activeRole);
       erpStore.updateUserPermission(
         activeUsername,
         (resolvedPerms || {}) as Partial<UserPermission>,
@@ -245,13 +277,15 @@ function LoginPage() {
       const timeoutPromise = new Promise<boolean>((resolve) =>
         window.setTimeout(() => resolve(false), 1500),
       );
-      // Restore only a real Supabase session on hosted deployments.
-      // Keep the browser's saved identifier intact, but never treat that
-      // identifier alone as proof of authentication or redirect to a blank admin shell.
-      if (storedLocalUser) setUsername(storedLocalUser);
       void Promise.race([continueWithHostedSession(), timeoutPromise])
+        .then((restored) => {
+          if (!restored) {
+            checkStoredLocalSession();
+          }
+        })
         .catch((cause) => {
-          console.warn("Hosted session restoration failed; showing the login form.", cause);
+          console.warn("Hosted session restoration failed, checking local session.", cause);
+          checkStoredLocalSession();
         });
       return;
     }
@@ -440,6 +474,16 @@ function LoginPage() {
     );
     localStorage.setItem("remember_me", rememberMe ? "true" : "false");
 
+    const persistRememberedCredentials = () => {
+      if (rememberMe) {
+        localStorage.setItem("restocash_saved_username", username.trim());
+        localStorage.setItem("restocash_saved_password", password);
+      } else {
+        localStorage.removeItem("restocash_saved_username");
+        localStorage.removeItem("restocash_saved_password");
+      }
+    };
+
     try {
       // 1. Always attempt Supabase Auth + public.profiles login first on ANY host (with 2.5s timeout so local login is never blocked)
       try {
@@ -459,10 +503,14 @@ function LoginPage() {
           sessionStorage.removeItem("restocash_auth_user");
           localStorage.removeItem("restocash_user_role");
           sessionStorage.removeItem("restocash_user_role");
-          const storage = rememberMe ? localStorage : sessionStorage;
           const activeRole = String(profile.role || "cashier").trim().toLowerCase();
-          storage.setItem("restocash_auth_user", activeEmail);
-          storage.setItem("restocash_user_role", activeRole);
+          if (rememberMe) {
+            localStorage.setItem("restocash_auth_user", activeEmail);
+            localStorage.setItem("restocash_user_role", activeRole);
+          }
+          sessionStorage.setItem("restocash_auth_user", activeEmail);
+          sessionStorage.setItem("restocash_user_role", activeRole);
+          persistRememberedCredentials();
           const customAdminPerms =
             hasAnyEnabledPermission(profile.permissions) ? profile.permissions : null;
           const permissions =
@@ -542,9 +590,13 @@ function LoginPage() {
         sessionStorage.removeItem("restocash_auth_user");
         localStorage.removeItem("restocash_user_role");
         sessionStorage.removeItem("restocash_user_role");
-        const storage = rememberMe ? localStorage : sessionStorage;
-        storage.setItem("restocash_auth_user", activeEmail);
-        storage.setItem("restocash_user_role", activeRole);
+        if (rememberMe) {
+          localStorage.setItem("restocash_auth_user", activeEmail);
+          localStorage.setItem("restocash_user_role", activeRole);
+        }
+        sessionStorage.setItem("restocash_auth_user", activeEmail);
+        sessionStorage.setItem("restocash_user_role", activeRole);
+        persistRememberedCredentials();
         const statePermissions = erpStore.getState().userPermissions;
         const customAdminPerms =
           (hasAnyEnabledPermission(foundUser.permissions) ? foundUser.permissions : null) ||
@@ -707,27 +759,51 @@ function LoginPage() {
           </div>
           <div className="space-y-1.5">
             <Label>كلمة المرور الجديدة (8 أحرف على الأقل، مع تطبيق سياسة Supabase)</Label>
-            <Input
-              required
-              type="password"
-              minLength={8}
-              value={bootstrapPassword}
-              onChange={(e) => setBootstrapPassword(e.target.value)}
-              autoComplete="new-password"
-              dir="ltr"
-            />
+            <div className="relative">
+              <Input
+                required
+                type={showBootstrapPassword ? "text" : "password"}
+                minLength={8}
+                value={bootstrapPassword}
+                onChange={(e) => setBootstrapPassword(e.target.value)}
+                autoComplete="new-password"
+                dir="ltr"
+                className="pl-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowBootstrapPassword((prev) => !prev)}
+                className="absolute inset-y-0 left-0 flex items-center px-3 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                aria-label={showBootstrapPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
+                title={showBootstrapPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
+              >
+                {showBootstrapPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
           </div>
           <div className="space-y-1.5">
             <Label>تأكيد كلمة المرور</Label>
-            <Input
-              required
-              type="password"
-              minLength={8}
-              value={bootstrapConfirm}
-              onChange={(e) => setBootstrapConfirm(e.target.value)}
-              autoComplete="new-password"
-              dir="ltr"
-            />
+            <div className="relative">
+              <Input
+                required
+                type={showBootstrapPassword ? "text" : "password"}
+                minLength={8}
+                value={bootstrapConfirm}
+                onChange={(e) => setBootstrapConfirm(e.target.value)}
+                autoComplete="new-password"
+                dir="ltr"
+                className="pl-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowBootstrapPassword((prev) => !prev)}
+                className="absolute inset-y-0 left-0 flex items-center px-3 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                aria-label={showBootstrapPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
+                title={showBootstrapPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
+              >
+                {showBootstrapPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
           </div>
           {error && (
             <p
@@ -804,15 +880,27 @@ function LoginPage() {
             <Label className="text-sm font-bold">
               {isEn ? "Password" : "كلمة المرور"}
             </Label>
-            <Input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              placeholder="••••••••"
-              dir="ltr"
-              className="h-11 rounded-xl bg-muted/40 focus:bg-background font-mono text-sm"
-            />
+            <div className="relative">
+              <Input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                placeholder="••••••••"
+                autoComplete="current-password"
+                dir="ltr"
+                className="h-11 rounded-xl bg-muted/40 focus:bg-background font-mono text-sm pl-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                className="absolute inset-y-0 left-0 flex items-center px-3 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                aria-label={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
+                title={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
           </div>
 
           <div className="flex items-center justify-between pt-1">
@@ -820,7 +908,15 @@ function LoginPage() {
               <Checkbox
                 id="remember"
                 checked={rememberMe}
-                onCheckedChange={(checked) => setRememberMe(checked as boolean)}
+                onCheckedChange={(checked) => {
+                  const val = Boolean(checked);
+                  setRememberMe(val);
+                  localStorage.setItem("remember_me", val ? "true" : "false");
+                  if (!val) {
+                    localStorage.removeItem("restocash_saved_username");
+                    localStorage.removeItem("restocash_saved_password");
+                  }
+                }}
               />
               <Label htmlFor="remember" className="text-xs font-semibold cursor-pointer">
                 {isEn ? "Keep me signed in" : "تذكرني على هذا الجهاز"}

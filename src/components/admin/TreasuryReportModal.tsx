@@ -1059,28 +1059,25 @@ export function TreasuryReportModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-card w-full max-w-7xl h-[94vh] rounded-3xl border border-border/80 shadow-2xl flex flex-col overflow-hidden text-right">
         {/* MODAL HEADER */}
-        <div className="px-5 py-3.5 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex flex-wrap items-center justify-between gap-3 border-b border-white/10 shrink-0">
+        <div className="px-5 py-3.5 bg-card text-foreground flex flex-wrap items-center justify-between gap-3 border-b border-border shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300">
+            <div className="w-10 h-10 rounded-2xl bg-indigo-500/10 border border-indigo-500/25 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
               <Printer size={20} />
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="font-black text-base tracking-tight">
-                  مركز تقارير وسندات الخزائن (منفرد / مجمع / رصيد فترة / قيود مختارة)
+                <h3 className="font-black text-base tracking-tight text-foreground">
+                  تقرير وحركة الخزائن
                 </h3>
-                <Badge className="bg-indigo-500/20 text-indigo-300 border-indigo-400/30 text-[10px] font-bold">
+                <Badge variant="outline" className="text-[10px] font-bold">
                   {sortedTxRows.length} حركة بالفترة
                 </Badge>
                 {selectedRowIds.length > 0 && (
-                  <Badge className="bg-amber-500/30 text-amber-200 border-amber-400/40 text-[10px] font-black">
+                  <Badge className="bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/30 text-[10px] font-black">
                     تم تحديد {selectedRowIds.length} حركة/قيد للطباعة
                   </Badge>
                 )}
               </div>
-              <p className="text-xs text-slate-300 font-semibold mt-0.5">
-                طباعة تقرير لكل خزينة لوحدها أو تقرير مجمع، تحديد قيود أو حركات بعينها، وطباعة الرصيد من تاريخ إلى تاريخ
-              </p>
             </div>
           </div>
 
@@ -1093,7 +1090,7 @@ export function TreasuryReportModal({
                     ? handlePrintJournalEntries(true)
                     : handlePrintMovementDocument(true)
                 }
-                className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs h-9 px-3.5 rounded-xl flex items-center gap-1.5 shadow-md active:scale-95"
+                className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs h-9 px-3.5 rounded-xl flex items-center gap-1.5 shadow-xs active:scale-95 cursor-pointer"
               >
                 <Printer size={15} />
                 <span>طباعة المحدد فقط ({selectedRowIds.length})</span>
@@ -1103,7 +1100,7 @@ export function TreasuryReportModal({
             <Button
               size="sm"
               onClick={() => handlePrintPeriodBalanceReport()}
-              className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs h-9 px-3.5 rounded-xl flex items-center gap-1.5 shadow-md active:scale-95"
+              className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs h-9 px-3.5 rounded-xl flex items-center gap-1.5 shadow-xs active:scale-95 cursor-pointer"
               title="طباعة بيان الرصيد الافتتاحي والختامي وصافي التدفق عن الفترة المحددة"
             >
               <Scale size={15} />
@@ -1113,7 +1110,7 @@ export function TreasuryReportModal({
             <Button
               size="sm"
               onClick={() => handlePrintMovementDocument(false)}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-9 px-3.5 rounded-xl flex items-center gap-1.5 shadow-md active:scale-95"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-9 px-3.5 rounded-xl flex items-center gap-1.5 shadow-xs active:scale-95 cursor-pointer"
             >
               <Printer size={15} />
               <span>
@@ -1124,7 +1121,7 @@ export function TreasuryReportModal({
             <Button
               size="sm"
               onClick={handleExportExcel}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-9 px-3.5 rounded-xl flex items-center gap-1.5 shadow-md active:scale-95"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-9 px-3.5 rounded-xl flex items-center gap-1.5 shadow-xs active:scale-95 cursor-pointer"
             >
               <FileSpreadsheet size={15} />
               <span>Excel</span>
@@ -1132,11 +1129,13 @@ export function TreasuryReportModal({
 
             <Button
               size="sm"
-              variant="ghost"
+              variant="destructive"
               onClick={onClose}
-              className="text-white/70 hover:text-white hover:bg-white/10 rounded-xl h-9 w-9 p-0"
+              data-testid="treasury-report-exit-btn"
+              className="font-black text-xs h-9 px-4 rounded-xl flex items-center gap-1.5 shadow-xs cursor-pointer"
             >
-              <X size={18} />
+              <X size={16} />
+              <span>خروج</span>
             </Button>
           </div>
         </div>

@@ -45,6 +45,7 @@ import { toast } from "sonner";
 
 export interface ShiftAuditLogViewerProps {
   initialShiftType?: ShiftType | "ALL" | string;
+  initialShiftId?: string;
   initialAction?: string;
   showHeaderTitle?: boolean;
   compact?: boolean;
@@ -52,6 +53,7 @@ export interface ShiftAuditLogViewerProps {
 
 export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
   initialShiftType = "ALL",
+  initialShiftId,
   initialAction = "ALL",
   showHeaderTitle = true,
   compact = false,
@@ -76,7 +78,7 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
   const [liveShiftStatusFilter, setLiveShiftStatusFilter] = useState<"ALL" | "open" | "closed">(
     "ALL",
   );
-  const [inspectedShiftId, setInspectedShiftId] = useState<string | null>(null);
+  const [inspectedShiftId, setInspectedShiftId] = useState<string | null>(initialShiftId || null);
 
   // Filters State
   const [searchQuery, setSearchQuery] = useState("");
@@ -90,18 +92,37 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
   const [endDate, setEndDate] = useState<string>("");
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
 
-  // Subscribe to erpStore for real-time Park & Restaurant shift updates
   useEffect(() => {
-    const unsub = erpStore.subscribe(() => {
-      setStoreTick((t) => t + 1);
-    });
-    return () => unsub();
+    setSelectedType(normalizedInitialType);
+    setLiveShiftSectorFilter(normalizedInitialType);
+  }, [normalizedInitialType]);
+
+  useEffect(() => {
+    if (initialShiftId) {
+      setInspectedShiftId(initialShiftId);
+    }
+  }, [initialShiftId]);
+
+  // Subscribe to erpStore and window events for real-time Park & Restaurant shift updates
+  useEffect(() => {
+    const bump = () => setStoreTick((t) => t + 1);
+    const unsub = erpStore.subscribe(bump);
+    window.addEventListener("shift_audit_updated", bump);
+    window.addEventListener("storage", bump);
+    window.addEventListener("focus", bump);
+    return () => {
+      unsub();
+      window.removeEventListener("shift_audit_updated", bump);
+      window.removeEventListener("storage", bump);
+      window.removeEventListener("focus", bump);
+    };
   }, []);
 
   // Load audit data from Supabase & synchronize with Park & Restaurant shifts
   const loadData = async () => {
     setLoading(true);
     try {
+      await shiftAuditService.syncOpenShiftsFromSupabase(erpStore);
       shiftAuditService.syncShiftsWithAuditLogs(
         erpStore.getParkShifts(),
         erpStore.getRestaurantShifts(),
@@ -126,6 +147,7 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
       }
 
       const res = await shiftAuditService.getShiftAuditLogs({
+        shiftId: initialShiftId || undefined,
         shiftType: selectedType !== "ALL" ? selectedType : undefined,
         action: selectedAction !== "ALL" ? selectedAction : undefined,
         startDate: finalStart || undefined,
@@ -138,7 +160,7 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
       setLogs(res.logs);
       setSource(res.source);
     } catch (err: any) {
-      toast.error("فشل تحميل سجل التدقيق من Supabase: " + (err.message || err));
+      toast.error("فشل تحميل سجل التدقيق: " + (err.message || err));
     } finally {
       setLoading(false);
     }
@@ -146,7 +168,17 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
 
   useEffect(() => {
     loadData();
-  }, [selectedType, selectedAction, selectedUser, datePreset, startDate, endDate, storeTick]);
+  }, [
+    selectedType,
+    selectedAction,
+    selectedUser,
+    datePreset,
+    startDate,
+    endDate,
+    searchQuery,
+    initialShiftId,
+    storeTick,
+  ]);
 
   // Live Park & Restaurant shifts synchronized from erpStore
   const liveShiftsData = useMemo(() => {
@@ -191,6 +223,7 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
         const startMs = new Date(s.start_at || 0).getTime();
         const endMs = s.end_at ? new Date(s.end_at).getTime() : Date.now();
         const matchingOrders = localRestOrders.filter((o: any) => {
+          if (o.shift_id === s.id || o.shift_number === s.shift_number) return true;
           const oMs = new Date(o.created_at || 0).getTime();
           return oMs >= startMs - 60000 && oMs <= endMs + 60000;
         });
@@ -457,10 +490,6 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
                       : "متزامن حياً مع الحديقة والمطعم"}
                 </Badge>
               </div>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                مراقبة ومطابقة حية لجميع ورديات تذاكر الحديقة وكاشير المطعم، مع تشخيص الظهور وسجل
-                العمليات الكامل
-              </p>
             </div>
           </div>
 
@@ -553,7 +582,7 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
                   </p>
                 </div>
               </div>
-              <Link to="/admin/park" search={{ tab: "shifts" }}>
+              <Link to="/admin/park" search={{ tab: "operations" } as any}>
                 <Button
                   size="sm"
                   variant="outline"
@@ -615,7 +644,7 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
                   </p>
                 </div>
               </div>
-              <Link to="/admin/restaurant" search={{ tab: "shifts" }}>
+              <Link to="/admin/restaurant" search={{ tab: "operations" } as any}>
                 <Button
                   size="sm"
                   variant="outline"
@@ -656,15 +685,9 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
           <CardHeader className="pb-3 border-b border-border/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <Layers size={18} className="text-teal-600" />
-              <div>
-                <CardTitle className="text-sm font-black">
-                  جدول الورديات المتزامنة حياً (الحديقة والمطعم)
-                </CardTitle>
-                <CardDescription className="text-[11px]">
-                  جميع الورديات المفتوحة والمغلقة المسجلة في قسم الحديقة وقسم المطعم مع إمكانية
-                  الفحص وإصلاح الحالة
-                </CardDescription>
-              </div>
+              <CardTitle className="text-sm font-black">
+                جدول الورديات المتزامنة حياً (الحديقة والمطعم)
+              </CardTitle>
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
               {(
@@ -918,7 +941,6 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
             <Database size={15} className="text-teal-600" />
           </div>
           <div className="text-2xl font-black text-foreground">{metrics.total}</div>
-          <p className="text-[10px] text-muted-foreground mt-0.5">عملية مسجلة في السجل</p>
         </div>
 
         <div className="bg-card border border-border p-4 rounded-2xl shadow-xs">
@@ -927,7 +949,6 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
             <Clock size={15} className="text-emerald-600" />
           </div>
           <div className="text-2xl font-black text-emerald-600">{metrics.opens}</div>
-          <p className="text-[10px] text-muted-foreground mt-0.5">جلسة تم فتحها</p>
         </div>
 
         <div className="bg-card border border-border p-4 rounded-2xl shadow-xs">
@@ -936,7 +957,6 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
             <CheckCircle2 size={15} className="text-blue-600" />
           </div>
           <div className="text-2xl font-black text-blue-600">{metrics.closes}</div>
-          <p className="text-[10px] text-muted-foreground mt-0.5">جلسة تم إغلاقها وترحيلها</p>
         </div>
 
         <div className="bg-card border border-border p-4 rounded-2xl shadow-xs">
@@ -947,9 +967,6 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
           <div className="text-2xl font-black text-amber-600">
             {metrics.updates + metrics.deletes}
           </div>
-          <p className="text-[10px] text-muted-foreground mt-0.5">
-            {metrics.deletes} حذف | {metrics.updates} تعديل وإصلاح
-          </p>
         </div>
       </div>
 
@@ -1140,9 +1157,6 @@ export const ShiftAuditLogViewer: React.FC<ShiftAuditLogViewerProps> = ({
           <h3 className="font-black text-base text-foreground">
             لا توجد حركات ورديات مطابقة للفلتر المحدد
           </h3>
-          <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto">
-            تأكد من اختيار نطاق تاريخ صحيح أو إلغاء فلاتر المستخدمين لعرض المزيد من البيانات المسجلة
-          </p>
           {hasActiveFilters && (
             <Button
               variant="outline"

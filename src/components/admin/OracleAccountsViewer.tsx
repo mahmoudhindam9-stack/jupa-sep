@@ -222,84 +222,43 @@ export function OracleAccountsViewer({
   };
 
   return (
-    <div className="space-y-6" dir="rtl">
-      {/* Header Banner */}
-      <div className="bg-gradient-to-l from-indigo-950/80 via-slate-900 to-slate-950 border border-indigo-500/30 rounded-2xl p-6 shadow-xl">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 text-indigo-400 font-bold text-sm">
-              <FolderTree className="w-5 h-5" />
-              <span>شجرة الحسابات التفاعلية (4 مستويات قياسية متصلة مباشرة بالنظام)</span>
-            </div>
-            <h2 className="text-2xl font-black text-white">
-              مستعرض وإدارة المستويات الشجرية الأربعة (4-Level Hierarchy)
-            </h2>
-            <p className="text-xs text-slate-400">
-              اضغط على أي حساب في أي مستوى لاستعراض تفرعاته أو إضافة حساب فرعي تحته أو تعديله وحذفه مباشرة
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="bg-slate-900/90 border border-slate-800 px-3.5 py-2 rounded-xl text-center">
-              <div className="text-[10px] text-slate-400">المستوى 1 (الرئيسي)</div>
-              <div className="text-lg font-black text-indigo-400">{level1Accounts.length}</div>
-            </div>
-            <div className="bg-slate-900/90 border border-slate-800 px-3.5 py-2 rounded-xl text-center">
-              <div className="text-[10px] text-slate-400">المستوى 2 (العام)</div>
-              <div className="text-lg font-black text-blue-400">
-                {allAccounts.filter((a) => Number(a.level) === 2).length}
-              </div>
-            </div>
-            <div className="bg-slate-900/90 border border-slate-800 px-3.5 py-2 rounded-xl text-center">
-              <div className="text-[10px] text-slate-400">المستوى 3 (الفرعي)</div>
-              <div className="text-lg font-black text-emerald-400">
-                {allAccounts.filter((a) => Number(a.level) === 3).length}
-              </div>
-            </div>
-            <div className="bg-slate-900/90 border border-slate-800 px-3.5 py-2 rounded-xl text-center">
-              <div className="text-[10px] text-slate-400">المستوى 4 (التحليلي)</div>
-              <div className="text-lg font-black text-amber-400">
-                {allAccounts.filter((a) => Number(a.level) === 4).length}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Search Input */}
-        <div className="mt-5 relative">
-          <Search className="w-4 h-4 absolute right-3.5 top-3 text-slate-400" />
+    <div className="space-y-4" dir="rtl">
+      {/* Clean Search Bar */}
+      <div className="bg-card border border-border rounded-2xl p-3.5 shadow-xs">
+        <div className="relative">
+          <Search className="w-4 h-4 absolute right-3.5 top-3 text-muted-foreground" />
           <Input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="ابحث برقم الحساب أو الاسم (مثال: 24010، الموردون، خزينة، مبيعات...)"
-            className="pr-10 bg-slate-900/90 border-slate-700 text-white placeholder:text-slate-500 h-10 rounded-xl"
+            className="pr-10 h-10 rounded-xl text-xs"
           />
           {searchResults.length > 0 && (
-            <div className="absolute z-50 w-full mt-2 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl max-h-72 overflow-y-auto divide-y divide-slate-800">
+            <div className="absolute z-50 w-full mt-2 bg-card border border-border rounded-xl shadow-2xl max-h-72 overflow-y-auto divide-y divide-border">
               {searchResults.map((acc) => (
                 <div
                   key={acc.code}
                   onClick={() => handleSelectSearchResult(acc)}
-                  className="w-full text-right px-4 py-2.5 hover:bg-indigo-600/20 flex items-center justify-between transition-colors cursor-pointer"
+                  className="w-full text-right px-4 py-2.5 hover:bg-primary/10 flex items-center justify-between transition-colors cursor-pointer"
                 >
                   <div className="flex items-center gap-3">
-                    <Badge variant="secondary" className="font-mono text-xs bg-slate-800 text-indigo-300">
+                    <Badge variant="secondary" className="font-mono text-xs">
                       {acc.code}
                     </Badge>
                     <div>
-                      <div className="font-bold text-sm text-white">{acc.name_ar}</div>
-                      {acc.name_en && <div className="text-[11px] text-slate-400">{acc.name_en}</div>}
+                      <div className="font-bold text-sm text-foreground">{acc.name_ar}</div>
+                      {acc.name_en && <div className="text-[11px] text-muted-foreground">{acc.name_en}</div>}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge className="bg-indigo-500/20 text-indigo-300 border-indigo-500/30 text-[10px]">
+                    <Badge variant="outline" className="text-[10px]">
                       مستوى {acc.level}
                     </Badge>
                     {onEditAccount && (
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-7 px-2 text-xs text-blue-400 hover:text-blue-300"
+                        className="h-7 px-2 text-xs text-primary"
                         onClick={(e) => {
                           e.stopPropagation();
                           setSearchQuery("");

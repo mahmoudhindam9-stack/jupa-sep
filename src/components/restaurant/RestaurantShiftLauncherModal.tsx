@@ -4,7 +4,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -19,24 +18,18 @@ import {
   Trash2,
   Lock,
   UserCheck,
-  Hash,
   Clock,
   DollarSign,
   AlertTriangle,
   ChevronDown,
   ChevronUp,
-  Sparkles,
   ShoppingBag,
-  RotateCcw,
-  Utensils,
-  Receipt,
   CheckCircle2,
-  Database,
+  FileText,
 } from "lucide-react";
 import { erpStore, RestaurantShift, Employee } from "@/shared/services/erpStore";
 import { shiftAuditService } from "@/features/shifts/services/shiftAuditService";
 import { getCurrentUserIdentitySync } from "@/shared/services/userAuthorization";
-import { ShiftAuditLogViewerModal } from "@/components/admin/ShiftAuditLogViewerModal";
 import { toast } from "sonner";
 import { useNavigate } from "@tanstack/react-router";
 
@@ -48,25 +41,16 @@ interface RestaurantShiftLauncherModalProps {
   onPreviewPOS?: () => void;
 }
 
-const SHIFT_CURRENCY_OPTIONS = [
-  { code: "EGP", label: "جنيه مصري (EGP)" },
-  { code: "USD", label: "دولار أمريكي (USD)" },
-  { code: "SSP", label: "جنيه جنوب السودان (SSP)" },
-] as const;
-
 export function RestaurantShiftLauncherModal({
   isOpen,
   onClose,
   onOpenPOS,
   onRequestCloseShift,
-  onPreviewPOS,
 }: RestaurantShiftLauncherModalProps) {
   const navigate = useNavigate();
   const [state, setState] = useState(erpStore.getState());
   const [isNewShiftFormOpen, setIsNewShiftFormOpen] = useState(false);
-  const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
 
-  // Detect current user role & permissions dynamically (no hardcoded usernames)
   const currentIdentity = useMemo(
     () => getCurrentUserIdentitySync(),
     [state.currentUser, state.users, isOpen],
@@ -74,11 +58,10 @@ export function RestaurantShiftLauncherModal({
   const isCashier = currentIdentity.isCashier;
   const canCloseShifts = currentIdentity.canCloseShifts;
 
-  // New Shift Form State
+  // Unified New Shift Form State (Currency strictly locked to USD)
   const [autoShiftNumber, setAutoShiftNumber] = useState("");
   const [customShiftNumber, setCustomShiftNumber] = useState("");
-  const [shiftCurrency, setShiftCurrency] = useState<string>("EGP");
-  const [selectedCashierType, setSelectedCashierType] = useState<string>("hr"); // "hr" | "manual"
+  const [selectedCashierType, setSelectedCashierType] = useState<"hr" | "manual">("hr");
   const [selectedHrEmployeeId, setSelectedHrEmployeeId] = useState<string>("");
   const [manualCashierName, setManualCashierName] = useState<string>("");
   const [openingBalance, setOpeningBalance] = useState<string>("0");
@@ -94,7 +77,6 @@ export function RestaurantShiftLauncherModal({
   // Delete Confirmation State
   const [deletingShift, setDeletingShift] = useState<RestaurantShift | null>(null);
 
-  // Subscribe to store updates
   useEffect(() => {
     const unsub = erpStore.subscribe(() => {
       setState(erpStore.getState());
@@ -102,57 +84,61 @@ export function RestaurantShiftLauncherModal({
     return unsub;
   }, []);
 
-  // Rehydrate any open shifts from Supabase shift_audit_logs when modal opens
   useEffect(() => {
     if (isOpen) {
       shiftAuditService.syncOpenShiftsFromSupabase(erpStore).catch(() => {});
     }
   }, [isOpen]);
 
-  // Initialize auto shift number & default fields when opening
   useEffect(() => {
     if (isOpen) {
       const generated = erpStore.generateUniqueRestaurantShiftNumber();
       setAutoShiftNumber(generated);
       const shiftIndex = (state.restaurantShifts?.length || 0) + 1;
-      setCustomShiftNumber(`وردية مطعم #${shiftIndex} - ${new Date().toLocaleDateString("ar-EG")}`);
-      setShiftCurrency("EGP");
-
-      // Default to first cashier or active employee in HR for manager/admin mode
-      const cashiers = (state.employees || []).filter(
-        (e) =>
-          e.status === "active" &&
-          (e.job_title?.includes("كاشير") ||
-            e.job_title?.includes("مبيعات") ||
-            e.job_title?.includes("صالة") ||
-            e.job_title?.includes("كابتن") ||
-            e.department?.includes("المطعم") ||
-            e.department?.includes("الصالة") ||
-            e.department?.includes("المبيعات")),
+      setCustomShiftNumber(
+        `وردية مطعم #${shiftIndex} - ${new Date().toLocaleDateString("ar-EG")}`,
       );
-      if (cashiers.length > 0) {
-        setSelectedHrEmployeeId(cashiers[0].id);
-      } else if (state.employees && state.employees.length > 0) {
-        setSelectedHrEmployeeId(state.employees[0].id);
-      } else {
+      setOpeningBalance("0");
+      setShiftNotes("");
+
+      if (isCashier) {
         setSelectedCashierType("manual");
-        setManualCashierName("كاشير المطعم");
+        setManualCashierName(
+          currentIdentity.fullName || currentIdentity.username || "كاشير المطعم",
+        );
+      } else {
+        const cashiers = (state.employees || []).filter(
+          (e) =>
+            e.status === "active" &&
+            (e.job_title?.includes("كاشير") ||
+              e.job_title?.includes("مبيعات") ||
+              e.job_title?.includes("صالة") ||
+              e.job_title?.includes("كابتن") ||
+              e.department?.includes("المطعم") ||
+              e.department?.includes("الصالة") ||
+              e.department?.includes("المبيعات")),
+        );
+        if (cashiers.length > 0) {
+          setSelectedHrEmployeeId(cashiers[0].id);
+        } else if (state.employees && state.employees.length > 0) {
+          setSelectedHrEmployeeId(state.employees[0].id);
+        } else {
+          setSelectedCashierType("manual");
+          setManualCashierName("كاشير المطعم");
+        }
       }
     }
-  }, [isOpen, state.restaurantShifts?.length]);
+  }, [isOpen, state.restaurantShifts?.length, state.employees, isCashier, currentIdentity]);
 
-  // HR Employees list
   const hrEmployees: Employee[] = useMemo(() => {
     return (state.employees || []).filter((e) => e.status === "active");
   }, [state.employees]);
 
-  // Active open shift for the logged-in cashier (linked to their user ID)
   const cashierActiveShift: RestaurantShift | null = useMemo(() => {
     if (!isCashier) return null;
     return erpStore.getCashierOpenRestaurantShift();
   }, [isCashier, state.restaurantShifts, state.currentUser, currentIdentity.userId]);
 
-  // Open / Active Restaurant shifts (for cashiers, show only their own active shift; for managers, show all open shifts)
   const openShifts: RestaurantShift[] = useMemo(() => {
     if (isCashier) {
       return cashierActiveShift ? [cashierActiveShift] : [];
@@ -160,7 +146,6 @@ export function RestaurantShiftLauncherModal({
     return (state.restaurantShifts || []).filter((s) => s.status === "open");
   }, [isCashier, cashierActiveShift, state.restaurantShifts]);
 
-  // Auto-open creation form when there are no open shifts
   useEffect(() => {
     if (isOpen) {
       if (isCashier && cashierActiveShift) {
@@ -171,20 +156,6 @@ export function RestaurantShiftLauncherModal({
     }
   }, [isOpen, isCashier, cashierActiveShift, openShifts.length]);
 
-  const selectedExchangeRate = useMemo(() => {
-    return erpStore.getExchangeRate(shiftCurrency);
-  }, [shiftCurrency, state.exchangeRates]);
-
-  const handlePreviewWithoutShift = () => {
-    onClose();
-    if (onPreviewPOS) {
-      onPreviewPOS();
-    } else {
-      navigate({ to: "/pos" });
-    }
-  };
-
-  // Handle Starting a New Shift
   const handleStartShift = () => {
     if (!customShiftNumber.trim()) {
       toast.error("يرجى إدخال اسم الوردية");
@@ -192,7 +163,7 @@ export function RestaurantShiftLauncherModal({
     }
 
     if (isCashier && cashierActiveShift) {
-      toast.error("لديك وردية مطعم مفتوحة بالفعل. يمكنك الدخول إليها مباشرة.");
+      toast.error("لديك وردية مفتوحة بالفعل");
       return;
     }
 
@@ -211,7 +182,7 @@ export function RestaurantShiftLauncherModal({
       finalCashierId = selectedHrEmployeeId || currentIdentity.userId;
       finalCashierType = "hr";
     } else {
-      finalCashierName = manualCashierName.trim() || "موظف مؤقت";
+      finalCashierName = manualCashierName.trim() || "كاشير المطعم";
       finalCashierId = currentIdentity.userId;
       finalCashierType = "manual";
     }
@@ -227,14 +198,14 @@ export function RestaurantShiftLauncherModal({
         cashier_id: finalCashierId,
         cashier_username: currentIdentity.username,
         cashier_type: finalCashierType,
-        currency: shiftCurrency,
-        exchange_rate: selectedExchangeRate,
+        currency: "USD",
+        exchange_rate: 1,
         opening_balance: Number(openingBalance) || 0,
         opening_notes: shiftNotes.trim() || undefined,
         notes: shiftNotes.trim() || undefined,
       });
 
-      toast.success(`تم فتح ${newShift.shift_number} بنجاح`);
+      toast.success(`تم فتح ${newShift.shift_number}`);
       onClose();
       if (onOpenPOS) {
         onOpenPOS(newShift);
@@ -246,11 +217,10 @@ export function RestaurantShiftLauncherModal({
     }
   };
 
-  // Handle Enter Existing Shift
   const handleEnterShift = (shift: RestaurantShift) => {
     try {
       erpStore.setActiveRestaurantShift(shift.id);
-      toast.info(`تم الدخول إلى الوردية: ${shift.shift_number}`);
+      toast.info(`تم الدخول إلى ${shift.shift_number}`);
       onClose();
       if (onOpenPOS) {
         onOpenPOS(shift);
@@ -262,15 +232,10 @@ export function RestaurantShiftLauncherModal({
     }
   };
 
-  // Save Edit Shift
   const handleSaveEditShift = () => {
     if (!editingShift) return;
-    if (!editShiftNumber.trim()) {
-      toast.error("لا يمكن ترك رقم الوردية فارغاً");
-      return;
-    }
-    if (!editCashierName.trim()) {
-      toast.error("لا يمكن ترك اسم الكاشير فارغاً");
+    if (!editShiftNumber.trim() || !editCashierName.trim()) {
+      toast.error("يرجى إدخال اسم الوردية واسم الكاشير");
       return;
     }
 
@@ -281,19 +246,18 @@ export function RestaurantShiftLauncherModal({
         opening_balance: Number(editOpeningBalance) || 0,
         notes: editNotes.trim() || undefined,
       });
-      toast.success("تم تحديث بيانات الوردية بنجاح");
+      toast.success("تم تحديث بيانات الوردية");
       setEditingShift(null);
     } catch (err: any) {
       toast.error(err.message || "فشل التحديث");
     }
   };
 
-  // Confirm Delete Shift
   const handleConfirmDelete = () => {
     if (!deletingShift) return;
     try {
       erpStore.deleteRestaurantShift(deletingShift.id);
-      toast.success(`تم حذف ${deletingShift.shift_number} بنجاح`);
+      toast.success(`تم حذف ${deletingShift.shift_number}`);
       setDeletingShift(null);
     } catch (err: any) {
       toast.error(err.message || "فشل حذف الوردية");
@@ -303,369 +267,166 @@ export function RestaurantShiftLauncherModal({
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="sm:max-w-[750px] rounded-3xl max-h-[90vh] overflow-y-auto border-border shadow-2xl p-0">
-          {/* Header Banner */}
-          <div className="bg-gradient-to-l from-slate-900 via-indigo-950 to-slate-900 p-6 text-white rounded-t-3xl relative overflow-hidden">
-            <div className="absolute -left-10 -bottom-10 w-40 h-40 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
-            <DialogHeader className="text-right space-y-1.5">
-              <div className="flex items-center justify-between">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-amber-300 text-xs font-bold backdrop-blur-md">
-                  <Utensils size={14} />
-                  <span>نقطة بيع المطعم (Restaurant POS)</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  {!isCashier && (
+        <DialogContent className="sm:max-w-[650px] rounded-3xl max-h-[90vh] overflow-y-auto font-sans antialiased text-right">
+          <DialogHeader className="text-right border-b border-border pb-3">
+            <div className="flex items-center justify-between">
+              <DialogTitle className="text-lg font-black text-foreground flex items-center gap-2">
+                <Store size={20} className="text-primary" />
+                <span>فتح وردية جديدة — المطعم</span>
+              </DialogTitle>
+              <Badge variant="outline" className="text-xs font-bold">
+                {openShifts.length} نشطة
+              </Badge>
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-5 py-2">
+            {/* OPEN NEW SHIFT FORM */}
+            {(!isCashier || !cashierActiveShift) && (
+              <div className="p-4 rounded-2xl bg-muted/30 border border-border space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-black text-foreground flex items-center gap-2">
+                    <PlusCircle size={16} className="text-primary" />
+                    <span>بيانات فتح الوردية</span>
+                  </h3>
+                  {openShifts.length > 0 && (
                     <Button
                       type="button"
-                      variant="outline"
                       size="sm"
-                      onClick={() => setIsAuditModalOpen(true)}
-                      className="text-xs h-7 gap-1 font-bold bg-white/10 hover:bg-white/20 text-white border-white/20 cursor-pointer"
+                      variant="outline"
+                      onClick={() => setIsNewShiftFormOpen(!isNewShiftFormOpen)}
+                      className="rounded-xl font-bold text-xs gap-1.5 h-8"
                     >
-                      <Database size={13} />
-                      سجل التدقيق
+                      {isNewShiftFormOpen ? (
+                        <>
+                          <ChevronUp size={14} /> إخفاء
+                        </>
+                      ) : (
+                        <>
+                          <ChevronDown size={14} /> فتح وردية جديدة
+                        </>
+                      )}
                     </Button>
                   )}
-                  <Badge
-                    variant="outline"
-                    className="bg-indigo-500/20 text-indigo-200 border-indigo-400/30 text-xs font-mono"
-                  >
-                    {openShifts.length > 0
-                      ? `${openShifts.length} وردية نشطة حالياً`
-                      : "لا توجد ورديات مفتوحة"}
-                  </Badge>
-                </div>
-              </div>
-              <DialogTitle className="text-xl font-black text-white flex items-center gap-2">
-                <Store className="text-indigo-400" size={22} />
-                {isCashier
-                  ? cashierActiveShift
-                    ? "ورديتك النشطة في كاشير المطعم"
-                    : "فتح وردية جديدة — كاشير المطعم"
-                  : "بدء وإدارة ورديات نقطة البيع (POS)"}
-              </DialogTitle>
-              <DialogDescription className="text-slate-300 text-xs leading-relaxed">
-                {isCashier
-                  ? cashierActiveShift
-                    ? "تم اكتشاف ورديتك المفتوحة تلقائياً. يمكنك الدخول للوردية ومتابعة العمل مباشرة."
-                    : "أدخل بيانات الوردية الأربعة الأساسية لبدء العمل في نقطة بيع المطعم."
-                  : "اختر فتح وردية كاشير جديدة مع رقم آلي يمنع التكرار وربط الموارد البشرية، أو إدارة الورديات المفتوحة كمدير نظام لتعديلها أو إغلاقها أو متابعة المبيعات والمرتجعات."}
-              </DialogDescription>
-            </DialogHeader>
-          </div>
-
-          <div className="p-6 space-y-6">
-            {/* SECTION 1: OPEN NEW SHIFT (Hidden for Cashiers if they already have an active shift) */}
-            {(!isCashier || !cashierActiveShift) && (
-              <div className="p-5 rounded-3xl border-2 border-indigo-500/20 bg-indigo-500/5 dark:bg-indigo-950/20 space-y-4">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                  <div className="space-y-1">
-                    <h3 className="text-sm font-black text-foreground flex items-center gap-2">
-                      <Sparkles className="text-amber-500" size={16} />
-                      هل ترغب في فتح وردية جديدة؟
-                    </h3>
-                    <p className="text-xs text-muted-foreground">
-                      {isCashier
-                        ? "فتح وردية جديدة مرتبطة بحسابك الشخصي في قسم المطعم."
-                        : "إنشاء جلسة كاشير جديدة برقم آلي ونظام مالي مستقل لحركات المبيعات والمرتجعات."}
-                    </p>
-                  </div>
-
-                  <Button
-                    onClick={() => setIsNewShiftFormOpen(!isNewShiftFormOpen)}
-                    className={`rounded-2xl font-black text-xs gap-2 px-5 py-2.5 shadow-md cursor-pointer transition-all ${
-                      isNewShiftFormOpen
-                        ? "bg-slate-700 hover:bg-slate-800 text-white"
-                        : "bg-indigo-600 hover:bg-indigo-700 text-white"
-                    }`}
-                  >
-                    {isNewShiftFormOpen ? (
-                      <>
-                        <ChevronUp size={16} />
-                        إخفاء نموذج الفتح
-                      </>
-                    ) : (
-                      <>
-                        <PlusCircle size={16} />
-                        فتح وردية جديدة (Open New Shift)
-                      </>
-                    )}
-                  </Button>
                 </div>
 
-                {/* EXPANDABLE NEW SHIFT FORM */}
                 {isNewShiftFormOpen && (
-                  <div className="pt-4 border-t border-indigo-500/20 space-y-4 animate-in fade-in-50 duration-200">
-                    {isCashier ? (
-                      /* ============================================================
-                         SIMPLIFIED 4-FIELD SHIFT OPENING FORM FOR CASHIERS
-                         1. Shift Name (Editable)
-                         2. Shift Currency (Selectable with exchange rates)
-                         3. Opening Balance
-                         4. Opening Notes (Optional)
-                         (Internal Unique Shift ID & technical fields are hidden)
-                         ============================================================ */
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {/* Field 1: Shift Name */}
-                        <div className="space-y-1.5">
-                          <Label className="text-xs font-black text-foreground flex items-center gap-1">
-                            <Store size={13} className="text-primary" />
-                            اسم الوردية (Shift Name):
-                          </Label>
-                          <Input
-                            data-testid="cashier-shift-name-input"
-                            value={customShiftNumber}
-                            onChange={(e) => setCustomShiftNumber(e.target.value)}
-                            placeholder="مثال: وردية مطعم صباحية"
-                            className="rounded-xl text-xs font-bold bg-background border-border focus:border-indigo-500"
-                          />
-                        </div>
-
-                        {/* Field 2: Shift Currency & Exchange Rate */}
-                        <div className="space-y-1.5">
-                          <Label className="text-xs font-black text-foreground flex items-center justify-between">
-                            <span className="flex items-center gap-1">
-                              <DollarSign size={13} className="text-emerald-600" />
-                              عملة الوردية (Shift Currency):
-                            </span>
-                            <span className="text-[10px] font-mono text-indigo-600 dark:text-indigo-400">
-                              سعر الصرف: 1 USD = {selectedExchangeRate} {shiftCurrency}
-                            </span>
-                          </Label>
-                          <select
-                            data-testid="cashier-shift-currency-select"
-                            value={shiftCurrency}
-                            onChange={(e) => setShiftCurrency(e.target.value)}
-                            className="w-full h-10 px-3 rounded-xl bg-background border border-border text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                          >
-                            {SHIFT_CURRENCY_OPTIONS.map((c) => {
-                              const rate = erpStore.getExchangeRate(c.code);
-                              return (
-                                <option key={c.code} value={c.code}>
-                                  {c.label} — (سعر الصرف: {rate})
-                                </option>
-                              );
-                            })}
-                          </select>
-                        </div>
-
-                        {/* Field 3: Opening Balance */}
-                        <div className="space-y-1.5">
-                          <Label className="text-xs font-black text-foreground flex items-center gap-1">
-                            <DollarSign size={13} className="text-amber-600" />
-                            الرصيد الافتتاحي (Opening Balance):
-                          </Label>
-                          <Input
-                            data-testid="cashier-shift-opening-balance-input"
-                            type="number"
-                            min="0"
-                            value={openingBalance}
-                            onChange={(e) => setOpeningBalance(e.target.value)}
-                            placeholder="0.00"
-                            className="rounded-xl text-xs font-mono font-bold bg-background"
-                          />
-                        </div>
-
-                        {/* Field 4: Opening Notes */}
-                        <div className="space-y-1.5">
-                          <Label className="text-xs font-black text-foreground">
-                            ملاحظات الفتح (Opening Notes - اختياري):
-                          </Label>
-                          <Input
-                            data-testid="cashier-shift-opening-notes-input"
-                            value={shiftNotes}
-                            onChange={(e) => setShiftNotes(e.target.value)}
-                            placeholder="ملاحظات اختيارية عند فتح الوردية..."
-                            className="rounded-xl text-xs bg-background"
-                          />
-                        </div>
+                  <div className="space-y-4 pt-2 border-t border-border/60">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-black text-foreground">اسم الوردية</Label>
+                        <Input
+                          data-testid="cashier-shift-name-input"
+                          value={customShiftNumber}
+                          onChange={(e) => setCustomShiftNumber(e.target.value)}
+                          placeholder="وردية مطعم صباحية"
+                          className="h-10 rounded-xl text-xs font-bold bg-background"
+                        />
                       </div>
-                    ) : (
-                      /* ============================================================
-                         ADMIN / MANAGER FULL SHIFT OPENING FORM
-                         ============================================================ */
-                      <>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          {/* AUTO SHIFT NUMBER (System generated, immutable reference) */}
-                          <div className="space-y-1.5">
-                            <Label className="text-xs font-black text-muted-foreground flex items-center justify-between">
-                              <span className="flex items-center gap-1">
-                                <Hash size={13} className="text-indigo-600" />
-                                الرقم التلقائي المحفوظ (يمنع التكرار):
-                              </span>
-                              <Badge
-                                variant="secondary"
-                                className="text-[10px] bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-mono"
-                              >
-                                ثابت في التقارير
-                              </Badge>
-                            </Label>
-                            <Input
-                              value={autoShiftNumber}
-                              readOnly
-                              disabled
-                              className="bg-muted/70 font-mono font-black text-xs text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-900 rounded-xl cursor-not-allowed"
-                            />
-                            <p className="text-[10px] text-muted-foreground">
-                              رقم مرجعي فريد يتم توليده برمجياً ولا يتكرر في السجلات المحاسبية.
-                            </p>
-                          </div>
 
-                          {/* CUSTOMIZABLE SHIFT NUMBER / NAME */}
-                          <div className="space-y-1.5">
-                            <Label className="text-xs font-black text-foreground flex items-center gap-1">
-                              <Store size={13} className="text-primary" />
-                              رقم / اسم الوردية المعروض (قابل للتعديل):
-                            </Label>
-                            <Input
-                              value={customShiftNumber}
-                              onChange={(e) => setCustomShiftNumber(e.target.value)}
-                              placeholder="مثال: وردية مطعم #1 - صباحية"
-                              className="rounded-xl text-xs font-bold bg-background border-border focus:border-indigo-500"
-                            />
-                            <p className="text-[10px] text-muted-foreground">
-                              يمكنك تعديل الاسم أو الرقم بحرية ويظل الرقم التلقائي محفوظاً.
-                            </p>
-                          </div>
-                        </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-black text-foreground">عملة الوردية</Label>
+                        <Input
+                          data-testid="cashier-shift-currency-select"
+                          value="دولار أمريكي (USD $)"
+                          readOnly
+                          disabled
+                          className="h-10 rounded-xl text-xs font-black bg-muted/70 text-foreground cursor-not-allowed"
+                        />
+                      </div>
 
-                        {/* CASHIER SELECTION */}
-                        <div className="space-y-2 p-3.5 rounded-2xl bg-card border border-border">
-                          <div className="flex items-center justify-between">
-                            <Label className="text-xs font-black text-foreground flex items-center gap-1.5">
-                              <UserCheck size={14} className="text-emerald-600" />
-                              اسم الكاشير المسؤول عن الوردية:
-                            </Label>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-black text-foreground">
+                          الرصيد الافتتاحي (USD $)
+                        </Label>
+                        <Input
+                          data-testid="cashier-shift-opening-balance-input"
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={openingBalance}
+                          onChange={(e) => setOpeningBalance(e.target.value)}
+                          placeholder="0.00"
+                          className="h-10 rounded-xl text-xs font-mono font-bold bg-background"
+                        />
+                      </div>
 
-                            {/* Toggle HR vs Manual */}
-                            <div className="inline-flex rounded-xl bg-muted p-0.5 border border-border text-[11px] font-bold">
-                              <button
-                                type="button"
-                                onClick={() => setSelectedCashierType("hr")}
-                                className={`px-3 py-1 rounded-lg transition-all ${
-                                  selectedCashierType === "hr"
-                                    ? "bg-background text-foreground shadow-xs font-black"
-                                    : "text-muted-foreground hover:text-foreground"
-                                }`}
-                              >
-                                موظف من HR
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setSelectedCashierType("manual")}
-                                className={`px-3 py-1 rounded-lg transition-all ${
-                                  selectedCashierType === "manual"
-                                    ? "bg-background text-foreground shadow-xs font-black"
-                                    : "text-muted-foreground hover:text-foreground"
-                                }`}
-                              >
-                                موظف مؤقت / إدخال يدوي
-                              </button>
-                            </div>
-                          </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-black text-foreground">ملاحظات الفتح</Label>
+                        <Input
+                          data-testid="cashier-shift-opening-notes-input"
+                          value={shiftNotes}
+                          onChange={(e) => setShiftNotes(e.target.value)}
+                          placeholder="ملاحظات اختيارية..."
+                          className="h-10 rounded-xl text-xs bg-background"
+                        />
+                      </div>
+                    </div>
 
-                          {selectedCashierType === "hr" ? (
-                            <div className="space-y-1.5">
-                              <select
-                                value={selectedHrEmployeeId}
-                                onChange={(e) => setSelectedHrEmployeeId(e.target.value)}
-                                className="w-full h-10 px-3 rounded-xl bg-background border border-border text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                              >
-                                {hrEmployees.map((emp) => (
-                                  <option key={emp.id} value={emp.id}>
-                                    {emp.name} — ({emp.job_title || "موظف"}) - قسم:{" "}
-                                    {emp.department || "المطعم"}
-                                  </option>
-                                ))}
-                              </select>
-                              <p className="text-[10px] text-muted-foreground">
-                                مربوط بقائمة موظفي الموارد البشرية (HR) لتسجيل الحركات والمسؤولية
-                                المالية بدقة.
-                              </p>
-                            </div>
-                          ) : (
-                            <div className="space-y-1.5">
-                              <Input
-                                value={manualCashierName}
-                                onChange={(e) => setManualCashierName(e.target.value)}
-                                placeholder="اكتب اسم الكاشير أو الموظف المؤقت..."
-                                className="rounded-xl text-xs font-bold bg-background border-border"
-                              />
-                              <p className="text-[10px] text-muted-foreground">
-                                استخدم هذا الخيار في حال تعيين كاشير مؤقت غير مسجل بالهيكل الوظيفي.
-                              </p>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* CURRENCY, OPENING BALANCE & NOTES */}
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                          <div className="space-y-1.5">
-                            <Label className="text-xs font-bold text-muted-foreground flex items-center justify-between">
-                              <span>عملة الوردية:</span>
-                              <span className="font-mono text-[10px]">
-                                الصرف: {selectedExchangeRate}
-                              </span>
-                            </Label>
-                            <select
-                              value={shiftCurrency}
-                              onChange={(e) => setShiftCurrency(e.target.value)}
-                              className="w-full h-10 px-3 rounded-xl bg-background border border-border text-xs font-bold"
+                    {!isCashier && (
+                      <div className="space-y-2 pt-1">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs font-black text-foreground flex items-center gap-1.5">
+                            <UserCheck size={14} className="text-primary" />
+                            <span>الكاشير المسؤول</span>
+                          </Label>
+                          <div className="inline-flex rounded-xl bg-muted p-0.5 border border-border text-[11px] font-bold">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedCashierType("hr")}
+                              className={`px-3 py-1 rounded-lg transition ${
+                                selectedCashierType === "hr"
+                                  ? "bg-background text-foreground shadow-xs font-black"
+                                  : "text-muted-foreground"
+                              }`}
                             >
-                              {SHIFT_CURRENCY_OPTIONS.map((c) => (
-                                <option key={c.code} value={c.code}>
-                                  {c.label} ({erpStore.getExchangeRate(c.code)})
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div className="space-y-1.5">
-                            <Label className="text-xs font-bold text-muted-foreground flex items-center gap-1">
-                              <DollarSign size={13} />
-                              الرصيد النقدي الافتتاحي:
-                            </Label>
-                            <Input
-                              type="number"
-                              min="0"
-                              value={openingBalance}
-                              onChange={(e) => setOpeningBalance(e.target.value)}
-                              placeholder="0.00"
-                              className="rounded-xl text-xs font-mono font-bold bg-background"
-                            />
-                          </div>
-                          <div className="space-y-1.5">
-                            <Label className="text-xs font-bold text-muted-foreground">
-                              ملاحظات استلام العهدة والوردية (اختياري):
-                            </Label>
-                            <Input
-                              value={shiftNotes}
-                              onChange={(e) => setShiftNotes(e.target.value)}
-                              placeholder="مثال: استلام درج النقدية سليم..."
-                              className="rounded-xl text-xs bg-background"
-                            />
+                              موظف HR
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedCashierType("manual")}
+                              className={`px-3 py-1 rounded-lg transition ${
+                                selectedCashierType === "manual"
+                                  ? "bg-background text-foreground shadow-xs font-black"
+                                  : "text-muted-foreground"
+                              }`}
+                            >
+                              إدخال يدوي
+                            </button>
                           </div>
                         </div>
-                      </>
+
+                        {selectedCashierType === "hr" ? (
+                          <select
+                            value={selectedHrEmployeeId}
+                            onChange={(e) => setSelectedHrEmployeeId(e.target.value)}
+                            className="w-full h-10 px-3 rounded-xl bg-background border border-border text-xs font-bold focus:outline-none"
+                          >
+                            {hrEmployees.map((emp) => (
+                              <option key={emp.id} value={emp.id}>
+                                {emp.name} — {emp.job_title || "موظف"}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <Input
+                            value={manualCashierName}
+                            onChange={(e) => setManualCashierName(e.target.value)}
+                            placeholder="اسم الكاشير..."
+                            className="h-10 rounded-xl text-xs font-bold bg-background"
+                          />
+                        )}
+                      </div>
                     )}
 
-                    {/* ACTION: START SHIFT & OPEN POS */}
-                    <div className="pt-2 flex justify-end gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setIsNewShiftFormOpen(false)}
-                        className="rounded-xl text-xs font-bold"
-                      >
-                        إلغاء
-                      </Button>
+                    <div className="pt-2 flex justify-end">
                       <Button
                         type="button"
                         onClick={handleStartShift}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs gap-2 rounded-xl px-6 shadow-md"
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs gap-2 rounded-xl px-6 h-10 shadow-sm cursor-pointer"
                       >
                         <Play size={15} />
-                        بدء الشيفت والانتقال لنقطة البيع (POS)
+                        <span>فتح الوردية ودخول الكاشير</span>
                       </Button>
                     </div>
                   </div>
@@ -673,292 +434,178 @@ export function RestaurantShiftLauncherModal({
               </div>
             )}
 
-            {/* SECTION 2: ACCESS CURRENT SHIFTS */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <h3 className="text-sm font-black text-foreground flex items-center gap-2">
-                    <Lock className="text-indigo-600" size={16} />
-                    {isCashier
-                      ? "ورديتك المفتوحة حالياً في قسم المطعم"
-                      : "الدخول على الشيفتات الموجودة حالياً كمدير"}
-                  </h3>
-                  <p className="text-xs text-muted-foreground">
-                    {isCashier
-                      ? "يمكنك الدخول مباشرة إلى ورديتك المفتوحة لمتابعة البيع. إغلاق الوردية يتم بواسطة المدير المختص فقط."
-                      : "يمكن للمدير تعديل أو حذف بيانات الجلسة، أو الدخول على الشيفت لإجراء عمليات البيع والمرتجع أو الإغلاق."}
-                  </p>
-                </div>
-                <Badge variant="outline" className="text-xs font-bold">
-                  {openShifts.length} ورديات مفتوحة
-                </Badge>
-              </div>
+            {/* EXISTING OPEN SHIFTS */}
+            {openShifts.length > 0 && (
+              <div className="space-y-2.5">
+                <h3 className="text-sm font-black text-foreground flex items-center gap-2">
+                  <Clock size={16} className="text-primary" />
+                  <span>الورديات المفتوحة ({openShifts.length})</span>
+                </h3>
 
-              {openShifts.length === 0 ? (
-                <div className="p-8 rounded-3xl border border-dashed border-border bg-muted/20 text-center space-y-2">
-                  <Store size={32} className="mx-auto text-muted-foreground opacity-50" />
-                  <p className="text-xs font-black text-muted-foreground">
-                    {isCashier
-                      ? "لا توجد وردية مطعم مفتوحة لحسابك حالياً."
-                      : "لا توجد ورديات مطعم مفتوحة حالياً."}
-                  </p>
-                  <p className="text-[11px] text-muted-foreground">
-                    اضغط على زر "فتح وردية جديدة" بالأعلى لبدء جلسة الكاشير.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {openShifts.map((shift) => {
-                    const activeRestaurantShift = erpStore.getActiveRestaurantShift();
-                    const isCurrentlyActive = activeRestaurantShift?.id === shift.id;
-                    const shiftRefunds = erpStore.getRestaurantRefundRecords(shift.id);
+                {openShifts.map((shift) => {
+                  const activeRestaurantShift = erpStore.getActiveRestaurantShift();
+                  const isCurrentlyActive = activeRestaurantShift?.id === shift.id;
 
-                    return (
-                      <div
-                        key={shift.id}
-                        className={`p-4 rounded-2xl border transition-all space-y-3 ${
-                          isCurrentlyActive
-                            ? "bg-indigo-50/50 dark:bg-indigo-950/20 border-indigo-300 dark:border-indigo-800 shadow-sm"
-                            : "bg-card border-border hover:border-indigo-200"
-                        }`}
-                      >
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-black text-sm text-foreground">
-                                {shift.shift_number}
-                              </span>
-                              {!isCashier && shift.auto_shift_number && (
-                                <Badge
-                                  variant="outline"
-                                  className="text-[10px] font-mono text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/50"
-                                >
-                                  {shift.auto_shift_number}
-                                </Badge>
-                              )}
-                              {isCurrentlyActive ? (
-                                <Badge className="bg-emerald-600 text-white text-[10px] font-black gap-1">
-                                  <CheckCircle2 size={11} /> الوردية النشطة بالـ POS
-                                </Badge>
-                              ) : (
-                                <Badge variant="secondary" className="text-[10px] font-bold">
-                                  مفتوحة
-                                </Badge>
-                              )}
-                            </div>
-
-                            <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap pt-0.5">
-                              <span className="flex items-center gap-1 font-medium">
-                                <UserCheck size={13} className="text-emerald-600" />
-                                الكاشير: <b className="text-foreground">{shift.cashier_name}</b>
-                              </span>
-                              <span className="flex items-center gap-1 font-medium">
-                                <Clock size={13} className="text-primary" />
-                                البدء: {new Date(shift.start_at).toLocaleTimeString("ar-EG")}
-                              </span>
-                              {shift.opening_balance ? (
-                                <span className="flex items-center gap-1 font-medium">
-                                  <DollarSign size={13} className="text-amber-600" />
-                                  الرصيد الافتتاحي:{" "}
-                                  <b className="font-mono text-foreground">
-                                    {shift.opening_balance.toLocaleString()}{" "}
-                                    {shift.currency || "EGP"}
-                                  </b>
-                                </span>
-                              ) : null}
-                            </div>
-                          </div>
-
-                          {/* Action Buttons for this shift */}
-                          <div className="flex items-center gap-1.5 flex-wrap self-end sm:self-center">
-                            {/* Enter Shift (POS) to perform Sales or Returns */}
-                            <Button
-                              size="sm"
-                              onClick={() => handleEnterShift(shift)}
-                              className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black gap-1.5 shadow-xs cursor-pointer"
-                            >
-                              <Play size={13} />
-                              الدخول للوردية (POS)
-                            </Button>
-
-                            {/* Edit, Close, and Delete Shift are strictly restricted to Managers/Admins (Hidden for Cashiers) */}
-                            {canCloseShifts && !isCashier && (
-                              <>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => {
-                                    setEditingShift(shift);
-                                    setEditShiftNumber(shift.shift_number);
-                                    setEditCashierName(shift.cashier_name);
-                                    setEditOpeningBalance(String(shift.opening_balance || 0));
-                                    setEditNotes(shift.notes || "");
-                                  }}
-                                  className="rounded-xl text-xs font-bold gap-1 border-border cursor-pointer h-9 px-2.5"
-                                  title="تعديل بيانات الجلسة"
-                                >
-                                  <Edit size={13} />
-                                  تعديل
-                                </Button>
-
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => {
-                                    onClose();
-                                    if (onRequestCloseShift) {
-                                      onRequestCloseShift(shift);
-                                    }
-                                  }}
-                                  className="rounded-xl text-xs font-bold gap-1 text-rose-600 hover:bg-rose-50 border-rose-200 dark:border-rose-900 cursor-pointer h-9 px-2.5"
-                                  title="إغلاق الوردية والترحيل"
-                                >
-                                  <Lock size={13} />
-                                  إغلاق
-                                </Button>
-
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => setDeletingShift(shift)}
-                                  className="rounded-xl text-xs font-bold gap-1 text-red-600 hover:bg-red-50 border-red-200 dark:border-red-900 cursor-pointer h-9 px-2.5"
-                                  title="حذف الوردية نهائياً كمدير"
-                                >
-                                  <Trash2 size={13} />
-                                </Button>
-                              </>
-                            )}
-                          </div>
+                  return (
+                    <div
+                      key={shift.id}
+                      className="p-3.5 rounded-2xl border border-border bg-card flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-black text-xs text-foreground">
+                            {shift.shift_number}
+                          </span>
+                          {isCurrentlyActive ? (
+                            <Badge className="bg-emerald-600 text-white text-[10px] font-black gap-1">
+                              <CheckCircle2 size={11} /> نشطة الآن
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary" className="text-[10px] font-bold">
+                              مفتوحة
+                            </Badge>
+                          )}
                         </div>
 
-                        {/* Shift quick financial metrics */}
-                        <div className="pt-2 border-t border-border/60 grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
-                          <div className="bg-muted/40 p-2 rounded-xl">
-                            <span className="text-muted-foreground block">إجمالي المبيعات:</span>
-                            <span className="font-mono font-black text-foreground">
-                              {Number(shift.total_sales || 0).toLocaleString()} EGP
-                            </span>
-                          </div>
-                          <div className="bg-muted/40 p-2 rounded-xl">
-                            <span className="text-muted-foreground block">حركات المرتجع:</span>
-                            <span className="font-mono font-black text-rose-600">
-                              {Number(shift.total_refunds || 0).toLocaleString()} EGP (
-                              {shiftRefunds.length} مرتجع)
-                            </span>
-                          </div>
-                          <div className="bg-muted/40 p-2 rounded-xl">
-                            <span className="text-muted-foreground block">صافي الإيراد:</span>
-                            <span className="font-mono font-black text-emerald-600">
-                              {Number(shift.net_total || shift.total_sales || 0).toLocaleString()}{" "}
-                              EGP
-                            </span>
-                          </div>
-                          <div className="bg-muted/40 p-2 rounded-xl">
-                            <span className="text-muted-foreground block">عدد الطلبات:</span>
-                            <span className="font-mono font-black text-primary">
-                              {shift.orders_count || 0} طلب
-                            </span>
-                          </div>
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                          <span className="flex items-center gap-1 font-bold text-foreground">
+                            <UserCheck size={12} className="text-emerald-600" />
+                            {shift.cashier_name}
+                          </span>
+                          <span>•</span>
+                          <span className="flex items-center gap-1 font-mono">
+                            <Clock size={12} />
+                            {new Date(shift.start_at).toLocaleTimeString("ar-EG")}
+                          </span>
+                          <span>•</span>
+                          <span className="flex items-center gap-1 font-mono font-bold text-emerald-600">
+                            <DollarSign size={12} />
+                            {(shift.opening_balance || 0).toLocaleString()} USD
+                          </span>
+                          <span>•</span>
+                          <span className="flex items-center gap-1 text-primary font-black">
+                            <ShoppingBag size={12} />
+                            {shift.orders_count || 0} طلب
+                          </span>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <Button
+                          size="sm"
+                          onClick={() => handleEnterShift(shift)}
+                          className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl text-xs font-black gap-1 cursor-pointer h-8"
+                        >
+                          <Play size={13} />
+                          <span>دخول الوردية</span>
+                        </Button>
+
+                        {canCloseShifts && !isCashier && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setEditingShift(shift);
+                                setEditShiftNumber(shift.shift_number);
+                                setEditCashierName(shift.cashier_name);
+                                setEditOpeningBalance(String(shift.opening_balance || 0));
+                                setEditNotes(shift.notes || "");
+                              }}
+                              className="rounded-xl text-xs font-bold gap-1 cursor-pointer h-8"
+                            >
+                              <Edit size={13} />
+                              <span>تعديل</span>
+                            </Button>
+
+                            {onRequestCloseShift && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  onClose();
+                                  onRequestCloseShift(shift);
+                                }}
+                                className="rounded-xl text-xs font-bold gap-1 text-rose-600 border-rose-200 cursor-pointer h-8"
+                              >
+                                <Lock size={13} />
+                                <span>إغلاق</span>
+                              </Button>
+                            )}
+
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setDeletingShift(shift)}
+                              className="rounded-xl text-xs font-bold text-rose-600 h-8 px-2 cursor-pointer"
+                            >
+                              <Trash2 size={14} />
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
-          <DialogFooter className="p-4 bg-muted/30 border-t border-border flex flex-col sm:flex-row justify-between sm:justify-between items-center gap-2 rounded-b-3xl">
-            <span className="text-[11px] text-muted-foreground font-medium">
-              نظام إدارة المطعم الشامل — يمكنك معاينة شاشة الكاشير بدون فتح وردية جديدة
-            </span>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={handlePreviewWithoutShift}
-                className="rounded-xl text-xs font-black gap-1.5 bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30 hover:bg-amber-500/25 cursor-pointer"
-              >
-                <Utensils size={13} />
-                معاينة شاشة الكاشير (بدون فتح وردية)
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onClose}
-                className="rounded-xl text-xs font-bold cursor-pointer"
-              >
-                إلغاء وإغلاق
-              </Button>
-            </div>
+          <DialogFooter className="border-t border-border pt-3 sm:justify-between">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onClose}
+              className="rounded-xl text-xs font-bold"
+            >
+              إغلاق
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* EDIT SHIFT MODAL */}
       {editingShift && (
-        <Dialog open={true} onOpenChange={() => setEditingShift(null)}>
-          <DialogContent className="sm:max-w-[500px] rounded-3xl">
-            <DialogHeader>
-              <DialogTitle className="text-base font-black flex items-center gap-2 text-primary">
-                <Edit size={18} />
-                تعديل بيانات وردية المطعم
-              </DialogTitle>
-              <DialogDescription className="text-xs">
-                يمكن لمدير النظام تعديل مسمى الوردية أو اسم الكاشير المسؤول أو الرصيد الافتتاحي.
-              </DialogDescription>
+        <Dialog open={editingShift !== null} onOpenChange={() => setEditingShift(null)}>
+          <DialogContent className="sm:max-w-[420px] rounded-3xl text-right">
+            <DialogHeader className="text-right">
+              <DialogTitle className="text-base font-black">تعديل بيانات الوردية</DialogTitle>
             </DialogHeader>
-
-            <div className="space-y-4 py-2">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-bold">الرقم التلقائي المحفوظ:</Label>
-                <Input
-                  value={editingShift.auto_shift_number || editingShift.id}
-                  readOnly
-                  disabled
-                  className="bg-muted font-mono text-xs font-black rounded-xl"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs font-bold">اسم / رقم الوردية:</Label>
+            <div className="space-y-3 py-2 text-xs">
+              <div>
+                <Label className="font-bold mb-1 block">اسم الوردية</Label>
                 <Input
                   value={editShiftNumber}
                   onChange={(e) => setEditShiftNumber(e.target.value)}
-                  className="rounded-xl text-xs font-bold"
+                  className="rounded-xl h-9 font-bold"
                 />
               </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs font-bold">اسم الكاشير المسؤول:</Label>
+              <div>
+                <Label className="font-bold mb-1 block">الكاشير المسؤول</Label>
                 <Input
                   value={editCashierName}
                   onChange={(e) => setEditCashierName(e.target.value)}
-                  className="rounded-xl text-xs font-bold"
+                  className="rounded-xl h-9 font-bold"
                 />
               </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs font-bold">الرصيد الافتتاحي:</Label>
+              <div>
+                <Label className="font-bold mb-1 block">الرصيد الافتتاحي (USD $)</Label>
                 <Input
                   type="number"
                   value={editOpeningBalance}
                   onChange={(e) => setEditOpeningBalance(e.target.value)}
-                  className="rounded-xl text-xs font-mono font-bold"
+                  className="rounded-xl h-9 font-mono font-bold"
                 />
               </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs font-bold">ملاحظات الجلسة:</Label>
+              <div>
+                <Label className="font-bold mb-1 block">ملاحظات</Label>
                 <Input
                   value={editNotes}
                   onChange={(e) => setEditNotes(e.target.value)}
-                  className="rounded-xl text-xs"
+                  className="rounded-xl h-9"
                 />
               </div>
             </div>
-
             <DialogFooter className="gap-2 sm:justify-between pt-2">
               <Button
                 variant="outline"
@@ -971,32 +618,26 @@ export function RestaurantShiftLauncherModal({
               <Button
                 size="sm"
                 onClick={handleSaveEditShift}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold"
+                className="bg-primary text-primary-foreground rounded-xl font-bold"
               >
-                حفظ التعديلات
+                حفظ
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
       )}
 
-      {/* CONFIRM DELETE DIALOG */}
+      {/* DELETE SHIFT CONFIRMATION MODAL */}
       {deletingShift && (
-        <Dialog open={true} onOpenChange={() => setDeletingShift(null)}>
-          <DialogContent className="sm:max-w-[450px] rounded-3xl">
-            <DialogHeader>
+        <Dialog open={deletingShift !== null} onOpenChange={() => setDeletingShift(null)}>
+          <DialogContent className="sm:max-w-[400px] rounded-3xl text-right">
+            <DialogHeader className="text-right">
               <DialogTitle className="text-base font-black flex items-center gap-2 text-rose-600">
                 <AlertTriangle size={18} />
-                تأكيد حذف وردية المطعم
+                <span>تأكيد حذف الوردية ({deletingShift.shift_number})</span>
               </DialogTitle>
-              <DialogDescription className="text-xs leading-relaxed text-foreground/80 pt-1">
-                هل أنت متأكد من رغبتك في حذف الوردية{" "}
-                <b className="text-rose-600">({deletingShift.shift_number})</b>؟ سيتم إزالة الجلسة
-                من قائمة الورديات النشطة. هذا الإجراء مخصص للمدير ولا يمكن التراجع عنه.
-              </DialogDescription>
             </DialogHeader>
-
-            <DialogFooter className="gap-2 sm:justify-between pt-4">
+            <DialogFooter className="gap-2 sm:justify-between pt-2">
               <Button
                 variant="outline"
                 size="sm"
@@ -1007,22 +648,16 @@ export function RestaurantShiftLauncherModal({
               </Button>
               <Button
                 size="sm"
+                variant="destructive"
                 onClick={handleConfirmDelete}
-                className="bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-black gap-1.5"
+                className="rounded-xl font-bold"
               >
-                <Trash2 size={14} />
-                تأكيد الحذف نهائياً
+                تأكيد الحذف
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
       )}
-
-      <ShiftAuditLogViewerModal
-        isOpen={isAuditModalOpen}
-        onClose={() => setIsAuditModalOpen(false)}
-        initialShiftType="restaurant"
-      />
     </>
   );
 }

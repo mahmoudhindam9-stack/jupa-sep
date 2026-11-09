@@ -78,11 +78,13 @@ export const ShiftAuditLogViewerModal: React.FC<ShiftAuditLogViewerModalProps> =
   const fetchLogs = async () => {
     setLoading(true);
     try {
+      await shiftAuditService.syncOpenShiftsFromSupabase(erpStore);
       shiftAuditService.syncShiftsWithAuditLogs(
         erpStore.getParkShifts(),
         erpStore.getRestaurantShifts(),
       );
       const res = await shiftAuditService.getShiftAuditLogs({
+        shiftId: initialShiftId || undefined,
         shiftType: selectedType !== "ALL" ? selectedType : undefined,
         action: selectedAction !== "ALL" ? selectedAction : undefined,
         searchQuery: searchQuery.trim() || undefined,
@@ -98,17 +100,32 @@ export const ShiftAuditLogViewerModal: React.FC<ShiftAuditLogViewerModalProps> =
   };
 
   useEffect(() => {
-    const unsub = erpStore.subscribe(() => {
-      setStoreTick((t) => t + 1);
-    });
-    return () => unsub();
+    setSelectedType(normalizedInitialType);
+  }, [normalizedInitialType]);
+
+  useEffect(() => {
+    if (initialShiftId) {
+      setSelectedInspectorShiftId(initialShiftId);
+    }
+  }, [initialShiftId]);
+
+  useEffect(() => {
+    const bump = () => setStoreTick((t) => t + 1);
+    const unsub = erpStore.subscribe(bump);
+    window.addEventListener("shift_audit_updated", bump);
+    window.addEventListener("storage", bump);
+    return () => {
+      unsub();
+      window.removeEventListener("shift_audit_updated", bump);
+      window.removeEventListener("storage", bump);
+    };
   }, []);
 
   useEffect(() => {
     if (isOpen) {
       fetchLogs();
     }
-  }, [isOpen, selectedType, selectedAction, storeTick]);
+  }, [isOpen, selectedType, selectedAction, initialShiftId, storeTick]);
 
   // All shifts currently in erpStore
   const allShifts = useMemo(() => {
@@ -257,7 +274,7 @@ export const ShiftAuditLogViewerModal: React.FC<ShiftAuditLogViewerModalProps> =
               </div>
               <div>
                 <DialogTitle className="text-lg font-black flex items-center gap-2">
-                  سجل تدقيق الورديات في Supabase (Shift Audit Log)
+                  سجل تدقيق الورديات
                   <Badge
                     variant="outline"
                     className="text-xs bg-teal-500/10 text-teal-600 border-teal-500/30"
@@ -269,10 +286,6 @@ export const ShiftAuditLogViewerModal: React.FC<ShiftAuditLogViewerModalProps> =
                         : "مخزن محلي"}
                   </Badge>
                 </DialogTitle>
-                <DialogDescription className="text-xs text-muted-foreground mt-0.5">
-                  تتبع جميع حركات فتح وإغلاق واستئناف الورديات، وتشخيص أسباب اختفاء أو ظهور الورديات
-                  بشكل خاطئ
-                </DialogDescription>
               </div>
             </div>
           </div>
@@ -329,7 +342,11 @@ export const ShiftAuditLogViewerModal: React.FC<ShiftAuditLogViewerModalProps> =
         {/* TAB 1: LOGS EXPLORER WITH ADVANCED FILTERS */}
         {activeTab === "logs" && (
           <div className="flex-1 overflow-y-auto p-5">
-            <ShiftAuditLogViewer initialShiftType={initialShiftType} showHeaderTitle={false} />
+            <ShiftAuditLogViewer
+              initialShiftType={initialShiftType}
+              initialShiftId={initialShiftId}
+              showHeaderTitle={false}
+            />
           </div>
         )}
 

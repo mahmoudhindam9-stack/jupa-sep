@@ -16,15 +16,12 @@ import {
   Save,
   UtensilsCrossed,
   CheckCircle2,
-  Package,
   ChefHat,
   FileText,
   ShoppingCart,
-  ChevronUp,
   Flame,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 
 type Table = {
   id: string;
@@ -76,7 +73,7 @@ export function TableOrderModal({
   onOrderSent?: () => void;
   onChangeTableStatus?: (status: "available" | "occupied" | "cleaning") => void;
 }) {
-  const { lang, currency, formatPrice, exchangeRates } = useSettings();
+  const { lang, formatPrice } = useSettings();
   const { toast } = useToast();
   const t = translations[lang];
 
@@ -96,6 +93,7 @@ export function TableOrderModal({
   useEffect(() => {
     if (isOpen && table) {
       setIsCartOpen(false);
+      setIsQuickNoteBarOpen(false);
       const existing = tableOrdersStore.getOrderByTableId(table.id, table.number);
       if (existing) {
         const normalizedLines: TableCartLine[] = (existing.items || []).map((raw: any) => {
@@ -127,12 +125,10 @@ export function TableOrderModal({
           .replace(/\[المكان:\s*[^\]]+\]/g, "")
           .trim();
         setOrderNotes(cleanedNotes);
-        setIsQuickNoteBarOpen(Boolean(cleanedNotes));
         setSelectedAdditions(existing.selectedAdditions || []);
       } else {
         setCart([]);
         setOrderNotes("");
-        setIsQuickNoteBarOpen(false);
         setSelectedAdditions([]);
       }
     }
@@ -524,648 +520,469 @@ export function TableOrderModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-3 md:p-5 animate-in fade-in duration-150">
-      <div
-        className="bg-slate-50 text-slate-900 w-full max-w-6xl h-[100dvh] sm:h-[92vh] rounded-none sm:rounded-3xl border-0 sm:border border-slate-200 shadow-2xl flex flex-col overflow-hidden relative"
-        dir={lang === "ar" ? "rtl" : "ltr"}
-        style={{ fontFamily: '"Tajawal", "Cairo", system-ui, sans-serif' }}
-      >
-        {/* 1. Compact Mobile-First Header */}
-        <header className="px-3 sm:px-5 py-2.5 bg-slate-900 text-white flex items-center justify-between gap-2 border-b border-slate-800 shrink-0">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-black text-sm sm:text-base shadow shrink-0">
-              #{table.number}
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <h2 className="text-sm sm:text-base font-black tracking-tight truncate">
-                  {lang === "ar" ? `طاولة #${table.number}` : `Table #${table.number}`}
-                </h2>
-                {table.name && (
-                  <span className="text-[11px] text-slate-400 truncate hidden xs:inline">
-                    ({table.name})
-                  </span>
-                )}
-              </div>
-              <p className="text-[10px] sm:text-[11px] text-slate-400 truncate">
-                {lang === "ar"
-                  ? "اضغط على الأصناف للإضافة السريعة أو افتح السلة للاعتماد"
-                  : "Tap items to add quickly or open cart to submit"}
-              </p>
-            </div>
+    <div
+      className="fixed inset-0 z-50 bg-background text-foreground flex flex-col overflow-hidden animate-in fade-in duration-150"
+      dir={lang === "ar" ? "rtl" : "ltr"}
+      style={{ fontFamily: '"Tajawal", "Cairo", system-ui, sans-serif' }}
+    >
+      {/* 1. Compact Header (No explanatory subtitle, no duplicate cart button) */}
+      <header className="px-3 sm:px-6 py-2.5 bg-card border-b border-border flex items-center justify-between gap-2 shrink-0">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div
+            className="w-9 h-9 rounded-xl flex items-center justify-center text-primary-foreground font-black text-sm shadow shrink-0"
+            style={{ background: "var(--gradient-primary)" }}
+          >
+            #{table.number}
           </div>
-
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {onChangeTableStatus && (
-              <div className="flex items-center gap-0.5 bg-slate-800 p-0.5 sm:p-1 rounded-xl border border-slate-700">
-                {(
-                  [
-                    { key: "available", label: "متاح", cls: "bg-emerald-600 text-white" },
-                    { key: "occupied", label: "مشغول", cls: "bg-rose-600 text-white" },
-                    { key: "cleaning", label: "تنظيف", cls: "bg-sky-600 text-white" },
-                  ] as const
-                ).map((st) => (
-                  <button
-                    key={st.key}
-                    type="button"
-                    onClick={() => onChangeTableStatus(st.key)}
-                    className={`px-2 sm:px-2.5 py-1 rounded-lg text-[11px] sm:text-xs font-bold transition cursor-pointer whitespace-nowrap ${
-                      table.status === st.key
-                        ? st.cls
-                        : "text-slate-300 hover:bg-slate-700"
-                    }`}
-                  >
-                    {st.label}
-                  </button>
-                ))}
-              </div>
+          <div className="flex items-center gap-2 min-w-0">
+            <h2 className="text-sm sm:text-base font-black tracking-tight truncate">
+              {lang === "ar" ? `طاولة #${table.number}` : `Table #${table.number}`}
+            </h2>
+            {table.name && (
+              <span className="text-xs text-muted-foreground font-bold truncate hidden sm:inline">
+                ({table.name})
+              </span>
             )}
+          </div>
+        </div>
 
+        <div className="flex items-center gap-2 shrink-0">
+          {onChangeTableStatus && (
+            <div className="flex items-center gap-0.5 bg-muted p-1 rounded-xl border border-border">
+              {(
+                [
+                  { key: "available", label: "متاح", cls: "bg-emerald-600 text-white" },
+                  { key: "occupied", label: "مشغول", cls: "bg-rose-600 text-white" },
+                  { key: "cleaning", label: "تنظيف", cls: "bg-sky-600 text-white" },
+                ] as const
+              ).map((st) => (
+                <button
+                  key={st.key}
+                  type="button"
+                  onClick={() => onChangeTableStatus(st.key)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap ${
+                    table.status === st.key
+                      ? st.cls
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {st.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setIsQuickNoteBarOpen(true)}
+            className={`h-9 px-3 rounded-xl border text-xs font-black flex items-center gap-1.5 transition cursor-pointer ${
+              orderNotes.trim() || selectedAdditions.length > 0
+                ? "bg-amber-50 border-amber-300 text-amber-900"
+                : "bg-muted border-border text-foreground hover:bg-muted/80"
+            }`}
+          >
+            <FileText size={14} className="text-amber-600 shrink-0" />
+            <span>{lang === "ar" ? "تفاصيل وإتمام الطلب" : "Order Details"}</span>
+            {(orderNotes.trim() || selectedAdditions.length > 0) && (
+              <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-9 h-9 rounded-xl bg-muted hover:bg-muted/80 flex items-center justify-center text-foreground transition cursor-pointer shrink-0"
+            aria-label="إغلاق"
+          >
+            <X size={18} />
+          </button>
+        </div>
+      </header>
+
+      {/* 2. Search + Categories Bar (Matching Restaurant & Park POS) */}
+      <div className="bg-card border-b border-border px-3 sm:px-6 py-2.5 space-y-2 shrink-0">
+        <div className="relative">
+          <Search
+            className={`absolute ${lang === "ar" ? "right-3" : "left-3"} top-1/2 -translate-y-1/2 text-muted-foreground`}
+            size={16}
+          />
+          <input
+            type="text"
+            placeholder={lang === "ar" ? "ابحث عن صنف..." : "Search item..."}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className={`w-full h-9 bg-muted/60 border border-border rounded-xl ${
+              lang === "ar" ? "pr-9 pl-8" : "pl-9 pr-8"
+            } text-xs sm:text-sm font-bold text-foreground outline-none focus:border-primary focus:bg-card transition`}
+          />
+          {search && (
             <button
               type="button"
-              onClick={() => setIsCartOpen(true)}
-              className="relative h-9 px-2.5 sm:px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white flex items-center gap-1.5 text-xs font-black transition cursor-pointer shadow"
-              title={lang === "ar" ? "فتح سلة الطلب" : "Open Cart"}
+              onClick={() => setSearch("")}
+              className={`absolute ${lang === "ar" ? "left-2.5" : "right-2.5"} top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1`}
             >
-              <ShoppingCart size={15} />
-              <span className="hidden md:inline">{lang === "ar" ? "السلة" : "Cart"}</span>
-              <span className="min-w-5 h-5 px-1 rounded-full bg-amber-400 text-slate-950 text-[11px] font-black flex items-center justify-center tabular-nums">
+              <X size={14} />
+            </button>
+          )}
+        </div>
+
+        <div className="flex gap-1.5 overflow-x-auto pb-0.5 scrollbar-none">
+          <button
+            type="button"
+            onClick={() => setActiveCategory("all")}
+            className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition border cursor-pointer ${
+              activeCategory === "all"
+                ? "bg-primary text-primary-foreground border-primary shadow"
+                : "bg-card text-foreground border-border hover:border-primary/40"
+            }`}
+          >
+            {t.all}
+          </button>
+          {(categoriesQuery.data ?? []).map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => setActiveCategory(c.id)}
+              className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition border cursor-pointer ${
+                activeCategory === c.id
+                  ? "bg-primary text-primary-foreground border-primary shadow"
+                  : "bg-card text-foreground border-border hover:border-primary/40"
+              }`}
+            >
+              {c.name_ar}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 3. Menu Grid (Matching Restaurant & Park POS) */}
+      <div className="flex-1 overflow-y-auto p-3 sm:p-6 pb-24 min-h-0">
+        {itemsQuery.isLoading ? (
+          <div className="py-16 text-center text-muted-foreground text-sm font-bold">
+            {lang === "ar" ? "جاري التحميل..." : "Loading..."}
+          </div>
+        ) : filteredItems.length === 0 ? (
+          <div className="py-16 text-center text-muted-foreground text-sm font-bold">
+            {lang === "ar" ? "لا توجد أصناف مطابقة" : "No matching items"}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
+            {filteredItems.map((item) => {
+              const inCartLine = cart.find((c) => c.item.id === item.id);
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => addToCart(item)}
+                  className={`group bg-card rounded-2xl sm:rounded-3xl overflow-hidden border transition-all hover:-translate-y-0.5 active:scale-[0.98] ${
+                    lang === "ar" ? "text-right" : "text-left"
+                  } ${
+                    inCartLine
+                      ? "border-primary ring-2 ring-primary/20"
+                      : "border-border"
+                  }`}
+                  style={{ boxShadow: "var(--shadow-card)" }}
+                >
+                  <div className="relative aspect-[4/3] overflow-hidden bg-muted">
+                    {item.image_url ? (
+                      <img
+                        src={item.image_url}
+                        alt={item.name_ar}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        loading="lazy"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                        <UtensilsCrossed size={24} />
+                      </div>
+                    )}
+                    <div className="absolute top-2.5 left-2.5 bg-primary text-primary-foreground text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow">
+                      {formatPrice(item.price)}
+                    </div>
+                    {item.requires_oven && (
+                      <span className="absolute top-2.5 right-2.5 bg-orange-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded-md flex items-center gap-0.5 shadow">
+                        <Flame size={10} />
+                        فرن
+                      </span>
+                    )}
+                    {inCartLine && (
+                      <div className="absolute bottom-2 left-2 bg-slate-900 text-white min-w-6 h-6 px-1.5 rounded-full flex items-center justify-center text-xs font-black shadow">
+                        {inCartLine.quantity}
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-3">
+                    <h4 className="font-bold text-xs sm:text-sm text-card-foreground line-clamp-1">
+                      {item.name_ar}
+                    </h4>
+                    <div className="mt-1.5 flex items-center gap-1.5 text-xs text-primary font-semibold">
+                      <Plus size={14} />
+                      <span>{t.add_to_order}</span>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* 4. Single Floating Cart Icon on the Bottom-Left (Identical to Restaurant POS & Park POS) */}
+      {!isCartOpen && (
+        <div className="fixed bottom-6 left-6 z-40">
+          <button
+            type="button"
+            onClick={() => setIsCartOpen(true)}
+            className="w-14 h-14 rounded-full shadow-2xl flex items-center justify-center relative hover:scale-105 active:scale-95 transition-all cursor-pointer border-2 border-white/20"
+            style={{ background: "var(--gradient-primary)", color: "white" }}
+            title={lang === "ar" ? "فتح سلة الطلبات" : "Open Cart"}
+          >
+            <ShoppingCart size={24} />
+            {itemCount > 0 && (
+              <span className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-[10px] font-black min-w-[22px] h-[22px] rounded-full flex items-center justify-center px-1 border-2 border-background shadow-sm">
                 {itemCount}
               </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={onClose}
-              className="w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-300 hover:text-white transition cursor-pointer shrink-0"
-              aria-label="إغلاق"
-            >
-              <X size={18} />
-            </button>
-          </div>
-        </header>
-
-        {/* 2. Search + Categories + Quick Order Notes Toggle Bar */}
-        <div className="bg-white border-b border-slate-200 px-3 sm:px-5 py-2.5 space-y-2 shrink-0 shadow-2xs">
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <Search
-                className={`absolute ${lang === "ar" ? "right-3" : "left-3"} top-1/2 -translate-y-1/2 text-slate-400`}
-                size={16}
-              />
-              <input
-                type="text"
-                placeholder={
-                  lang === "ar" ? "ابحث عن صنف بسرعة..." : "Quick search menu item..."
-                }
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className={`w-full h-10 bg-slate-100 border border-slate-200 rounded-xl ${
-                  lang === "ar" ? "pr-9 pl-8" : "pl-9 pr-8"
-                } text-xs sm:text-sm font-bold text-slate-800 outline-none focus:border-indigo-500 focus:bg-white transition`}
-              />
-              {search && (
-                <button
-                  type="button"
-                  onClick={() => setSearch("")}
-                  className={`absolute ${lang === "ar" ? "left-2.5" : "right-2.5"} top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-1`}
-                >
-                  <X size={14} />
-                </button>
-              )}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setIsQuickNoteBarOpen((v) => !v)}
-              className={`h-10 px-3 rounded-xl border text-xs font-black flex items-center gap-1.5 shrink-0 transition cursor-pointer ${
-                orderNotes.trim() || selectedAdditions.length > 0 || isQuickNoteBarOpen
-                  ? "bg-amber-50 border-amber-300 text-amber-900"
-                  : "bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200"
-              }`}
-            >
-              <FileText size={15} className="text-amber-600 shrink-0" />
-              <span>{lang === "ar" ? "ملاحظات الطلب" : "Order Notes"}</span>
-              {(orderNotes.trim() || selectedAdditions.length > 0) && (
-                <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
-              )}
-            </button>
-          </div>
-
-          {/* Collapsible Quick Order Note & Additions Box right above the Menu */}
-          {isQuickNoteBarOpen && (
-            <div className="p-2.5 rounded-2xl bg-amber-50/70 border border-amber-200 space-y-2 animate-in fade-in duration-150">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-black text-amber-950 flex items-center gap-1.5">
-                  <FileText size={14} className="text-amber-600" />
-                  {lang === "ar"
-                    ? "ملاحظات عامة للطلب بالكامل (تظهر للمطبخ والكاشير):"
-                    : "General Order Notes:"}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setIsQuickNoteBarOpen(false)}
-                  className="text-[11px] font-bold text-amber-800 hover:underline"
-                >
-                  {lang === "ar" ? "إخفاء" : "Hide"}
-                </button>
-              </div>
-
-              <textarea
-                rows={2}
-                placeholder={
-                  lang === "ar"
-                    ? "اكتب ملاحظات الطاولة أو الطلب هنا (مثال: بدون بصل، طلب مستعجل، صوص إضافي...)"
-                    : "Write general table or order notes here..."
-                }
-                value={orderNotes}
-                onChange={(e) => setOrderNotes(e.target.value)}
-                className="w-full bg-white border border-amber-300 rounded-xl p-2 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-amber-500 resize-none"
-              />
-
-              <div className="flex flex-wrap gap-1.5">
-                {QUICK_ORDER_NOTE_PRESETS.filter((preset) => {
-                  const raw = String(orderNotes || "").trim();
-                  const tokens = raw
-                    .split(/[،,\n]+/)
-                    .map((s) => s.trim())
-                    .filter(Boolean);
-                  return !tokens.includes(preset) && !raw.includes(preset);
-                }).map((preset) => (
-                  <button
-                    key={preset}
-                    type="button"
-                    onClick={() => appendOrderPresetNote(preset)}
-                    className="px-2.5 py-1 rounded-lg bg-white hover:bg-amber-100 text-amber-950 border border-amber-200 text-[11px] font-bold transition active:scale-95 cursor-pointer"
-                  >
-                    + {preset}
-                  </button>
-                ))}
-              </div>
-
-              <div className="pt-1 border-t border-amber-200/70 flex items-center gap-1.5 flex-wrap">
-                <span className="text-[11px] font-black text-amber-900 ml-1">
-                  {lang === "ar" ? "إضافات سريعة:" : "Additions:"}
-                </span>
-                {additionsList.map((add) => {
-                  const selected = selectedAdditions.includes(add.id);
-                  return (
-                    <button
-                      key={add.id}
-                      type="button"
-                      onClick={() => toggleAddition(add.id)}
-                      className={`px-2.5 py-1 rounded-lg border text-[11px] font-bold transition cursor-pointer ${
-                        selected
-                          ? "bg-indigo-600 text-white border-indigo-600 shadow-2xs"
-                          : "bg-white text-slate-700 border-slate-200 hover:border-slate-300"
-                      }`}
-                    >
-                      {lang === "ar" ? add.label_ar : add.label_en} (+{add.price})
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Horizontal Category Pills */}
-          <div className="flex gap-1.5 overflow-x-auto pb-0.5 scrollbar-none">
-            <button
-              type="button"
-              onClick={() => setActiveCategory("all")}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition shrink-0 cursor-pointer ${
-                activeCategory === "all"
-                  ? "bg-indigo-600 text-white shadow-xs"
-                  : "bg-slate-100 hover:bg-slate-200 text-slate-700"
-              }`}
-            >
-              {t.all}
-            </button>
-            {(categoriesQuery.data ?? []).map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => setActiveCategory(c.id)}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition shrink-0 cursor-pointer whitespace-nowrap ${
-                  activeCategory === c.id
-                    ? "bg-indigo-600 text-white shadow-xs"
-                    : "bg-slate-100 hover:bg-slate-200 text-slate-700"
-                }`}
-              >
-                {c.name_ar}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* 3. Expansive Full-Width Menu Grid (Takes 100% of available body space) */}
-        <div className="flex-1 overflow-y-auto p-3 sm:p-5 min-h-0">
-          {itemsQuery.isLoading ? (
-            <div className="py-16 text-center text-slate-400 text-sm font-bold">
-              {lang === "ar" ? "جاري تحميل أصناف المنيو..." : "Loading menu items..."}
-            </div>
-          ) : filteredItems.length === 0 ? (
-            <div className="py-16 text-center text-slate-400 text-sm font-bold">
-              {lang === "ar" ? "لا توجد أصناف مطابقة للبحث" : "No matching items found"}
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5 sm:gap-3.5">
-              {filteredItems.map((item) => {
-                const inCartLine = cart.find((c) => c.item.id === item.id);
-                return (
-                  <div
-                    key={item.id}
-                    onClick={() => addToCart(item)}
-                    className={`group bg-white rounded-2xl border-2 p-2.5 sm:p-3 flex flex-col justify-between cursor-pointer transition-all relative select-none ${
-                      inCartLine
-                        ? "border-indigo-600 ring-2 ring-indigo-500/15 bg-indigo-50/20 shadow-sm"
-                        : "border-slate-200/90 hover:border-indigo-300 hover:shadow-sm"
-                    }`}
-                  >
-                    {/* Top Image / Icon Area */}
-                    <div>
-                      <div className="relative w-full h-20 sm:h-24 rounded-xl overflow-hidden bg-slate-100 mb-2">
-                        {item.image_url ? (
-                          <img
-                            src={item.image_url}
-                            alt={item.name_ar}
-                            className="w-full h-full object-cover"
-                            loading="lazy"
-                            referrerPolicy="no-referrer"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-slate-400">
-                            <UtensilsCrossed size={24} />
-                          </div>
-                        )}
-
-                        {/* Price Badge */}
-                        <span className="absolute bottom-1.5 right-1.5 bg-slate-900/90 backdrop-blur-xs text-white text-[11px] font-black px-2 py-0.5 rounded-lg tabular-nums shadow">
-                          {formatPrice(item.price)}
-                        </span>
-
-                        {/* Oven Indicator */}
-                        {item.requires_oven && (
-                          <span
-                            className="absolute top-1.5 right-1.5 bg-orange-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded-md flex items-center gap-0.5 shadow"
-                            title="يتطلب فرن"
-                          >
-                            <Flame size={10} />
-                            فرن
-                          </span>
-                        )}
-
-                        {/* Quantity Badge */}
-                        {inCartLine && (
-                          <div className="absolute top-1.5 left-1.5 bg-indigo-600 text-white min-w-6 h-6 px-1.5 rounded-full flex items-center justify-center text-xs font-black shadow-md tabular-nums">
-                            {inCartLine.quantity}
-                          </div>
-                        )}
-                      </div>
-
-                      <h4 className="font-black text-xs sm:text-sm text-slate-900 line-clamp-2 leading-snug">
-                        {item.name_ar}
-                      </h4>
-
-                      {/* Show active item note directly on the menu card if present */}
-                      {inCartLine?.notes && (
-                        <div
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setNoteEditingItem({
-                              id: item.id,
-                              name: item.name_ar,
-                              notes: inCartLine.notes || "",
-                            });
-                          }}
-                          className="mt-1.5 bg-amber-100 border border-amber-300 text-amber-950 rounded-lg px-2 py-1 text-[10px] font-bold truncate flex items-center gap-1"
-                        >
-                          <FileText size={11} className="text-amber-700 shrink-0" />
-                          <span className="truncate">{inCartLine.notes}</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Bottom Controls on Card: Either "+ Add" OR Inline Stepper + Quick Item Note Button */}
-                    <div className="mt-2.5 pt-2 border-t border-slate-100">
-                      {inCartLine ? (
-                        <div
-                          className="flex items-center justify-between gap-1"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <div className="flex items-center gap-1 bg-slate-100 border border-slate-200 rounded-xl p-0.5">
-                            <button
-                              type="button"
-                              onClick={() => updateQuantity(item.id, -1)}
-                              className="w-7 h-7 rounded-lg bg-white hover:bg-rose-50 text-slate-700 hover:text-rose-600 flex items-center justify-center shadow-2xs transition cursor-pointer"
-                            >
-                              <Minus size={13} />
-                            </button>
-                            <span className="text-xs font-black w-5 text-center tabular-nums">
-                              {inCartLine.quantity}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => updateQuantity(item.id, 1)}
-                              className="w-7 h-7 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center shadow-2xs transition cursor-pointer"
-                            >
-                              <Plus size={13} />
-                            </button>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setNoteEditingItem({
-                                id: item.id,
-                                name: item.name_ar,
-                                notes: inCartLine.notes || "",
-                              })
-                            }
-                            className={`h-8 px-2 rounded-xl border text-[11px] font-black flex items-center gap-1 transition cursor-pointer ${
-                              inCartLine.notes
-                                ? "bg-amber-500 text-white border-amber-600"
-                                : "bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-200"
-                            }`}
-                            title={lang === "ar" ? "إضافة ملاحظة لهذا الصنف" : "Add item note"}
-                          >
-                            <FileText size={12} />
-                            <span>{lang === "ar" ? "ملاحظة" : "Note"}</span>
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-between text-xs font-bold text-indigo-600 group-hover:text-indigo-700">
-                          <span>{lang === "ar" ? "إضافة للطلب" : "Add to order"}</span>
-                          <div className="w-6 h-6 rounded-lg bg-indigo-50 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white flex items-center justify-center transition">
-                            <Plus size={14} />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* 4. Sticky Bottom Thumb-Zone Bar (Cart Trigger + Quick Actions) */}
-        <footer className="bg-white border-t border-slate-200 px-3 sm:px-5 py-2.5 shrink-0 shadow-[0_-8px_25px_rgba(15,23,42,0.08)]">
-          <div className="flex items-center gap-2">
-            {/* Primary Button to Open Cart Drawer */}
-            <button
-              type="button"
-              onClick={() => setIsCartOpen(true)}
-              className="flex-1 h-12 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white px-3.5 sm:px-5 flex items-center justify-between gap-2 shadow-md active:scale-[0.99] transition cursor-pointer"
-            >
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="relative flex items-center justify-center w-8 h-8 rounded-xl bg-indigo-600 text-white shrink-0">
-                  <ShoppingCart size={16} />
-                  {itemCount > 0 && (
-                    <span className="absolute -top-1.5 -right-1.5 min-w-5 h-5 px-1 rounded-full bg-amber-400 text-slate-950 text-[10px] font-black flex items-center justify-center">
-                      {itemCount}
-                    </span>
-                  )}
-                </div>
-                <div className="text-right min-w-0">
-                  <div className="text-xs sm:text-sm font-black flex items-center gap-1 truncate">
-                    <span>
-                      {lang === "ar" ? "عرض السلة والاعتماد" : "View Cart & Submit"}
-                    </span>
-                    <ChevronUp size={15} className="text-slate-400 shrink-0" />
-                  </div>
-                  <div className="text-[10px] text-slate-300 truncate">
-                    {itemCount > 0
-                      ? `${itemCount} ${lang === "ar" ? "أصناف في السلة" : "items in cart"}`
-                      : lang === "ar"
-                        ? "السلة فارغة — اضغط للمراجعة أو الحفظ"
-                        : "Cart is empty"}
-                  </div>
-                </div>
-              </div>
-
-              <div className="text-left shrink-0">
-                <span className="text-xs sm:text-base font-black text-amber-400 tabular-nums">
-                  {formatPrice(total)}
-                </span>
-              </div>
-            </button>
-
-            {/* Direct 1-Tap Save Draft Button (Works even when cart is empty!) */}
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleSaveDraft}
-              className="h-12 px-3 sm:px-4 rounded-2xl border-slate-300 hover:bg-slate-100 text-slate-800 font-black text-xs flex items-center gap-1.5 shrink-0 cursor-pointer"
-              title={lang === "ar" ? "حفظ المسودة حتى لو السلة فارغة" : "Save Draft"}
-            >
-              <Save size={16} className="text-indigo-600 shrink-0" />
-              <span>{lang === "ar" ? "حفظ مسودة" : "Save Draft"}</span>
-            </Button>
-
-            {/* Direct 1-Tap Send to Kitchen when items exist */}
-            {cart.length > 0 && (
-              <Button
-                type="button"
-                onClick={handleSendToKitchen}
-                className="hidden sm:inline-flex h-12 px-4 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs items-center gap-1.5 shadow shrink-0 cursor-pointer"
-              >
-                <ChefHat size={16} className="shrink-0" />
-                <span>{lang === "ar" ? "إرسال للمطبخ" : "Send Kitchen"}</span>
-              </Button>
             )}
-          </div>
-        </footer>
+          </button>
+        </div>
+      )}
 
-        {/* 5. Slide-Up / Drawer Cart & Order Submission Sheet (Hidden until clicked!) */}
-        {isCartOpen && (
+      {/* 5. Left Slide-Over Cart Drawer (Identical in position, shape, and size to Restaurant POS & Park POS) */}
+      {isCartOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex animate-in fade-in"
+          onClick={() => setIsCartOpen(false)}
+        >
           <div
-            className="absolute inset-0 z-40 bg-slate-950/60 backdrop-blur-xs flex flex-col justify-end sm:justify-center sm:items-center animate-in fade-in duration-150"
-            onClick={() => setIsCartOpen(false)}
+            dir={lang === "ar" ? "rtl" : "ltr"}
+            className="w-full max-w-md bg-card h-full flex flex-col shadow-2xl animate-in slide-in-from-left duration-300 border-r border-border"
+            style={{ marginLeft: 0, marginRight: "auto", boxShadow: "var(--shadow-elegant)" }}
+            onClick={(e) => e.stopPropagation()}
           >
-            <div
-              className="w-full sm:max-w-2xl bg-white h-[88dvh] sm:h-[85vh] rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-200"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Mobile grab handle */}
-              <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto mt-2.5 mb-1 sm:hidden shrink-0" />
-
-              {/* Drawer Header */}
-              <div className="px-4 sm:px-6 py-3 border-b border-slate-200 bg-slate-50 flex items-center justify-between gap-2 shrink-0">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs">
-                    <ShoppingCart size={18} />
-                  </div>
-                  <div>
-                    <h3 className="font-black text-sm sm:text-base text-slate-900">
-                      {lang === "ar"
-                        ? `سلة طلب طاولة #${table.number}`
-                        : `Table #${table.number} Cart`}
-                    </h3>
-                    <p className="text-[11px] text-slate-500 font-bold">
-                      {itemCount} {lang === "ar" ? "أصناف مضافة" : "items added"}
-                    </p>
-                  </div>
+            {/* Drawer Header */}
+            <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-card shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div
+                  className="w-10 h-10 rounded-xl flex items-center justify-center text-primary-foreground shadow"
+                  style={{ background: "var(--gradient-primary)" }}
+                >
+                  <ShoppingCart size={20} />
                 </div>
-
-                <div className="flex items-center gap-2">
-                  {cart.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setCart([])}
-                      className="text-xs font-bold text-rose-600 hover:bg-rose-50 px-2.5 py-1.5 rounded-xl transition cursor-pointer"
-                    >
-                      {lang === "ar" ? "تفريغ السلة" : "Empty Cart"}
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setIsCartOpen(false)}
-                    className="px-3 py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-black flex items-center gap-1 transition cursor-pointer"
-                  >
-                    <span>{lang === "ar" ? "العودة للمنيو" : "Back to Menu"}</span>
-                    <X size={15} />
-                  </button>
+                <div>
+                  <h2 className="font-black text-base leading-none">{t.cart}</h2>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {itemCount} {lang === "ar" ? "صنف" : "items"}
+                  </p>
                 </div>
               </div>
+              <div className="flex items-center gap-2">
+                {cart.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setCart([])}
+                    className="text-xs text-destructive hover:underline px-2 py-1 font-bold cursor-pointer"
+                  >
+                    {lang === "ar" ? "مسح الكل" : "Clear All"}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setIsCartOpen(false)}
+                  className="w-9 h-9 rounded-full bg-muted hover:bg-muted/80 flex items-center justify-center text-foreground transition cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
 
-              {/* Drawer Scrollable Content: Cart Lines + Additions + General Notes + Totals */}
-              <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 min-h-0">
-                {cart.length === 0 ? (
-                  <div className="py-10 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 p-6 space-y-2">
-                    <div className="w-12 h-12 rounded-full bg-slate-100 mx-auto flex items-center justify-center text-slate-400">
-                      <Package size={24} />
-                    </div>
-                    <p className="text-sm font-black text-slate-700">
-                      {lang === "ar" ? "السلة فارغة حالياً" : "Cart is currently empty"}
-                    </p>
-                    <p className="text-xs text-slate-500 font-semibold">
-                      {lang === "ar"
-                        ? "يمكنك حفظ المسودة كما هي حتى لو السلة فارغة، أو العودة للمنيو لإضافة أصناف."
-                        : "You can save draft even if empty, or return to menu to add items."}
-                    </p>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setIsCartOpen(false)}
-                      className="mt-2 rounded-xl font-bold text-xs"
-                    >
-                      {lang === "ar" ? "إضافة أصناف من المنيو" : "Add items from menu"}
-                    </Button>
+            {/* Drawer Items List */}
+            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2 min-h-0">
+              {cart.length === 0 ? (
+                <div className="text-center py-14 px-4">
+                  <div className="w-14 h-14 mx-auto rounded-full bg-muted flex items-center justify-center text-muted-foreground mb-3">
+                    <ShoppingCart size={24} />
                   </div>
-                ) : (
-                  <div className="space-y-2.5">
-                    {cart.map((line) => (
-                      <div
-                        key={line.item.id}
-                        className="p-3 rounded-2xl border border-slate-200 bg-white shadow-2xs space-y-2"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0 flex-1">
-                            <h5 className="font-black text-xs sm:text-sm text-slate-900">
-                              {line.item.name_ar}
-                            </h5>
-                            <span className="text-xs font-black text-indigo-600 tabular-nums">
-                              {formatPrice(
-                                (line.item.price +
-                                  (line.selectedAdditions?.reduce(
-                                    (s, a) => s + (a.price || 0),
-                                    0,
-                                  ) || 0)) *
-                                  line.quantity,
-                              )}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <div className="flex items-center gap-1 bg-slate-100 border border-slate-200 rounded-xl p-0.5">
-                              <button
-                                type="button"
-                                onClick={() => updateQuantity(line.item.id, -1)}
-                                className="w-8 h-8 rounded-lg bg-white hover:bg-slate-50 flex items-center justify-center text-slate-700 shadow-2xs cursor-pointer"
-                              >
-                                <Minus size={14} />
-                              </button>
-                              <span className="text-xs sm:text-sm font-black w-6 text-center tabular-nums">
-                                {line.quantity}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => updateQuantity(line.item.id, 1)}
-                                className="w-8 h-8 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 flex items-center justify-center shadow-2xs cursor-pointer"
-                              >
-                                <Plus size={14} />
-                              </button>
-                            </div>
-
-                            <button
-                              type="button"
-                              onClick={() => removeFromCart(line.item.id)}
-                              className="w-8 h-8 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 flex items-center justify-center transition cursor-pointer"
-                              title={lang === "ar" ? "حذف الصنف" : "Remove"}
-                            >
-                              <Trash2 size={15} />
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Item Note Row inside Cart */}
-                        {line.notes ? (
-                          <div className="flex items-center justify-between gap-2 bg-amber-50 border border-amber-200 text-amber-950 rounded-xl px-3 py-1.5 text-xs font-bold">
-                            <div
-                              className="flex-1 min-w-0 cursor-pointer flex items-center gap-1.5"
-                              onClick={() =>
-                                setNoteEditingItem({
-                                  id: line.item.id,
-                                  name: line.item.name_ar,
-                                  notes: line.notes || "",
-                                })
-                              }
-                            >
-                              <FileText size={13} className="text-amber-700 shrink-0" />
-                              <span className="text-amber-800 font-black shrink-0">ملاحظة:</span>
-                              <span className="truncate">{line.notes}</span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => updateItemNotes(line.item.id, "")}
-                              className="text-amber-700 hover:text-rose-600 p-1 rounded transition shrink-0"
-                            >
-                              <X size={13} />
-                            </button>
-                          </div>
-                        ) : (
+                  <p className="text-sm text-muted-foreground font-bold">{t.empty_cart}</p>
+                </div>
+              ) : (
+                cart.map((c) => (
+                  <div
+                    key={c.item.id}
+                    className="flex gap-3 p-3 rounded-2xl bg-muted/50 hover:bg-muted transition group"
+                  >
+                    {c.item.image_url && (
+                      <img
+                        src={c.item.image_url}
+                        alt=""
+                        className="w-12 h-12 rounded-xl object-cover shrink-0"
+                        referrerPolicy="no-referrer"
+                      />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <h5 className="font-bold text-sm line-clamp-1">{c.item.name_ar}</h5>
+                        <div className="flex items-center gap-1 shrink-0">
                           <button
                             type="button"
                             onClick={() =>
                               setNoteEditingItem({
-                                id: line.item.id,
-                                name: line.item.name_ar,
-                                notes: "",
+                                id: c.item.id,
+                                name: c.item.name_ar,
+                                notes: c.notes || "",
                               })
                             }
-                            className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-800 bg-amber-50/80 hover:bg-amber-100 border border-amber-200/80 px-2.5 py-1 rounded-xl transition cursor-pointer"
+                            className={`p-1 rounded-md transition cursor-pointer ${
+                              c.notes
+                                ? "bg-amber-100 text-amber-800 hover:bg-amber-200"
+                                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                            }`}
+                            title={lang === "ar" ? "ملاحظة للصنف" : "Item note"}
                           >
-                            <FileText size={12} />
-                            <span>
-                              {lang === "ar"
-                                ? "إضافة ملاحظة خاصة لهذا الصنف..."
-                                : "Add note for this item..."}
-                            </span>
+                            <FileText size={14} />
                           </button>
-                        )}
+                          <button
+                            type="button"
+                            onClick={() => removeFromCart(c.item.id)}
+                            className="text-muted-foreground hover:text-destructive transition p-1 cursor-pointer"
+                            title={lang === "ar" ? "حذف الصنف" : "Remove item"}
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
                       </div>
-                    ))}
-                  </div>
-                )}
 
-                {/* Quick Additions */}
-                <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2">
-                  <label className="text-xs font-black text-slate-800 block">
-                    {lang === "ar" ? "إضافات سريعة على الطلب:" : "Quick Additions:"}
+                      {c.notes && (
+                        <div className="mt-1 flex items-center justify-between gap-1.5 bg-amber-50 border border-amber-200 text-amber-950 rounded-lg px-2 py-0.5 text-[11px] font-bold">
+                          <span className="truncate">{c.notes}</span>
+                          <button
+                            type="button"
+                            onClick={() => updateItemNotes(c.item.id, "")}
+                            className="text-amber-700 hover:text-rose-600 p-0.5 rounded transition shrink-0"
+                          >
+                            <X size={11} />
+                          </button>
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between mt-1.5">
+                        <span className="text-sm font-black text-primary">
+                          {formatPrice(c.item.price * c.quantity)}
+                        </span>
+                        <div
+                          className="flex items-center gap-1.5 bg-card rounded-lg border border-border p-0.5"
+                          dir="ltr"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => updateQuantity(c.item.id, -1)}
+                            className="w-7 h-7 rounded-md hover:bg-muted flex items-center justify-center transition cursor-pointer"
+                          >
+                            <Minus size={14} />
+                          </button>
+                          <span className="text-xs font-bold w-6 text-center">{c.quantity}</span>
+                          <button
+                            type="button"
+                            onClick={() => updateQuantity(c.item.id, 1)}
+                            className="w-7 h-7 rounded-md bg-primary text-primary-foreground hover:opacity-90 flex items-center justify-center transition cursor-pointer"
+                          >
+                            <Plus size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Drawer Footer: Two Captain Options (Send to Kitchen / Send to Cashier) instead of single Place Order */}
+            <div className="border-t border-border p-4 space-y-2.5 bg-card mt-auto shrink-0">
+              <div className="flex justify-between items-baseline">
+                <span className="font-bold text-sm">
+                  {lang === "ar" ? "مجموع الطلبات" : t.subtotal}
+                </span>
+                <span className="text-xl font-black text-primary">{formatPrice(total)}</span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCartOpen(false);
+                  setIsQuickNoteBarOpen(true);
+                }}
+                className="w-full py-2 rounded-xl border border-border bg-muted/60 hover:bg-muted text-foreground font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
+              >
+                <FileText size={14} className="text-amber-600" />
+                <span>
+                  {lang === "ar"
+                    ? "صفحة إتمام وتخصيص الطلب (إضافات / ملاحظات / مسودة)"
+                    : "Order Completion & Notes"}
+                </span>
+              </button>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  disabled={cart.length === 0}
+                  onClick={handleSendToKitchen}
+                  className="py-3.5 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs sm:text-sm disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.99] transition shadow flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <ChefHat size={16} />
+                  <span>{lang === "ar" ? "إرسال للمطبخ" : "Send Kitchen"}</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={cart.length === 0}
+                  onClick={handleSendToCashier}
+                  className="py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs sm:text-sm disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.99] transition shadow flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Send size={15} />
+                  <span>{lang === "ar" ? "إرسال للكاشير" : "Send Cashier"}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 6. Compact Single-Screen Captain Order Completion Modal (صفحة إتمام الطلب في صفحة الكابتن أوردر) */}
+      {isQuickNoteBarOpen && (
+        <div
+          className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in"
+          onClick={() => setIsQuickNoteBarOpen(false)}
+        >
+          <div
+            dir={lang === "ar" ? "rtl" : "ltr"}
+            className="bg-card text-foreground rounded-3xl w-full max-w-3xl p-4 sm:p-5 shadow-2xl border border-border space-y-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2.5 border-b border-border">
+              <h3 className="text-base font-black flex items-center gap-2">
+                <UtensilsCrossed size={18} className="text-primary" />
+                <span>
+                  {lang === "ar"
+                    ? `إتمام وتفاصيل طلب طاولة #${table.number}`
+                    : `Complete Table #${table.number} Order`}
+                </span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsQuickNoteBarOpen(false)}
+                className="w-8 h-8 rounded-full bg-muted hover:bg-muted/80 flex items-center justify-center text-foreground cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 items-start">
+              {/* Right Column: Additions & General Order Notes */}
+              <div className="md:col-span-7 space-y-3">
+                <div className="bg-muted/40 p-3 rounded-2xl border border-border space-y-2">
+                  <label className="text-xs font-black text-foreground block">
+                    {lang === "ar" ? "الإضافات" : "Additions"}
                   </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <div className="grid grid-cols-2 gap-1.5">
                     {additionsList.map((add) => {
                       const selected = selectedAdditions.includes(add.id);
                       return (
@@ -1173,10 +990,10 @@ export function TableOrderModal({
                           key={add.id}
                           type="button"
                           onClick={() => toggleAddition(add.id)}
-                          className={`px-3 py-2 rounded-xl border text-xs font-bold flex items-center justify-between transition cursor-pointer ${
+                          className={`px-2.5 py-2 rounded-xl border text-xs font-bold flex items-center justify-between transition cursor-pointer ${
                             selected
-                              ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
-                              : "bg-white text-slate-700 border-slate-200 hover:border-slate-300"
+                              ? "bg-primary text-primary-foreground border-primary shadow-2xs"
+                              : "bg-card text-foreground border-border hover:border-primary/40"
                           }`}
                         >
                           <span className="truncate">
@@ -1191,26 +1008,19 @@ export function TableOrderModal({
                   </div>
                 </div>
 
-                {/* General Order Notes with 1-Tap Presets */}
-                <div className="bg-amber-50/60 p-3.5 rounded-2xl border border-amber-200 space-y-2">
+                <div className="bg-amber-50/60 p-3 rounded-2xl border border-amber-200 space-y-2">
                   <label className="text-xs font-black text-amber-950 flex items-center gap-1.5">
                     <FileText size={14} className="text-amber-600" />
-                    {lang === "ar"
-                      ? "ملاحظات وتخصيص الطلب بالكامل:"
-                      : "Order Notes & Special Instructions:"}
+                    {lang === "ar" ? "ملاحظات الطلب" : "Order Notes"}
                   </label>
                   <textarea
                     rows={2}
-                    placeholder={
-                      lang === "ar"
-                        ? "اكتب أي ملاحظات للطاولة أو للمطبخ (مثال: بدون بصل، صوص إضافي، طلب مستعجل...)"
-                        : "e.g. No onions, extra sauce, urgent..."
-                    }
+                    placeholder={lang === "ar" ? "ملاحظات الطاولة أو المطبخ..." : "Order notes..."}
                     value={orderNotes}
                     onChange={(e) => setOrderNotes(e.target.value)}
-                    className="w-full bg-white border border-amber-300 rounded-xl p-2.5 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-amber-500 transition resize-none"
+                    className="w-full bg-white border border-amber-300 rounded-xl p-2 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-amber-500 resize-none"
                   />
-                  <div className="flex flex-wrap gap-1.5">
+                  <div className="flex flex-wrap gap-1">
                     {QUICK_ORDER_NOTE_PRESETS.filter((preset) => {
                       const raw = String(orderNotes || "").trim();
                       const tokens = raw
@@ -1223,103 +1033,102 @@ export function TableOrderModal({
                         key={preset}
                         type="button"
                         onClick={() => appendOrderPresetNote(preset)}
-                        className="px-2.5 py-1 rounded-lg bg-white hover:bg-amber-100 text-amber-950 border border-amber-200 text-[11px] font-bold transition active:scale-95 cursor-pointer"
+                        className="px-2 py-0.5 rounded-lg bg-white hover:bg-amber-100 text-amber-950 border border-amber-200 text-[11px] font-bold transition cursor-pointer"
                       >
                         + {preset}
                       </button>
                     ))}
                   </div>
                 </div>
-
-                {/* Totals Summary */}
-                <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-1.5 text-xs">
-                  <div className="flex justify-between text-slate-600">
-                    <span>{lang === "ar" ? "المجموع الفرعي:" : "Subtotal:"}</span>
-                    <span className="font-bold tabular-nums">{formatPrice(subTotal)}</span>
-                  </div>
-                  <div className="flex justify-between text-slate-600">
-                    <span>{lang === "ar" ? "الضريبة (14%):" : "Tax (14%):"}</span>
-                    <span className="font-bold tabular-nums">{formatPrice(tax)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm font-black text-slate-900 pt-1.5 border-t border-slate-200">
-                    <span>{lang === "ar" ? "الإجمالي الكلي:" : "Grand Total:"}</span>
-                    <span className="text-indigo-600 tabular-nums">{formatPrice(total)}</span>
-                  </div>
-                </div>
               </div>
 
-              {/* Drawer Footer Actions */}
-              <div className="p-3 sm:p-4 border-t border-slate-200 bg-white space-y-2 shrink-0">
-                <div className="grid grid-cols-3 gap-2">
+              {/* Left Column: Totals & Actions */}
+              <div className="md:col-span-5 space-y-3">
+                <div className="bg-muted/40 p-3 rounded-2xl border border-border space-y-1.5 text-xs">
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>{lang === "ar" ? "عدد الأصناف" : "Items"}</span>
+                    <span className="font-bold text-foreground tabular-nums">{itemCount}</span>
+                  </div>
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>{lang === "ar" ? "المجموع الفرعي" : "Subtotal"}</span>
+                    <span className="font-bold text-foreground tabular-nums">
+                      {formatPrice(subTotal)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>{lang === "ar" ? "الضريبة (14%)" : "Tax (14%)"}</span>
+                    <span className="font-bold text-foreground tabular-nums">
+                      {formatPrice(tax)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm font-black text-foreground pt-1.5 border-t border-border">
+                    <span>{lang === "ar" ? "الإجمالي الكلي" : "Grand Total"}</span>
+                    <span className="text-primary text-base tabular-nums">
+                      {formatPrice(total)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    type="button"
+                    onClick={handleSendToKitchen}
+                    className="h-10 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs gap-1.5 shadow cursor-pointer"
+                  >
+                    <ChefHat size={15} />
+                    <span>{lang === "ar" ? "إرسال للمطبخ" : "Send Kitchen"}</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={handleSendToCashier}
+                    className="h-10 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs gap-1.5 shadow cursor-pointer"
+                  >
+                    <Send size={14} />
+                    <span>{lang === "ar" ? "إرسال للكاشير" : "Send Cashier"}</span>
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
                   <Button
                     type="button"
                     variant="outline"
                     onClick={handleSaveDraft}
-                    className="w-full font-black text-xs h-11 rounded-xl flex items-center justify-center gap-1.5 border-slate-300 hover:bg-slate-100 text-slate-800 px-2 cursor-pointer"
+                    className="h-9 rounded-xl font-bold text-xs gap-1.5 cursor-pointer"
                   >
-                    <Save size={15} className="text-indigo-600 shrink-0" />
-                    <span className="truncate">
-                      {lang === "ar" ? "حفظ مسودة" : "Save Draft"}
-                    </span>
+                    <Save size={14} className="text-indigo-600" />
+                    <span>{lang === "ar" ? "حفظ مسودة" : "Save Draft"}</span>
                   </Button>
-
                   <Button
                     type="button"
-                    onClick={handleSendToKitchen}
-                    className="w-full font-black text-xs h-11 rounded-xl flex items-center justify-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white shadow-md active:scale-95 transition px-2 cursor-pointer"
+                    variant="destructive"
+                    onClick={handleCancelOrder}
+                    className="h-9 rounded-xl font-bold text-xs gap-1.5 cursor-pointer"
                   >
-                    <ChefHat size={16} className="shrink-0" />
-                    <span className="truncate">
-                      {lang === "ar" ? "إرسال للمطبخ" : "Send Kitchen"}
-                    </span>
-                  </Button>
-
-                  <Button
-                    type="button"
-                    onClick={handleSendToCashier}
-                    className="w-full font-black text-xs h-11 rounded-xl flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md active:scale-95 transition px-2 cursor-pointer"
-                  >
-                    <Send size={15} className="shrink-0" />
-                    <span className="truncate">
-                      {lang === "ar" ? "إرسال للكاشير" : "Send Cashier"}
-                    </span>
+                    <Trash2 size={14} />
+                    <span>{lang === "ar" ? "إلغاء الطلب" : "Cancel Order"}</span>
                   </Button>
                 </div>
-
-                <Button
-                  type="button"
-                  variant="destructive"
-                  onClick={handleCancelOrder}
-                  className="w-full font-bold text-xs h-10 rounded-xl flex items-center justify-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white shadow-2xs cursor-pointer"
-                >
-                  <Trash2 size={14} className="shrink-0" />
-                  <span>
-                    {lang === "ar"
-                      ? "إلغاء ومسح الطلب من الطاولة"
-                      : "Cancel & Clear Table Order"}
-                  </span>
-                </Button>
               </div>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* Item Note Modal for Captain Order */}
+      {/* 7. Item Note Modal for Captain Order */}
       {noteEditingItem && (
         <div
           className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-[99999] font-cairo"
           dir={lang === "ar" ? "rtl" : "ltr"}
         >
-          <div className="bg-white rounded-3xl p-5 sm:p-6 max-w-md w-full shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
-              <div className="flex items-center gap-2.5">
+          <div className="bg-white rounded-3xl p-4 sm:p-5 max-w-md w-full shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-2.5 border-b border-slate-100 mb-3">
+              <div className="flex items-center gap-2">
                 <div className="p-2 bg-amber-100 text-amber-800 rounded-xl">
-                  <FileText size={18} />
+                  <FileText size={16} />
                 </div>
                 <div>
-                  <h3 className="font-black text-base text-slate-900">
-                    {lang === "ar" ? "ملاحظة خاصة بالصنف" : "Item Note"}
+                  <h3 className="font-black text-sm text-slate-900">
+                    {lang === "ar" ? "ملاحظة الصنف" : "Item Note"}
                   </h3>
                   <p className="text-xs text-slate-500 font-bold line-clamp-1">
                     {noteEditingItem.name}
@@ -1331,32 +1140,23 @@ export function TableOrderModal({
                 onClick={() => setNoteEditingItem(null)}
                 className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 transition"
               >
-                <X size={18} />
+                <X size={16} />
               </button>
             </div>
 
-            <div className="space-y-4">
-              <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1.5">
-                  {lang === "ar" ? "الملاحظة (بدون بصل، صوص إضافي...):" : "Note description:"}
-                </label>
-                <textarea
-                  rows={3}
-                  value={noteEditingItem.notes}
-                  onChange={(e) =>
-                    setNoteEditingItem((prev) =>
-                      prev ? { ...prev, notes: e.target.value } : null,
-                    )
-                  }
-                  placeholder={
-                    lang === "ar"
-                      ? "اكتب تفاصيل تحضير الصنف المطلوبة..."
-                      : "Type specific item prep instructions..."
-                  }
-                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-3 text-xs font-bold outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent resize-none leading-relaxed"
-                  autoFocus
-                />
-              </div>
+            <div className="space-y-3">
+              <textarea
+                rows={2}
+                value={noteEditingItem.notes}
+                onChange={(e) =>
+                  setNoteEditingItem((prev) =>
+                    prev ? { ...prev, notes: e.target.value } : null,
+                  )
+                }
+                placeholder={lang === "ar" ? "تفاصيل تحضير الصنف..." : "Item prep note..."}
+                className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-2.5 text-xs font-bold outline-none focus:ring-2 focus:ring-amber-500 resize-none"
+                autoFocus
+              />
 
               {(() => {
                 const rawNotes = String(noteEditingItem.notes || "").trim();
@@ -1369,40 +1169,35 @@ export function TableOrderModal({
                 );
                 if (availablePresets.length === 0) return null;
                 return (
-                  <div>
-                    <span className="text-[11px] font-bold text-slate-500 block mb-2">
-                      {lang === "ar" ? "خيارات سريعة شائعة:" : "Quick Preset Options:"}
-                    </span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {availablePresets.map((preset) => (
-                        <button
-                          key={preset}
-                          type="button"
-                          onClick={() => {
-                            setNoteEditingItem((prev) => {
-                              if (!prev) return null;
-                              const existing = prev.notes.trim();
-                              const newNotes = existing ? `${existing}، ${preset}` : preset;
-                              return { ...prev, notes: newNotes };
-                            });
-                          }}
-                          className="text-[11px] font-bold bg-slate-100 hover:bg-amber-100 hover:text-amber-900 border border-slate-200 px-2.5 py-1.5 rounded-xl transition active:scale-95 text-slate-700 cursor-pointer"
-                        >
-                          +{preset}
-                        </button>
-                      ))}
-                    </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {availablePresets.map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => {
+                          setNoteEditingItem((prev) => {
+                            if (!prev) return null;
+                            const existing = prev.notes.trim();
+                            const newNotes = existing ? `${existing}، ${preset}` : preset;
+                            return { ...prev, notes: newNotes };
+                          });
+                        }}
+                        className="text-[11px] font-bold bg-slate-100 hover:bg-amber-100 hover:text-amber-900 border border-slate-200 px-2.5 py-1 rounded-xl transition active:scale-95 text-slate-700 cursor-pointer"
+                      >
+                        +{preset}
+                      </button>
+                    ))}
                   </div>
                 );
               })()}
 
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
                 {noteEditingItem.notes ? (
                   <Button
                     type="button"
                     variant="destructive"
                     size="sm"
-                    className="gap-1 text-xs font-bold rounded-xl h-9"
+                    className="gap-1 text-xs font-bold rounded-xl h-8"
                     onClick={() => {
                       updateItemNotes(noteEditingItem.id, "");
                       setNoteEditingItem(null);
@@ -1410,7 +1205,7 @@ export function TableOrderModal({
                     }}
                   >
                     <Trash2 size={13} />
-                    {lang === "ar" ? "حذف الملاحظة" : "Delete Note"}
+                    {lang === "ar" ? "حذف" : "Delete"}
                   </Button>
                 ) : (
                   <div />
@@ -1421,7 +1216,7 @@ export function TableOrderModal({
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="text-xs font-bold rounded-xl h-9"
+                    className="text-xs font-bold rounded-xl h-8"
                     onClick={() => setNoteEditingItem(null)}
                   >
                     {lang === "ar" ? "إلغاء" : "Cancel"}
@@ -1429,7 +1224,7 @@ export function TableOrderModal({
                   <Button
                     type="button"
                     size="sm"
-                    className="bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-black rounded-xl h-9 gap-1 shadow-xs"
+                    className="bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-black rounded-xl h-8 gap-1 shadow-xs"
                     onClick={() => {
                       updateItemNotes(noteEditingItem.id, noteEditingItem.notes);
                       setNoteEditingItem(null);
@@ -1437,7 +1232,7 @@ export function TableOrderModal({
                     }}
                   >
                     <CheckCircle2 size={14} />
-                    {lang === "ar" ? "حفظ الملاحظة" : "Save Note"}
+                    {lang === "ar" ? "حفظ" : "Save"}
                   </Button>
                 </div>
               </div>

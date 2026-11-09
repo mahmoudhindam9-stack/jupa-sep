@@ -609,124 +609,71 @@ export function AccountsPage() {
   }, [selectedAccountForLedger]);
 
   return (
-    <div className="space-y-6 pb-12">
-      {/* Integrated Financial Management banner */}
-      <div className="bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 rounded-xl p-3 flex items-center justify-between gap-3 text-xs">
-        <div className="flex items-center gap-2 text-indigo-900 dark:text-indigo-200 font-bold">
-          <Landmark size={16} />
-          <span>هذا القسم متاح ومدمج أيضاً ضمن قسم الإدارة المالية الشاملة.</span>
-        </div>
-        <Link
-          to="/admin/ledger"
-          search={{ tab: "accounts" }}
-          className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 rounded-lg transition"
-        >
-          فتح داخل الإدارة المالية ←
-        </Link>
-      </div>
-
-      {/* Header Banner */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white rounded-3xl p-6 sm:p-8 shadow-xl relative overflow-hidden">
-        <div className="absolute -left-10 -top-10 w-48 h-48 bg-primary/20 rounded-full blur-3xl pointer-events-none" />
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2">
+    <div className="space-y-4 pb-8">
+      <Tabs defaultValue="oracle_tree" className="space-y-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3 shadow-xs">
+          <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-2">
-              <span className="bg-amber-400/20 text-amber-300 border border-amber-400/30 text-xs font-black px-3 py-1 rounded-full flex items-center gap-1.5 backdrop-blur">
-                <Landmark size={14} />
-                النظام المالي والمحاسبي الموحد ERP
-              </span>
-              <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                ربط لحظي نشط
-              </span>
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary border border-primary/20">
+                <Layers size={18} />
+              </div>
+              <h2 className="text-base sm:text-lg font-black text-foreground">
+                دليل وشجرة الحسابات ({summary.totalAccounts})
+              </h2>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
-              إدارة دليل الحسابات والشجرة المالية
-            </h1>
-            <p className="text-slate-300 text-xs sm:text-sm max-w-2xl font-medium leading-relaxed">
-              عرض شامل لجميع أصول وخصوم وحقوق ملكية وإيرادات ومصروفات الشركة. يمكنك إضافة، تعديل، أو
-              حذف الحسابات ومراقبة أرصدتها اللحظية المرتبطة تلقائياً بفواتير المبيعات وسندات الخزينة
-              وجرد المخزون.
-            </p>
+
+            <TabsList className="bg-muted p-1 rounded-xl h-auto">
+              <TabsTrigger value="oracle_tree" className="rounded-lg font-bold text-xs px-3 py-1.5">
+                <Layers size={14} className="ml-1.5 inline" />
+                الشجرة التفاعلية (4 مستويات)
+              </TabsTrigger>
+              <TabsTrigger value="system_accounts" className="rounded-lg font-bold text-xs px-3 py-1.5">
+                <SlidersHorizontal size={14} className="ml-1.5 inline" />
+                جدول الحسابات النشطة
+              </TabsTrigger>
+            </TabsList>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 shrink-0">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
-              onClick={handleRecalculate}
-              variant="outline"
-              className="bg-white/10 hover:bg-white/20 text-white border-white/20 font-bold text-xs h-10 rounded-2xl backdrop-blur transition active:scale-95"
-            >
-              <RefreshCw size={16} className="ml-1.5" />
-              مزامنة وتحديث الأرصدة
-            </Button>
-            <Button
-              onClick={handleExportExcel}
-              variant="outline"
-              className="bg-emerald-600/80 hover:bg-emerald-600 text-white border-emerald-500 font-bold text-xs h-10 rounded-2xl backdrop-blur transition active:scale-95"
-            >
-              <FileSpreadsheet size={16} className="ml-1.5" />
-              تصدير الدليل (Excel)
-            </Button>
-            <Button
-              onClick={() => {
-                if (
-                  confirm(
-                    "هل أنت متأكد من رغبتك في محو كافة الحركات المالية والإيرادات والمصروفات بالكامل في المول والحديقة والمطعم والإدارة المالية للبدء من الصفر؟",
-                  )
-                ) {
-                  erpStore.wipeAllFinancialTransactionsToZero();
-                  toast({
-                    title: "تم تصفير الحركات بنجاح",
-                    description:
-                      "تم مسح جميع الإيرادات والمصروفات والقيود والورديات وتصفير جميع الأرصدة للبدء من الصفر.",
-                  });
-                }
-              }}
-              variant="outline"
-              className="bg-red-700/90 hover:bg-red-700 text-white border-red-600 font-black text-xs h-10 rounded-2xl backdrop-blur transition active:scale-95 flex items-center gap-1.5"
-            >
-              <Trash2 size={16} />
-              البدء من الصفر (تصفير الحركات)
-            </Button>
-            <Button
-              onClick={handleClearAndExportTemplate}
-              variant="outline"
-              className="bg-rose-600/80 hover:bg-rose-600 text-white border-rose-500 font-bold text-xs h-10 rounded-2xl backdrop-blur transition active:scale-95 flex items-center gap-1.5"
-            >
-              <Trash2 size={16} />
-              تفريغ وتصدير نموذج Excel القياسي
-            </Button>
-            <Button
-              onClick={() => setIsOracleImportOpen(true)}
-              className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs h-10 rounded-2xl px-4 shadow-lg shadow-amber-600/30 transition active:scale-95 flex items-center gap-1.5"
-            >
-              <FileSpreadsheet size={16} />
-              استيراد أوراكل (4 مستويات والحركات)
-            </Button>
-            <Button
+              size="sm"
               onClick={() => openAddAccountModal({ level: 4, parent_code: "13010", type: "asset" })}
-              className="bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs h-10 rounded-2xl px-5 shadow-lg shadow-primary/30 transition active:scale-95"
+              className="bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs h-8 rounded-xl px-3.5 cursor-pointer"
             >
-              <Plus size={18} className="ml-1.5" />
+              <Plus size={15} className="ml-1" />
               إضافة حساب جديد
             </Button>
+            <Button
+              size="sm"
+              onClick={() => setIsOracleImportOpen(true)}
+              variant="outline"
+              className="font-bold text-xs h-8 rounded-xl px-3 border-amber-500/40 text-amber-700 dark:text-amber-300 cursor-pointer"
+            >
+              <FileSpreadsheet size={14} className="ml-1" />
+              استيراد أوراكل
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleExportExcel}
+              variant="outline"
+              className="font-bold text-xs h-8 rounded-xl px-3 border-emerald-500/40 text-emerald-700 dark:text-emerald-300 cursor-pointer"
+            >
+              <FileSpreadsheet size={14} className="ml-1" />
+              تصدير Excel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleRecalculate}
+              variant="outline"
+              className="font-bold text-xs h-8 rounded-xl px-3 cursor-pointer"
+            >
+              <RefreshCw size={14} className="ml-1" />
+              تحديث الأرصدة
+            </Button>
           </div>
         </div>
-      </div>
 
-      <Tabs defaultValue="oracle_tree" className="space-y-6">
-        <TabsList className="bg-muted p-1 rounded-xl flex w-full max-w-xl mx-auto mb-6">
-          <TabsTrigger value="oracle_tree" className="flex-1 rounded-lg font-bold">
-            <Layers size={16} className="ml-2 inline" />
-            دليل الحسابات (شجرة أوراكل)
-          </TabsTrigger>
-          <TabsTrigger value="system_accounts" className="flex-1 rounded-lg font-bold">
-            <SlidersHorizontal size={16} className="ml-2 inline" />
-            إدارة الحسابات النشطة (قائمة النظام)
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="oracle_tree" className="mt-4">
+        <TabsContent value="oracle_tree" className="mt-0">
           <OracleAccountsViewer
             onAddAccount={(preset) =>
               openAddAccountModal({
@@ -743,97 +690,7 @@ export function AccountsPage() {
           />
         </TabsContent>
 
-        <TabsContent value="system_accounts" className="space-y-6 mt-4">
-          {/* Summary KPI Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-            <Card className="border-border bg-card shadow-sm hover:shadow-md transition">
-              <CardContent className="p-4 space-y-1">
-                <p className="text-[11px] font-bold text-muted-foreground flex items-center gap-1">
-                  <Layers size={13} className="text-primary" />
-                  إجمالي الحسابات
-                </p>
-                <h3 className="text-xl font-black text-foreground">{summary.totalAccounts}</h3>
-                <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">
-                  {summary.activeAccounts} حساب نشط
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/40 dark:bg-emerald-950/20 shadow-sm">
-              <CardContent className="p-4 space-y-1">
-                <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 flex items-center gap-1">
-                  <TrendingUp size={13} />
-                  الأصول (Assets)
-                </p>
-                <h3 className="text-lg font-black text-emerald-800 dark:text-emerald-200">
-                  {formatPrice(summary.totalAssets)}
-                </h3>
-                <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">
-                  الخزينة + البنوك + المخزون
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="border-rose-200 dark:border-rose-800/60 bg-rose-50/40 dark:bg-rose-950/20 shadow-sm">
-              <CardContent className="p-4 space-y-1">
-                <p className="text-[11px] font-bold text-rose-700 dark:text-rose-300 flex items-center gap-1">
-                  <ShieldAlert size={13} />
-                  الالتزامات (Liabilities)
-                </p>
-                <h3 className="text-lg font-black text-rose-800 dark:text-rose-200">
-                  {formatPrice(summary.totalLiabilities)}
-                </h3>
-                <p className="text-[10px] text-rose-600 dark:text-rose-400 font-semibold">
-                  مستحقات الموردين والدائنين
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="border-blue-200 dark:border-blue-800/60 bg-blue-50/40 dark:bg-blue-950/20 shadow-sm">
-              <CardContent className="p-4 space-y-1">
-                <p className="text-[11px] font-bold text-blue-700 dark:text-blue-300 flex items-center gap-1">
-                  <Landmark size={13} />
-                  حقوق الملكية (Equity)
-                </p>
-                <h3 className="text-lg font-black text-blue-800 dark:text-blue-200">
-                  {formatPrice(summary.totalEquity)}
-                </h3>
-                <p className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold">
-                  رأس المال والأرباح المبقاة
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="border-teal-200 dark:border-teal-800/60 bg-teal-50/40 dark:bg-teal-950/20 shadow-sm">
-              <CardContent className="p-4 space-y-1">
-                <p className="text-[11px] font-bold text-teal-700 dark:text-teal-300 flex items-center gap-1">
-                  <DollarSign size={13} />
-                  الإيرادات (Revenues)
-                </p>
-                <h3 className="text-lg font-black text-teal-800 dark:text-teal-200">
-                  {formatPrice(summary.totalRevenues)}
-                </h3>
-                <p className="text-[10px] text-teal-600 dark:text-teal-400 font-semibold">
-                  إجمالي مبيعات وروافد النظام
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="border-amber-200 dark:border-amber-800/60 bg-amber-50/40 dark:bg-amber-950/20 shadow-sm">
-              <CardContent className="p-4 space-y-1">
-                <p className="text-[11px] font-bold text-amber-700 dark:text-amber-300 flex items-center gap-1">
-                  <PieChartIcon size={13} />
-                  المصروفات (Expenses)
-                </p>
-                <h3 className="text-lg font-black text-amber-800 dark:text-amber-200">
-                  {formatPrice(summary.totalExpenses)}
-                </h3>
-                <p className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold">
-                  مصاريف التشغيل والمشتريات
-                </p>
-              </CardContent>
-            </Card>
-          </div>
+        <TabsContent value="system_accounts" className="space-y-4 mt-0">
 
           {/* Filter Toolbar */}
           <Card className="border-border bg-card shadow-sm">

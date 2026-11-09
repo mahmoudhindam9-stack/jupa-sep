@@ -783,32 +783,13 @@ export function ReportsPage() {
 
   return (
     <div className="space-y-6 pb-12 text-right print:p-0">
-      {/* Integrated Financial Management banner */}
-      <div className="bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 rounded-xl p-3 flex items-center justify-between gap-3 text-xs print:hidden">
-        <div className="flex items-center gap-2 text-indigo-900 dark:text-indigo-200 font-bold">
-          <FileBarChart size={16} />
-          <span>هذا القسم متاح ومدمج أيضاً ضمن قسم الإدارة المالية الشاملة.</span>
-        </div>
-        <Link
-          to="/admin/ledger"
-          search={{ tab: "reports" }}
-          className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 rounded-lg transition"
-        >
-          فتح داخل الإدارة المالية ←
-        </Link>
-      </div>
-
       {/* Title block */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border pb-5 print:hidden">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border pb-4 print:hidden">
         <div>
-          <h1 className="text-3xl font-black tracking-tight text-foreground flex items-center gap-2">
-            <FileBarChart className="text-primary" size={28} />
-            المركز المالي والحسابات العامة
+          <h1 className="text-xl sm:text-2xl font-black tracking-tight text-foreground flex items-center gap-2">
+            <FileBarChart className="text-primary" size={24} />
+            التقارير والتحليلات العامة
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            ميزانية موحدة، قوائم الأرباح والخسائر، التدفقات النقدية، الحسابات والقيود اليومية
-            التلقائية
-          </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Button

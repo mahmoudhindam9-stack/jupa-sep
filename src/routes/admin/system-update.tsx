@@ -116,6 +116,13 @@ function SystemUpdatePage() {
   }, [tabParam]);
 
   useSyncedSubTab("/admin/system-update", currentTab, setCurrentTab, "system");
+  const [devDefTool, setDevDefTool] = useState<"access_package" | "github_vercel_config">(
+    "access_package",
+  );
+  const [devOpsTool, setDevOpsTool] = useState<"github_sync" | "backup_restore">("github_sync");
+  const [devReportTool, setDevReportTool] = useState<"tables_report" | "release_status">(
+    "tables_report",
+  );
 
   const handleTabChange = (newTab: string) => {
     const normalized = normalizeSystemTab(newTab);
@@ -697,34 +704,22 @@ function SystemUpdatePage() {
 
   return (
     <div className="space-y-6 pb-12 text-right font-cairo px-2 sm:px-4 md:px-6">
-      {/* Page Navigation Tabs (Standardized 3 Subsections: التعريفات / العمليات / التقارير) */}
+      {/* Page Content (Controlled by AppBreadcrumbBar: التعريفات / العمليات / التقارير) */}
       <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full space-y-6">
-        <TabsList className="bg-muted p-1 rounded-xl flex flex-wrap gap-1 h-auto w-fit">
-          <TabsTrigger value="access" className="rounded-lg font-bold px-4 py-2 text-xs">
-            التعريفات (حزمة أكسس والبيانات)
-          </TabsTrigger>
-          <TabsTrigger value="system" className="rounded-lg font-bold px-4 py-2 text-xs">
-            العمليات (تحديث النظام والمزامنة)
-          </TabsTrigger>
-          <TabsTrigger value="reports" className="rounded-lg font-bold px-4 py-2 text-xs">
-            التقارير (حالة الجداول والإصدارات)
-          </TabsTrigger>
-        </TabsList>
-
-        {/* Top Header & Tab Controls */}
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b pb-4 border-border/60">
+        {/* Clean Section Header */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b pb-3 border-border/60">
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-foreground">
+              <h1 className="text-xl sm:text-2xl font-black tracking-tight text-foreground">
                 {currentTab === "access"
-                  ? "التعريفات: حزمة قاعدة بيانات أكسس (MS Access Package)"
+                  ? "خيارات المطور — التعريفات (حزمة أكسس وإعدادات الربط السحابي)"
                   : currentTab === "reports"
-                    ? "التقارير: حالة الجداول وسجل الإصدارات والمزامنة"
-                    : "العمليات: تحديث السيستم والنظام المباشر"}
+                    ? "خيارات المطور — التقارير (حالة الجداول والإصدارات)"
+                    : "خيارات المطور — العمليات (تحديث النظام والنسخ الاحتياطي)"}
               </h1>
               <Badge
                 variant="outline"
-                className={`gap-1.5 px-3 py-1 font-bold text-xs rounded-full ${
+                className={`gap-1.5 px-2.5 py-0.5 font-bold text-xs rounded-full ${
                   isLiveSynced
                     ? "bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800"
                     : "bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800"
@@ -735,219 +730,743 @@ function SystemUpdatePage() {
                     isLiveSynced ? "bg-emerald-500 animate-pulse" : "bg-amber-500"
                   }`}
                 />
-                {isLiveSynced ? "متزامن لحظياً 🟢" : "إعادة المزامنة..."}
+                {isLiveSynced ? "متزامن لحظياً" : "إعادة المزامنة..."}
               </Badge>
             </div>
-            <p className="text-xs sm:text-sm text-muted-foreground mt-1.5 flex items-center gap-2 flex-wrap">
-              <span>
-                {currentTab === "access"
-                  ? "تصدير واستيراد قاعدة بيانات أكسس الشاملة Restocash.zip مع دعم جداول CSV ومخطط SQL"
-                  : "إدارة وتحديث النظام في الوقت الفعلي مع النسخ الاحتياطي السحابي والمحلي"}
-              </span>
-              <span className="text-slate-400 hidden sm:inline">|</span>
-              <span className="text-xs font-bold text-primary flex items-center gap-1">
-                <Activity size={13} /> آخر مزامنة: {lastSyncTime}
-              </span>
-            </p>
           </div>
 
-          <div className="flex items-center gap-2.5 w-full md:w-auto justify-between md:justify-end flex-wrap">
-            <div className="flex items-center gap-1.5 px-3 py-2 bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-900 rounded-xl text-xs font-bold">
-              <span className="text-muted-foreground">رقم النسخة:</span>
-              <Badge
-                variant="secondary"
-                className="font-mono text-purple-700 dark:text-purple-300 bg-white dark:bg-purple-900 font-black text-xs px-2 py-0.5"
-              >
-                v{CURRENT_VERSION}
-              </Badge>
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-muted/50 border border-border rounded-xl text-xs font-bold">
+              <span className="text-muted-foreground">الإصدار:</span>
+              <span className="font-mono text-primary font-black">v{CURRENT_VERSION}</span>
             </div>
-
-            <Button
-              onClick={handleCheckGitHubUpdates}
-              disabled={isCheckingUpdate}
-              variant="outline"
-              className="gap-2 font-bold text-xs sm:text-sm border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-400 bg-purple-50/50 hover:bg-purple-100 dark:bg-purple-950/20 dark:hover:bg-purple-900/40 h-11 rounded-xl shrink-0"
-            >
-              <RefreshCw size={16} className={isCheckingUpdate ? "animate-spin" : ""} />
-              {isCheckingUpdate ? "جاري الفحص..." : "البحث عن تحديثات"}
-            </Button>
-
-            <Button
-              onClick={() => navigate({ to: "/admin/studio" })}
-              variant="outline"
-              className="gap-2 font-bold text-xs sm:text-sm border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-400 bg-indigo-50/50 hover:bg-indigo-100 dark:bg-indigo-950/20 dark:hover:bg-indigo-900/40 h-11 rounded-xl shrink-0"
-            >
-              <Sparkles size={18} />
-              استوديو المطور Pro
-            </Button>
+            <span className="text-xs font-bold text-muted-foreground flex items-center gap-1">
+              <Activity size={13} className="text-primary" /> آخر مزامنة: {lastSyncTime}
+            </span>
           </div>
         </div>
 
-        {/* TAB 1: SYSTEM UPDATE & BACKUP */}
+        {/* SECTION 1: OPERATIONS (العمليات: تحديث النظام والنسخ الاحتياطي) */}
         <TabsContent value="system" className="space-y-6 mt-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Card 0: System Version & GitHub Automatic Update (إصدار النظام والتحديث التلقائي من GitHub) */}
-            <Card className="col-span-1 md:col-span-2 border-border/80 shadow-sm rounded-2xl overflow-hidden hover:shadow-md transition-shadow bg-card">
-              <CardHeader className="bg-gradient-to-r from-purple-500/10 via-indigo-500/5 to-transparent border-b border-border/40 pb-4">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                  <div>
-                    <CardTitle className="text-lg sm:text-xl font-black text-foreground flex items-center gap-2">
-                      <Github size={24} className="text-purple-600 dark:text-purple-400" />
-                      إصدار النظام والتحديث التلقائي من GitHub
-                    </CardTitle>
-                    <CardDescription className="font-bold text-xs sm:text-sm text-muted-foreground mt-1">
-                      متابعة رقم النسخة الحالية وفحص التحديثات والمزامنة المباشرة مع مستودع GitHub
-                    </CardDescription>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge
-                      variant="outline"
-                      className="px-3 py-1 text-xs font-bold gap-1.5 border-purple-300 dark:border-purple-800 text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40"
-                    >
-                      <Sparkles size={13} className="text-purple-600" />
-                      النسخة المثبتة: v{CURRENT_VERSION}
-                    </Badge>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="p-4 sm:p-6 space-y-6">
-                {/* Metrics Row */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="bg-purple-50/60 dark:bg-purple-950/20 border border-purple-200/80 dark:border-purple-900/40 p-4 rounded-xl space-y-1">
-                    <div className="text-xs font-bold text-muted-foreground flex items-center gap-1.5">
-                      <GitBranch size={14} className="text-purple-600" />
-                      رقم النسخة الحالية
-                    </div>
-                    <div className="text-2xl font-black text-foreground font-mono">
-                      v{CURRENT_VERSION}
-                    </div>
-                    <div className="text-[11px] text-muted-foreground font-medium">
-                      تاريخ الإصدار: {BUILD_DATE}
-                    </div>
-                  </div>
+          {/* Sub-tools bar for Operations */}
+          <div className="flex flex-wrap items-center justify-between gap-2 bg-card border border-border/80 p-2.5 rounded-2xl shadow-xs">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant={devOpsTool === "github_sync" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setDevOpsTool("github_sync")}
+                className="rounded-xl font-black text-xs gap-1.5 cursor-pointer"
+              >
+                <Github size={15} />
+                تحديث ومزامنة النظام و GitHub
+              </Button>
+              <Button
+                type="button"
+                variant={devOpsTool === "backup_restore" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setDevOpsTool("backup_restore")}
+                className="rounded-xl font-black text-xs gap-1.5 cursor-pointer"
+              >
+                <Database size={15} />
+                النسخ الاحتياطي واستعادة وتصفير البيانات
+              </Button>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => navigate({ to: "/admin/studio" })}
+              className="rounded-xl font-black text-xs gap-1.5 border-indigo-300 dark:border-indigo-800 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 cursor-pointer"
+            >
+              <Sparkles size={15} />
+              استوديو المطور Pro
+            </Button>
+          </div>
 
-                  <div className="bg-blue-50/60 dark:bg-blue-950/20 border border-blue-200/80 dark:border-blue-900/40 p-4 rounded-xl space-y-1">
-                    <div className="text-xs font-bold text-muted-foreground flex items-center gap-1.5">
-                      <Github size={14} className="text-blue-600" />
-                      أحدث نسخة في GitHub
+          {devOpsTool === "github_sync" && (
+            <div className="space-y-6">
+              {/* System Version & GitHub Automatic Update */}
+              <Card className="border-border/80 shadow-sm rounded-2xl overflow-hidden bg-card">
+                <CardHeader className="border-b border-border/40 pb-4">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div>
+                      <CardTitle className="text-base sm:text-lg font-black text-foreground flex items-center gap-2">
+                        <Github size={20} className="text-purple-600 dark:text-purple-400" />
+                        فحص التحديثات والمزامنة المباشرة مع GitHub
+                      </CardTitle>
                     </div>
-                    <div className="text-2xl font-black text-foreground font-mono">
-                      v{updateInfo.latestVersion || CURRENT_VERSION}
-                    </div>
-                    <div className="text-[11px] text-muted-foreground font-medium">
-                      {updateInfo.checkedAt
-                        ? `آخر فحص: ${new Date(updateInfo.checkedAt).toLocaleTimeString("ar-EG")}`
-                        : "لم يتم الفحص بعد"}
+                    <div className="flex items-center gap-2">
+                      <Button
+                        onClick={handleCheckGitHubUpdates}
+                        disabled={isCheckingUpdate}
+                        size="sm"
+                        className="gap-1.5 font-black bg-purple-600 hover:bg-purple-700 text-white text-xs rounded-xl cursor-pointer"
+                      >
+                        <RefreshCw size={14} className={isCheckingUpdate ? "animate-spin" : ""} />
+                        {isCheckingUpdate ? "جاري فحص GitHub..." : "البحث عن التحديثات الآن"}
+                      </Button>
+                      <Button
+                        onClick={() => setShowConfirmSystemUpdate(true)}
+                        disabled={isUpdatingSystem}
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5 font-black text-xs rounded-xl border-amber-300 text-amber-700 dark:text-amber-400 cursor-pointer"
+                      >
+                        <RefreshCw size={14} className={isUpdatingSystem ? "animate-spin" : ""} />
+                        {isUpdatingSystem ? "جاري التحديث..." : "مزامنة النظام المباشر"}
+                      </Button>
                     </div>
                   </div>
-
-                  <div
-                    className={`p-4 rounded-xl border space-y-1 ${
-                      updateInfo.hasUpdate
-                        ? "bg-amber-50/80 dark:bg-amber-950/30 border-amber-300 dark:border-amber-800"
-                        : "bg-emerald-50/80 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-800"
-                    }`}
-                  >
-                    <div className="text-xs font-bold text-muted-foreground flex items-center gap-1.5">
-                      <Activity
-                        size={14}
-                        className={updateInfo.hasUpdate ? "text-amber-600" : "text-emerald-600"}
-                      />
-                      حالة التحديث
+                </CardHeader>
+                <CardContent className="p-4 sm:p-6 space-y-6">
+                  {/* Metrics Row */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="bg-muted/30 border border-border/80 p-4 rounded-xl space-y-1">
+                      <div className="text-xs font-bold text-muted-foreground flex items-center gap-1.5">
+                        <GitBranch size={14} className="text-purple-600" />
+                        رقم النسخة الحالية
+                      </div>
+                      <div className="text-2xl font-black text-foreground font-mono">
+                        v{CURRENT_VERSION}
+                      </div>
+                      <div className="text-[11px] text-muted-foreground font-medium">
+                        تاريخ الإصدار: {BUILD_DATE}
+                      </div>
                     </div>
+
+                    <div className="bg-muted/30 border border-border/80 p-4 rounded-xl space-y-1">
+                      <div className="text-xs font-bold text-muted-foreground flex items-center gap-1.5">
+                        <Github size={14} className="text-blue-600" />
+                        أحدث نسخة في GitHub
+                      </div>
+                      <div className="text-2xl font-black text-foreground font-mono">
+                        v{updateInfo.latestVersion || CURRENT_VERSION}
+                      </div>
+                      <div className="text-[11px] text-muted-foreground font-medium">
+                        {updateInfo.checkedAt
+                          ? `آخر فحص: ${new Date(updateInfo.checkedAt).toLocaleTimeString("ar-EG")}`
+                          : "لم يتم الفحص بعد"}
+                      </div>
+                    </div>
+
                     <div
-                      className={`text-base font-black flex items-center gap-1.5 ${
+                      className={`p-4 rounded-xl border space-y-1 ${
                         updateInfo.hasUpdate
-                          ? "text-amber-700 dark:text-amber-400"
-                          : "text-emerald-700 dark:text-emerald-400"
+                          ? "bg-amber-50/80 dark:bg-amber-950/30 border-amber-300 dark:border-amber-800"
+                          : "bg-emerald-50/80 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-800"
                       }`}
                     >
-                      {updateInfo.hasUpdate ? (
-                        <>
-                          <ArrowUpCircle size={18} />
-                          يوجد إصدار أحدث متاح!
-                        </>
-                      ) : (
-                        <>
-                          <CheckCircle2 size={18} />
-                          النظام محدث بالكامل 🟢
-                        </>
-                      )}
-                    </div>
-                    <div className="text-[11px] text-muted-foreground font-medium">
-                      {updateInfo.hasUpdate
-                        ? `الإصدار الجديد: v${updateInfo.latestVersion}`
-                        : "لا توجد تحديثات معلقة"}
+                      <div className="text-xs font-bold text-muted-foreground flex items-center gap-1.5">
+                        <Activity
+                          size={14}
+                          className={updateInfo.hasUpdate ? "text-amber-600" : "text-emerald-600"}
+                        />
+                        حالة التحديث
+                      </div>
+                      <div
+                        className={`text-base font-black flex items-center gap-1.5 ${
+                          updateInfo.hasUpdate
+                            ? "text-amber-700 dark:text-amber-400"
+                            : "text-emerald-700 dark:text-emerald-400"
+                        }`}
+                      >
+                        {updateInfo.hasUpdate ? (
+                          <>
+                            <ArrowUpCircle size={18} />
+                            يوجد إصدار أحدث متاح!
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 size={18} />
+                            النظام محدث بالكامل
+                          </>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-muted-foreground font-medium">
+                        {updateInfo.hasUpdate
+                          ? `الإصدار الجديد: v${updateInfo.latestVersion}`
+                          : "لا توجد تحديثات معلقة"}
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                {/* If Update Available Banner */}
-                {updateInfo.hasUpdate && (
-                  <div className="bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/15 border-2 border-amber-500/40 rounded-2xl p-4 sm:p-5 space-y-3">
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  {/* If Update Available Banner */}
+                  {updateInfo.hasUpdate && (
+                    <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-400/50 rounded-2xl p-4 space-y-3">
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                        <div>
+                          <h4 className="font-black text-sm text-amber-900 dark:text-amber-200 flex items-center gap-2">
+                            <Sparkles size={16} className="text-amber-600" />
+                            إصدار جديد متاح على GitHub: v{updateInfo.latestVersion}
+                          </h4>
+                          <p className="text-xs text-amber-800 dark:text-amber-300 font-medium mt-1">
+                            {updateInfo.releaseNotes ||
+                              "يتضمن هذا التحديث أحدث التحسينات ومزامنة الأكواد وقواعد البيانات."}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 w-full sm:w-auto">
+                          {updateInfo.releaseUrl && (
+                            <a
+                              href={updateInfo.releaseUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline font-bold px-2 py-1"
+                            >
+                              <ExternalLink size={13} />
+                              عرض المستودع
+                            </a>
+                          )}
+                          <Button
+                            onClick={handleApplyGitHubUpdate}
+                            disabled={isApplyingUpdate}
+                            className="font-black text-xs bg-amber-600 hover:bg-amber-700 text-white rounded-xl gap-2"
+                          >
+                            <RefreshCw
+                              size={14}
+                              className={isApplyingUpdate ? "animate-spin" : ""}
+                            />
+                            {isApplyingUpdate
+                              ? "جاري تثبيت التحديث..."
+                              : `تحديث النظام الآن إلى v${updateInfo.latestVersion}`}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Section: Push to GitHub */}
+                  <div className="border-t border-border/60 pt-5 space-y-4">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
                       <div>
-                        <h4 className="font-black text-sm sm:text-base text-amber-900 dark:text-amber-200 flex items-center gap-2">
-                          <Sparkles size={18} className="text-amber-600" />
-                          إصدار جديد متاح على GitHub: v{updateInfo.latestVersion} (الإصدار الحالي: v
-                          {CURRENT_VERSION})
+                        <h4 className="font-black text-sm text-foreground flex items-center gap-2">
+                          <UploadCloud size={18} className="text-emerald-600" />
+                          رفع ومزامنة التحديثات إلى GitHub (Git Push)
                         </h4>
-                        <p className="text-xs text-amber-800 dark:text-amber-300 font-medium mt-1">
-                          {updateInfo.releaseNotes ||
-                            "يتضمن هذا التحديث أحدث التحسينات ومزامنة الأكواد وقواعد البيانات."}
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          رفع التعديلات والأكواد فورياً إلى مستودع{" "}
+                          <strong className="font-mono text-foreground font-bold">
+                            {updateSettings.repo}
+                          </strong>{" "}
+                          (الفرع main)
                         </p>
                       </div>
-                      <div className="flex items-center gap-2 w-full sm:w-auto">
-                        {updateInfo.releaseUrl && (
-                          <a
-                            href={updateInfo.releaseUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline font-bold px-2 py-1"
-                          >
-                            <ExternalLink size={13} />
-                            عرض المستودع
-                          </a>
-                        )}
+                      <Badge
+                        variant="outline"
+                        className="font-mono text-xs border-emerald-300 text-emerald-700 bg-emerald-50 dark:bg-emerald-950/40"
+                      >
+                        Branch: main
+                      </Badge>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-muted/20 border border-border/80 p-4 sm:p-5 rounded-2xl">
+                      <div className="space-y-3">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                            <Key size={14} className="text-emerald-600" />
+                            رمز الوصول الشخصي (GitHub Personal Access Token):
+                          </label>
+                          <div className="relative">
+                            <Input
+                              type={showToken ? "text" : "password"}
+                              value={githubToken}
+                              onChange={(e) => setGithubToken(e.target.value)}
+                              placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                              className="font-mono text-xs h-10 rounded-xl pr-9"
+                              dir="ltr"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowToken(!showToken)}
+                              className="absolute left-2.5 top-2.5 text-muted-foreground hover:text-foreground"
+                              title={showToken ? "إخفاء" : "إظهار"}
+                            >
+                              {showToken ? <EyeOff size={16} /> : <Eye size={16} />}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-foreground block">
+                            رسالة التحديث (Commit Message):
+                          </label>
+                          <Input
+                            value={pushCommitMsg}
+                            onChange={(e) => setPushCommitMsg(e.target.value)}
+                            placeholder="تحديثات النظام وإصلاح الأكواد"
+                            className="text-xs h-10 rounded-xl"
+                          />
+                        </div>
+
                         <Button
-                          onClick={handleApplyGitHubUpdate}
-                          disabled={isApplyingUpdate}
-                          className="font-black text-xs sm:text-sm bg-amber-600 hover:bg-amber-700 text-white rounded-xl shadow-md gap-2"
+                          onClick={handlePushToGitHub}
+                          disabled={isPushing}
+                          className="w-full gap-2 font-black bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm h-10 rounded-xl cursor-pointer"
                         >
-                          <RefreshCw size={15} className={isApplyingUpdate ? "animate-spin" : ""} />
-                          {isApplyingUpdate
-                            ? "جاري تثبيت التحديث..."
-                            : `تحديث النظام الآن إلى v${updateInfo.latestVersion}`}
+                          <UploadCloud size={16} className={isPushing ? "animate-bounce" : ""} />
+                          {isPushing
+                            ? "جاري رفع التحديثات إلى GitHub..."
+                            : `رفع التحديثات إلى ${updateSettings.repo} الآن`}
                         </Button>
+
+                        {pushResult?.success && (
+                          <div className="p-3 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-200 rounded-xl text-xs font-bold flex items-center gap-2">
+                            <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                            <span>{pushResult.message}</span>
+                          </div>
+                        )}
+
+                        {pushResult?.error && (
+                          <div className="p-3 bg-rose-100 dark:bg-rose-900/40 text-rose-800 dark:text-rose-200 rounded-xl text-xs font-bold space-y-1">
+                            <div className="flex items-center gap-2">
+                              <AlertCircle size={16} className="text-rose-600 shrink-0" />
+                              <span>{pushResult.error}</span>
+                            </div>
+                            {pushResult.output && (
+                              <pre className="font-mono text-[10px] text-rose-700 dark:text-rose-300 overflow-x-auto whitespace-pre-wrap p-1.5 bg-black/10 rounded">
+                                {pushResult.output}
+                              </pre>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="bg-slate-950 text-slate-200 p-4 rounded-xl font-mono text-xs space-y-2.5 border border-slate-800 flex flex-col justify-between">
+                        <div className="space-y-2">
+                          <div className="text-[11px] text-emerald-400 font-bold flex items-center justify-between">
+                            <span className="flex items-center gap-1.5">
+                              <Terminal size={14} />
+                              أوامر الرفع عبر الطرفية (Terminal / Git Bash):
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const cmds = `git remote set-url origin https://github.com/${updateSettings.repo}.git\ngit pull origin main --rebase\ngit add -A\ngit commit -m "Update from Restocash v${CURRENT_VERSION}"\ngit push origin main`;
+                                navigator.clipboard.writeText(cmds);
+                                toast({
+                                  title: "تم نسخ الأوامر",
+                                  description: "تم نسخ أوامر الطرفية إلى الحافظة",
+                                });
+                              }}
+                              className="text-[10px] text-slate-400 hover:text-white underline font-normal"
+                            >
+                              نسخ الكل
+                            </button>
+                          </div>
+                          <pre
+                            className="text-[11px] text-slate-300 whitespace-pre-wrap leading-relaxed select-all"
+                            dir="ltr"
+                          >
+                            {`git remote set-url origin https://github.com/${updateSettings.repo}.git
+git pull origin main --rebase
+git add -A
+git commit -m "Update from Restocash v${CURRENT_VERSION}"
+git push origin main`}
+                          </pre>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Create New Official GitHub Release */}
+                    <div className="border border-border/80 bg-muted/20 rounded-2xl p-4 sm:p-5 space-y-4">
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-border/60 pb-3">
+                        <div className="flex items-center gap-2">
+                          <Rocket className="text-purple-600 dark:text-purple-400" size={18} />
+                          <div>
+                            <h4 className="font-black text-sm text-foreground">
+                              إنشاء ونشر إصدار رسمي جديد (New GitHub Release)
+                            </h4>
+                          </div>
+                        </div>
+                        <Badge variant="outline" className="font-mono text-xs shrink-0">
+                          <Tag size={12} className="ml-1 inline" />
+                          Tag: {releaseTagName}
+                        </Badge>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-3">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div className="space-y-1.5">
+                              <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                                <Tag size={13} className="text-purple-600" />
+                                رقم الإصدار (Tag Name):
+                              </label>
+                              <Input
+                                value={releaseTagName}
+                                onChange={(e) => setReleaseTagName(e.target.value)}
+                                placeholder="v1.3.0"
+                                className="font-mono text-xs h-10 rounded-xl"
+                                dir="ltr"
+                              />
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <label className="text-xs font-bold text-foreground block">
+                                عنوان الإصدار (Release Title):
+                              </label>
+                              <Input
+                                value={releaseTitle}
+                                onChange={(e) => setReleaseTitle(e.target.value)}
+                                placeholder={`Restocash ERP v${CURRENT_VERSION}`}
+                                className="text-xs h-10 rounded-xl"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-foreground block">
+                              ملاحظات الإصدار وسجل التغييرات (Release Notes):
+                            </label>
+                            <Textarea
+                              value={releaseNotes}
+                              onChange={(e) => setReleaseNotes(e.target.value)}
+                              rows={4}
+                              placeholder="اكتب التغييرات والمميزات المضمنة في هذا الإصدار..."
+                              className="text-xs rounded-xl font-mono leading-relaxed"
+                            />
+                          </div>
+
+                          <Button
+                            onClick={handleCreateGitHubRelease}
+                            disabled={isCreatingRelease || !githubToken.trim()}
+                            className="w-full gap-2 font-black bg-purple-600 hover:bg-purple-700 text-white text-xs sm:text-sm h-10 rounded-xl cursor-pointer"
+                          >
+                            <Rocket
+                              size={16}
+                              className={isCreatingRelease ? "animate-bounce" : ""}
+                            />
+                            {isCreatingRelease
+                              ? "جاري رفع ونشر الإصدار على GitHub..."
+                              : `نشر الإصدار ${releaseTagName} على GitHub الآن`}
+                          </Button>
+
+                          {releaseResult?.success && (
+                            <div className="p-3 bg-purple-100 dark:bg-purple-900/40 text-purple-900 dark:text-purple-200 rounded-xl text-xs font-bold space-y-2">
+                              <div className="flex items-center gap-2">
+                                <CheckCircle2 size={16} className="text-purple-600 shrink-0" />
+                                <span>{releaseResult.message}</span>
+                              </div>
+                              {releaseResult.releaseUrl && (
+                                <a
+                                  href={releaseResult.releaseUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1.5 bg-purple-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-purple-700 transition-colors"
+                                >
+                                  <ExternalLink size={13} />
+                                  عرض صفحة الإصدار على GitHub
+                                </a>
+                              )}
+                            </div>
+                          )}
+
+                          {releaseResult?.error && (
+                            <div className="p-3 bg-rose-100 dark:bg-rose-900/40 text-rose-800 dark:text-rose-200 rounded-xl text-xs font-bold flex items-center gap-2">
+                              <AlertCircle size={16} className="text-rose-600 shrink-0" />
+                              <span>{releaseResult.error}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="bg-slate-950 text-slate-200 p-4 rounded-xl font-mono text-xs space-y-3 border border-slate-800 flex flex-col justify-between">
+                          <div className="space-y-2">
+                            <div className="text-[11px] text-purple-400 font-bold flex items-center justify-between">
+                              <span className="flex items-center gap-1.5">
+                                <Terminal size={14} />
+                                أوامر إنشاء الإصدار عبر الطرفية:
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const cmds = `git tag -a ${releaseTagName} -m "${releaseTitle}"\ngit push origin ${releaseTagName}`;
+                                  navigator.clipboard.writeText(cmds);
+                                  toast({
+                                    title: "تم نسخ الأوامر",
+                                    description: "تم نسخ أوامر إنشاء الإصدار إلى الحافظة",
+                                  });
+                                }}
+                                className="text-[10px] text-slate-400 hover:text-white underline font-normal"
+                              >
+                                نسخ الكل
+                              </button>
+                            </div>
+                            <pre
+                              className="text-[11px] text-slate-300 whitespace-pre-wrap leading-relaxed select-all"
+                              dir="ltr"
+                            >
+                              {`git tag -a ${releaseTagName} -m "${releaseTitle}"
+git push origin ${releaseTagName}`}
+                            </pre>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
-                )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
 
-                {/* Primary Button to Search for Updates in Developer Options */}
-                <div className="bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <h4 className="font-black text-sm text-foreground flex items-center gap-2">
-                      <RefreshCw size={16} className="text-purple-600" />
-                      البحث عن التحديثات المباشرة من GitHub
+          {devOpsTool === "backup_restore" && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Cloud & Local Backup Management */}
+              <Card className="border-border/70 shadow-sm rounded-2xl overflow-hidden bg-card">
+                <CardHeader className="border-b border-border/40 pb-4">
+                  <CardTitle className="text-base sm:text-lg font-black text-foreground flex items-center gap-2">
+                    <Database size={20} className="text-blue-600 dark:text-blue-400" />
+                    النسخ الاحتياطي السحابي والمحلي
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-4 sm:p-6 space-y-4">
+                  <div className="bg-muted/30 border border-border/80 p-4 rounded-xl space-y-2">
+                    <h4 className="font-black text-xs sm:text-sm text-foreground flex items-center gap-1.5">
+                      <Layers size={16} className="text-blue-600" /> الحفظ السحابي (Supabase)
                     </h4>
+                    <Button
+                      onClick={saveDataToDatabase}
+                      className="w-full gap-2 font-bold bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm h-10 rounded-xl cursor-pointer"
+                    >
+                      <Save size={16} />
+                      حفظ البيانات سحابياً الآن
+                    </Button>
+                  </div>
+
+                  <div className="bg-muted/30 border border-border/80 p-4 rounded-xl space-y-2">
+                    <h4 className="font-black text-xs sm:text-sm text-foreground">
+                      النسخة الاحتياطية المحلية (JSON)
+                    </h4>
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={downloadBackup}
+                        variant="outline"
+                        className="flex-1 gap-1.5 font-bold text-xs h-10 rounded-xl cursor-pointer"
+                      >
+                        <Download size={15} />
+                        تنزيل JSON
+                      </Button>
+                      <input
+                        type="file"
+                        accept=".json"
+                        ref={fileInputRef}
+                        className="hidden"
+                        onChange={restoreBackup}
+                      />
+                      <Button
+                        onClick={() => fileInputRef.current?.click()}
+                        variant="outline"
+                        className="flex-1 gap-1.5 font-bold text-xs h-10 rounded-xl cursor-pointer"
+                      >
+                        <Upload size={15} />
+                        استعادة JSON
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Danger Zone */}
+              <Card className="border-red-300 dark:border-red-900 shadow-sm rounded-2xl overflow-hidden bg-card">
+                <CardHeader className="bg-red-50 dark:bg-red-950/20 border-b border-red-200 dark:border-red-900/40 pb-4">
+                  <CardTitle className="text-base sm:text-lg font-black text-red-700 flex items-center gap-2">
+                    <AlertTriangle size={20} />
+                    منطقة الخطر (مسح جميع البيانات وتصفير النظام)
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-4 sm:p-6 space-y-4">
+                  <p className="text-xs sm:text-sm font-bold text-muted-foreground leading-relaxed">
+                    سيتم مسح جميع الحركات المالية، والقيود، وأوامر الشراء، وحركات الخزينة، وتصفير
+                    جميع الأرصدة. هذه العملية لا رجعة فيها.
+                  </p>
+                  <Button
+                    variant="destructive"
+                    className="w-full font-black rounded-xl h-10 cursor-pointer"
+                    onClick={() => {
+                      if (
+                        confirm(
+                          "هل أنت متأكد من رغبتك في مسح جميع الحركات وتصفير جميع الأرصدة؟ لا يمكن التراجع عن هذه الخطوة!",
+                        )
+                      ) {
+                        erpStore.deleteAllSystemData();
+                        toast({
+                          title: "تم",
+                          description: "تم مسح جميع البيانات وتصفير النظام بنجاح.",
+                        });
+                      }
+                    }}
+                  >
+                    مسح جميع البيانات وتصفير النظام
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* SECTION 2: DEFINITIONS (التعريفات: حزمة أكسس وإعدادات الربط السحابي) */}
+        <TabsContent value="access" className="space-y-6 mt-4">
+          {/* Sub-tools bar for Definitions */}
+          <div className="flex flex-wrap items-center justify-between gap-2 bg-card border border-border/80 p-2.5 rounded-2xl shadow-xs">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant={devDefTool === "access_package" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setDevDefTool("access_package")}
+                className="rounded-xl font-black text-xs gap-1.5 cursor-pointer"
+              >
+                <FileSpreadsheet size={15} />
+                حزمة وجداول قاعدة بيانات أكسس (MS Access & SQL Schema)
+              </Button>
+              <Button
+                type="button"
+                variant={devDefTool === "github_vercel_config" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setDevDefTool("github_vercel_config")}
+                className="rounded-xl font-black text-xs gap-1.5 cursor-pointer"
+              >
+                <Globe size={15} />
+                إعدادات مستودع GitHub والربط السحابي (Vercel)
+              </Button>
+            </div>
+          </div>
+
+          {devDefTool === "access_package" && (
+            <div className="space-y-6">
+              {/* Compact Action Bar for Access Package (replaces giant dark hero card) */}
+              <div className="bg-card border border-border/80 rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-xs">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-emerald-500/10 text-emerald-600 rounded-xl shrink-0">
+                    <FileSpreadsheet size={22} />
+                  </div>
+                  <div>
+                    <h2 className="text-sm sm:text-base font-black text-foreground">
+                      حزمة قاعدة بيانات أكسس الشاملة (Restocash.zip — UTF-8 BOM CSV)
+                    </h2>
                     <p className="text-xs text-muted-foreground">
-                      يقوم بالاتصال المباشر بمستودع GitHub للتحقق مما إذا كان هناك إصدار أحدث جاهز
-                      للترقية.
+                      تصدير واستيراد جداول النظام بصيغة CSV ومخطط SQL متوافق مع Microsoft Access
                     </p>
                   </div>
-                  <Button
-                    onClick={handleCheckGitHubUpdates}
-                    disabled={isCheckingUpdate}
-                    className="w-full sm:w-auto gap-2 font-black shadow-md bg-purple-600 hover:bg-purple-700 text-white text-xs sm:text-sm h-11 px-6 rounded-xl touch-manipulation shrink-0"
-                  >
-                    <RefreshCw size={16} className={isCheckingUpdate ? "animate-spin" : ""} />
-                    {isCheckingUpdate ? "جاري فحص GitHub..." : "البحث عن التحديثات الآن"}
-                  </Button>
                 </div>
 
-                {/* Settings & Configurations */}
-                <div className="border-t border-border/60 pt-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-right">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    onClick={() => setShowConfirmDownloadAccess(true)}
+                    disabled={isDownloadingAccess}
+                    size="sm"
+                    className="gap-1.5 font-black bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-9 rounded-xl cursor-pointer"
+                  >
+                    {isDownloadingAccess ? (
+                      <RefreshCw size={15} className="animate-spin" />
+                    ) : (
+                      <Archive size={15} />
+                    )}
+                    تنزيل حزمة Restocash.zip
+                  </Button>
+
+                  <Button
+                    onClick={downloadAccessSqlSchemaFile}
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 font-bold text-xs h-9 rounded-xl cursor-pointer"
+                  >
+                    <FileCode size={15} />
+                    تحميل مخطط SQL
+                  </Button>
+
+                  <Button
+                    onClick={() => setShowSchemaDialog(true)}
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 font-bold text-xs h-9 rounded-xl cursor-pointer"
+                  >
+                    <Eye size={15} />
+                    معاينة SQL Schema
+                  </Button>
+
+                  <input
+                    type="file"
+                    accept=".zip,.csv"
+                    ref={accessPackageInputRef}
+                    className="hidden"
+                    onChange={handleUploadAccessPackage}
+                  />
+                  <Button
+                    onClick={() => accessPackageInputRef.current?.click()}
+                    disabled={isUploadingAccess}
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 font-bold text-xs h-9 rounded-xl cursor-pointer"
+                  >
+                    {isUploadingAccess ? (
+                      <RefreshCw size={15} className="animate-spin" />
+                    ) : (
+                      <Upload size={15} />
+                    )}
+                    رفع حزمة Access (ZIP/CSV)
+                  </Button>
+                </div>
+              </div>
+
+              {/* Individual Tables Exporter Section */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {accessTablesList.map((tbl) => (
+                  <Card
+                    key={tbl.id}
+                    className="border-border/70 shadow-sm rounded-xl hover:shadow-md transition flex flex-col justify-between bg-card"
+                  >
+                    <CardHeader className="p-4 pb-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <CardTitle className="text-sm font-black text-foreground flex items-center gap-1.5">
+                            <Table size={15} className="text-emerald-600 dark:text-emerald-400" />
+                            {tbl.name}
+                          </CardTitle>
+                          <CardDescription className="text-xs font-bold text-muted-foreground mt-0.5">
+                            {tbl.label}
+                          </CardDescription>
+                        </div>
+                        <Badge variant="secondary" className="font-mono text-[10px] shrink-0">
+                          {tbl.count} سجل
+                        </Badge>
+                      </div>
+                    </CardHeader>
+
+                    <CardContent className="p-4 pt-2 space-y-3">
+                      <p className="text-[11px] text-muted-foreground leading-snug line-clamp-2">
+                        {tbl.description}
+                      </p>
+
+                      <div className="pt-2 border-t border-border/60 flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-mono text-slate-400">
+                          PK: [{tbl.primaryKey}]
+                        </span>
+                        <Button
+                          onClick={() => downloadAccessSingleTableCsv(tbl.id)}
+                          size="sm"
+                          variant="outline"
+                          className="h-8 text-xs font-bold gap-1.5 border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 cursor-pointer"
+                        >
+                          <ArrowDownToLine size={14} />
+                          تنزيل CSV
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {devDefTool === "github_vercel_config" && (
+            <div className="space-y-6">
+              {/* GitHub Target Repo & Auto-Check Config */}
+              <Card className="border-border/80 shadow-sm rounded-2xl bg-card p-5 space-y-4">
+                <h3 className="text-base font-black text-foreground flex items-center gap-2">
+                  <Github size={18} className="text-purple-600" />
+                  إعدادات مستودع GitHub والتحديث التلقائي
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-right">
                   <div className="space-y-2">
                     <label className="text-xs font-bold text-foreground block">
                       مستودع GitHub المستهدف (رابط Clone أو مالك/مستودع):
@@ -964,7 +1483,7 @@ function SystemUpdatePage() {
                         onClick={handleSaveRepoSettings}
                         variant="secondary"
                         size="sm"
-                        className="h-10 text-xs font-bold shrink-0 rounded-xl"
+                        className="h-10 text-xs font-bold shrink-0 rounded-xl cursor-pointer"
                       >
                         <Save size={14} className="ml-1" />
                         حفظ
@@ -989,896 +1508,142 @@ function SystemUpdatePage() {
                     </div>
                   </div>
 
-                  <div className="space-y-3 bg-muted/30 p-3 rounded-xl border">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-bold text-xs text-foreground">
-                          التحديث التلقائي عند فتح النظام
-                        </div>
-                        <div className="text-[11px] text-muted-foreground">
-                          التحقق من وجود إصدار أعلى تلقائياً في الخلفية عند فتح التطبيق
-                        </div>
+                  <div className="space-y-3 bg-muted/30 p-3.5 rounded-xl border border-border/80 flex items-center justify-between">
+                    <div>
+                      <div className="font-bold text-xs text-foreground">
+                        التحديث التلقائي عند فتح النظام
                       </div>
-                      <Switch
-                        checked={updateSettings.autoCheck}
-                        onCheckedChange={handleToggleAutoCheck}
-                      />
+                      <div className="text-[11px] text-muted-foreground">
+                        التحقق من وجود إصدار أعلى تلقائياً في الخلفية عند فتح التطبيق
+                      </div>
                     </div>
+                    <Switch
+                      checked={updateSettings.autoCheck}
+                      onCheckedChange={handleToggleAutoCheck}
+                    />
                   </div>
                 </div>
+              </Card>
 
-                {/* Section: Push to GitHub */}
-                <div className="border-t border-border/60 pt-5 space-y-4">
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+              {/* Deploy on Vercel Config */}
+              <Card className="border-border/80 shadow-sm rounded-2xl bg-card p-5 space-y-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-border/60 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Globe className="text-sky-600 dark:text-sky-400" size={20} />
                     <div>
-                      <h4 className="font-black text-sm text-foreground flex items-center gap-2">
-                        <UploadCloud size={18} className="text-emerald-600" />
-                        رفع ومزامنة التحديثات إلى GitHub (Git Push)
+                      <h4 className="font-black text-sm sm:text-base text-foreground">
+                        إعدادات النشر والتشغيل على منصة Vercel (Vercel Deployment)
                       </h4>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        قم برفع التعديلات والأكواد فورياً إلى مستودع{" "}
-                        <strong className="font-mono text-foreground font-bold">
-                          {updateSettings.repo}
-                        </strong>{" "}
-                        (الفرع main)
+                      <p className="text-xs text-muted-foreground">
+                        نشر سحابي فوري مرتبط بمستودع GitHub مع دعم التحديث التلقائي (Continuous
+                        Deployment)
                       </p>
                     </div>
-                    <Badge
-                      variant="outline"
-                      className="font-mono text-xs border-emerald-300 text-emerald-700 bg-emerald-50 dark:bg-emerald-950/40"
-                    >
-                      Branch: main
-                    </Badge>
                   </div>
+                  <Badge
+                    variant="outline"
+                    className="font-mono text-xs border-sky-300 text-sky-700 bg-sky-50 dark:bg-sky-950/40 shrink-0"
+                  >
+                    Vercel Ready: vercel.json ✓
+                  </Badge>
+                </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-emerald-50/40 dark:bg-emerald-950/20 border border-emerald-200/80 dark:border-emerald-900/40 p-4 sm:p-5 rounded-2xl">
-                    <div className="space-y-3">
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                          <Key size={14} className="text-emerald-600" />
-                          رمز الوصول الشخصي (GitHub Personal Access Token):
-                        </label>
-                        <div className="relative">
-                          <Input
-                            type={showToken ? "text" : "password"}
-                            value={githubToken}
-                            onChange={(e) => setGithubToken(e.target.value)}
-                            placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                            className="font-mono text-xs h-10 rounded-xl pr-9"
-                            dir="ltr"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowToken(!showToken)}
-                            className="absolute left-2.5 top-2.5 text-muted-foreground hover:text-foreground"
-                            title={showToken ? "إخفاء" : "إظهار"}
-                          >
-                            {showToken ? <EyeOff size={16} /> : <Eye size={16} />}
-                          </button>
-                        </div>
-                        <span className="text-[10px] text-muted-foreground block">
-                          يتطلب صلاحية{" "}
-                          <strong className="text-emerald-700 dark:text-emerald-400 font-mono">
-                            repo
-                          </strong>{" "}
-                          للرفع. لا يتم إرسال الرمز لأي طرف ثالث ويحفظ محلياً في متصفحك.
-                        </span>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-3">
+                    <div className="p-3.5 bg-muted/30 rounded-xl border border-border/80 space-y-2 text-xs">
+                      <div className="font-bold text-foreground flex items-center gap-1.5">
+                        <CheckCircle2 size={15} className="text-sky-600" />
+                        حالة تكوين ملف النشر vercel.json:
                       </div>
+                      <ul className="space-y-1 text-muted-foreground list-disc list-inside text-[11px] leading-relaxed">
+                        <li>
+                          <strong>Framework:</strong> Vite SPA
+                        </li>
+                        <li>
+                          <strong>Build Command:</strong>{" "}
+                          <code className="bg-muted px-1.5 py-0.5 rounded text-foreground font-mono">
+                            npm run build
+                          </code>
+                        </li>
+                        <li>
+                          <strong>Output Directory:</strong>{" "}
+                          <code className="bg-muted px-1.5 py-0.5 rounded text-foreground font-mono">
+                            dist
+                          </code>
+                        </li>
+                      </ul>
+                    </div>
 
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-foreground block">
-                          رسالة التحديث (Commit Message):
-                        </label>
-                        <Input
-                          value={pushCommitMsg}
-                          onChange={(e) => setPushCommitMsg(e.target.value)}
-                          placeholder="تحديثات النظام وإصلاح الأكواد"
-                          className="text-xs h-10 rounded-xl"
-                        />
-                      </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <a
+                        href={`https://vercel.com/new/clone?repository-url=${encodeURIComponent(
+                          `https://github.com/${updateSettings.repo}`,
+                        )}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center justify-center gap-2 font-black bg-black hover:bg-neutral-800 text-white text-xs h-10 px-3 rounded-xl transition-all"
+                      >
+                        ربط ونشر في Vercel (1-Click)
+                      </a>
 
                       <Button
-                        onClick={handlePushToGitHub}
-                        disabled={isPushing}
-                        className="w-full gap-2 font-black shadow-md bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm h-11 rounded-xl touch-manipulation"
+                        variant="outline"
+                        onClick={() => {
+                          const envVars = `VITE_SUPABASE_URL=https://myqtvbfibvgxkqwxvuru.supabase.co\nVITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im15cXR2YmZpYnZneGtxd3h2dXJ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ4MjY0NjgsImV4cCI6MjEwMDQwMjQ2OH0.LDFW826N2GRzG9WnLHgYxoeOcTkDOeLjTiFK6aQ-BSE\nVITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_srgqLn2ZvysGKh47yCQ0Kg_IW02yjDf`;
+                          navigator.clipboard.writeText(envVars);
+                          toast({
+                            title: "تم نسخ متغيرات البيئة",
+                            description:
+                              "تم نسخ متغيرات Vercel Environment Variables إلى الحافظة",
+                          });
+                        }}
+                        className="text-xs h-10 rounded-xl gap-1.5 font-bold cursor-pointer"
                       >
-                        <UploadCloud size={17} className={isPushing ? "animate-bounce" : ""} />
-                        {isPushing
-                          ? "جاري رفع التحديثات إلى GitHub..."
-                          : `رفع التحديثات إلى ${updateSettings.repo} الآن`}
+                        <Copy size={13} />
+                        نسخ متغيرات البيئة (.env)
                       </Button>
-
-                      {pushResult?.success && (
-                        <div className="p-3 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-200 rounded-xl text-xs font-bold flex items-center gap-2">
-                          <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
-                          <span>{pushResult.message}</span>
-                        </div>
-                      )}
-
-                      {pushResult?.error && (
-                        <div className="p-3 bg-rose-100 dark:bg-rose-900/40 text-rose-800 dark:text-rose-200 rounded-xl text-xs font-bold space-y-1">
-                          <div className="flex items-center gap-2">
-                            <AlertCircle size={16} className="text-rose-600 shrink-0" />
-                            <span>{pushResult.error}</span>
-                          </div>
-                          {pushResult.output && (
-                            <pre className="font-mono text-[10px] text-rose-700 dark:text-rose-300 overflow-x-auto whitespace-pre-wrap p-1.5 bg-black/10 rounded">
-                              {pushResult.output}
-                            </pre>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="bg-slate-950 text-slate-200 p-4 rounded-xl font-mono text-xs space-y-2.5 border border-slate-800 flex flex-col justify-between">
-                      <div className="space-y-2">
-                        <div className="text-[11px] text-emerald-400 font-bold flex items-center justify-between">
-                          <span className="flex items-center gap-1.5">
-                            <Terminal size={14} />
-                            أوامر الرفع عبر الطرفية (Terminal / Git Bash):
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const cmds = `git remote set-url origin https://github.com/${updateSettings.repo}.git\ngit pull origin main --rebase\ngit add -A\ngit commit -m "Update from Restocash v${CURRENT_VERSION}"\ngit push origin main`;
-                              navigator.clipboard.writeText(cmds);
-                              toast({
-                                title: "تم نسخ الأوامر",
-                                description: "تم نسخ أوامر الطرفية إلى الحافظة",
-                              });
-                            }}
-                            className="text-[10px] text-slate-400 hover:text-white underline font-normal"
-                          >
-                            نسخ الكل
-                          </button>
-                        </div>
-                        <pre
-                          className="text-[11px] text-slate-300 whitespace-pre-wrap leading-relaxed select-all"
-                          dir="ltr"
-                        >
-                          {`git remote set-url origin https://github.com/${updateSettings.repo}.git
-git pull origin main --rebase
-git add -A
-git commit -m "Update from Restocash v${CURRENT_VERSION}"
-git push origin main`}
-                        </pre>
-                      </div>
-
-                      <div className="text-[10px] text-slate-400 border-t border-slate-800 pt-2 leading-relaxed">
-                        💡 <strong className="text-amber-300">ملاحظة هامة:</strong> إذا ظهرت رسالة
-                        خطأ <code className="text-amber-200">Authentication failed</code> عند
-                        استخدام الطرفية، فإن GitHub يتطلب استخدام Token ككلمة مرور وليس كلمة مرور
-                        الحساب العادية.
-                      </div>
                     </div>
                   </div>
 
-                  {/* Create New Official GitHub Release */}
-                  <div className="border border-purple-200 dark:border-purple-900/50 bg-gradient-to-br from-purple-50/50 via-indigo-50/20 to-purple-50/30 dark:from-purple-950/20 dark:via-indigo-950/10 dark:to-purple-950/20 rounded-2xl p-4 sm:p-5 space-y-4">
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-purple-200/60 dark:border-purple-900/40 pb-3">
-                      <div className="flex items-center gap-2">
-                        <Rocket className="text-purple-600 dark:text-purple-400" size={20} />
-                        <div>
-                          <h4 className="font-black text-sm sm:text-base text-foreground">
-                            إنشاء ونشر إصدار رسمي جديد (New GitHub Release)
-                          </h4>
-                          <p className="text-xs text-muted-foreground">
-                            نشر علامة الإصدار (Tag) والملاحظات الرسمية في مستودع GitHub ليتمكن
-                            الجميع من معرفة التحديثات
-                          </p>
-                        </div>
-                      </div>
-                      <Badge
-                        variant="outline"
-                        className="font-mono text-xs border-purple-300 text-purple-700 bg-purple-50 dark:bg-purple-950/40 shrink-0"
-                      >
-                        <Tag size={12} className="ml-1 inline" />
-                        Tag: {releaseTagName}
-                      </Badge>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-3">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div className="space-y-1.5">
-                            <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                              <Tag size={13} className="text-purple-600" />
-                              رقم الإصدار (Tag Name):
-                            </label>
-                            <Input
-                              value={releaseTagName}
-                              onChange={(e) => setReleaseTagName(e.target.value)}
-                              placeholder="v1.3.0"
-                              className="font-mono text-xs h-10 rounded-xl"
-                              dir="ltr"
-                            />
-                          </div>
-
-                          <div className="space-y-1.5">
-                            <label className="text-xs font-bold text-foreground block">
-                              عنوان الإصدار (Release Title):
-                            </label>
-                            <Input
-                              value={releaseTitle}
-                              onChange={(e) => setReleaseTitle(e.target.value)}
-                              placeholder={`Restocash ERP v${CURRENT_VERSION}`}
-                              className="text-xs h-10 rounded-xl"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <label className="text-xs font-bold text-foreground flex items-center justify-between">
-                            <span>ملاحظات الإصدار وسجل التغييرات (Release Notes):</span>
-                            <span className="text-[10px] text-muted-foreground font-normal">
-                              يدعم تنسيق Markdown
-                            </span>
-                          </label>
-                          <Textarea
-                            value={releaseNotes}
-                            onChange={(e) => setReleaseNotes(e.target.value)}
-                            rows={5}
-                            placeholder="اكتب التغييرات والمميزات المضمنة في هذا الإصدار..."
-                            className="text-xs rounded-xl font-mono leading-relaxed"
-                          />
-                        </div>
-
-                        <Button
-                          onClick={handleCreateGitHubRelease}
-                          disabled={isCreatingRelease || !githubToken.trim()}
-                          className="w-full gap-2 font-black shadow-md bg-purple-600 hover:bg-purple-700 text-white text-xs sm:text-sm h-11 rounded-xl touch-manipulation"
+                  <div className="bg-slate-950 text-slate-200 p-4 rounded-xl font-mono text-xs space-y-3 border border-slate-800 flex flex-col justify-between">
+                    <div className="space-y-2">
+                      <div className="text-[11px] text-sky-400 font-bold flex items-center justify-between">
+                        <span className="flex items-center gap-1.5">
+                          <Terminal size={14} />
+                          أوامر النشر المباشر عبر Vercel CLI:
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const cmds = `npm install -g vercel\nvercel login\nvercel --prod`;
+                            navigator.clipboard.writeText(cmds);
+                            toast({
+                              title: "تم نسخ أوامر Vercel CLI",
+                              description: "تم نسخ الأوامر إلى الحافظة",
+                            });
+                          }}
+                          className="text-[10px] text-slate-400 hover:text-white underline font-normal"
                         >
-                          <Rocket size={17} className={isCreatingRelease ? "animate-bounce" : ""} />
-                          {isCreatingRelease
-                            ? "جاري رفع ونشر الإصدار على GitHub..."
-                            : `نشر الإصدار ${releaseTagName} على GitHub الآن`}
-                        </Button>
-
-                        {releaseResult?.success && (
-                          <div className="p-3 bg-purple-100 dark:bg-purple-900/40 text-purple-900 dark:text-purple-200 rounded-xl text-xs font-bold space-y-2">
-                            <div className="flex items-center gap-2">
-                              <CheckCircle2 size={16} className="text-purple-600 shrink-0" />
-                              <span>{releaseResult.message}</span>
-                            </div>
-                            {releaseResult.releaseUrl && (
-                              <a
-                                href={releaseResult.releaseUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center gap-1.5 bg-purple-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-purple-700 transition-colors shadow-sm"
-                              >
-                                <ExternalLink size={13} />
-                                عرض صفحة الإصدار على GitHub
-                              </a>
-                            )}
-                          </div>
-                        )}
-
-                        {releaseResult?.error && (
-                          <div className="p-3 bg-rose-100 dark:bg-rose-900/40 text-rose-800 dark:text-rose-200 rounded-xl text-xs font-bold flex items-center gap-2">
-                            <AlertCircle size={16} className="text-rose-600 shrink-0" />
-                            <span>{releaseResult.error}</span>
-                          </div>
-                        )}
+                          نسخ الكل
+                        </button>
                       </div>
-
-                      <div className="bg-slate-950 text-slate-200 p-4 rounded-xl font-mono text-xs space-y-3 border border-slate-800 flex flex-col justify-between">
-                        <div className="space-y-2">
-                          <div className="text-[11px] text-purple-400 font-bold flex items-center justify-between">
-                            <span className="flex items-center gap-1.5">
-                              <Terminal size={14} />
-                              أوامر إنشاء الإصدار عبر الطرفية (Git CLI / GitHub CLI):
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const cmds = `git tag -a ${releaseTagName} -m "${releaseTitle}"\ngit push origin ${releaseTagName}\n# أو باستخدام GitHub CLI:\ngh release create ${releaseTagName} --title "${releaseTitle}" --notes "${releaseNotes.replace(/\n/g, " ")}"`;
-                                navigator.clipboard.writeText(cmds);
-                                toast({
-                                  title: "تم نسخ الأوامر",
-                                  description: "تم نسخ أوامر إنشاء الإصدار إلى الحافظة",
-                                });
-                              }}
-                              className="text-[10px] text-slate-400 hover:text-white underline font-normal"
-                            >
-                              نسخ الكل
-                            </button>
-                          </div>
-                          <pre
-                            className="text-[11px] text-slate-300 whitespace-pre-wrap leading-relaxed select-all"
-                            dir="ltr"
-                          >
-                            {`git tag -a ${releaseTagName} -m "${releaseTitle}"
-git push origin ${releaseTagName}
-
-# أو عبر GitHub CLI:
-gh release create ${releaseTagName} --title "${releaseTitle}" --generate-notes`}
-                          </pre>
-                        </div>
-
-                        <div className="text-[10px] text-slate-400 border-t border-slate-800 pt-2 leading-relaxed">
-                          💡 <strong className="text-purple-300">نصيحة:</strong> يتم ربط الإصدار
-                          تلقائياً بآخر التحديثات على الفرع{" "}
-                          <code className="text-purple-200 font-mono">main</code> ويظهر في صفحة
-                          Releases الرسمية لمستودعك.
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Deploy on Vercel */}
-                  <div className="border border-sky-200 dark:border-sky-900/50 bg-gradient-to-br from-sky-50/60 via-blue-50/20 to-sky-50/30 dark:from-sky-950/20 dark:via-blue-950/10 dark:to-sky-950/20 rounded-2xl p-4 sm:p-5 space-y-4">
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-sky-200/60 dark:border-sky-900/40 pb-3">
-                      <div className="flex items-center gap-2">
-                        <Globe className="text-sky-600 dark:text-sky-400" size={20} />
-                        <div>
-                          <h4 className="font-black text-sm sm:text-base text-foreground">
-                            النشر والتشغيل على منصة Vercel (Vercel Deployment)
-                          </h4>
-                          <p className="text-xs text-muted-foreground">
-                            نظام نشر سحابي فوري مرتبط بمستودع GitHub مع دعم التحديث التلقائي
-                            (Continuous Deployment)
-                          </p>
-                        </div>
-                      </div>
-                      <Badge
-                        variant="outline"
-                        className="font-mono text-xs border-sky-300 text-sky-700 bg-sky-50 dark:bg-sky-950/40 shrink-0"
+                      <pre
+                        className="text-[11px] text-slate-300 whitespace-pre-wrap leading-relaxed select-all"
+                        dir="ltr"
                       >
-                        Vercel Ready: vercel.json ✓
-                      </Badge>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-3">
-                        <div className="p-3.5 bg-white dark:bg-slate-900/80 rounded-xl border border-sky-100 dark:border-sky-900/40 space-y-2 text-xs">
-                          <div className="font-bold text-foreground flex items-center gap-1.5">
-                            <CheckCircle2 size={15} className="text-sky-600" />
-                            حالة تكوين ملف النشر vercel.json:
-                          </div>
-                          <ul className="space-y-1 text-muted-foreground list-disc list-inside text-[11px] leading-relaxed">
-                            <li>
-                              <strong>Framework:</strong> Vite SPA
-                            </li>
-                            <li>
-                              <strong>Build Command:</strong>{" "}
-                              <code className="bg-muted px-1.5 py-0.5 rounded text-foreground font-mono">
-                                npm run build
-                              </code>
-                            </li>
-                            <li>
-                              <strong>Output Directory:</strong>{" "}
-                              <code className="bg-muted px-1.5 py-0.5 rounded text-foreground font-mono">
-                                dist
-                              </code>
-                            </li>
-                            <li>
-                              <strong>Routing:</strong> إعادة توجيه لكافة المسارات إلى{" "}
-                              <code className="bg-muted px-1.5 py-0.5 rounded text-foreground font-mono">
-                                /index.html
-                              </code>
-                            </li>
-                          </ul>
-                        </div>
-
-                        <div className="space-y-2">
-                          <label className="text-xs font-bold text-foreground block">
-                            طرق النشر المتاحة:
-                          </label>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            <a
-                              href={`https://vercel.com/new/clone?repository-url=${encodeURIComponent(
-                                `https://github.com/${updateSettings.repo}`,
-                              )}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center justify-center gap-2 font-black shadow-md bg-black hover:bg-neutral-800 text-white text-xs h-10 px-3 rounded-xl transition-all"
-                            >
-                              <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 116 100">
-                                <path
-                                  fillRule="evenodd"
-                                  clipRule="evenodd"
-                                  d="M57.5 0L115 100H0L57.5 0z"
-                                />
-                              </svg>
-                              ربط ونشر في Vercel (1-Click)
-                            </a>
-
-                            <Button
-                              variant="outline"
-                              onClick={() => {
-                                const envVars = `VITE_SUPABASE_URL=https://myqtvbfibvgxkqwxvuru.supabase.co\nVITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im15cXR2YmZpYnZneGtxd3h2dXJ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ4MjY0NjgsImV4cCI6MjEwMDQwMjQ2OH0.LDFW826N2GRzG9WnLHgYxoeOcTkDOeLjTiFK6aQ-BSE\nVITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_srgqLn2ZvysGKh47yCQ0Kg_IW02yjDf`;
-                                navigator.clipboard.writeText(envVars);
-                                toast({
-                                  title: "تم نسخ متغيرات البيئة",
-                                  description:
-                                    "تم نسخ متغيرات Vercel Environment Variables إلى الحافظة",
-                                });
-                              }}
-                              className="text-xs h-10 rounded-xl gap-1.5 border-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950 font-bold"
-                            >
-                              <Copy size={13} />
-                              نسخ متغيرات البيئة (.env) لـ Vercel
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="bg-slate-950 text-slate-200 p-4 rounded-xl font-mono text-xs space-y-3 border border-slate-800 flex flex-col justify-between">
-                        <div className="space-y-2">
-                          <div className="text-[11px] text-sky-400 font-bold flex items-center justify-between">
-                            <span className="flex items-center gap-1.5">
-                              <Terminal size={14} />
-                              أوامر النشر المباشر عبر Vercel CLI:
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const cmds = `npm install -g vercel\nvercel login\nvercel --prod`;
-                                navigator.clipboard.writeText(cmds);
-                                toast({
-                                  title: "تم نسخ أوامر Vercel CLI",
-                                  description: "تم نسخ الأوامر إلى الحافظة",
-                                });
-                              }}
-                              className="text-[10px] text-slate-400 hover:text-white underline font-normal"
-                            >
-                              نسخ الكل
-                            </button>
-                          </div>
-                          <pre
-                            className="text-[11px] text-slate-300 whitespace-pre-wrap leading-relaxed select-all"
-                            dir="ltr"
-                          >
-                            {`# تثبيت أداة Vercel عالمياً
-npm install -g vercel
-
-# تسجيل الدخول والنشر للإنتاج
+                        {`npm install -g vercel
 vercel login
 vercel --prod`}
-                          </pre>
-                        </div>
-
-                        <div className="text-[10px] text-slate-400 border-t border-slate-800 pt-2 leading-relaxed">
-                          ⚡ <strong className="text-sky-300">النشر التلقائي:</strong> بمجرد ربط
-                          المستودع في Vercel، أي عملية{" "}
-                          <code className="text-sky-200 font-mono">git push</code> أو إنشاء Release
-                          على الفرع <code className="text-sky-200 font-mono">main</code> ستقوم
-                          Vercel ببنائها ونشرها فورياً تلقائياً!
-                        </div>
-                      </div>
+                      </pre>
                     </div>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-
-            {/* Card 1: System and Code Updates */}
-            <Card className="border-border/70 shadow-sm rounded-2xl overflow-hidden hover:shadow-md transition-shadow">
-              <CardHeader className="bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-transparent border-b border-border/40 pb-4">
-                <CardTitle className="text-lg sm:text-xl font-black text-foreground flex items-center gap-2">
-                  <RefreshCw size={22} className="text-amber-600 dark:text-amber-400" />
-                  تحديثات النظام والأكواد
-                </CardTitle>
-                <CardDescription className="font-bold text-xs sm:text-sm text-muted-foreground">
-                  تحديث وتزامن النظام فورياً لإعادة جلب آخر الأكواد والبيانات
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="p-4 sm:p-6 space-y-4">
-                <div className="bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-900/40 p-5 rounded-2xl space-y-4 text-center flex flex-col justify-between">
-                  <div className="mx-auto w-16 h-16 bg-amber-100 dark:bg-amber-900/50 rounded-2xl flex items-center justify-center">
-                    <Code size={30} className="text-amber-600 dark:text-amber-400" />
-                  </div>
-                  <div>
-                    <h4 className="font-black text-base text-amber-900 dark:text-amber-300">
-                      مزامنة وتحديث النظام المباشر
-                    </h4>
-                    <p className="text-xs font-bold text-amber-700 dark:text-amber-400 mt-1 leading-relaxed max-w-sm mx-auto">
-                      إعادة تنشيط الروابط والتأكد من مطابقة جميع متطلبات التشغيل والأكواد البرمجية
-                      مع قاعدة البيانات في الوقت الفعلي.
-                    </p>
-                  </div>
-
-                  <div className="pt-2">
-                    <Button
-                      onClick={() => setShowConfirmSystemUpdate(true)}
-                      disabled={isUpdatingSystem}
-                      className="w-full gap-2 font-black shadow-md bg-amber-600 hover:bg-amber-700 text-white text-sm h-11 rounded-xl touch-manipulation"
-                    >
-                      <RefreshCw size={18} className={isUpdatingSystem ? "animate-spin" : ""} />
-                      {isUpdatingSystem ? "جاري تحديث النظام..." : "تحديث النظام والربط المباشر"}
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Card 2: Cloud & Local Backup Management */}
-            <Card className="border-border/70 shadow-sm rounded-2xl overflow-hidden hover:shadow-md transition-shadow">
-              <CardHeader className="bg-gradient-to-r from-blue-500/10 via-indigo-500/5 to-transparent border-b border-border/40 pb-4">
-                <CardTitle className="text-lg sm:text-xl font-black text-foreground flex items-center gap-2">
-                  <Database size={22} className="text-blue-600 dark:text-blue-400" />
-                  النسخ الاحتياطي السحابي والمحلي
-                </CardTitle>
-                <CardDescription className="font-bold text-xs sm:text-sm text-muted-foreground">
-                  حفظ النسخ الاحتياطية سحابياً أو استيراد وتصدير النسخ المحلية
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="p-4 sm:p-6 space-y-4">
-                <div className="space-y-4">
-                  <div className="bg-blue-50/60 dark:bg-blue-950/20 border border-blue-200/80 dark:border-blue-900/40 p-4 rounded-xl">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-black text-xs sm:text-sm text-blue-900 dark:text-blue-300 flex items-center gap-1.5">
-                        <Layers size={16} /> الحفظ السحابي (Supabase)
-                      </h4>
-                    </div>
-                    <Button
-                      onClick={saveDataToDatabase}
-                      className="w-full gap-2 font-bold shadow-sm bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm h-11 rounded-xl touch-manipulation"
-                    >
-                      <Save size={18} />
-                      حفظ البيانات سحابياً الآن
-                    </Button>
-                  </div>
-
-                  <div className="bg-slate-50/80 dark:bg-slate-900/40 border border-slate-200/80 dark:border-slate-800 p-4 rounded-xl">
-                    <h4 className="font-black text-xs sm:text-sm text-slate-800 dark:text-slate-200 mb-2">
-                      النسخة المحلية (JSON)
-                    </h4>
-                    <div className="flex gap-2">
-                      <Button
-                        onClick={downloadBackup}
-                        variant="outline"
-                        className="flex-1 gap-1.5 font-bold text-xs h-11 rounded-xl touch-manipulation"
-                      >
-                        <Download size={16} />
-                        تنزيل JSON
-                      </Button>
-                      <input
-                        type="file"
-                        accept=".json"
-                        ref={fileInputRef}
-                        className="hidden"
-                        onChange={restoreBackup}
-                      />
-                      <Button
-                        onClick={() => fileInputRef.current?.click()}
-                        variant="outline"
-                        className="flex-1 gap-1.5 font-bold text-xs h-11 rounded-xl touch-manipulation"
-                      >
-                        <Upload size={16} />
-                        استعادة JSON
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Mobile & Tablet Optimization Indicator */}
-          <div className="bg-slate-900 text-slate-100 p-4 rounded-2xl shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3 text-xs sm:text-sm font-bold">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-slate-800 rounded-xl text-amber-400 shrink-0">
-                <Smartphone size={22} />
-              </div>
-              <div>
-                <div>وضع الموبايل والتابلت نشط ومدعوم بالكامل 📱</div>
-                <p className="text-xs text-slate-400 font-normal mt-0.5">
-                  تم تحسين واجهات التطبيق وأزرار التحكم للعمل بسلاسة على كافة الشاشات والأجهزة
-                  اللوحية.
-                </p>
-              </div>
+              </Card>
             </div>
-            <Badge
-              variant="secondary"
-              className="bg-slate-800 text-slate-200 shrink-0 font-mono text-[11px] px-3 py-1"
-            >
-              RWD Mode: Ready
-            </Badge>
-          </div>
-
-          {/* Danger Zone */}
-          <Card className="border-red-300 dark:border-red-900 shadow-sm rounded-2xl overflow-hidden mt-6">
-            <CardHeader className="bg-red-50 dark:bg-red-950/20 border-b border-red-200 dark:border-red-900/40 pb-4">
-              <CardTitle className="text-lg font-black text-red-700 flex items-center gap-2">
-                <AlertTriangle size={22} />
-                منطقة الخطر (مسح جميع البيانات)
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4 sm:p-6 space-y-4">
-              <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                سيتم مسح جميع الحركات المالية، والقيود، وأوامر الشراء، وحركات الخزينة (بما في ذلك
-                البيانات القديمة)، وسيتم تصفير جميع الأرصدة. هذه العملية لا رجعة فيها.
-              </p>
-              <Button
-                variant="destructive"
-                className="w-full sm:w-auto font-black"
-                onClick={() => {
-                  if (
-                    confirm(
-                      "هل أنت متأكد من رغبتك في مسح جميع الحركات وتصفير جميع الأرصدة؟ لا يمكن التراجع عن هذه الخطوة!",
-                    )
-                  ) {
-                    erpStore.deleteAllSystemData();
-                    toast({
-                      title: "تم",
-                      description: "تم مسح جميع البيانات وتصفير النظام بنجاح.",
-                    });
-                  }
-                }}
-              >
-                مسح جميع البيانات وتصفير النظام
-              </Button>
-            </CardContent>
-          </Card>
+          )}
         </TabsContent>
 
-        {/* TAB 2: MS ACCESS COMPREHENSIVE PACKAGE TAB */}
-        <TabsContent value="access" className="space-y-6 mt-4">
-          {/* Main Hero Card for Access Package */}
-          <Card className="border-emerald-300/80 dark:border-emerald-800/80 shadow-md rounded-2xl overflow-hidden bg-gradient-to-br from-emerald-950 via-slate-900 to-slate-950 text-white relative">
-            <div className="absolute top-0 left-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
-            <CardContent className="p-6 sm:p-8 relative z-10 space-y-6">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 border-b border-emerald-800/60 pb-6">
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <div className="p-2.5 bg-emerald-500/20 border border-emerald-500/40 rounded-xl text-emerald-300 shrink-0">
-                      <FileSpreadsheet size={28} />
-                    </div>
-                    <div>
-                      <h2 className="text-xl sm:text-2xl font-black text-white">
-                        حزمة قاعدة بيانات أكسس الشاملة (Restocash Package)
-                      </h2>
-                      <p className="text-xs sm:text-sm text-emerald-200/80 font-medium mt-0.5">
-                        استخراج وتجهيز كافة جداول النظام بصيغة CSV عالية التوافق مع Microsoft Access
-                        مع ترميز UTF-8 BOM
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 flex-wrap shrink-0">
-                  <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40 font-mono text-xs px-3 py-1">
-                    Restocash.zip
-                  </Badge>
-                  <Badge className="bg-blue-500/20 text-blue-300 border-blue-500/40 font-mono text-xs px-3 py-1">
-                    UTF-8 BOM CSV
-                  </Badge>
-                  <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 font-mono text-xs px-3 py-1">
-                    MS Access Ready
-                  </Badge>
-                </div>
-              </div>
-
-              {/* Main Action Bar */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                <Button
-                  onClick={() => setShowConfirmDownloadAccess(true)}
-                  disabled={isDownloadingAccess}
-                  className="w-full gap-2 font-black bg-emerald-500 hover:bg-emerald-600 text-slate-950 shadow-lg text-sm h-12 rounded-xl touch-manipulation transition active:scale-95"
-                >
-                  {isDownloadingAccess ? (
-                    <RefreshCw size={20} className="animate-spin" />
-                  ) : (
-                    <Archive size={20} />
-                  )}
-                  تنزيل حزمة Restocash.zip الشاملة
-                </Button>
-
-                <Button
-                  onClick={downloadAccessSqlSchemaFile}
-                  variant="outline"
-                  className="w-full gap-2 font-black border-emerald-500/50 bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 text-sm h-12 rounded-xl touch-manipulation transition active:scale-95"
-                >
-                  <FileCode size={20} />
-                  تحميل مخطط SQL (Schema)
-                </Button>
-
-                <input
-                  type="file"
-                  accept=".zip,.csv"
-                  ref={accessPackageInputRef}
-                  className="hidden"
-                  onChange={handleUploadAccessPackage}
-                />
-                <Button
-                  onClick={() => accessPackageInputRef.current?.click()}
-                  disabled={isUploadingAccess}
-                  variant="outline"
-                  className="w-full gap-2 font-black border-slate-700 bg-slate-800/80 hover:bg-slate-800 text-slate-200 text-sm h-12 rounded-xl touch-manipulation transition active:scale-95"
-                >
-                  {isUploadingAccess ? (
-                    <RefreshCw size={20} className="animate-spin" />
-                  ) : (
-                    <Upload size={20} />
-                  )}
-                  رفع حزمة Access (ZIP/CSV)
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Database Live Stats Grid */}
-          <div className="space-y-3">
-            <h3 className="text-base font-black text-foreground flex items-center gap-2">
-              <Server size={18} className="text-emerald-600 dark:text-emerald-400" />
-              إحصائيات جداول الحزمة الجاهزة للتصدير لأكسس
-            </h3>
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-              {accessTablesList.slice(0, 6).map((item) => (
-                <div
-                  key={item.id}
-                  className="bg-card border border-border/80 rounded-xl p-3.5 shadow-sm space-y-1 hover:border-emerald-500/50 transition"
-                >
-                  <span className="text-[11px] font-bold text-muted-foreground block truncate">
-                    {item.name}
-                  </span>
-                  <div className="text-xl font-black text-foreground">{item.count}</div>
-                  <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 block truncate">
-                    {item.label}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Individual Tables Exporter Section */}
-          <div className="space-y-4 pt-2">
-            <div className="flex items-center justify-between gap-4 flex-wrap">
-              <div>
-                <h3 className="text-base sm:text-lg font-black text-foreground flex items-center gap-2">
-                  <Table size={20} className="text-emerald-600 dark:text-emerald-400" />
-                  تنزيل الجداول الفردية بصيغة CSV لأكسس
-                </h3>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  يمكنك استخراج أي جدول منفصلاً لاستيراده المباشر في Microsoft Access
-                </p>
-              </div>
-
-              <Button
-                onClick={() => setShowSchemaDialog(true)}
-                variant="outline"
-                size="sm"
-                className="gap-2 font-bold text-xs border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-400"
-              >
-                <FileCode size={15} />
-                معاينة أكواد SQL Schema
-              </Button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {accessTablesList.map((tbl) => (
-                <Card
-                  key={tbl.id}
-                  className="border-border/70 shadow-sm rounded-xl hover:shadow-md transition flex flex-col justify-between"
-                >
-                  <CardHeader className="p-4 pb-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <CardTitle className="text-sm font-black text-foreground flex items-center gap-1.5">
-                          <Table size={16} className="text-emerald-600 dark:text-emerald-400" />
-                          {tbl.name}
-                        </CardTitle>
-                        <CardDescription className="text-xs font-bold text-muted-foreground mt-0.5">
-                          {tbl.label}
-                        </CardDescription>
-                      </div>
-                      <Badge variant="secondary" className="font-mono text-[10px] shrink-0">
-                        {tbl.count} سجل
-                      </Badge>
-                    </div>
-                  </CardHeader>
-
-                  <CardContent className="p-4 pt-2 space-y-3">
-                    <p className="text-[11px] text-muted-foreground leading-snug line-clamp-2">
-                      {tbl.description}
-                    </p>
-
-                    <div className="pt-2 border-t border-border/60 flex items-center justify-between gap-2">
-                      <span className="text-[10px] font-mono text-slate-400">
-                        PK: [{tbl.primaryKey}]
-                      </span>
-                      <Button
-                        onClick={() => downloadAccessSingleTableCsv(tbl.id)}
-                        size="sm"
-                        variant="outline"
-                        className="h-8 text-xs font-bold gap-1.5 border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
-                      >
-                        <ArrowDownToLine size={14} />
-                        تنزيل CSV
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </div>
-
-          {/* Import Drag & Drop Zone */}
-          <Card className="border-dashed border-2 border-emerald-300 dark:border-emerald-800 bg-emerald-50/30 dark:bg-emerald-950/10 rounded-2xl p-6 text-center space-y-3">
-            <div className="w-12 h-12 bg-emerald-100 dark:bg-emerald-900/50 rounded-2xl text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto">
-              <Upload size={24} />
-            </div>
-            <div>
-              <h4 className="font-black text-sm text-foreground">
-                استيراد حزمة أكسس مجمعة أو جداول مفردة
-              </h4>
-              <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto">
-                قم بسحب وإسقاط ملف Restocash.zip أو ملفات CSV المخصصة هنا للرفع والمزامنة التلقائية مع
-                السيستم
-              </p>
-            </div>
-            <Button
-              onClick={() => accessPackageInputRef.current?.click()}
-              disabled={isUploadingAccess}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-10 px-6 rounded-xl shadow-sm"
-            >
-              {isUploadingAccess ? (
-                <RefreshCw size={16} className="animate-spin" />
-              ) : (
-                <Upload size={16} />
-              )}
-              اختر ملف Restocash.zip أو CSV
-            </Button>
-          </Card>
-
-          {/* Microsoft Access Import Guide */}
-          <Card className="border-border/70 shadow-sm rounded-2xl overflow-hidden">
-            <CardHeader className="bg-slate-50 dark:bg-slate-900 border-b border-border/40 p-4 sm:p-5">
-              <CardTitle className="text-base font-black text-foreground flex items-center gap-2">
-                <BookOpen size={18} className="text-emerald-600 dark:text-emerald-400" />
-                دليل طريقة الاستيراد والفتح في Microsoft Access
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4 sm:p-6 space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs font-bold">
-                <div className="p-3.5 bg-slate-50 dark:bg-slate-900 rounded-xl border border-border/60 space-y-1">
-                  <span className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs font-black mb-2">
-                    1
-                  </span>
-                  <div className="text-foreground">تنزيل حزمة Restocash.zip</div>
-                  <p className="text-muted-foreground font-normal text-[11px]">
-                    اضغط زر تنزيل حزمة Restocash.zip الشاملة وقم بفك الضغط في مجلد خاص.
-                  </p>
-                </div>
-
-                <div className="p-3.5 bg-slate-50 dark:bg-slate-900 rounded-xl border border-border/60 space-y-1">
-                  <span className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs font-black mb-2">
-                    2
-                  </span>
-                  <div className="text-foreground">إنشاء قاعدة البيانات</div>
-                  <p className="text-muted-foreground font-normal text-[11px]">
-                    افتح برنامج Microsoft Access وانشئ قاعدة بيانات خالية باسم Restocash.accdb.
-                  </p>
-                </div>
-
-                <div className="p-3.5 bg-slate-50 dark:bg-slate-900 rounded-xl border border-border/60 space-y-1">
-                  <span className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs font-black mb-2">
-                    3
-                  </span>
-                  <div className="text-foreground">استيراد مخطط SQL (اختياري)</div>
-                  <p className="text-muted-foreground font-normal text-[11px]">
-                    قم بتشغيل ملف Restocash_Access_Schema.sql لتحديد الهياكل والمفاتيح تلقائياً.
-                  </p>
-                </div>
-
-                <div className="p-3.5 bg-slate-50 dark:bg-slate-900 rounded-xl border border-border/60 space-y-1">
-                  <span className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs font-black mb-2">
-                    4
-                  </span>
-                  <div className="text-foreground">استيراد CSV في Access</div>
-                  <p className="text-muted-foreground font-normal text-[11px]">
-                    من تبويب (External Data) حدد Text File واختر ملفات CSV مع ترميز UTF-8.
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* TAB 3: REPORTS (حالة الجداول وسجل الإصدارات والمزامنة) */}
+        {/* SECTION 3: REPORTS (التقارير: حالة الجداول وسجل الإصدارات والمزامنة) */}
         <TabsContent value="reports" className="space-y-6 mt-4">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <Card className="border-border/80 rounded-2xl bg-card p-5">
@@ -1911,56 +1676,124 @@ vercel --prod`}
             </Card>
           </div>
 
-          <Card className="border-border/80 rounded-2xl bg-card overflow-hidden">
-            <CardHeader className="border-b border-border/50 p-4 sm:p-5 flex flex-row items-center justify-between">
-              <CardTitle className="text-base font-black text-foreground">
-                تقرير إحصائيات جداول النظام والسجلات المحاسبية والتشغيلية
-              </CardTitle>
+          {/* Sub-report switcher */}
+          <div className="flex flex-wrap items-center justify-between gap-2 bg-card border border-border/80 p-2.5 rounded-2xl shadow-xs">
+            <div className="flex flex-wrap items-center gap-2">
               <Button
+                type="button"
+                variant={devReportTool === "tables_report" ? "default" : "outline"}
                 size="sm"
-                variant="outline"
-                onClick={() => setShowSchemaDialog(true)}
-                className="font-bold text-xs gap-1.5 rounded-xl"
+                onClick={() => setDevReportTool("tables_report")}
+                className="rounded-xl font-black text-xs gap-1.5 cursor-pointer"
               >
-                <FileCode size={14} />
-                معاينة مخطط SQL
+                <Table size={15} />
+                تقرير إحصائيات جداول النظام والسجلات
               </Button>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="divide-y divide-border/60">
-                {accessTablesList.map((tbl) => (
-                  <div
-                    key={tbl.id}
-                    className="p-4 flex items-center justify-between gap-4 hover:bg-muted/30 transition"
-                  >
-                    <div className="space-y-0.5">
-                      <div className="font-black text-sm text-foreground flex items-center gap-2">
-                        <span>{tbl.label}</span>
-                        <span className="text-[11px] font-mono text-muted-foreground">
-                          ({tbl.name})
-                        </span>
+              <Button
+                type="button"
+                variant={devReportTool === "release_status" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setDevReportTool("release_status")}
+                className="rounded-xl font-black text-xs gap-1.5 cursor-pointer"
+              >
+                <GitBranch size={15} />
+                تقرير حالة الإصدارات والربط السحابي
+              </Button>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowSchemaDialog(true)}
+              className="font-bold text-xs gap-1.5 rounded-xl cursor-pointer"
+            >
+              <FileCode size={14} />
+              معاينة مخطط SQL
+            </Button>
+          </div>
+
+          {devReportTool === "tables_report" ? (
+            <Card className="border-border/80 rounded-2xl bg-card overflow-hidden">
+              <CardHeader className="border-b border-border/50 p-4 sm:p-5">
+                <CardTitle className="text-base font-black text-foreground">
+                  بيان إحصائيات جداول النظام والسجلات المحاسبية والتشغيلية
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="divide-y divide-border/60">
+                  {accessTablesList.map((tbl) => (
+                    <div
+                      key={tbl.id}
+                      className="p-4 flex items-center justify-between gap-4 hover:bg-muted/30 transition"
+                    >
+                      <div className="space-y-0.5">
+                        <div className="font-black text-sm text-foreground flex items-center gap-2">
+                          <span>{tbl.label}</span>
+                          <span className="text-[11px] font-mono text-muted-foreground">
+                            ({tbl.name})
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">{tbl.description}</p>
                       </div>
-                      <p className="text-xs text-muted-foreground">{tbl.description}</p>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <Badge variant="outline" className="font-mono font-bold">
+                          {tbl.count} سجل
+                        </Badge>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => downloadAccessSingleTableCsv(tbl.id)}
+                          className="h-8 text-xs font-bold gap-1 rounded-xl cursor-pointer"
+                        >
+                          <ArrowDownToLine size={13} />
+                          CSV
+                        </Button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      <Badge variant="outline" className="font-mono font-bold">
-                        {tbl.count} سجل
-                      </Badge>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => downloadAccessSingleTableCsv(tbl.id)}
-                        className="h-8 text-xs font-bold gap-1 rounded-xl"
-                      >
-                        <ArrowDownToLine size={13} />
-                        CSV
-                      </Button>
-                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="border-border/80 rounded-2xl bg-card p-5 space-y-4">
+              <h3 className="text-base font-black text-foreground">
+                ملخص الإصدار البرمجي وحالة الربط السحابي (GitHub & Vercel)
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                <div className="p-4 rounded-xl border border-border/80 bg-muted/20 space-y-2">
+                  <div className="font-black text-foreground">بيانات الإصدار والمستودع</div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">الإصدار المثبت:</span>
+                    <span className="font-mono font-bold">v{CURRENT_VERSION}</span>
                   </div>
-                ))}
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">تاريخ البناء:</span>
+                    <span className="font-mono font-bold">{BUILD_DATE}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">المستودع المرتبط:</span>
+                    <span className="font-mono font-bold">{updateSettings.repo}</span>
+                  </div>
+                </div>
+                <div className="p-4 rounded-xl border border-border/80 bg-muted/20 space-y-2">
+                  <div className="font-black text-foreground">بيانات النشر والمزامنة</div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">منصة النشر السحابي:</span>
+                    <span className="font-bold text-emerald-600">Vercel SPA Ready ✓</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">التحقق التلقائي من التحديثات:</span>
+                    <span className="font-bold">
+                      {updateSettings.autoCheck ? "مفعل" : "غير مفعل"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">آخر مزامنة للبيانات:</span>
+                    <span className="font-mono font-bold">{lastSyncTime}</span>
+                  </div>
+                </div>
               </div>
-            </CardContent>
-          </Card>
+            </Card>
+          )}
         </TabsContent>
       </Tabs>
 

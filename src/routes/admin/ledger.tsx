@@ -36,6 +36,7 @@ import { VouchersLedgerSection } from "@/components/admin/VouchersLedgerSection"
 import { ComprehensiveFinancialPositionCard } from "@/components/admin/ComprehensiveFinancialPositionCard";
 import { AccountsPage } from "@/components/admin/AccountsPageView";
 import { TreasuryManagementView } from "@/components/admin/TreasuryManagementView";
+import { TreasuryReportModal } from "@/components/admin/TreasuryReportModal";
 import { AdvancedFinancialReportsSuite } from "@/components/admin/AdvancedFinancialReportsSuite";
 import { ViewModeToggle, useViewMode } from "@/components/ui/view-mode-toggle";
 import {
@@ -288,53 +289,123 @@ function LedgerPage() {
     }
   };
 
-  // UI state
+  // UI state — Unified 3-Section Architecture (definitions | operations | reports)
   const location = useLocation();
-  const [hubViewMode, setHubViewMode] = useViewMode("ledger-hub", "grid");
-  const [hubSectionFilter, setHubSectionFilter] = useState<"all" | "definitions" | "operations" | "reports">("all");
+  const [activeDefTool, setActiveDefTool] = useState<"accounts" | "treasury">("accounts");
+  const [activeOperationTool, setActiveOperationTool] = useState<
+    "vouchers" | "transfers" | "journal"
+  >("vouchers");
+  const [activeReportTool, setActiveReportTool] = useState<
+    "vouchers_register" | "unified_reports" | "general_ledger" | "treasury_report"
+  >("vouchers_register");
+  const [isTreasuryReportModalOpen, setIsTreasuryReportModalOpen] = useState(false);
 
-  const normalizeLedgerTab = (tabParam?: string | null) => {
-    if (!tabParam || tabParam === "hub") return "hub";
-    if (tabParam === "definitions" || tabParam === "operations") {
-      return "hub";
+  // Treasury Transfer State (عمليات التحويل بين الخزائن)
+  const [transferSourceId, setTransferSourceId] = useState("");
+  const [transferTargetId, setTransferTargetId] = useState("");
+  const [transferAmount, setTransferAmount] = useState("");
+  const [transferCurrency, setTransferCurrency] = useState<"EGP" | "USD" | "SSP">("EGP");
+  const [transferNote, setTransferNote] = useState("");
+
+  const handleExecuteTreasuryTransfer = (e: React.FormEvent) => {
+    e.preventDefault();
+    const amountNum = Number(String(transferAmount).replace(/,/g, "").trim());
+    if (!transferSourceId || !transferTargetId || !amountNum || amountNum <= 0) {
+      toast({
+        title: "بيانات غير مكتملة",
+        description: "يرجى اختيار الخزينة المحول منها والخزينة المستلمة وإدخال مبلغ صحيح.",
+        variant: "destructive",
+      });
+      return;
     }
-    if (tabParam === "payments" || tabParam === "expenses" || tabParam === "mall_finance") {
-      return "vouchers";
+    if (transferSourceId === transferTargetId) {
+      toast({
+        title: "تنبيه",
+        description: "لا يمكن التحويل إلى نفس الخزينة المصدر.",
+        variant: "destructive",
+      });
+      return;
     }
-    if (
-      [
-        "financial_position",
-        "ledger",
-        "journal",
-        "vouchers",
-        "trial",
-        "statements",
-        "accounts",
-        "treasury",
-        "reports",
-      ].includes(tabParam)
-    ) {
-      return tabParam;
+    try {
+      erpStore.transferBetweenTreasuries(
+        transferSourceId,
+        transferTargetId,
+        amountNum,
+        transferCurrency,
+        transferNote.trim() || "تحويل نقدي داخلي بين الخزائن",
+        "المسؤول المالي",
+      );
+      setErpState({ ...erpStore.getState() });
+      setTransferAmount("");
+      setTransferNote("");
+      toast({
+        title: "تم التحويل بين الخزائن بنجاح",
+        description: `تم تحويل ${amountNum.toLocaleString()} ${transferCurrency} وتوليد قيد المناقلة المحاسبي تلقائياً.`,
+      });
+    } catch (err: any) {
+      toast({
+        title: "تعذر إتمام التحويل",
+        description: err?.message || "حدث خطأ أثناء تنفيذ التحويل بين الخزائن",
+        variant: "destructive",
+      });
     }
-    return "hub";
   };
 
-  const [selectedTab, setSelectedTab] = useState(() => {
+  const normalizeLedgerTab = (
+    tabParam?: string | null,
+  ): "definitions" | "operations" | "reports" => {
+    if (!tabParam) return "operations";
+    if (tabParam === "definitions" || tabParam === "accounts" || tabParam === "treasury") {
+      return "definitions";
+    }
+    if (
+      tabParam === "reports" ||
+      tabParam === "vouchers_register" ||
+      tabParam === "financial_position" ||
+      tabParam === "ledger" ||
+      tabParam === "trial" ||
+      tabParam === "statements"
+    ) {
+      return "reports";
+    }
+    return "operations";
+  };
+
+  const [selectedTab, setSelectedTab] = useState<"definitions" | "operations" | "reports">(() => {
     const tabParam = extractTabParam(location.search, (location as any).searchStr);
     return normalizeLedgerTab(tabParam);
   });
 
   useEffect(() => {
     const tabParam = extractTabParam(location.search, (location as any).searchStr);
-    if (tabParam === "definitions" || tabParam === "operations" || tabParam === "reports") {
-      setHubSectionFilter(tabParam);
-    } else if (!tabParam || tabParam === "hub") {
-      setHubSectionFilter("all");
+    if (tabParam === "accounts") setActiveDefTool("accounts");
+    else if (tabParam === "treasury") setActiveDefTool("treasury");
+    else if (
+      tabParam === "vouchers" ||
+      tabParam === "payments" ||
+      tabParam === "expenses" ||
+      tabParam === "mall_finance"
+    ) {
+      setActiveOperationTool("vouchers");
+    } else if (tabParam === "transfers") {
+      setActiveOperationTool("transfers");
+    } else if (tabParam === "journal") {
+      setActiveOperationTool("journal");
+    } else if (tabParam === "vouchers_register") {
+      setActiveReportTool("vouchers_register");
+    } else if (
+      tabParam === "financial_position" ||
+      tabParam === "trial" ||
+      tabParam === "statements"
+    ) {
+      setActiveReportTool("unified_reports");
+    } else if (tabParam === "ledger") {
+      setActiveReportTool("general_ledger");
     }
     setSelectedTab(normalizeLedgerTab(tabParam));
   }, [location.search]);
 
-  useSyncedSubTab("/admin/ledger", selectedTab, setSelectedTab, "hub");
+  useSyncedSubTab("/admin/ledger", selectedTab, setSelectedTab as any, "operations");
 
   const [isImportingOracle, setIsImportingOracle] = useState(false);
   const [isSavingToDb, setIsSavingToDb] = useState(false);
@@ -1866,14 +1937,14 @@ function LedgerPage() {
               إضافة قيد يومي مزدوج
             </Button>
             <DialogContent
-              className="w-[calc(100vw-1rem)] sm:w-[calc(100vw-2rem)] lg:w-[calc(100vw-4rem)] max-w-6xl max-h-[92vh] overflow-y-auto overflow-x-hidden p-0 gap-0 border-2 border-primary/20 shadow-2xl rounded-2xl"
+              className="w-[calc(100vw-1rem)] sm:w-[calc(100vw-2rem)] lg:w-[calc(100vw-4rem)] max-w-6xl max-h-[92vh] overflow-y-auto overflow-x-hidden p-0 gap-0 border-2 border-primary/20 shadow-2xl rounded-2xl [&>button]:hidden"
               dir="rtl"
             >
               {/* Unified Accounting Voucher Sheet Container */}
               <div className="bg-card text-card-foreground flex flex-col min-w-0 w-full">
                 {/* 1. Voucher Top Banner Header */}
-                <DialogHeader className="text-right px-4 sm:px-6 py-3.5 sm:py-4 bg-gradient-to-l from-primary/10 via-primary/5 to-transparent border-b border-border">
-                  <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2.5 pl-8">
+                <DialogHeader className="text-right px-4 sm:px-6 py-3.5 sm:py-4 bg-muted/30 border-b border-border">
+                  <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2.5">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <div className="p-1.5 sm:p-2 rounded-xl bg-primary/15 text-primary shrink-0">
@@ -1941,13 +2012,14 @@ function LedgerPage() {
 
                       <Button
                         type="button"
-                        variant="ghost"
-                        size="icon"
+                        variant="outline"
+                        size="sm"
                         onClick={handleRequestCloseNewEntry}
-                        className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted shrink-0"
-                        title="إغلاق النافذة"
+                        className="h-8 px-3 rounded-xl font-bold text-xs gap-1.5 text-rose-600 border-rose-200 hover:bg-rose-50 dark:border-rose-900 dark:hover:bg-rose-950/40 shrink-0"
+                        title="خروج"
                       >
                         <X className="h-4 w-4" />
+                        <span>خروج</span>
                       </Button>
                     </div>
                   </div>
@@ -2624,14 +2696,6 @@ function LedgerPage() {
                     <Button
                       type="button"
                       variant="outline"
-                      onClick={handleRequestCloseNewEntry}
-                      className="flex-1 sm:flex-initial rounded-xl text-xs font-bold text-rose-600 border-rose-200 hover:bg-rose-50 dark:border-rose-900 dark:hover:bg-rose-950/40"
-                    >
-                      إلغاء / خروج
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
                       onClick={handleSaveJournalAsDraft}
                       className="flex-1 sm:flex-initial gap-1.5 border-amber-500/40 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-xl font-bold text-xs"
                     >
@@ -2952,664 +3016,402 @@ function LedgerPage() {
         </div>
       </div>
 
-      {/* Tabs list */}
-      <div className="flex flex-wrap items-center gap-2 mb-4 print:hidden">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() =>
-            printLedgerDocument(
-              buildLedgerPrintRows(erpState?.journalEntries || [], erpState?.accounts || []),
-              false,
-            )
-          }
-          className="font-bold gap-2"
-          title="طباعة القيود"
-        >
-          <Printer size={15} /> طباعة القيود
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() =>
-            printLedgerDocument(
-              buildLedgerPrintRows(erpState?.journalEntries || [], erpState?.accounts || []),
-              true,
-            )
-          }
-          className="font-bold gap-2"
-          title="طباعة مستند محاسبي"
-        >
-          <FileText size={15} /> مستند محاسبي
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() =>
-            exportLedgerDocumentToExcel(
-              buildLedgerPrintRows(erpState?.journalEntries || [], erpState?.accounts || []),
-            )
-          }
-          className="font-bold gap-2"
-          title="تصدير القيود إلى Excel"
-        >
-          <FileSpreadsheet size={15} /> Excel
-        </Button>
-      </div>
-
-      {/* MAIN FINANCIAL HUB VIEW (When selectedTab === 'hub') */}
-      {selectedTab === "hub" && (
-        <section aria-labelledby="financial-modules-heading" className="space-y-5">
-          <div className="flex items-center justify-between gap-4 border-b border-border/60 pb-3 flex-wrap">
-            <div className="flex items-center gap-3 flex-wrap">
-              <h2
-                id="financial-modules-heading"
-                className="flex items-center gap-2 text-lg font-black text-foreground"
+      {/* ===================================================================== */}
+      {/* SECTION 1: DEFINITIONS (التعريفات) — الحسابات والخزائن                 */}
+      {/* ===================================================================== */}
+      {selectedTab === "definitions" && (
+        <div className="space-y-4 animate-in fade-in duration-200">
+          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card p-2 shadow-2xs print:hidden">
+            <button
+              type="button"
+              onClick={() => setActiveDefTool("accounts")}
+              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
+                activeDefTool === "accounts"
+                  ? "bg-primary text-primary-foreground shadow-xs"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+            >
+              <Layers className="h-4 w-4" />
+              <span>دليل وشجرة الحسابات (4 مستويات)</span>
+              <Badge
+                variant="secondary"
+                className="bg-black/15 text-current text-[10px] px-1.5 py-0 font-mono"
               >
-                <Landmark size={22} className="text-primary" aria-hidden="true" />
-                أقسام الإدارة المالية
-              </h2>
+                {accounts.length}
+              </Badge>
+            </button>
 
-              {/* 3-Subsection Filter Pills (التعريفات / العمليات / التقارير) */}
-              <div className="inline-flex items-center gap-1 bg-muted/60 p-1 rounded-xl border border-border/70">
-                {[
-                  { id: "all", label: "الكل" },
-                  { id: "definitions", label: "التعريفات" },
-                  { id: "operations", label: "العمليات" },
-                  { id: "reports", label: "التقارير" },
-                ].map((sec) => (
-                  <button
-                    key={sec.id}
-                    type="button"
-                    onClick={() => setHubSectionFilter(sec.id as any)}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                      hubSectionFilter === sec.id
-                        ? "bg-primary text-primary-foreground shadow-2xs"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {sec.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <ViewModeToggle mode={hubViewMode} onChange={setHubViewMode} />
-              <Button
-                onClick={() => handleOpenNewEntry()}
-                className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs rounded-xl gap-1.5 shadow-sm"
+            <button
+              type="button"
+              onClick={() => setActiveDefTool("treasury")}
+              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
+                activeDefTool === "treasury"
+                  ? "bg-primary text-primary-foreground shadow-xs"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+            >
+              <Wallet className="h-4 w-4" />
+              <span>إدارة الخزائن النقدية والبنكية</span>
+              <Badge
+                variant="secondary"
+                className="bg-black/15 text-current text-[10px] px-1.5 py-0 font-mono"
               >
-                <Plus size={15} />
-                <span>إضافة قيد يومي</span>
-              </Button>
-            </div>
+                {treasuries.length}
+              </Badge>
+            </button>
           </div>
 
-          {/* Hub Items (Grid or List) */}
-          {(() => {
-            const allHubItems = [
-              {
-                id: "vouchers",
-                section: "operations" as const,
-                sectionLabel: "العمليات",
-                title: "سندات الصرف والقبض الموحدة",
-                badge: "المول • الحديقة • المطعم",
-                icon: Receipt,
-                colorClass: "text-emerald-600 dark:text-emerald-400 bg-emerald-500/15",
-                borderClass: "border-emerald-500/30 bg-emerald-500/5 hover:border-emerald-500",
-                onClick: () => {
-                  setSelectedTab("vouchers");
-                  setAutoOpenVoucherModal(true);
-                },
-              },
-              {
-                id: "new_entry",
-                section: "operations" as const,
-                sectionLabel: "العمليات",
-                title: "إضافة قيد يومي جديد",
-                badge: "قيد فوري",
-                icon: Plus,
-                colorClass: "text-primary dark:text-primary bg-primary/15",
-                borderClass: "border-primary/30 bg-primary/5 hover:border-primary",
-                onClick: () => {
-                  handleOpenNewEntry();
-                },
-              },
-              {
-                id: "journal",
-                section: "operations" as const,
-                sectionLabel: "العمليات",
-                title: "دفتر اليومية والقيود المزدوجة",
-                badge: `${journalEntries.length} قيد`,
-                icon: FileText,
-                colorClass: "text-indigo-600 dark:text-indigo-400 bg-indigo-500/15",
-                borderClass: "border-border/80 bg-card hover:border-indigo-500/50",
-                onClick: () => setSelectedTab("journal"),
-              },
-              {
-                id: "accounts",
-                section: "definitions" as const,
-                sectionLabel: "التعريفات",
-                title: "دليل وشجرة الحسابات",
-                badge: "4 مستويات",
-                icon: Layers,
-                colorClass: "text-blue-600 dark:text-blue-400 bg-blue-500/15",
-                borderClass: "border-border/80 bg-card hover:border-blue-500/50",
-                onClick: () => setSelectedTab("accounts"),
-              },
-              {
-                id: "treasury",
-                section: "definitions" as const,
-                sectionLabel: "التعريفات",
-                title: "إدارة الخزائن النقدية",
-                badge: `${treasuries.length} خزائن`,
-                icon: Wallet,
-                colorClass: "text-amber-600 dark:text-amber-400 bg-amber-500/15",
-                borderClass: "border-border/80 bg-card hover:border-amber-500/50",
-                onClick: () => setSelectedTab("treasury"),
-              },
-              {
-                id: "financial_position",
-                section: "reports" as const,
-                sectionLabel: "التقارير",
-                title: "المركز المالي الشامل",
-                badge: "الميزانية ⭐",
-                icon: TrendingUp,
-                colorClass: "text-emerald-600 dark:text-emerald-400 bg-emerald-500/15",
-                borderClass: "border-emerald-500/30 bg-emerald-500/5 hover:border-emerald-500",
-                onClick: () => setSelectedTab("financial_position"),
-              },
-              {
-                id: "reports",
-                section: "reports" as const,
-                sectionLabel: "التقارير",
-                title: "منظومة التقارير والقوائم المالية الشاملة",
-                badge: "ميزان • دخل • مركز مالي",
-                icon: BarChart3,
-                colorClass: "text-emerald-600 dark:text-emerald-400 bg-emerald-500/15",
-                borderClass: "border-border/80 bg-card hover:border-emerald-500/50",
-                onClick: () => setSelectedTab("reports"),
-              },
-              {
-                id: "ledger",
-                section: "reports" as const,
-                sectionLabel: "التقارير",
-                title: "كشف حساب الأستاذ العام",
-                badge: `${accounts.length} حساب`,
-                icon: BookOpen,
-                colorClass: "text-blue-600 dark:text-blue-400 bg-blue-500/15",
-                borderClass: "border-border/80 bg-card hover:border-primary/50",
-                onClick: () => setSelectedTab("ledger"),
-              },
-            ];
+          {activeDefTool === "accounts" ? (
+            <div className="bg-card rounded-2xl border border-border p-3 sm:p-4">
+              <AccountsPage />
+            </div>
+          ) : (
+            <div className="bg-card rounded-2xl border border-border p-3 sm:p-4">
+              <TreasuryManagementView />
+            </div>
+          )}
+        </div>
+      )}
 
-            const hubItems =
-              hubSectionFilter === "all"
-                ? allHubItems
-                : allHubItems.filter((item) => item.section === hubSectionFilter);
+      {/* ===================================================================== */}
+      {/* SECTION 2: OPERATIONS (العمليات) — إصدار السندات ودفتر اليومية        */}
+      {/* ===================================================================== */}
+      {selectedTab === "operations" && (
+        <div className="space-y-4 animate-in fade-in duration-200 min-w-0 w-full">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-border bg-card p-2 shadow-2xs print:hidden">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setActiveOperationTool("vouchers")}
+                className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
+                  activeOperationTool === "vouchers"
+                    ? "bg-primary text-primary-foreground shadow-xs"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                }`}
+              >
+                <Receipt className="h-4 w-4" />
+                <span>إصدار سند جديد (قبض / صرف / مشتريات)</span>
+              </button>
 
-            if (hubViewMode === "list") {
-              return (
-                <div className="flex flex-col gap-2">
-                  {hubItems.map((item) => {
-                    const IconComp = item.icon;
-                    return (
-                      <div
-                        key={item.id}
-                        onClick={item.onClick}
-                        className={`group cursor-pointer rounded-xl border p-3.5 flex items-center justify-between gap-4 transition-all hover:shadow-md ${item.borderClass}`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className={`rounded-xl p-2.5 ${item.colorClass}`}>
-                            <IconComp size={20} />
-                          </div>
-                          <h3 className="font-black text-sm text-foreground">{item.title}</h3>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Badge variant="secondary" className="text-[10px] font-bold">
-                            {item.sectionLabel}
-                          </Badge>
-                          <Badge variant="outline" className="text-[11px] font-bold">
-                            {item.badge}
-                          </Badge>
-                          <span className="text-xs font-bold text-primary">فتح ←</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            }
+              <button
+                type="button"
+                onClick={() => setActiveOperationTool("transfers")}
+                className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
+                  activeOperationTool === "transfers"
+                    ? "bg-primary text-primary-foreground shadow-xs"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                }`}
+              >
+                <ArrowUpDown className="h-4 w-4" />
+                <span>عمليات التحويل بين الخزائن</span>
+              </button>
 
-            return (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {hubItems.map((item) => {
-                  const IconComp = item.icon;
-                  return (
-                    <Card
-                      key={item.id}
-                      onClick={item.onClick}
-                      className={`group cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-xl ${item.borderClass}`}
-                    >
-                      <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4">
-                        <div className="flex items-center gap-3">
-                          <div className={`rounded-xl p-2.5 shadow-xs ${item.colorClass}`}>
-                            <IconComp size={22} />
-                          </div>
-                          <div>
-                            <h3 className="font-black text-sm text-foreground">{item.title}</h3>
-                            <span className="text-[10px] font-bold text-muted-foreground">
-                              {item.sectionLabel}
-                            </span>
-                          </div>
-                        </div>
-                        <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground shrink-0">
-                          {item.badge}
-                        </span>
-                      </CardHeader>
-                    </Card>
-                  );
-                })}
-              </div>
-            );
-          })()}
+              <button
+                type="button"
+                onClick={() => setActiveOperationTool("journal")}
+                className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
+                  activeOperationTool === "journal"
+                    ? "bg-primary text-primary-foreground shadow-xs"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                }`}
+              >
+                <FileText className="h-4 w-4" />
+                <span>دفتر اليومية والقيود المزدوجة</span>
+                <Badge
+                  variant="secondary"
+                  className="bg-black/15 text-current text-[10px] px-1.5 py-0 font-mono"
+                >
+                  {journalEntries.length}
+                </Badge>
+              </button>
+            </div>
 
-          {/* Saved Journal Drafts Banner if any */}
-          {journalDrafts.length > 0 && (
-            <div className="p-4 rounded-2xl border border-amber-500/30 bg-amber-500/5 flex items-center justify-between gap-4 flex-wrap">
-              <div className="flex items-center gap-2">
-                <Save className="h-5 w-5 text-amber-600" />
-                <h4 className="text-xs font-black text-foreground">
-                  مسودات قيود يومية محفوظة ({journalDrafts.length})
-                </h4>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                {journalDrafts.slice(0, 3).map((draft) => (
+            {journalDrafts.length > 0 && (
+              <div className="flex items-center gap-1.5 flex-wrap px-2">
+                <span className="text-[11px] font-bold text-amber-700 dark:text-amber-300">
+                  مسودات محفوظة ({journalDrafts.length}):
+                </span>
+                {journalDrafts.slice(0, 2).map((draft) => (
                   <Button
                     key={draft.id}
                     size="sm"
                     variant="outline"
                     onClick={() => handleLoadJournalDraft(draft)}
-                    className="text-xs font-bold border-amber-500/40 text-amber-800 dark:text-amber-300 rounded-xl gap-1.5"
+                    className="h-7 text-[11px] font-bold border-amber-500/40 text-amber-800 dark:text-amber-300 rounded-lg px-2"
                   >
-                    <span>{draft.newEntryDesc || draft.newEntryRef}</span>
-                    <span className="text-[10px] text-muted-foreground font-mono">
-                      ({draft.savedAt ? draft.savedAt.slice(0, 10) : ""})
-                    </span>
+                    {draft.newEntryDesc || draft.newEntryRef}
                   </Button>
                 ))}
               </div>
-            </div>
-          )}
-        </section>
-      )}
-
-      {/* DEDICATED SUBPAGE VIEW HEADER (When selectedTab !== 'hub') */}
-      {selectedTab !== "hub" && (
-        <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-card border border-border shadow-sm">
-            <div className="flex items-center gap-3">
-              <Button
-                onClick={() => setSelectedTab("hub")}
-                variant="default"
-                className="gap-2 bg-primary hover:bg-primary/90 text-primary-foreground font-black rounded-xl px-4 py-2 text-xs md:text-sm shadow-md transition-all hover:scale-105"
-              >
-                <ArrowRight size={18} />
-                <span>الرجوع للأقسام المالية الرئيسية</span>
-              </Button>
-              <div className="h-6 w-px bg-border hidden sm:block" />
-              <div>
-                <h3 className="text-base font-black text-foreground flex items-center gap-2">
-                  {selectedTab === "vouchers" && "💳 سندات الصرف والقبض الرسمية"}
-                  {selectedTab === "financial_position" && "⭐ المركز المالي الشامل"}
-                  {selectedTab === "ledger" && "📖 كشف حساب الأستاذ العام"}
-                  {selectedTab === "journal" && "📝 دفتر اليومية والقيود المزدوجة"}
-                  {selectedTab === "accounts" && "🏛️ دليل وشجرة الحسابات الرباعية"}
-                  {selectedTab === "treasury" && "💰 إدارة الخزائن والمحافط النقدية"}
-                  {selectedTab === "reports" && "📊 التقارير المالية والقوائم الختامية"}
-                  {selectedTab === "trial" && "⚖️ ميزان المراجعة بالمجاميع والأرصدة"}
-                  {selectedTab === "statements" && "📑 القوائم المالية الختامية"}
-                </h3>
-              </div>
-            </div>
-
-            {/* Quick Actions Bar */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <Button
-                size="sm"
-                onClick={() => handleOpenNewEntry()}
-                className="bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 font-bold text-xs rounded-xl gap-1.5"
-              >
-                <Plus size={14} />
-                <span>إضافة قيد يومي</span>
-              </Button>
-            </div>
+            )}
           </div>
 
-          {/* Subpage Switcher Pills */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 print:hidden">
-            {[
-              { id: "vouchers", label: "السندات والعمليات المالية الموحدة" },
-              { id: "financial_position", label: "المركز المالي الشامل ⭐" },
-              { id: "ledger", label: "كشف الأستاذ" },
-              { id: "journal", label: "اليومية العامة" },
-              { id: "treasury", label: "إدارة الخزائن" },
-              { id: "accounts", label: "دليل الحسابات" },
-              { id: "trial", label: "ميزان المراجعة" },
-              { id: "reports", label: "التقارير المالية" },
-              { id: "statements", label: "القوائم المالية" },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setSelectedTab(tab.id)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap border ${
-                  selectedTab === tab.id
-                    ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                    : "bg-card border-border/70 text-muted-foreground hover:bg-muted hover:text-foreground"
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* SUBPAGE CONTENT RENDERING */}
-      {selectedTab !== "hub" && (
-        <Tabs value={selectedTab} onValueChange={setSelectedTab} className="space-y-4">
-          {/* Tab Standalone: Comprehensive Financial Position */}
-          <TabsContent value="financial_position" className="space-y-6">
-            <ComprehensiveFinancialPositionCard />
-          </TabsContent>
-
-          {/* Tab 0: Vouchers Entry & Management */}
-          <TabsContent value="vouchers" className="space-y-6">
+          {activeOperationTool === "vouchers" && (
             <VouchersLedgerSection
+              mode="operations"
               autoOpenNewModal={autoOpenVoucherModal}
               onModalClosed={() => setAutoOpenVoucherModal(false)}
+              onOpenReports={() => {
+                setSelectedTab("reports");
+                setActiveReportTool("vouchers_register");
+              }}
               onNavigateToJournal={(ref) => {
                 if (ref) setJournalSearch(ref);
-                setSelectedTab("journal");
+                setActiveOperationTool("journal");
               }}
             />
-          </TabsContent>
+          )}
 
-          {/* Tab 1: General Ledger Account Details */}
-          <TabsContent value="ledger" className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-              {/* Account selector and metadata */}
-              <Card className="lg:col-span-1 rounded-2xl">
-                <CardHeader className="pb-4">
-                  <CardTitle className="text-sm font-bold text-muted-foreground uppercase tracking-wider">
-                    اختيار الحساب المحاسبي
+          {activeOperationTool === "transfers" && (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+              <Card className="lg:col-span-5 rounded-2xl border border-border shadow-sm">
+                <CardHeader className="pb-3 border-b border-border/60">
+                  <CardTitle className="text-base font-black flex items-center gap-2">
+                    <ArrowUpDown className="h-4 w-4 text-primary" />
+                    <span>تحويل نقدي بين الخزائن والحسابات البنكية</span>
                   </CardTitle>
+                  <CardDescription className="text-xs font-semibold">
+                    يتم خصم المبلغ من الخزينة المحول منها وإيداعه في الخزينة المستلمة مع توليد قيد مناقلة محاسبي مزدوج تلقائياً.
+                  </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label>الحساب المالي (البحث الذكي)</Label>
-                    <AccountSearchSelect
-                      value={selectedAccountCode}
-                      onChange={(code) => setSelectedAccountCode(code)}
-                      accounts={accounts}
-                      placeholder="ابحث برقم أو اسم الحساب..."
-                    />
-                  </div>
+                <CardContent className="pt-4">
+                  <form onSubmit={handleExecuteTreasuryTransfer} className="space-y-4">
+                    <div>
+                      <Label className="text-xs font-bold">من الخزينة / الحساب البنكي (المصدر) *</Label>
+                      <select
+                        className="w-full mt-1.5 h-10 rounded-xl border border-input bg-background px-3 text-xs font-bold text-right"
+                        value={transferSourceId}
+                        onChange={(e) => setTransferSourceId(e.target.value)}
+                        required
+                      >
+                        <option value="">-- اختر الخزينة المحول منها --</option>
+                        {erpState.treasuries
+                          .filter((t) => !t.deleted && t.is_open)
+                          .map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.name_ar} (الرصيد: {t.balance.toLocaleString()} {t.currency}) [حساب:{" "}
+                              {t.account_code || "130101"}]
+                            </option>
+                          ))}
+                      </select>
+                    </div>
 
-                  <div className="h-px bg-border my-2" />
+                    <div>
+                      <Label className="text-xs font-bold">إلى الخزينة / الحساب البنكي (المستلم) *</Label>
+                      <select
+                        className="w-full mt-1.5 h-10 rounded-xl border border-input bg-background px-3 text-xs font-bold text-right"
+                        value={transferTargetId}
+                        onChange={(e) => setTransferTargetId(e.target.value)}
+                        required
+                      >
+                        <option value="">-- اختر الخزينة المستلمة --</option>
+                        {erpState.treasuries
+                          .filter((t) => !t.deleted && t.id !== transferSourceId)
+                          .map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.name_ar} (الرصيد: {t.balance.toLocaleString()} {t.currency}) [حساب:{" "}
+                              {t.account_code || "130101"}]
+                            </option>
+                          ))}
+                      </select>
+                    </div>
 
-                  {currentAccount && (
-                    <div className="space-y-3">
-                      <div>
-                        <span className="text-xs text-muted-foreground block">
-                          كود الحساب المحاسبي:
-                        </span>
-                        <span className="text-sm font-mono font-bold text-foreground">
-                          {currentAccount.code}
-                        </span>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="col-span-2">
+                        <Label className="text-xs font-bold">المبلغ المحول *</Label>
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          className="mt-1.5 h-10 rounded-xl font-mono font-black text-sm"
+                          value={transferAmount}
+                          onChange={(e) => setTransferAmount(e.target.value)}
+                          placeholder="0.00"
+                          required
+                        />
                       </div>
                       <div>
-                        <span className="text-xs text-muted-foreground block">نوع الحساب:</span>
-                        <Badge variant="outline" className="mt-1">
-                          {ACCOUNT_TYPE_LABELS[currentAccount.type]}
-                        </Badge>
-                      </div>
-                      <div>
-                        <span className="text-xs text-muted-foreground block">
-                          الرصيد الافتتاحي:
-                        </span>
-                        <span className="text-sm font-bold font-mono text-foreground">
-                          {formatCurrency(
-                            currentAccount.initial_balance || 0,
-                            ledgerSummary.currency,
-                          )}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-xs text-muted-foreground block">الحالة الحالية:</span>
-                        <Badge className="mt-1 bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800">
-                          نشط ومرحل
-                        </Badge>
+                        <Label className="text-xs font-bold">العملة *</Label>
+                        <select
+                          className="w-full mt-1.5 h-10 rounded-xl border border-input bg-background px-2 text-xs font-black text-right"
+                          value={transferCurrency}
+                          onChange={(e) =>
+                            setTransferCurrency(e.target.value as "EGP" | "USD" | "SSP")
+                          }
+                        >
+                          <option value="EGP">EGP</option>
+                          <option value="USD">USD</option>
+                          <option value="SSP">SSP</option>
+                        </select>
                       </div>
                     </div>
-                  )}
+
+                    <div>
+                      <Label className="text-xs font-bold">البيان / سبب التحويل</Label>
+                      <Input
+                        className="mt-1.5 h-10 rounded-xl text-xs font-bold"
+                        value={transferNote}
+                        onChange={(e) => setTransferNote(e.target.value)}
+                        placeholder="مثال: تغذية خزينة المصروفات اليومية أو توريد للبنك..."
+                      />
+                    </div>
+
+                    <Button
+                      type="submit"
+                      className="w-full h-10 rounded-xl font-black text-xs gap-2 shadow-sm"
+                    >
+                      <ArrowUpDown className="h-4 w-4" />
+                      <span>اعتماد التحويل وترحيل القيد المحاسبي</span>
+                    </Button>
+                  </form>
                 </CardContent>
               </Card>
 
-              {/* Stats Cards and Movements Ledger Table */}
-              <div className="lg:col-span-3 space-y-6">
-                {/* Ledger Summary Stats */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <Card className="rounded-2xl bg-gradient-to-br from-background to-muted/20">
-                    <CardContent className="p-5 flex items-center justify-between">
-                      <div>
-                        <span className="text-xs text-muted-foreground font-medium">
-                          إجمالي الجانب المدين (Dr)
-                        </span>
-                        <h3 className="text-xl font-bold font-mono mt-1 text-emerald-600 dark:text-emerald-400">
-                          {formatCurrency(ledgerSummary.totalDebit, ledgerSummary.currency)}
-                        </h3>
-                      </div>
-                      <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 rounded-xl">
-                        <ArrowUpRight className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card className="rounded-2xl bg-gradient-to-br from-background to-muted/20">
-                    <CardContent className="p-5 flex items-center justify-between">
-                      <div>
-                        <span className="text-xs text-muted-foreground font-medium">
-                          إجمالي الجانب الدائن (Cr)
-                        </span>
-                        <h3 className="text-xl font-bold font-mono mt-1 text-rose-600 dark:text-rose-400">
-                          {formatCurrency(ledgerSummary.totalCredit, ledgerSummary.currency)}
-                        </h3>
-                      </div>
-                      <div className="p-3 bg-rose-50 dark:bg-rose-950/40 rounded-xl">
-                        <ArrowDownLeft className="h-5 w-5 text-rose-600 dark:text-rose-400" />
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card className="rounded-2xl border-primary/20 bg-primary/5">
-                    <CardContent className="p-5 flex items-center justify-between">
-                      <div>
-                        <span className="text-xs text-muted-foreground font-medium">
-                          صافي الرصيد النهائي للأستاذ
-                        </span>
-                        <h3 className="text-xl font-extrabold font-mono mt-1 text-primary">
-                          {formatCurrency(ledgerSummary.netBalance, ledgerSummary.currency)}
-                        </h3>
-                      </div>
-                      <div className="p-3 bg-primary/10 rounded-xl">
-                        <DollarSign className="h-5 w-5 text-primary" />
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                {/* Transactions Table */}
-                <Card className="rounded-2xl">
-                  <CardHeader className="flex flex-row items-center justify-between pb-3">
-                    <div>
-                      <CardTitle className="text-base font-bold">
-                        الحركات القييدية المفصلة (دفتر حساب الأستاذ)
-                      </CardTitle>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        size="sm"
-                        onClick={() => {
-                          if (!currentAccount) return;
-                          printAccountingDocument({
-                            title: `كشف حساب الأستاذ العام — ${currentAccount.name_ar || currentAccount.name}`,
-                            subtitle: `كود الحساب: ${currentAccount.code} | التصنيف: ${ACCOUNT_TYPE_LABELS[currentAccount.type]}`,
-                            metaItems: [
-                              { label: "كود الحساب", value: currentAccount.code },
-                              {
-                                label: "اسم الحساب",
-                                value: currentAccount.name_ar || currentAccount.name,
-                              },
-                              {
-                                label: "الرصيد الافتتاحي",
-                                value: formatCurrency(
-                                  currentAccount.initial_balance || 0,
-                                  ledgerSummary.currency,
-                                ),
-                              },
-                              { label: "عدد الحركات", value: `${ledgerLines.length} حركة` },
-                            ],
-                            columns: [
-                              { key: "date", label: "التاريخ" },
-                              { key: "reference", label: "المرجع" },
-                              { key: "description", label: "شرح وتفاصيل الحركة" },
-                              { key: "debit", label: "مدين (Debit)" },
-                              { key: "credit", label: "دائن (Credit)" },
-                              { key: "runningBalance", label: "الرصيد التراكمي" },
-                            ],
-                            rows: ledgerLines.map((line) => ({
-                              date: line.date,
-                              reference: line.reference,
-                              description: line.description,
-                              debit:
-                                line.debit > 0 ? formatCurrency(line.debit, line.currency) : "-",
-                              credit:
-                                line.credit > 0 ? formatCurrency(line.credit, line.currency) : "-",
-                              runningBalance: formatCurrency(line.runningBalance, line.currency),
-                            })),
-                            totals: [
-                              {
-                                label: "إجمالي المدين",
-                                value: formatCurrency(
-                                  ledgerSummary.totalDebit,
-                                  ledgerSummary.currency,
-                                ),
-                              },
-                              {
-                                label: "إجمالي الدائن",
-                                value: formatCurrency(
-                                  ledgerSummary.totalCredit,
-                                  ledgerSummary.currency,
-                                ),
-                              },
-                              {
-                                label: "صافي الرصيد النهائي",
-                                value: formatCurrency(
-                                  ledgerSummary.netBalance,
-                                  ledgerSummary.currency,
-                                ),
-                              },
-                            ],
-                          });
-                        }}
-                        className="gap-1.5 rounded-xl bg-primary text-primary-foreground font-bold"
-                      >
-                        <Printer className="h-4 w-4" />
-                        طباعة كشف الحساب
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleExportLedger}
-                        className="gap-1.5 rounded-xl"
-                      >
-                        <FileSpreadsheet className="h-4 w-4" />
-                        تصدير Excel
-                      </Button>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="p-0">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm text-right">
-                        <thead className="bg-muted/50 text-muted-foreground text-xs font-semibold uppercase border-y">
-                          <tr>
-                            <th className="p-4">التاريخ</th>
-                            <th className="p-4">المرجع</th>
-                            <th className="p-4">شرح وتفاصيل الحركة</th>
-                            <th className="p-4 text-emerald-600 dark:text-emerald-400">
-                              مدين (Debit)
-                            </th>
-                            <th className="p-4 text-rose-600 dark:text-rose-400">دائن (Credit)</th>
-                            <th className="p-4 text-primary">الرصيد التراكمي</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y border-b">
-                          {ledgerLines.length === 0 ? (
-                            <tr>
-                              <td colSpan={6} className="p-8 text-center text-muted-foreground">
-                                لا توجد حركات مسجلة لهذا الحساب. يمكنك إضافة قيد يدوي بالأعلى.
-                              </td>
-                            </tr>
-                          ) : (
-                            ledgerLines.map((line) => (
-                              <tr key={line.id} className="hover:bg-muted/20 transition">
-                                <td className="p-4 font-mono">{line.date}</td>
-                                <td className="p-4 font-mono">
-                                  <Badge variant="secondary" className="font-mono">
-                                    {line.reference}
+              <Card className="lg:col-span-7 rounded-2xl border border-border shadow-sm overflow-hidden">
+                <CardHeader className="pb-3 border-b border-border/60 flex flex-row items-center justify-between">
+                  <div>
+                    <CardTitle className="text-base font-black">
+                      سجل عمليات التحويل والمناقلات بين الخزائن
+                    </CardTitle>
+                    <CardDescription className="text-xs font-semibold">
+                      أحدث التحويلات النقدية الداخلية المرحلة في دفتر اليومية
+                    </CardDescription>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setSelectedTab("reports");
+                      setActiveReportTool("treasury_report");
+                    }}
+                    className="h-8 rounded-xl text-xs font-bold gap-1.5"
+                  >
+                    <Vault className="h-3.5 w-3.5" />
+                    <span>تقرير الخزائن الشامل</span>
+                  </Button>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto max-h-[420px]">
+                    <table className="w-full text-xs text-right">
+                      <thead className="bg-muted/60 text-muted-foreground font-bold border-b border-border">
+                        <tr>
+                          <th className="p-3">التاريخ</th>
+                          <th className="p-3">الخزينة</th>
+                          <th className="p-3">النوع</th>
+                          <th className="p-3">المبلغ</th>
+                          <th className="p-3">البيان</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/60">
+                        {(erpState.treasuryTransactions || [])
+                          .filter(
+                            (tx) =>
+                              tx.type === "transfer_in" ||
+                              tx.type === "transfer_out" ||
+                              (tx.note && tx.note.includes("تحويل")),
+                          )
+                          .slice(0, 25)
+                          .map((tx) => {
+                            const tr = erpState.treasuries.find((t) => t.id === tx.treasury_id);
+                            const isOut = tx.type === "transfer_out" || tx.type === "withdrawal";
+                            return (
+                              <tr key={tx.id} className="hover:bg-muted/30">
+                                <td className="p-3 font-mono text-[11px] text-muted-foreground">
+                                  {new Date(tx.created_at).toLocaleString("ar-EG")}
+                                </td>
+                                <td className="p-3 font-bold">{tr?.name_ar || tx.treasury_id}</td>
+                                <td className="p-3">
+                                  <Badge
+                                    variant="outline"
+                                    className={
+                                      isOut
+                                        ? "border-rose-500/30 bg-rose-500/10 text-rose-600 font-bold text-[10px]"
+                                        : "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 font-bold text-[10px]"
+                                    }
+                                  >
+                                    {isOut ? "تحويل صادر (-)" : "تحويل وارد (+)"}
                                   </Badge>
                                 </td>
-                                <td className="p-4 max-w-sm font-medium">{line.description}</td>
-                                <td className="p-4 font-mono text-emerald-600 dark:text-emerald-400">
-                                  {line.debit > 0 ? formatCurrency(line.debit, line.currency) : "-"}
+                                <td className="p-3 font-mono font-black">
+                                  {Number(tx.amount).toLocaleString()} {tx.currency || tr?.currency || "EGP"}
                                 </td>
-                                <td className="p-4 font-mono text-rose-600 dark:text-rose-400">
-                                  {line.credit > 0
-                                    ? formatCurrency(line.credit, line.currency)
-                                    : "-"}
-                                </td>
-                                <td className="p-4 font-bold font-mono text-foreground">
-                                  {formatCurrency(line.runningBalance, line.currency)}
-                                </td>
+                                <td className="p-3 text-muted-foreground">{tx.note}</td>
                               </tr>
-                            ))
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
+                            );
+                          })}
+                        {(erpState.treasuryTransactions || []).filter(
+                          (tx) =>
+                            tx.type === "transfer_in" ||
+                            tx.type === "transfer_out" ||
+                            (tx.note && tx.note.includes("تحويل")),
+                        ).length === 0 && (
+                          <tr>
+                            <td colSpan={5} className="p-8 text-center text-muted-foreground font-semibold">
+                              لا توجد عمليات تحويل بين الخزائن مسجلة بعد.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
-          </TabsContent>
+          )}
 
-          {/* Tab 2: General Journal Ledger */}
-          <TabsContent value="journal" className="space-y-6 min-w-0 w-full">
+          {activeOperationTool === "journal" && (
             <Card className="rounded-2xl w-full min-w-0 overflow-hidden">
               <CardHeader className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-3 w-full min-w-0">
                 <div>
                   <CardTitle className="text-base font-bold">
-                    دفتر اليومية العامة (General Journal)
+                    دفتر اليومية العامة والقيود المزدوجة
                   </CardTitle>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 max-w-full">
                   <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      printLedgerDocument(
+                        buildLedgerPrintRows(
+                          erpState?.journalEntries || [],
+                          erpState?.accounts || [],
+                        ),
+                        false,
+                      )
+                    }
+                    className="gap-1.5 rounded-xl text-xs font-bold"
+                    title="طباعة القيود"
+                  >
+                    <Printer className="h-4 w-4" />
+                    طباعة القيود
+                  </Button>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      printLedgerDocument(
+                        buildLedgerPrintRows(
+                          erpState?.journalEntries || [],
+                          erpState?.accounts || [],
+                        ),
+                        true,
+                      )
+                    }
+                    className="gap-1.5 rounded-xl text-xs font-bold"
+                    title="طباعة مستند محاسبي"
+                  >
+                    <FileText className="h-4 w-4" />
+                    مستند محاسبي
+                  </Button>
+
+                  <Button
                     variant="outline"
                     size="sm"
                     onClick={handleExportJournal}
-                    className="gap-1.5 rounded-xl text-xs"
+                    className="gap-1.5 rounded-xl text-xs font-bold"
                   >
                     <FileSpreadsheet className="h-4 w-4" />
                     تصدير Excel
@@ -3628,7 +3430,7 @@ function LedgerPage() {
                       variant="default"
                       size="sm"
                       disabled={isImportingOracle}
-                      className="gap-1.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white pointer-events-none text-xs"
+                      className="gap-1.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white pointer-events-none text-xs font-bold"
                     >
                       <ArrowUpDown className="h-4 w-4" />
                       {isImportingOracle ? "جاري الاستيراد..." : "رفع قيود Excel"}
@@ -3645,27 +3447,6 @@ function LedgerPage() {
                   >
                     <ClipboardPaste className="h-4 w-4" />
                     لصق نصي للقيود
-                  </Button>
-
-                  <Button
-                    variant="default"
-                    size="sm"
-                    onClick={() => setIsSaveConfirmOpen(true)}
-                    disabled={isSavingToDb || !hasUnsavedChanges}
-                    className={`gap-1.5 rounded-xl text-white font-bold shadow-sm text-xs ${
-                      hasUnsavedChanges
-                        ? "bg-amber-600 hover:bg-amber-700 ring-2 ring-amber-400"
-                        : "bg-emerald-600 hover:bg-emerald-700"
-                    }`}
-                  >
-                    <Save className={`h-4 w-4 ${isSavingToDb ? "animate-spin" : ""}`} />
-                    {isSavingToDb ? "جاري الحفظ..." : "حفظ في قاعدة البيانات"}
-                    <Badge
-                      variant="secondary"
-                      className="mr-1 bg-black/30 text-white text-[10px] px-1.5 py-0 font-mono"
-                    >
-                      {journalEntries.length}
-                    </Badge>
                   </Button>
 
                   <Button
@@ -4129,37 +3910,372 @@ function LedgerPage() {
                 </div>
               </CardContent>
             </Card>
-          </TabsContent>
+          )}
+        </div>
+      )}
 
-          {/* Tab 3: Trial Balance (General + Summary + Account Comparisons) */}
-          <TabsContent value="trial" className="space-y-6">
-            <AdvancedFinancialReportsSuite initialSection="general_trial" />
-          </TabsContent>
+      {/* ===================================================================== */}
+      {/* SECTION 3: REPORTS (التقارير) — السندات، منظومة التقارير، الأستاذ، الخزائن */}
+      {/* ===================================================================== */}
+      {selectedTab === "reports" && (
+        <div className="space-y-5 animate-in fade-in duration-200">
+          {/* Unified 4-Report Selector Bar */}
+          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card p-2 shadow-2xs print:hidden">
+            <button
+              type="button"
+              onClick={() => setActiveReportTool("vouchers_register")}
+              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
+                activeReportTool === "vouchers_register"
+                  ? "bg-primary text-primary-foreground shadow-xs"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+            >
+              <Receipt className="h-4 w-4" />
+              <span>تفقد وسجل سندات الدفع والقبض</span>
+            </button>
 
-          {/* Tab 4: Financial Statements */}
-          <TabsContent value="statements" className="space-y-6">
-            <AdvancedFinancialReportsSuite initialSection="statements" />
-          </TabsContent>
+            <button
+              type="button"
+              onClick={() => setActiveReportTool("unified_reports")}
+              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
+                activeReportTool === "unified_reports"
+                  ? "bg-primary text-primary-foreground shadow-xs"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+            >
+              <BarChart3 className="h-4 w-4" />
+              <span>المركز المالي والقوائم وميزان المراجعة الموحد</span>
+            </button>
 
-          {/* Tab 6: Chart of Accounts (دليل وشجرة الحسابات) */}
-          <TabsContent value="accounts" className="space-y-6">
-            <div className="bg-card rounded-2xl border border-border p-2 sm:p-4">
-              <AccountsPage />
+            <button
+              type="button"
+              onClick={() => setActiveReportTool("general_ledger")}
+              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
+                activeReportTool === "general_ledger"
+                  ? "bg-primary text-primary-foreground shadow-xs"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+            >
+              <BookOpen className="h-4 w-4" />
+              <span>كشف حساب الأستاذ العام</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setActiveReportTool("treasury_report");
+                setIsTreasuryReportModalOpen(true);
+              }}
+              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
+                activeReportTool === "treasury_report"
+                  ? "bg-primary text-primary-foreground shadow-xs"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+            >
+              <Wallet className="h-4 w-4" />
+              <span>تقرير وحركة الخزائن</span>
+            </button>
+          </div>
+
+          {/* 1. Vouchers Inspection & Register (تفقد وسجل سندات الدفع والقبض) */}
+          {activeReportTool === "vouchers_register" && (
+            <VouchersLedgerSection
+              mode="reports"
+              onNavigateToJournal={(ref) => {
+                if (ref) setJournalSearch(ref);
+                setSelectedTab("operations");
+                setActiveOperationTool("journal");
+              }}
+            />
+          )}
+
+          {/* 2. Unified Financial Reports & Financial Position (دمج المركز المالي الشامل ومنظومة التقارير) */}
+          {activeReportTool === "unified_reports" && (
+            <div className="space-y-6">
+              <ComprehensiveFinancialPositionCard />
+              <AdvancedFinancialReportsSuite initialSection="account_status" />
             </div>
-          </TabsContent>
+          )}
 
-          {/* Tab 7: Treasury Management (إدارة الخزائن والصناديق) */}
-          <TabsContent value="treasury" className="space-y-6">
-            <div className="bg-card rounded-2xl border border-border p-2 sm:p-4">
-              <TreasuryManagementView />
+          {/* 3. General Ledger Account Statement (كشف حساب الأستاذ العام) */}
+          {activeReportTool === "general_ledger" && (
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+              <Card className="lg:col-span-1 rounded-2xl">
+                <CardHeader className="pb-4">
+                  <CardTitle className="text-sm font-bold text-muted-foreground uppercase tracking-wider">
+                    اختيار الحساب المحاسبي
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>الحساب المالي (البحث الذكي)</Label>
+                    <AccountSearchSelect
+                      value={selectedAccountCode}
+                      onChange={(code) => setSelectedAccountCode(code)}
+                      accounts={accounts}
+                      placeholder="ابحث برقم أو اسم الحساب..."
+                    />
+                  </div>
+
+                  <div className="h-px bg-border my-2" />
+
+                  {currentAccount && (
+                    <div className="space-y-3">
+                      <div>
+                        <span className="text-xs text-muted-foreground block">
+                          كود الحساب المحاسبي:
+                        </span>
+                        <span className="text-sm font-mono font-bold text-foreground">
+                          {currentAccount.code}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-xs text-muted-foreground block">نوع الحساب:</span>
+                        <Badge variant="outline" className="mt-1">
+                          {ACCOUNT_TYPE_LABELS[currentAccount.type]}
+                        </Badge>
+                      </div>
+                      <div>
+                        <span className="text-xs text-muted-foreground block">
+                          الرصيد الافتتاحي:
+                        </span>
+                        <span className="text-sm font-bold font-mono text-foreground">
+                          {formatCurrency(
+                            currentAccount.initial_balance || 0,
+                            ledgerSummary.currency,
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <div className="lg:col-span-3 space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <Card className="rounded-2xl bg-gradient-to-br from-background to-muted/20">
+                    <CardContent className="p-5 flex items-center justify-between">
+                      <div>
+                        <span className="text-xs text-muted-foreground font-medium">
+                          إجمالي الجانب المدين (Dr)
+                        </span>
+                        <h3 className="text-xl font-bold font-mono mt-1 text-emerald-600 dark:text-emerald-400">
+                          {formatCurrency(ledgerSummary.totalDebit, ledgerSummary.currency)}
+                        </h3>
+                      </div>
+                      <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 rounded-xl">
+                        <ArrowUpRight className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="rounded-2xl bg-gradient-to-br from-background to-muted/20">
+                    <CardContent className="p-5 flex items-center justify-between">
+                      <div>
+                        <span className="text-xs text-muted-foreground font-medium">
+                          إجمالي الجانب الدائن (Cr)
+                        </span>
+                        <h3 className="text-xl font-bold font-mono mt-1 text-rose-600 dark:text-rose-400">
+                          {formatCurrency(ledgerSummary.totalCredit, ledgerSummary.currency)}
+                        </h3>
+                      </div>
+                      <div className="p-3 bg-rose-50 dark:bg-rose-950/40 rounded-xl">
+                        <ArrowDownLeft className="h-5 w-5 text-rose-600 dark:text-rose-400" />
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="rounded-2xl border-primary/20 bg-primary/5">
+                    <CardContent className="p-5 flex items-center justify-between">
+                      <div>
+                        <span className="text-xs text-muted-foreground font-medium">
+                          صافي الرصيد النهائي للأستاذ
+                        </span>
+                        <h3 className="text-xl font-extrabold font-mono mt-1 text-primary">
+                          {formatCurrency(ledgerSummary.netBalance, ledgerSummary.currency)}
+                        </h3>
+                      </div>
+                      <div className="p-3 bg-primary/10 rounded-xl">
+                        <DollarSign className="h-5 w-5 text-primary" />
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <Card className="rounded-2xl">
+                  <CardHeader className="flex flex-row items-center justify-between pb-3">
+                    <div>
+                      <CardTitle className="text-base font-bold">
+                        الحركات القييدية المفصلة (دفتر حساب الأستاذ)
+                      </CardTitle>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          if (!currentAccount) return;
+                          printAccountingDocument({
+                            title: `كشف حساب الأستاذ العام — ${currentAccount.name_ar || currentAccount.name}`,
+                            subtitle: `كود الحساب: ${currentAccount.code} | التصنيف: ${ACCOUNT_TYPE_LABELS[currentAccount.type]}`,
+                            metaItems: [
+                              { label: "كود الحساب", value: currentAccount.code },
+                              {
+                                label: "اسم الحساب",
+                                value: currentAccount.name_ar || currentAccount.name,
+                              },
+                              {
+                                label: "الرصيد الافتتاحي",
+                                value: formatCurrency(
+                                  currentAccount.initial_balance || 0,
+                                  ledgerSummary.currency,
+                                ),
+                              },
+                              { label: "عدد الحركات", value: `${ledgerLines.length} حركة` },
+                            ],
+                            columns: [
+                              { key: "date", label: "التاريخ" },
+                              { key: "reference", label: "المرجع" },
+                              { key: "description", label: "شرح وتفاصيل الحركة" },
+                              { key: "debit", label: "مدين (Debit)" },
+                              { key: "credit", label: "دائن (Credit)" },
+                              { key: "runningBalance", label: "الرصيد التراكمي" },
+                            ],
+                            rows: ledgerLines.map((line) => ({
+                              date: line.date,
+                              reference: line.reference,
+                              description: line.description,
+                              debit:
+                                line.debit > 0 ? formatCurrency(line.debit, line.currency) : "-",
+                              credit:
+                                line.credit > 0 ? formatCurrency(line.credit, line.currency) : "-",
+                              runningBalance: formatCurrency(line.runningBalance, line.currency),
+                            })),
+                            totals: [
+                              {
+                                label: "إجمالي المدين",
+                                value: formatCurrency(
+                                  ledgerSummary.totalDebit,
+                                  ledgerSummary.currency,
+                                ),
+                              },
+                              {
+                                label: "إجمالي الدائن",
+                                value: formatCurrency(
+                                  ledgerSummary.totalCredit,
+                                  ledgerSummary.currency,
+                                ),
+                              },
+                              {
+                                label: "صافي الرصيد النهائي",
+                                value: formatCurrency(
+                                  ledgerSummary.netBalance,
+                                  ledgerSummary.currency,
+                                ),
+                              },
+                            ],
+                          });
+                        }}
+                        className="gap-1.5 rounded-xl bg-primary text-primary-foreground font-bold"
+                      >
+                        <Printer className="h-4 w-4" />
+                        طباعة كشف الحساب
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleExportLedger}
+                        className="gap-1.5 rounded-xl"
+                      >
+                        <FileSpreadsheet className="h-4 w-4" />
+                        تصدير Excel
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm text-right">
+                        <thead className="bg-muted/50 text-muted-foreground text-xs font-semibold uppercase border-y">
+                          <tr>
+                            <th className="p-4">التاريخ</th>
+                            <th className="p-4">المرجع</th>
+                            <th className="p-4">شرح وتفاصيل الحركة</th>
+                            <th className="p-4 text-emerald-600 dark:text-emerald-400">
+                              مدين (Debit)
+                            </th>
+                            <th className="p-4 text-rose-600 dark:text-rose-400">دائن (Credit)</th>
+                            <th className="p-4 text-primary">الرصيد التراكمي</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y border-b">
+                          {ledgerLines.length === 0 ? (
+                            <tr>
+                              <td colSpan={6} className="p-8 text-center text-muted-foreground">
+                                لا توجد حركات مسجلة لهذا الحساب.
+                              </td>
+                            </tr>
+                          ) : (
+                            ledgerLines.map((line) => (
+                              <tr key={line.id} className="hover:bg-muted/20 transition">
+                                <td className="p-4 font-mono">{line.date}</td>
+                                <td className="p-4 font-mono">
+                                  <Badge variant="secondary" className="font-mono">
+                                    {line.reference}
+                                  </Badge>
+                                </td>
+                                <td className="p-4 max-w-sm font-medium">{line.description}</td>
+                                <td className="p-4 font-mono text-emerald-600 dark:text-emerald-400">
+                                  {line.debit > 0 ? formatCurrency(line.debit, line.currency) : "-"}
+                                </td>
+                                <td className="p-4 font-mono text-rose-600 dark:text-rose-400">
+                                  {line.credit > 0
+                                    ? formatCurrency(line.credit, line.currency)
+                                    : "-"}
+                                </td>
+                                <td className="p-4 font-bold font-mono text-foreground">
+                                  {formatCurrency(line.runningBalance, line.currency)}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
             </div>
-          </TabsContent>
+          )}
 
-          {/* Tab 8: Financial Reports (التقارير المالية) */}
-          <TabsContent value="reports" className="space-y-6">
-            <AdvancedFinancialReportsSuite initialSection="account_status" />
-          </TabsContent>
-        </Tabs>
+          {/* 4. Treasury Report Launcher & Modal (تقرير وحركة الخزائن) */}
+          {activeReportTool === "treasury_report" && (
+            <Card className="rounded-2xl border-border">
+              <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2.5 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                    <Wallet className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base font-black">
+                      تقرير وحركة الخزائن النقدية والبنكية
+                    </CardTitle>
+                  </div>
+                </div>
+                <Button
+                  onClick={() => setIsTreasuryReportModalOpen(true)}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl gap-2"
+                >
+                  <FileText className="h-4 w-4" />
+                  فتح نافذة تقرير الخزائن المفصل
+                </Button>
+              </CardHeader>
+            </Card>
+          )}
+
+          <TreasuryReportModal
+            isOpen={isTreasuryReportModalOpen}
+            onClose={() => setIsTreasuryReportModalOpen(false)}
+          />
+        </div>
       )}
 
       {/* Attachment Dialog */}
