@@ -205,26 +205,32 @@ export const menuService = {
 
     let dbData: any[] = [];
     try {
+      // Anonymous QR-menu visitors must only receive public product fields.
+      // Recipe and inventory details are fetched only for authenticated staff.
+      const { data: authState } = await supabase.auth.getSession();
+      const hasStaffSession = Boolean(authState?.session?.user?.id);
+      const menuSelect = hasStaffSession
+        ? `
+            *,
+            recipes (
+              id,
+              notes,
+              recipe_ingredients (
+                inventory_id,
+                weight,
+                quantity,
+                unit,
+                optional,
+                waste_percent,
+                notes
+              )
+            )
+          `
+        : "id,name_ar,price,category_id,image_url,is_available,created_at";
+
       let query = supabase
         .from("menu_items")
-        .select(
-          `
-          *,
-          recipes (
-            id,
-            notes,
-            recipe_ingredients (
-              inventory_id,
-              weight,
-              quantity,
-              unit,
-              optional,
-              waste_percent,
-              notes
-            )
-          )
-        `,
-        )
+        .select(menuSelect)
         .order("created_at");
 
       if (onlyAvailable) {

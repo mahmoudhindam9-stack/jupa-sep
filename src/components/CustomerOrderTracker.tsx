@@ -91,21 +91,19 @@ export function CustomerOrderTracker({
       }
 
       try {
-        const { data, error: dbError } = await supabase
-          .from("orders")
-          .select(
-            "id,order_number,status,total,pricing_currency,payment_currency,payment_exchange_rate,payment_amount,notes,items,created_at",
-          )
-          .eq("customer_tracking_token", token)
-          .maybeSingle();
+        // The RPC returns only the order represented by this unguessable token,
+        // with customer-safe fields. The public client never reads the orders table.
+        const { data, error: dbError } = await supabase.rpc("get_customer_order_status", {
+          p_tracking_token: token,
+        });
 
         if (!alive) return;
         setLoading(false);
         if (data) {
           setOrder({ ...(localFallback || {}), ...data });
           setError("");
-        } else if (!localFallback && dbError) {
-          setError(dbError.message);
+        } else if (!localFallback) {
+          setError(dbError?.message || "Order not found");
         }
       } catch (err: any) {
         if (!alive) return;
@@ -119,34 +117,9 @@ export function CustomerOrderTracker({
     load();
     const pollTimer = setInterval(load, 4000);
 
-    const channel = supabase
-      .channel(`customer-order-tracker-${token}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "orders",
-          filter: `customer_tracking_token=eq.${token}`,
-        },
-        (payload) => {
-          if (alive && payload.new) {
-            setOrder((prev: any) => ({ ...(prev || {}), ...payload.new }));
-          }
-        },
-      )
-      .on("broadcast", { event: "ORDER_STATUS_UPDATED" }, (payload) => {
-        const data = payload?.payload;
-        if (alive && data && data.customer_tracking_token === token) {
-          setOrder((prev: any) => ({ ...(prev || {}), ...data }));
-        }
-      })
-      .subscribe();
-
     return () => {
       alive = false;
       clearInterval(pollTimer);
-      supabase.removeChannel(channel);
     };
   }, [token]);
 
