@@ -125,8 +125,8 @@ AS $current_user_has_any_permission$
         OR COALESCE(p.permissions ->> 'super_admin_full_access', 'false') = 'true'
         OR EXISTS (
           SELECT 1
-          FROM unnest(COALESCE(p_keys, ARRAY[]::TEXT[])) AS permission_key
-          WHERE COALESCE(p.permissions ->> permission_key, 'false') = 'true'
+          FROM unnest(COALESCE(p_keys, ARRAY[]::TEXT[])) AS allowed(permission_key)
+          WHERE COALESCE(p.permissions ->> allowed.permission_key, 'false') = 'true'
         )
       )
   );
@@ -204,8 +204,13 @@ CREATE POLICY menu_categories_authenticated_manage
 
 CREATE POLICY menu_items_public_read
   ON public.menu_items
-  FOR SELECT TO anon, authenticated
+  FOR SELECT TO anon
   USING (true);
+
+CREATE POLICY menu_items_staff_read
+  ON public.menu_items
+  FOR SELECT TO authenticated
+  USING (public.current_user_has_any_permission(ARRAY['page_restaurant_menu','pos','captain','kitchen','orders','orders_view','inventory','inventory_view']));
 
 CREATE POLICY menu_items_authenticated_manage
   ON public.menu_items
