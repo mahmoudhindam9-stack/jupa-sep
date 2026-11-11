@@ -7,7 +7,7 @@
   "trailingSlash": false,
   "rewrites": [
     {
-      "source": "/((?!assets/|data/|icons/|images/|favicon\\.ico|robots\\.txt|placeholder\\.svg).*)",
+      "source": "/(.*)",
       "destination": "/index.html"
     }
   ],
