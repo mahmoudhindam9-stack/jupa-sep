@@ -436,35 +436,6 @@ function MenuPage() {
         created_at: alertPayload.created_at,
       });
 
-      // 4. Broadcast via Supabase Realtime to Captain page
-      const channel = supabase.channel("orders_channel");
-      await new Promise<void>((resolve) => {
-        let done = false;
-        const finish = () => {
-          if (!done) {
-            done = true;
-            resolve();
-          }
-        };
-        channel.subscribe(async (status) => {
-          if (status === "SUBSCRIBED") {
-            try {
-              await channel.send({
-                type: "broadcast",
-                event: "TABLE_ASSISTANCE_REQUEST",
-                payload: alertPayload,
-              });
-            } finally {
-              supabase.removeChannel(channel);
-              finish();
-            }
-          }
-        });
-        setTimeout(() => {
-          supabase.removeChannel(channel);
-          finish();
-        }, 1800);
-      });
     } catch (e) {
       console.warn("Assistance request sync warning:", e);
     } finally {
@@ -625,40 +596,6 @@ function MenuPage() {
       }
     } catch (error) {
       console.warn("Self-order database persistence warning:", error);
-    }
-
-    // 3. Broadcast to Captain via Supabase Realtime Channel
-    try {
-      const channel = supabase.channel("orders_channel");
-      await new Promise<void>((resolve) => {
-        let settled = false;
-        const finish = () => {
-          if (!settled) {
-            settled = true;
-            resolve();
-          }
-        };
-        channel.subscribe(async (status) => {
-          if (status === "SUBSCRIBED") {
-            try {
-              await channel.send({
-                type: "broadcast",
-                event: "NEW_ORDER",
-                payload: orderPayload,
-              });
-            } finally {
-              supabase.removeChannel(channel);
-              finish();
-            }
-          }
-        });
-        setTimeout(() => {
-          supabase.removeChannel(channel);
-          finish();
-        }, 1800);
-      });
-    } catch (e) {
-      console.warn("Realtime broadcast warning:", e);
     }
 
     setTrackingToken(trackingTokenForOrder);

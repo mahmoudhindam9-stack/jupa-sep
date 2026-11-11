@@ -784,12 +784,6 @@ function CaptainPage() {
 
     const channel = supabase
       .channel("orders_channel")
-      .on("broadcast", { event: "NEW_ORDER" }, (payload) => {
-        attachIncomingSelfOrderToTable(payload.payload, true);
-      })
-      .on("broadcast", { event: "TABLE_ASSISTANCE_REQUEST" }, (payload) => {
-        upsertAssistanceAlert(payload.payload, true);
-      })
       .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, (payload) => {
         if (payload.new) {
           attachIncomingSelfOrderToTable(payload.new, true);
