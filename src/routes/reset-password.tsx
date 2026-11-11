@@ -42,36 +42,45 @@ function ResetPasswordPage() {
           throw new Error(decodeURIComponent(urlError.replace(/\+/g, " ")));
         }
 
-        let authError: Error | null = null;
         const tokenHash = query.get("token_hash");
         const code = query.get("code");
         const accessToken = hash.get("access_token");
         const refreshToken = hash.get("refresh_token");
 
+        // Verify token-hash links explicitly. For PKCE and implicit links, let
+        // supabase-js first process the browser URL during getSession(); doing
+        // exchangeCodeForSession() before this can race with its automatic
+        // callback handling and consume the one-time PKCE code twice.
         if (tokenHash) {
-          const result = await supabase.auth.verifyOtp({
+          const { error: verifyError } = await supabase.auth.verifyOtp({
             type: "recovery",
             token_hash: tokenHash,
           });
-          authError = result.error;
-        } else if (code) {
-          const result = await supabase.auth.exchangeCodeForSession(code);
-          authError = result.error;
-        } else if (accessToken && refreshToken) {
-          const result = await supabase.auth.setSession({
+          if (verifyError) throw verifyError;
+        }
+
+        const initialSession = await supabase.auth.getSession();
+        if (initialSession.error) throw initialSession.error;
+        let session = initialSession.data.session;
+
+        // Compatibility fallback for clients that did not auto-detect a URL
+        // callback. Only attempt the one-time exchange when no session exists.
+        if (!session && code) {
+          const { data, error: exchangeError } =
+            await supabase.auth.exchangeCodeForSession(code);
+          if (exchangeError) throw exchangeError;
+          session = data.session;
+        }
+
+        if (!session && accessToken && refreshToken) {
+          const { data, error: setSessionError } = await supabase.auth.setSession({
             access_token: accessToken,
             refresh_token: refreshToken,
           });
-          authError = result.error;
+          if (setSessionError) throw setSessionError;
+          session = data.session;
         }
 
-        if (authError) throw authError;
-
-        const {
-          data: { session },
-          error: sessionError,
-        } = await supabase.auth.getSession();
-        if (sessionError) throw sessionError;
         if (!session?.user?.id) {
           throw new Error(
             "رابط الاستعادة غير صالح أو انتهت صلاحيته. ارجع إلى تسجيل الدخول واطلب رابطًا جديدًا.",
