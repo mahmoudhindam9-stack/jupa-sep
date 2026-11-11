@@ -155,9 +155,9 @@ function LoginPage() {
     if (savedRemember) {
       const savedUser = localStorage.getItem("restocash_saved_username");
       if (savedUser) setUsername(savedUser);
-      // Never restore or keep a plaintext password in browser storage.
-      localStorage.removeItem("restocash_saved_password");
     }
+    // Remove any plaintext password left by older versions, regardless of remember-me state.
+    localStorage.removeItem("restocash_saved_password");
 
     const currentLocalUsers = localLoginUsers();
     setHasLocalAccounts(currentLocalUsers.length > 0);
