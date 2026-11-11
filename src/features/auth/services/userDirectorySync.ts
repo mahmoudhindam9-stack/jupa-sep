@@ -59,7 +59,14 @@ export async function pushUsersDirectorySnapshotToSupabase(
     );
     // User-directory audit snapshots must never contain passwords or credential material.
     const safeUsers = currentUsers.map((user) => {
-      const { password: _password, password_hash: _passwordHash, ...safeUser } = user as any;
+      const {
+        password: _password,
+        password_hash: _passwordHash,
+        hashed_password: _hashedPassword,
+        access_token: _accessToken,
+        refresh_token: _refreshToken,
+        ...safeUser
+      } = user as any;
       return safeUser;
     });
     const state = erpStore.getState();
@@ -134,7 +141,14 @@ export async function pullUsersDirectorySnapshotFromSupabase(): Promise<{
 
     return {
       users: meta.users.map((user: any) => {
-        const { password: _password, password_hash: _passwordHash, ...safeUser } = user || {};
+        const {
+          password: _password,
+          password_hash: _passwordHash,
+          hashed_password: _hashedPassword,
+          access_token: _accessToken,
+          refresh_token: _refreshToken,
+          ...safeUser
+        } = user || {};
         return safeUser as SystemUser;
       }),
       userPermissions: (meta.userPermissions || {}) as Record<string, any>,
