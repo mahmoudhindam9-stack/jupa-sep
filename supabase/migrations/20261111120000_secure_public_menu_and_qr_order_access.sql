@@ -3,6 +3,28 @@
 -- and retrieve a single sanitized order using its high-entropy tracking token.
 
 BEGIN;
+ 
+-- Resolve one managed username to its Auth email without exposing profiles-table reads.
+-- Supabase Auth still validates the password and applies its normal sign-in rate limits.
+CREATE OR REPLACE FUNCTION public.resolve_managed_login_email(p_username TEXT)
+RETURNS TEXT
+LANGUAGE SQL
+STABLE
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $resolve_managed_login_email$
+  SELECT lower(trim(u.email))
+  FROM public.profiles AS p
+  JOIN auth.users AS u ON u.id = p.id
+  WHERE lower(trim(COALESCE(p.username, ''))) = lower(trim(COALESCE(p_username, '')))
+    AND COALESCE(trim(u.email), '') <> ''
+    AND COALESCE(trim(p_username), '') ~ '^[a-zA-Z0-9._-]{3,32}$'
+  LIMIT 1;
+$resolve_managed_login_email$;
+
+REVOKE ALL ON FUNCTION public.resolve_managed_login_email(TEXT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.resolve_managed_login_email(TEXT) TO anon, authenticated;
+
 
 -- 1. Enable RLS for operational tables that were still exposed without it.
 DO $$
@@ -86,27 +108,78 @@ GRANT ALL ON TABLE
   public.warehouse_transfers
 TO authenticated;
 
--- Signed-in staff use the ERP tables; anonymous customers do not.
+-- Permission-aware RLS: an authenticated session alone is not enough.
+CREATE OR REPLACE FUNCTION public.current_user_has_any_permission(p_keys TEXT[])
+RETURNS BOOLEAN
+LANGUAGE SQL
+STABLE
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $current_user_has_any_permission$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.profiles AS p
+    WHERE p.id = auth.uid()
+      AND (
+        p.role IN ('admin', 'super_admin', 'manager')
+        OR COALESCE(p.permissions ->> 'super_admin_full_access', 'false') = 'true'
+        OR EXISTS (
+          SELECT 1
+          FROM unnest(COALESCE(p_keys, ARRAY[]::TEXT[])) AS permission_key
+          WHERE COALESCE(p.permissions ->> permission_key, 'false') = 'true'
+        )
+      )
+  );
+$current_user_has_any_permission$;
+
+REVOKE ALL ON FUNCTION public.current_user_has_any_permission(TEXT[]) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.current_user_has_any_permission(TEXT[]) TO authenticated;
+
 DO $$
 DECLARE
   v_table TEXT;
+  v_read_keys TEXT[];
+  v_write_keys TEXT[];
 BEGIN
   FOREACH v_table IN ARRAY ARRAY[
-    'inventory',
-    'inventory_transactions',
-    'tables',
-    'purchase_orders',
-    'purchase_order_items',
-    'warehouse_inventory',
-    'warehouses',
-    'warehouse_transfers'
+    'inventory', 'inventory_transactions', 'warehouse_inventory', 'warehouses', 'warehouse_transfers'
   ] LOOP
+    v_read_keys := ARRAY['inventory', 'inventory_view'];
+    v_write_keys := ARRAY['inventory', 'inventory_adjust_transfer', 'inventory_waste_dispose', 'branch_mgmt'];
     EXECUTE format(
-      'CREATE POLICY %I ON public.%I FOR ALL TO authenticated USING (auth.uid() IS NOT NULL) WITH CHECK (auth.uid() IS NOT NULL)',
-      v_table || '_authenticated_access',
-      v_table
+      'CREATE POLICY %I ON public.%I FOR SELECT TO authenticated USING (public.current_user_has_any_permission(%L::text[]))',
+      v_table || '_authorized_read', v_table, v_read_keys::text
+    );
+    EXECUTE format(
+      'CREATE POLICY %I ON public.%I FOR ALL TO authenticated USING (public.current_user_has_any_permission(%L::text[])) WITH CHECK (public.current_user_has_any_permission(%L::text[]))',
+      v_table || '_authorized_write', v_table, v_write_keys::text, v_write_keys::text
     );
   END LOOP;
+
+  v_read_keys := ARRAY['purchasing', 'purchasing_view'];
+  v_write_keys := ARRAY['purchasing', 'purchasing_add_invoice', 'purchasing_returns'];
+  FOREACH v_table IN ARRAY ARRAY['purchase_orders', 'purchase_order_items'] LOOP
+    EXECUTE format(
+      'CREATE POLICY %I ON public.%I FOR SELECT TO authenticated USING (public.current_user_has_any_permission(%L::text[]))',
+      v_table || '_authorized_read', v_table, v_read_keys::text
+    );
+    EXECUTE format(
+      'CREATE POLICY %I ON public.%I FOR ALL TO authenticated USING (public.current_user_has_any_permission(%L::text[])) WITH CHECK (public.current_user_has_any_permission(%L::text[]))',
+      v_table || '_authorized_write', v_table, v_write_keys::text, v_write_keys::text
+    );
+  END LOOP;
+
+  v_read_keys := ARRAY['page_restaurant_tables', 'captain', 'captain_access', 'pos', 'orders', 'orders_view'];
+  v_write_keys := ARRAY['page_restaurant_tables', 'captain', 'captain_access', 'captain_transfer_tables', 'pos'];
+  v_table := 'tables';
+  EXECUTE format(
+    'CREATE POLICY %I ON public.%I FOR SELECT TO authenticated USING (public.current_user_has_any_permission(%L::text[]))',
+    v_table || '_authorized_read', v_table, v_read_keys::text
+  );
+  EXECUTE format(
+    'CREATE POLICY %I ON public.%I FOR ALL TO authenticated USING (public.current_user_has_any_permission(%L::text[])) WITH CHECK (public.current_user_has_any_permission(%L::text[]))',
+    v_table || '_authorized_write', v_table, v_write_keys::text, v_write_keys::text
+  );
 END;
 $$;
 
@@ -126,8 +199,8 @@ CREATE POLICY menu_categories_public_read
 CREATE POLICY menu_categories_authenticated_manage
   ON public.menu_categories
   FOR ALL TO authenticated
-  USING (auth.uid() IS NOT NULL)
-  WITH CHECK (auth.uid() IS NOT NULL);
+  USING (public.is_manager_or_admin())
+  WITH CHECK (public.is_manager_or_admin());
 
 CREATE POLICY menu_items_public_read
   ON public.menu_items
@@ -137,8 +210,8 @@ CREATE POLICY menu_items_public_read
 CREATE POLICY menu_items_authenticated_manage
   ON public.menu_items
   FOR ALL TO authenticated
-  USING (auth.uid() IS NOT NULL)
-  WITH CHECK (auth.uid() IS NOT NULL);
+  USING (public.is_manager_or_admin())
+  WITH CHECK (public.is_manager_or_admin());
 
 -- Recipes and ingredient quantities are staff-only, even though menu products are public.
 REVOKE ALL ON TABLE public.recipes, public.recipe_ingredients FROM PUBLIC, anon;
@@ -147,7 +220,7 @@ GRANT ALL ON TABLE public.recipes, public.recipe_ingredients TO authenticated;
 CREATE POLICY recipes_authenticated_read
   ON public.recipes
   FOR SELECT TO authenticated
-  USING (auth.uid() IS NOT NULL);
+  USING (public.current_user_has_any_permission(ARRAY['inventory','inventory_view','page_restaurant_menu','production','production_view','accounting','accounting_view','reports_view_financials']));
 
 CREATE POLICY recipes_manager_write
   ON public.recipes
@@ -158,7 +231,7 @@ CREATE POLICY recipes_manager_write
 CREATE POLICY recipe_ingredients_authenticated_read
   ON public.recipe_ingredients
   FOR SELECT TO authenticated
-  USING (auth.uid() IS NOT NULL);
+  USING (public.current_user_has_any_permission(ARRAY['inventory','inventory_view','page_restaurant_menu','production','production_view','accounting','accounting_view','reports_view_financials']));
 
 CREATE POLICY recipe_ingredients_manager_write
   ON public.recipe_ingredients
@@ -176,23 +249,23 @@ GRANT USAGE, SELECT ON SEQUENCE public.orders_order_number_seq TO anon, authenti
 CREATE POLICY orders_authenticated_select
   ON public.orders
   FOR SELECT TO authenticated
-  USING (auth.uid() IS NOT NULL);
+  USING (public.current_user_has_any_permission(ARRAY['orders','orders_view','pos','captain','kitchen','delivery','reports','accounting']));
 
 CREATE POLICY orders_authenticated_insert
   ON public.orders
   FOR INSERT TO authenticated
-  WITH CHECK (auth.uid() IS NOT NULL);
+  WITH CHECK (public.current_user_has_any_permission(ARRAY['orders','orders_create_custom','pos','pos_access','captain','captain_access','captain_create_order','delivery','delivery_update_status']));
 
 CREATE POLICY orders_authenticated_update
   ON public.orders
   FOR UPDATE TO authenticated
-  USING (auth.uid() IS NOT NULL)
-  WITH CHECK (auth.uid() IS NOT NULL);
+  USING (public.current_user_has_any_permission(ARRAY['orders','orders_cancel_modify','pos','pos_access','captain','captain_modify_items','kitchen','kitchen_modify_order','kitchen_change_status','delivery','delivery_update_status']))
+  WITH CHECK (public.current_user_has_any_permission(ARRAY['orders','orders_cancel_modify','pos','pos_access','captain','captain_modify_items','kitchen','kitchen_modify_order','kitchen_change_status','delivery','delivery_update_status']));
 
 CREATE POLICY orders_authenticated_delete
   ON public.orders
   FOR DELETE TO authenticated
-  USING (auth.uid() IS NOT NULL);
+  USING (public.current_user_has_any_permission(ARRAY['orders_cancel_modify']));
 
 CREATE POLICY orders_anon_qr_insert
   ON public.orders
@@ -264,22 +337,59 @@ GRANT EXECUTE ON FUNCTION public.get_customer_order_status(TEXT) TO anon, authen
 REVOKE ALL ON TABLE public.shift_audit_logs FROM PUBLIC, anon;
 GRANT SELECT, INSERT ON TABLE public.shift_audit_logs TO authenticated;
 
+-- Remove credentials left in historical directory snapshots before tightening access.
+UPDATE public.shift_audit_logs AS l
+SET metadata = jsonb_set(
+  l.metadata,
+  '{users}',
+  COALESCE((
+    SELECT jsonb_agg(u - 'password' - 'password_hash' - 'hashed_password' - 'access_token' - 'refresh_token')
+    FROM jsonb_array_elements(COALESCE(l.metadata->'users', '[]'::jsonb)) AS u
+  ), '[]'::jsonb),
+  true
+)
+WHERE l.shift_id = 'GLOBAL_USERS_DIRECTORY_SYNC_V1'
+  AND jsonb_typeof(l.metadata->'users') = 'array'
+  AND EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements(l.metadata->'users') AS u
+    WHERE u ?| ARRAY['password','password_hash','hashed_password','access_token','refresh_token']
+  );
+
 CREATE POLICY shift_audit_logs_authenticated_insert
   ON public.shift_audit_logs
   FOR INSERT TO authenticated
-  WITH CHECK (auth.uid() IS NOT NULL);
+  WITH CHECK (
+    auth.uid() IS NOT NULL
+    AND (
+      shift_id IS DISTINCT FROM 'GLOBAL_USERS_DIRECTORY_SYNC_V1'
+      OR public.current_user_can_manage_profiles()
+    )
+  );
 
 CREATE POLICY shift_audit_logs_role_based_read
   ON public.shift_audit_logs
   FOR SELECT TO authenticated
   USING (
-    public.current_user_can_manage_profiles()
-    OR EXISTS (
+    shift_id IS DISTINCT FROM 'GLOBAL_USERS_DIRECTORY_SYNC_V1'
+    AND EXISTS (
       SELECT 1
       FROM public.profiles AS p
       WHERE p.id = auth.uid()
-        AND p.role IN ('admin', 'super_admin', 'manager', 'accountant')
+        AND (
+          p.role IN ('admin', 'super_admin', 'manager', 'accountant')
+          OR COALESCE(p.permissions ->> 'audit_logs', 'false') = 'true'
+          OR COALESCE(p.permissions ->> 'system_audit_logs', 'false') = 'true'
+        )
     )
+  );
+
+CREATE POLICY shift_audit_logs_users_directory_read
+  ON public.shift_audit_logs
+  FOR SELECT TO authenticated
+  USING (
+    shift_id = 'GLOBAL_USERS_DIRECTORY_SYNC_V1'
+    AND public.current_user_can_manage_profiles()
   );
 
 -- 7. Clean up anonymous/PUBLIC grants on accounting tables that already have RLS.
