@@ -395,23 +395,6 @@ export function CaptainSelfOrderPanel({
       })
       .subscribe();
 
-    const broadcastCh = supabase
-      .channel("orders_channel")
-      .on("broadcast", { event: "NEW_ORDER" }, () => {
-        queryClient.invalidateQueries({ queryKey: ["captain-self-orders"] });
-      })
-      .on("broadcast", { event: "TABLE_ASSISTANCE_REQUEST" }, (payload) => {
-        const alertData = payload?.payload as TableAssistanceAlert;
-        if (!alertData) return;
-        setAssistanceAlerts((prev) => {
-          if (prev.some((a) => a.id === alertData.id)) return prev;
-          const next = [alertData, ...prev];
-          saveAssistanceAlerts(next);
-          return next;
-        });
-      })
-      .subscribe();
-
     let bc: BroadcastChannel | null = null;
     if (typeof BroadcastChannel !== "undefined") {
       bc = new BroadcastChannel("restocash_self_orders_bc");
@@ -450,7 +433,6 @@ export function CaptainSelfOrderPanel({
 
     return () => {
       supabase.removeChannel(ch);
-      supabase.removeChannel(broadcastCh);
       bc?.close();
       unsubStore();
       if (typeof window !== "undefined") {

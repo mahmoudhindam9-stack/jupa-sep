@@ -57,13 +57,8 @@ async function signInHostedUser(username: string, password: string) {
     return uName === normalized || (Boolean(uEmail) && uEmail === normalized);
   });
 
-  const candidates = normalized.includes("@")
-    ? [
-        normalized,
-        ...(normalized === "admin@juba.com" || normalized === "admin@restocash.local"
-          ? ["admin@restocash.com"]
-          : []),
-      ]
+  const candidates: string[] = normalized.includes("@")
+    ? [normalized]
     : [
         ...(matchedLocalUser?.email ? [matchedLocalUser.email.trim().toLowerCase()] : []),
         `${normalized}@restocash.com`,
@@ -73,6 +68,23 @@ async function signInHostedUser(username: string, password: string) {
           ? ["admin@restocash.com", "admin@juba.com", "mahmoudhindam9@gmail.com"]
           : []),
       ];
+
+  // The Users directory is private before authentication. Resolve a single username
+  // through a narrowly scoped RPC so login works on a clean browser without exposing
+  // profiles or depending on a stale localStorage cache.
+  if (!normalized.includes("@")) {
+    try {
+      const { data: resolvedEmail, error: resolveError } = await (supabase as any).rpc(
+        "resolve_managed_login_email",
+        { p_username: normalized },
+      );
+      if (!resolveError && typeof resolvedEmail === "string" && resolvedEmail.includes("@")) {
+        candidates.unshift(resolvedEmail.trim().toLowerCase());
+      }
+    } catch (resolveError) {
+      console.warn("Could not resolve username for hosted sign-in.", resolveError);
+    }
+  }
 
   for (const email of Array.from(new Set(candidates))) {
     try {
@@ -90,7 +102,7 @@ async function signInHostedUser(username: string, password: string) {
       }
       return { session: data.session, email, profile };
     } catch {
-      // Try next candidate
+      // Try the next supported email candidate.
     }
   }
 
@@ -142,10 +154,10 @@ function LoginPage() {
     setRememberMe(savedRemember);
     if (savedRemember) {
       const savedUser = localStorage.getItem("restocash_saved_username");
-      const savedPass = localStorage.getItem("restocash_saved_password");
       if (savedUser) setUsername(savedUser);
-      if (savedPass) setPassword(savedPass);
     }
+    // Remove any plaintext password left by older versions, regardless of remember-me state.
+    localStorage.removeItem("restocash_saved_password");
 
     const currentLocalUsers = localLoginUsers();
     setHasLocalAccounts(currentLocalUsers.length > 0);
@@ -477,7 +489,7 @@ function LoginPage() {
     const persistRememberedCredentials = () => {
       if (rememberMe) {
         localStorage.setItem("restocash_saved_username", username.trim());
-        localStorage.setItem("restocash_saved_password", password);
+        localStorage.removeItem("restocash_saved_password");
       } else {
         localStorage.removeItem("restocash_saved_username");
         localStorage.removeItem("restocash_saved_password");
@@ -485,12 +497,10 @@ function LoginPage() {
     };
 
     try {
-      // 1. Always attempt Supabase Auth + public.profiles login first on ANY host (with 2.5s timeout so local login is never blocked)
+      // 1. Always complete the hosted username/email lookup and Supabase Auth attempt first.
+      // Do not abandon a valid sign-in merely because network latency exceeds an arbitrary timeout.
       try {
-        const authenticated = await Promise.race([
-          signInHostedUser(normalizedUsername, normalizedPassword),
-          new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 2500)),
-        ]);
+        const authenticated = await signInHostedUser(normalizedUsername, normalizedPassword);
         if (authenticated && "session" in authenticated && authenticated.session?.user?.id) {
           const { session, profile, email } = authenticated;
           const activeUsername = String(
