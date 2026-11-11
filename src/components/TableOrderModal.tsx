@@ -73,7 +73,7 @@ export function TableOrderModal({
   onOrderSent?: () => void;
   onChangeTableStatus?: (status: "available" | "occupied" | "cleaning") => void;
 }) {
-  const { lang, formatPrice } = useSettings();
+  const { lang, formatPrice, currency, exchangeRates } = useSettings();
   const { toast } = useToast();
   const t = translations[lang];
 
