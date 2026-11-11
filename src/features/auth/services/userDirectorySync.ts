@@ -57,6 +57,11 @@ export async function pushUsersDirectorySnapshotToSupabase(
         Boolean(u?.id && u?.username) &&
         !deletedSet.has(String(u.username || "").trim().toLowerCase()),
     );
+    // User-directory audit snapshots must never contain passwords or credential material.
+    const safeUsers = currentUsers.map((user) => {
+      const { password: _password, password_hash: _passwordHash, ...safeUser } = user as any;
+      return safeUser;
+    });
     const state = erpStore.getState();
     const userPermissions = state.userPermissions || {};
 
@@ -72,7 +77,7 @@ export async function pushUsersDirectorySnapshotToSupabase(
       performed_by: state.currentUser || "admin",
       details: `مزامنة تلقائية لدليل المستخدمين والصلاحيات (${currentUsers.length} مستخدم)`,
       metadata: {
-        users: currentUsers,
+        users: safeUsers,
         userPermissions,
         deletedUsernames,
         updatedAt: Date.now(),
@@ -128,7 +133,10 @@ export async function pullUsersDirectorySnapshotFromSupabase(): Promise<{
     }
 
     return {
-      users: meta.users as SystemUser[],
+      users: meta.users.map((user: any) => {
+        const { password: _password, password_hash: _passwordHash, ...safeUser } = user || {};
+        return safeUser as SystemUser;
+      }),
       userPermissions: (meta.userPermissions || {}) as Record<string, any>,
       deletedUsernames: remoteDeleted,
       updatedAt: Number(meta.updatedAt || Date.parse(row.created_at) || Date.now()),
