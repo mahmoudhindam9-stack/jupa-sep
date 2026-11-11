@@ -147,7 +147,7 @@ export function RestaurantCashierTreasuryModal({
       </body>
       </html>
     `;
-    printRawHtml(html, "بيان رصيد خزينة الكاشير");
+    printRawHtml(html);
   };
 
   return (
