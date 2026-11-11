@@ -147,6 +147,12 @@ function LoginPage() {
   const [bootstrapConfirm, setBootstrapConfirm] = useState("");
   const [showBootstrapPassword, setShowBootstrapPassword] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [showRecoveryForm, setShowRecoveryForm] = useState(false);
+  const [recoveryEmail, setRecoveryEmail] = useState("");
+  const [recoveryLoading, setRecoveryLoading] = useState(false);
+  const [recoveryError, setRecoveryError] = useState("");
+  const [recoveryNotice, setRecoveryNotice] = useState("");
+  const [bootstrapWorkflowRequired, setBootstrapWorkflowRequired] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
@@ -162,23 +168,44 @@ function LoginPage() {
     const currentLocalUsers = localLoginUsers();
     setHasLocalAccounts(currentLocalUsers.length > 0);
 
-    void syncUsersDirectoryWithDatabase().then(() => {
-      setHasLocalAccounts(localLoginUsers().length > 0);
-    });
-
-    if (!isHostedDeployment() || currentLocalUsers.length > 0) {
+    // On hosted deployments, Supabase is authoritative. A stale browser cache
+    // must never hide the first-admin form after the last remote account is deleted.
+    // Check the server before syncing/using the local directory.
+    if (!isHostedDeployment()) {
+      void syncUsersDirectoryWithDatabase().then(() => {
+        setHasLocalAccounts(localLoginUsers().length > 0);
+      });
       setIsBootstrapChecked(true);
       return;
     }
 
     void authService
       .isInitialAdminSetupAvailable()
-      .then((available) => {
+      .then(async (available) => {
         setBootstrapAvailable(available);
+
+        if (available) {
+          // The server confirms both auth.users and profiles are empty. Discard
+          // stale local users and pending directory writes so they cannot mask or
+          // interfere with the one-time first-admin bootstrap flow.
+          resetLocalManagedUserDirectoryForBootstrap();
+          setHasLocalAccounts(false);
+          return;
+        }
+
+        // Only hydrate the local directory after Supabase confirms the system
+        // already has an account. Local storage is never used to decide bootstrap.
+        const syncResult = await syncUsersDirectoryWithDatabase();
+        setHasLocalAccounts(
+          syncResult.users.length > 0 || localLoginUsers().length > 0,
+        );
       })
       .catch((cause) => {
-        console.warn("Could not check initial Supabase user directory; falling back to local directory.", cause);
-        setBootstrapCheckFailed(false);
+        console.error("Could not verify the hosted Supabase user directory.", cause);
+        setError(
+          "تعذر التحقق من حسابات Supabase. تحقق من الاتصال ثم أعد تحميل الصفحة؛ لن نستخدم حسابات محلية قديمة لتجاوز تسجيل الدخول.",
+        );
+        setBootstrapCheckFailed(true);
       })
       .finally(() => setIsBootstrapChecked(true));
   }, []);
@@ -292,12 +319,22 @@ function LoginPage() {
       void Promise.race([continueWithHostedSession(), timeoutPromise])
         .then((restored) => {
           if (!restored) {
-            checkStoredLocalSession();
+            // Hosted authentication must always be backed by a live Supabase session.
+            // Never let stale localStorage/sessionStorage bypass a deleted or disabled account.
+            localStorage.removeItem("restocash_auth_user");
+            localStorage.removeItem("restocash_user_role");
+            sessionStorage.removeItem("restocash_auth_user");
+            sessionStorage.removeItem("restocash_user_role");
+            erpStore.setCurrentUser("");
           }
         })
         .catch((cause) => {
-          console.warn("Hosted session restoration failed, checking local session.", cause);
-          checkStoredLocalSession();
+          console.warn("Hosted Supabase session restoration failed.", cause);
+          localStorage.removeItem("restocash_auth_user");
+          localStorage.removeItem("restocash_user_role");
+          sessionStorage.removeItem("restocash_auth_user");
+          sessionStorage.removeItem("restocash_user_role");
+          erpStore.setCurrentUser("");
         });
       return;
     }
@@ -369,6 +406,7 @@ function LoginPage() {
     event.preventDefault();
     setError(null);
     setNotice(null);
+    setBootstrapWorkflowRequired(false);
     setLoading(true);
 
     const fullName = bootstrapFullName.trim();
@@ -469,9 +507,44 @@ function LoginPage() {
       erpStore.setCurrentUser(activeUsername);
       navigate({ to: "/admin/users" });
     } catch (cause: any) {
-      setError(userValidationErrorMessage(cause) || "تعذر إنشاء المدير الأول في Supabase.");
+      const message = String(cause?.message || "");
+      if (/signups?\s+not allowed|signup.*disabled/i.test(message)) {
+        setError(null);
+        setNotice(
+          "التسجيل العام في Supabase مغلق لحماية النظام. لا تفتح التسجيل للعامة؛ أنشئ المدير الأول من مسار Bootstrap الآمن في GitHub Actions، ثم ارجع وسجّل الدخول بحساب admin.",
+        );
+        setBootstrapWorkflowRequired(true);
+      } else {
+        setError(userValidationErrorMessage(cause) || "تعذر إنشاء المدير الأول في Supabase.");
+      }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const sendPasswordRecovery = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setRecoveryError("");
+    setRecoveryNotice("");
+    const email = recoveryEmail.trim().toLowerCase();
+    if (!email || !email.includes("@")) {
+      setRecoveryError("أدخل البريد الإلكتروني المرتبط بحساب المستخدم.");
+      return;
+    }
+
+    setRecoveryLoading(true);
+    try {
+      const { error: recoveryRequestError } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (recoveryRequestError) throw recoveryRequestError;
+      setRecoveryNotice(
+        "لو كان البريد مرتبطًا بحساب، ستصلك رسالة استعادة. افتح أحدث رسالة على نفس الجهاز أو المتصفح.",
+      );
+    } catch (cause: any) {
+      setRecoveryError(cause?.message || "تعذر إرسال رابط الاستعادة. حاول مرة أخرى.");
+    } finally {
+      setRecoveryLoading(false);
     }
   };
 
@@ -935,12 +1008,22 @@ function LoginPage() {
           </div>
 
           {notice && (
-            <p
+            <div
               role="status"
-              className="text-xs text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 p-3 rounded-xl border border-emerald-500/20 text-center font-semibold"
+              className="text-xs text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 p-3 rounded-xl border border-emerald-500/20 text-center font-semibold space-y-2"
             >
-              {notice}
-            </p>
+              <p>{notice}</p>
+              {bootstrapWorkflowRequired && (
+                <a
+                  href="https://github.com/mahmoudhindam9-stack/jupa-sep/actions/workflows/bootstrap-admin.yml"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center rounded-lg border border-current px-3 py-2 font-extrabold underline underline-offset-2"
+                >
+                  فتح مسار إنشاء المدير الآمن في GitHub
+                </a>
+              )}
+            </div>
           )}
           {error && (
             <p className="text-xs text-destructive bg-destructive/10 p-3 rounded-xl border border-destructive/20 text-center font-bold">
@@ -961,6 +1044,72 @@ function LoginPage() {
                 : "تسجيل الدخول"}
           </Button>
         </form>
+
+        {!showRecoveryForm ? (
+          <div className="text-center -mt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setRecoveryEmail(username.includes("@") ? username.trim() : "");
+                setRecoveryError("");
+                setRecoveryNotice("");
+                setShowRecoveryForm(true);
+              }}
+              className="text-sm font-semibold text-primary hover:underline"
+            >
+              {isEn ? "Forgot your password?" : "نسيت كلمة المرور؟"}
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={sendPasswordRecovery} className="space-y-3 rounded-xl border border-border bg-muted/30 p-4">
+            <div className="space-y-1 text-center">
+              <p className="font-bold">{isEn ? "Recover account" : "استعادة الحساب"}</p>
+              <p className="text-xs text-muted-foreground">
+                {isEn
+                  ? "Enter the email linked to the account. The link will return to this app."
+                  : "اكتب البريد المرتبط بالحساب. رابط الاستعادة سيعود إلى هذه الصفحة داخل التطبيق."}
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="recovery-email">{isEn ? "Account email" : "البريد الإلكتروني للحساب"}</Label>
+              <Input
+                id="recovery-email"
+                type="email"
+                value={recoveryEmail}
+                onChange={(event) => setRecoveryEmail(event.target.value)}
+                autoComplete="email"
+                required
+                dir="ltr"
+                className="h-10 bg-background"
+                placeholder="name@example.com"
+              />
+            </div>
+            {recoveryError && (
+              <p role="alert" className="rounded-lg border border-destructive/20 bg-destructive/10 p-2 text-xs text-destructive">
+                {recoveryError}
+              </p>
+            )}
+            {recoveryNotice && (
+              <p role="status" className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-2 text-xs text-emerald-700 dark:text-emerald-300">
+                {recoveryNotice}
+              </p>
+            )}
+            <Button type="submit" className="w-full" disabled={recoveryLoading}>
+              {recoveryLoading
+                ? (isEn ? "Sending…" : "جارٍ إرسال الرابط…")
+                : (isEn ? "Send recovery link" : "إرسال رابط الاستعادة")}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={() => setShowRecoveryForm(false)}
+              disabled={recoveryLoading}
+            >
+              {isEn ? "Back to sign in" : "العودة لتسجيل الدخول"}
+            </Button>
+          </form>
+        )}
       </div>
     </div>
   );
