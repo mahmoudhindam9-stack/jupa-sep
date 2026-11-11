@@ -147,6 +147,11 @@ function LoginPage() {
   const [bootstrapConfirm, setBootstrapConfirm] = useState("");
   const [showBootstrapPassword, setShowBootstrapPassword] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [showRecoveryForm, setShowRecoveryForm] = useState(false);
+  const [recoveryEmail, setRecoveryEmail] = useState("");
+  const [recoveryLoading, setRecoveryLoading] = useState(false);
+  const [recoveryError, setRecoveryError] = useState("");
+  const [recoveryNotice, setRecoveryNotice] = useState("");
 
   useEffect(() => {
     setIsMounted(true);
@@ -472,6 +477,32 @@ function LoginPage() {
       setError(userValidationErrorMessage(cause) || "تعذر إنشاء المدير الأول في Supabase.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const sendPasswordRecovery = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setRecoveryError("");
+    setRecoveryNotice("");
+    const email = recoveryEmail.trim().toLowerCase();
+    if (!email || !email.includes("@")) {
+      setRecoveryError("أدخل البريد الإلكتروني المرتبط بحساب المستخدم.");
+      return;
+    }
+
+    setRecoveryLoading(true);
+    try {
+      const { error: recoveryRequestError } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (recoveryRequestError) throw recoveryRequestError;
+      setRecoveryNotice(
+        "لو كان البريد مرتبطًا بحساب، ستصلك رسالة استعادة. افتح أحدث رسالة على نفس الجهاز أو المتصفح.",
+      );
+    } catch (cause: any) {
+      setRecoveryError(cause?.message || "تعذر إرسال رابط الاستعادة. حاول مرة أخرى.");
+    } finally {
+      setRecoveryLoading(false);
     }
   };
 
@@ -961,6 +992,72 @@ function LoginPage() {
                 : "تسجيل الدخول"}
           </Button>
         </form>
+
+        {!showRecoveryForm ? (
+          <div className="text-center -mt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setRecoveryEmail(username.includes("@") ? username.trim() : "");
+                setRecoveryError("");
+                setRecoveryNotice("");
+                setShowRecoveryForm(true);
+              }}
+              className="text-sm font-semibold text-primary hover:underline"
+            >
+              {isEn ? "Forgot your password?" : "نسيت كلمة المرور؟"}
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={sendPasswordRecovery} className="space-y-3 rounded-xl border border-border bg-muted/30 p-4">
+            <div className="space-y-1 text-center">
+              <p className="font-bold">{isEn ? "Recover account" : "استعادة الحساب"}</p>
+              <p className="text-xs text-muted-foreground">
+                {isEn
+                  ? "Enter the email linked to the account. The link will return to this app."
+                  : "اكتب البريد المرتبط بالحساب. رابط الاستعادة سيعود إلى هذه الصفحة داخل التطبيق."}
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="recovery-email">{isEn ? "Account email" : "البريد الإلكتروني للحساب"}</Label>
+              <Input
+                id="recovery-email"
+                type="email"
+                value={recoveryEmail}
+                onChange={(event) => setRecoveryEmail(event.target.value)}
+                autoComplete="email"
+                required
+                dir="ltr"
+                className="h-10 bg-background"
+                placeholder="name@example.com"
+              />
+            </div>
+            {recoveryError && (
+              <p role="alert" className="rounded-lg border border-destructive/20 bg-destructive/10 p-2 text-xs text-destructive">
+                {recoveryError}
+              </p>
+            )}
+            {recoveryNotice && (
+              <p role="status" className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-2 text-xs text-emerald-700 dark:text-emerald-300">
+                {recoveryNotice}
+              </p>
+            )}
+            <Button type="submit" className="w-full" disabled={recoveryLoading}>
+              {recoveryLoading
+                ? (isEn ? "Sending…" : "جارٍ إرسال الرابط…")
+                : (isEn ? "Send recovery link" : "إرسال رابط الاستعادة")}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={() => setShowRecoveryForm(false)}
+              disabled={recoveryLoading}
+            >
+              {isEn ? "Back to sign in" : "العودة لتسجيل الدخول"}
+            </Button>
+          </form>
+        )}
       </div>
     </div>
   );
