@@ -167,23 +167,44 @@ function LoginPage() {
     const currentLocalUsers = localLoginUsers();
     setHasLocalAccounts(currentLocalUsers.length > 0);
 
-    void syncUsersDirectoryWithDatabase().then(() => {
-      setHasLocalAccounts(localLoginUsers().length > 0);
-    });
-
-    if (!isHostedDeployment() || currentLocalUsers.length > 0) {
+    // On hosted deployments, Supabase is authoritative. A stale browser cache
+    // must never hide the first-admin form after the last remote account is deleted.
+    // Check the server before syncing/using the local directory.
+    if (!isHostedDeployment()) {
+      void syncUsersDirectoryWithDatabase().then(() => {
+        setHasLocalAccounts(localLoginUsers().length > 0);
+      });
       setIsBootstrapChecked(true);
       return;
     }
 
     void authService
       .isInitialAdminSetupAvailable()
-      .then((available) => {
+      .then(async (available) => {
         setBootstrapAvailable(available);
+
+        if (available) {
+          // The server confirms both auth.users and profiles are empty. Discard
+          // stale local users and pending directory writes so they cannot mask or
+          // interfere with the one-time first-admin bootstrap flow.
+          resetLocalManagedUserDirectoryForBootstrap();
+          setHasLocalAccounts(false);
+          return;
+        }
+
+        // Only hydrate the local directory after Supabase confirms the system
+        // already has an account. Local storage is never used to decide bootstrap.
+        const syncResult = await syncUsersDirectoryWithDatabase();
+        setHasLocalAccounts(
+          syncResult.users.length > 0 || localLoginUsers().length > 0,
+        );
       })
       .catch((cause) => {
-        console.warn("Could not check initial Supabase user directory; falling back to local directory.", cause);
-        setBootstrapCheckFailed(false);
+        console.error("Could not verify the hosted Supabase user directory.", cause);
+        setError(
+          "تعذر التحقق من حسابات Supabase. تحقق من الاتصال ثم أعد تحميل الصفحة؛ لن نستخدم حسابات محلية قديمة لتجاوز تسجيل الدخول.",
+        );
+        setBootstrapCheckFailed(true);
       })
       .finally(() => setIsBootstrapChecked(true));
   }, []);
