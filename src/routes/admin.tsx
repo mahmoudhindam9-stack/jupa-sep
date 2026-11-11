@@ -269,7 +269,7 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
-    const requiresSupabaseSession = false;
+    const requiresSupabaseSession = isHostedDeployment();
 
     const readLocalUser = (storedUser: string) => {
       const normalized = String(storedUser || "")
