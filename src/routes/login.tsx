@@ -508,7 +508,7 @@ function LoginPage() {
       navigate({ to: "/admin/users" });
     } catch (cause: any) {
       const message = String(cause?.message || "");
-      if (/signups?\\s+not allowed|signup.*disabled/i.test(message)) {
+      if (/signups?\s+not allowed|signup.*disabled/i.test(message)) {
         setError(null);
         setNotice(
           "التسجيل العام في Supabase مغلق لحماية النظام. لا تفتح التسجيل للعامة؛ أنشئ المدير الأول من مسار Bootstrap الآمن في GitHub Actions، ثم ارجع وسجّل الدخول بحساب admin.",
