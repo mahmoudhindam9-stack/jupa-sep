@@ -152,6 +152,7 @@ function LoginPage() {
   const [recoveryLoading, setRecoveryLoading] = useState(false);
   const [recoveryError, setRecoveryError] = useState("");
   const [recoveryNotice, setRecoveryNotice] = useState("");
+  const [bootstrapWorkflowRequired, setBootstrapWorkflowRequired] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
@@ -318,12 +319,22 @@ function LoginPage() {
       void Promise.race([continueWithHostedSession(), timeoutPromise])
         .then((restored) => {
           if (!restored) {
-            checkStoredLocalSession();
+            // Hosted authentication must always be backed by a live Supabase session.
+            // Never let stale localStorage/sessionStorage bypass a deleted or disabled account.
+            localStorage.removeItem("restocash_auth_user");
+            localStorage.removeItem("restocash_user_role");
+            sessionStorage.removeItem("restocash_auth_user");
+            sessionStorage.removeItem("restocash_user_role");
+            erpStore.setCurrentUser("");
           }
         })
         .catch((cause) => {
-          console.warn("Hosted session restoration failed, checking local session.", cause);
-          checkStoredLocalSession();
+          console.warn("Hosted Supabase session restoration failed.", cause);
+          localStorage.removeItem("restocash_auth_user");
+          localStorage.removeItem("restocash_user_role");
+          sessionStorage.removeItem("restocash_auth_user");
+          sessionStorage.removeItem("restocash_user_role");
+          erpStore.setCurrentUser("");
         });
       return;
     }
@@ -395,6 +406,7 @@ function LoginPage() {
     event.preventDefault();
     setError(null);
     setNotice(null);
+    setBootstrapWorkflowRequired(false);
     setLoading(true);
 
     const fullName = bootstrapFullName.trim();
@@ -495,7 +507,16 @@ function LoginPage() {
       erpStore.setCurrentUser(activeUsername);
       navigate({ to: "/admin/users" });
     } catch (cause: any) {
-      setError(userValidationErrorMessage(cause) || "تعذر إنشاء المدير الأول في Supabase.");
+      const message = String(cause?.message || "");
+      if (/signups?\\s+not allowed|signup.*disabled/i.test(message)) {
+        setError(null);
+        setNotice(
+          "التسجيل العام في Supabase مغلق لحماية النظام. لا تفتح التسجيل للعامة؛ أنشئ المدير الأول من مسار Bootstrap الآمن في GitHub Actions، ثم ارجع وسجّل الدخول بحساب admin.",
+        );
+        setBootstrapWorkflowRequired(true);
+      } else {
+        setError(userValidationErrorMessage(cause) || "تعذر إنشاء المدير الأول في Supabase.");
+      }
     } finally {
       setLoading(false);
     }
@@ -987,12 +1008,22 @@ function LoginPage() {
           </div>
 
           {notice && (
-            <p
+            <div
               role="status"
-              className="text-xs text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 p-3 rounded-xl border border-emerald-500/20 text-center font-semibold"
+              className="text-xs text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 p-3 rounded-xl border border-emerald-500/20 text-center font-semibold space-y-2"
             >
-              {notice}
-            </p>
+              <p>{notice}</p>
+              {bootstrapWorkflowRequired && (
+                <a
+                  href="https://github.com/mahmoudhindam9-stack/jupa-sep/actions/workflows/bootstrap-admin.yml"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center rounded-lg border border-current px-3 py-2 font-extrabold underline underline-offset-2"
+                >
+                  فتح مسار إنشاء المدير الآمن في GitHub
+                </a>
+              )}
+            </div>
           )}
           {error && (
             <p className="text-xs text-destructive bg-destructive/10 p-3 rounded-xl border border-destructive/20 text-center font-bold">
