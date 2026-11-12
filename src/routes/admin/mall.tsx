@@ -145,14 +145,38 @@ function MallManagementPage() {
   const tabParam = extractTabParam(location.search, (location as any).searchStr);
   const [viewMode, setViewMode] = useViewMode("mall", "grid");
 
+  const openMallSubpage = (tabKey: string) => {
+    navigate({
+      to: "/admin/mall" as any,
+      search: { tab: tabKey } as any,
+    });
+  };
+
   const resolveMallTab = (rawTab: string | undefined): "definitions" | "operations" | "reports" => {
-    if (rawTab === "definitions" || rawTab === "shops") return "definitions";
-    if (rawTab === "reports") return "reports";
+    if (
+      rawTab === "definitions" ||
+      rawTab === "shops" ||
+      rawTab === "units" ||
+      rawTab === "tenants" ||
+      rawTab === "readings"
+    ) {
+      return "definitions";
+    }
+    if (rawTab === "reports" || (rawTab && rawTab.startsWith("rep_"))) return "reports";
     return "operations";
   };
 
   const [activeTab, setActiveTab] = useState<"definitions" | "operations" | "reports">(() =>
     resolveMallTab(tabParam),
+  );
+
+  const isMallSubpageOpen = Boolean(
+    tabParam &&
+      tabParam !== "definitions" &&
+      tabParam !== "operations" &&
+      tabParam !== "reports" &&
+      tabParam !== "overview" &&
+      tabParam !== "grid",
   );
 
   useEffect(() => {
@@ -1542,36 +1566,38 @@ function MallManagementPage() {
 
         <div className="flex items-center gap-2 flex-wrap">
           <ViewModeToggle mode={viewMode} onChange={setViewMode} />
-          <Button
-            onClick={() => setIsContractModalOpen(true)}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-1.5 shadow-xs rounded-xl text-xs h-8 px-3.5 cursor-pointer"
-          >
-            <Plus size={14} />
-            عمل عقد جديد
-          </Button>
-          <Button
-            onClick={() => setIsTerminationModalOpen(true)}
-            variant="outline"
-            className="border-rose-200 text-rose-700 hover:bg-rose-50 font-bold gap-1.5 rounded-xl text-xs h-8 px-3 cursor-pointer"
-          >
-            <XCircle size={14} />
-            فسخ تعاقد
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() =>
-              navigate({ to: "/admin/ledger", search: { tab: "vouchers", dept: "mall" } as any })
-            }
-            className="font-bold text-xs h-8 px-3 rounded-xl gap-1.5 border-indigo-500/30 text-indigo-600 dark:text-indigo-400 cursor-pointer"
-          >
-            <Landmark size={14} />
-            <span>الإدارة المالية</span>
-          </Button>
         </div>
       </div>
 
       {/* SECTION 1: DEFINITIONS (التعريفات - دليل المحلات والوحدات التجارية) */}
-      {activeTab === "definitions" && (
+      {activeTab === "definitions" && !isMallSubpageOpen && (
+        <div
+          className={
+            viewMode === "grid"
+              ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 animate-in fade-in duration-200"
+              : "space-y-3 animate-in fade-in duration-200"
+          }
+        >
+          <Card
+            onClick={() => openMallSubpage("shops")}
+            className="group cursor-pointer rounded-2xl border border-border/80 bg-card p-5 hover:border-primary/50 hover:shadow-md transition flex items-center justify-between gap-4"
+          >
+            <div className="flex items-center gap-3.5">
+              <div className="rounded-xl bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 p-3">
+                <Building2 size={22} />
+              </div>
+              <h3 className="font-black text-base text-foreground group-hover:text-primary transition-colors">
+                دليل المحلات والوحدات التجارية
+              </h3>
+            </div>
+            <Badge variant="secondary" className="font-bold">
+              {totalShops} وحدة
+            </Badge>
+          </Card>
+        </div>
+      )}
+
+      {activeTab === "definitions" && isMallSubpageOpen && (
         <div className="space-y-4 animate-in fade-in duration-200">
           <div className="flex flex-col lg:flex-row items-center justify-between gap-4 bg-card p-4 rounded-2xl border border-border">
             <div className="relative w-full lg:w-80">
@@ -1795,12 +1821,33 @@ function MallManagementPage() {
       )}
 
       {/* SECTION 2: OPERATIONS (العمليات - إبرام وتجديد وفسخ العقود ومتابعة الإشغال) */}
-      {activeTab === "operations" && (
+      {activeTab === "operations" && !isMallSubpageOpen && (
         <div className="space-y-6 animate-in fade-in duration-200">
           {/* Operational Actions */}
           <div
-            className={viewMode === "grid" ? "grid grid-cols-1 sm:grid-cols-3 gap-4" : "space-y-3"}
+            className={
+              viewMode === "grid"
+                ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"
+                : "space-y-3"
+            }
           >
+            <Card
+              onClick={() => openMallSubpage("contracts")}
+              className="group cursor-pointer rounded-2xl border border-border/80 bg-card p-5 hover:border-indigo-500/50 hover:shadow-md transition flex items-center justify-between gap-4"
+            >
+              <div className="flex items-center gap-3.5">
+                <div className="rounded-xl bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 p-3">
+                  <Building2 size={22} />
+                </div>
+                <h3 className="font-black text-base text-foreground group-hover:text-indigo-600 transition-colors">
+                  عقود الإيجار السارية والوحدات المشغولة
+                </h3>
+              </div>
+              <Badge variant="outline" className="font-bold">
+                {rentedShops} عقد
+              </Badge>
+            </Card>
+
             <Card
               onClick={() => setIsContractModalOpen(true)}
               className="group cursor-pointer rounded-2xl border border-border/80 bg-card p-5 hover:border-emerald-500/50 hover:shadow-md transition flex items-center justify-between gap-4"
@@ -1852,7 +1899,11 @@ function MallManagementPage() {
               </Badge>
             </Card>
           </div>
+        </div>
+      )}
 
+      {activeTab === "operations" && isMallSubpageOpen && (
+        <div className="space-y-6 animate-in fade-in duration-200">
           {/* Active Contracts List */}
           <Card className="border border-border/80 bg-card rounded-2xl shadow-xs overflow-hidden">
             <CardHeader className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60">
@@ -1993,7 +2044,34 @@ function MallManagementPage() {
       )}
 
       {/* SECTION 3: REPORTS (التقارير - تقارير الإشغال وحالة المحلات والعقود) */}
-      {activeTab === "reports" && (
+      {activeTab === "reports" && !isMallSubpageOpen && (
+        <div
+          className={
+            viewMode === "grid"
+              ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 animate-in fade-in duration-200"
+              : "space-y-3 animate-in fade-in duration-200"
+          }
+        >
+          <Card
+            onClick={() => openMallSubpage("rep_occupancy")}
+            className="group cursor-pointer rounded-2xl border border-border/80 bg-card p-5 hover:border-emerald-500/50 hover:shadow-md transition flex items-center justify-between gap-4"
+          >
+            <div className="flex items-center gap-3.5">
+              <div className="rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 p-3">
+                <FileSpreadsheet size={22} />
+              </div>
+              <h3 className="font-black text-base text-foreground group-hover:text-emerald-600 transition-colors">
+                تقرير حالة المول ونسب الإشغال والعقود
+              </h3>
+            </div>
+            <Badge variant="outline" className="font-bold">
+              {totalShops} وحدة
+            </Badge>
+          </Card>
+        </div>
+      )}
+
+      {activeTab === "reports" && isMallSubpageOpen && (
         <div className="space-y-6 animate-in fade-in duration-200">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <h2 className="text-base font-black text-foreground">

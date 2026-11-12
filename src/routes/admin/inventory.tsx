@@ -138,6 +138,13 @@ function InventoryPage() {
   const navigate = useNavigate();
   const tabParam = extractTabParam(location.search, (location as any).searchStr);
 
+  const openInvSubpage = (tabKey: string) => {
+    navigate({
+      to: "/admin/inventory" as any,
+      search: { tab: tabKey } as any,
+    });
+  };
+
   const resolveInvSection = (raw?: string | null): "definitions" | "operations" | "reports" => {
     if (
       raw === "definitions" ||
@@ -149,16 +156,18 @@ function InventoryPage() {
     ) {
       return "definitions";
     }
-    if (raw === "reports") {
+    if (raw === "reports" || (raw && raw.startsWith("rep_"))) {
       return "reports";
     }
     return "operations";
   };
 
   const resolveInvTool = (raw?: string | null): string => {
-    if (!raw || raw === "grid" || raw === "operations") return "purchases";
-    if (raw === "definitions" || raw === "items") return "stock";
-    if (raw === "reports") return "reports";
+    if (!raw || raw === "grid" || raw === "operations" || raw === "overview") return "operations_hub";
+    if (raw === "definitions") return "definitions_hub";
+    if (raw === "items") return "stock";
+    if (raw === "reports") return "reports_hub";
+    if (raw.startsWith("rep_")) return "reports";
     return raw;
   };
 
@@ -167,17 +176,23 @@ function InventoryPage() {
   );
   const [activeTab, setActiveTab] = useState(() => resolveInvTool(tabParam));
 
+  // Reports tab states
+  const [selectedReportType, setSelectedReportType] = useState("current_stock");
+
   useEffect(() => {
     setInvSection(resolveInvSection(tabParam));
     setActiveTab(resolveInvTool(tabParam));
+    if (tabParam === "rep_current_stock") setSelectedReportType("current_stock");
+    else if (tabParam === "rep_valuation") setSelectedReportType("valuation");
+    else if (tabParam === "rep_movement") setSelectedReportType("movement");
+    else if (tabParam === "rep_low_stock") setSelectedReportType("low_stock");
+    else if (tabParam === "rep_waste") setSelectedReportType("waste_adjustments");
+    else if (tabParam === "rep_food_cost") setSelectedReportType("food_cost");
   }, [tabParam]);
 
-  useSyncedSubTab("/admin/inventory", activeTab, setActiveTab, "purchases");
+  useSyncedSubTab("/admin/inventory", invSection, setInvSection as any, "operations");
   const [search, setSearch] = useState("");
   const [filterLowStock, setFilterLowStock] = useState(false);
-
-  // Reports tab states
-  const [selectedReportType, setSelectedReportType] = useState("current_stock");
   const [reportSearchQuery, setReportSearchQuery] = useState("");
   const [reportCategoryFilter, setReportCategoryFilter] = useState("all");
   const [reportDateStart, setReportDateStart] = useState(() => {
@@ -1432,7 +1447,7 @@ function InventoryPage() {
         )}
 
       {/* Section Sub-Tools Cards */}
-      {invSection === "definitions" &&
+      {activeTab === "definitions_hub" &&
         renderCards([
           {
             id: "inv-def-stock",
@@ -1441,8 +1456,8 @@ function InventoryPage() {
             badge: `${stats.totalItems} صنف`,
             toneClass:
               "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
-            active: activeTab === "stock",
-            onClick: () => setActiveTab("stock"),
+            active: false,
+            onClick: () => openInvSubpage("stock"),
           },
           {
             id: "inv-def-warehouses",
@@ -1450,8 +1465,8 @@ function InventoryPage() {
             icon: Building2,
             toneClass:
               "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
-            active: activeTab === "warehouses",
-            onClick: () => setActiveTab("warehouses"),
+            active: false,
+            onClick: () => openInvSubpage("warehouses"),
           },
           {
             id: "inv-def-suppliers",
@@ -1459,8 +1474,8 @@ function InventoryPage() {
             icon: Users2,
             toneClass:
               "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
-            active: activeTab === "suppliers",
-            onClick: () => setActiveTab("suppliers"),
+            active: false,
+            onClick: () => openInvSubpage("suppliers"),
           },
           {
             id: "inv-def-settings",
@@ -1468,12 +1483,12 @@ function InventoryPage() {
             icon: Settings,
             toneClass:
               "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20",
-            active: activeTab === "settings",
-            onClick: () => setActiveTab("settings"),
+            active: false,
+            onClick: () => openInvSubpage("settings"),
           },
         ])}
 
-      {invSection === "operations" &&
+      {activeTab === "operations_hub" &&
         renderCards([
           {
             id: "inv-op-purchases",
@@ -1481,8 +1496,8 @@ function InventoryPage() {
             icon: Truck,
             toneClass:
               "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
-            active: activeTab === "purchases",
-            onClick: () => setActiveTab("purchases"),
+            active: false,
+            onClick: () => openInvSubpage("purchases"),
           },
           {
             id: "inv-op-transfers",
@@ -1490,8 +1505,8 @@ function InventoryPage() {
             icon: ArrowUpRight,
             toneClass:
               "bg-teal-500/10 text-teal-600 dark:text-teal-400 border-teal-500/20",
-            active: activeTab === "transfers",
-            onClick: () => setActiveTab("transfers"),
+            active: false,
+            onClick: () => openInvSubpage("transfers"),
           },
           {
             id: "inv-op-transactions",
@@ -1499,8 +1514,8 @@ function InventoryPage() {
             icon: RefreshCw,
             toneClass:
               "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
-            active: activeTab === "transactions",
-            onClick: () => setActiveTab("transactions"),
+            active: false,
+            onClick: () => openInvSubpage("transactions"),
           },
           {
             id: "inv-op-waste",
@@ -1508,8 +1523,8 @@ function InventoryPage() {
             icon: AlertTriangle,
             toneClass:
               "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20",
-            active: activeTab === "waste",
-            onClick: () => setActiveTab("waste"),
+            active: false,
+            onClick: () => openInvSubpage("waste"),
           },
           {
             id: "inv-op-expiry",
@@ -1517,26 +1532,12 @@ function InventoryPage() {
             icon: Calendar,
             toneClass:
               "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20",
-            active: activeTab === "expiry",
-            onClick: () => setActiveTab("expiry"),
-          },
-          {
-            id: "inv-op-supplier-vouchers",
-            title: "سندات صرف الموردين",
-            icon: DollarSign,
-            badge: "المالية",
-            toneClass:
-              "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
             active: false,
-            onClick: () =>
-              navigate({
-                to: "/admin/ledger",
-                search: { tab: "vouchers", dept: "restaurant" },
-              }),
+            onClick: () => openInvSubpage("expiry"),
           },
         ])}
 
-      {invSection === "reports" && (
+      {activeTab === "reports_hub" && (
         <div className="space-y-4">
           {renderCards([
             {
@@ -1546,10 +1547,10 @@ function InventoryPage() {
               badge: `${stats.totalItems} صنف`,
               toneClass:
                 "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
-              active: selectedReportType === "current_stock",
+              active: false,
               onClick: () => {
-                setActiveTab("reports");
                 setSelectedReportType("current_stock");
+                openInvSubpage("rep_current_stock");
               },
             },
             {
@@ -1559,10 +1560,10 @@ function InventoryPage() {
               badge: formatPrice(stats.totalValue),
               toneClass:
                 "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
-              active: selectedReportType === "valuation",
+              active: false,
               onClick: () => {
-                setActiveTab("reports");
                 setSelectedReportType("valuation");
+                openInvSubpage("rep_valuation");
               },
             },
             {
@@ -1571,10 +1572,10 @@ function InventoryPage() {
               icon: FileText,
               toneClass:
                 "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
-              active: selectedReportType === "movement",
+              active: false,
               onClick: () => {
-                setActiveTab("reports");
                 setSelectedReportType("movement");
+                openInvSubpage("rep_movement");
               },
             },
             {
@@ -1584,10 +1585,10 @@ function InventoryPage() {
               badge: `${stats.lowStockItems} تنبيه`,
               toneClass:
                 "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20",
-              active: selectedReportType === "low_stock",
+              active: false,
               onClick: () => {
-                setActiveTab("reports");
                 setSelectedReportType("low_stock");
+                openInvSubpage("rep_low_stock");
               },
             },
             {
@@ -1596,10 +1597,10 @@ function InventoryPage() {
               icon: AlertTriangle,
               toneClass:
                 "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20",
-              active: selectedReportType === "waste_adjustments",
+              active: false,
               onClick: () => {
-                setActiveTab("reports");
                 setSelectedReportType("waste_adjustments");
+                openInvSubpage("rep_waste");
               },
             },
             {
@@ -1608,10 +1609,10 @@ function InventoryPage() {
               icon: CheckCircle,
               toneClass:
                 "bg-teal-500/10 text-teal-600 dark:text-teal-400 border-teal-500/20",
-              active: selectedReportType === "food_cost",
+              active: false,
               onClick: () => {
-                setActiveTab("reports");
                 setSelectedReportType("food_cost");
+                openInvSubpage("rep_food_cost");
               },
             },
           ])}

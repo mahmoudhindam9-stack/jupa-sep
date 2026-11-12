@@ -166,38 +166,91 @@ export function RestaurantShiftClosingReportModal({
     return breakdown;
   }, [currentShift, shiftOrders]);
 
-  // Journal Entries created for this shift
+  // Journal Entries created for this shift (consolidated GL entry + detailed shift sales entries)
   const shiftJournalEntries: JournalEntry[] = useMemo(() => {
     if (!currentShift) return [];
     const allJes = erpStore.getState().journalEntries || [];
     const refs = currentShift.generated_journal_refs || [];
 
-    // Look up by refs or description containing shift number
-    return allJes.filter((je) => {
+    const matchedGL = allJes.filter((je) => {
       if (refs.some((r) => je.reference?.includes(r) || je.id?.includes(r))) return true;
       if (je.description?.includes(currentShift.shift_number)) return true;
       if (je.description?.includes(currentShift.auto_shift_number || "___")) return true;
-      // Also match INV- or REF- of this shift's orders
-      if (
-        shiftOrders.some(
-          (o: any) =>
-            je.reference === `INV-${o.order_number}` ||
-            je.description?.includes(`طلب رقم #${o.order_number}`),
-        )
-      ) {
-        return true;
-      }
-      if (
-        shiftRefunds.some(
-          (r) =>
-            je.reference === `REF-${r.order_number}` ||
-            je.description?.includes(`طلب #${r.order_number}`),
-        )
-      ) {
-        return true;
-      }
       return false;
     });
+
+    const shiftEntryList: JournalEntry[] = [...matchedGL];
+
+    // Synthesize detailed shift order entries for the shift closing report only
+    shiftOrders.forEach((o: any) => {
+      const refCode = `INV-${o.order_number || o.id}`;
+      if (shiftEntryList.some((e) => e.reference === refCode)) return;
+      const amt = Number(o.total || 0);
+      if (amt <= 0) return;
+      const pm = (o.payment_method || "cash").toLowerCase();
+      const isCard = pm.includes("card") || pm.includes("بطاقة") || pm.includes("شبكة") || pm.includes("visa");
+      shiftEntryList.push({
+        id: `SHIFT-ORD-${o.id}`,
+        date: (o.created_at || currentShift.start_at || new Date().toISOString()).split("T")[0],
+        description: `مبيعات طلب مطعم #${o.order_number || o.id} - الكاشير: ${currentShift.cashier_name}`,
+        reference: refCode,
+        total_debit: amt,
+        total_credit: amt,
+        status: "posted",
+        created_by: currentShift.cashier_name,
+        lines: [
+          {
+            id: `L1-${o.id}`,
+            account_code: isCard ? "1102" : "1101",
+            account_name: isCard ? "البنك / الشبكة" : "الصندوق / الخزينة النقدية",
+            debit: amt,
+            credit: 0,
+          },
+          {
+            id: `L2-${o.id}`,
+            account_code: "4101",
+            account_name: "إيرادات مبيعات المطعم والكافيه",
+            debit: 0,
+            credit: amt,
+          },
+        ],
+      });
+    });
+
+    shiftRefunds.forEach((r) => {
+      const refCode = `REF-${r.order_number || r.id}`;
+      if (shiftEntryList.some((e) => e.reference === refCode)) return;
+      const amt = Number(r.amount || 0);
+      if (amt <= 0) return;
+      shiftEntryList.push({
+        id: `SHIFT-REF-${r.id}`,
+        date: (r.refunded_at || currentShift.start_at || new Date().toISOString()).split("T")[0],
+        description: `مرتجع طلب مطعم #${r.order_number || r.id} (${r.reason || "مرتجع"})`,
+        reference: refCode,
+        total_debit: amt,
+        total_credit: amt,
+        status: "posted",
+        created_by: r.refunded_by || currentShift.cashier_name,
+        lines: [
+          {
+            id: `RL1-${r.id}`,
+            account_code: "4102",
+            account_name: "مردودات ومسموحات المبيعات",
+            debit: amt,
+            credit: 0,
+          },
+          {
+            id: `RL2-${r.id}`,
+            account_code: "1101",
+            account_name: "الصندوق / الخزينة النقدية",
+            debit: 0,
+            credit: amt,
+          },
+        ],
+      });
+    });
+
+    return shiftEntryList;
   }, [currentShift, shiftOrders, shiftRefunds, isOpen, closedResult]);
 
   // Handle Close Shift Action

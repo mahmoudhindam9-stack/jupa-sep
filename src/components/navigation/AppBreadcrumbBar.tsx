@@ -26,6 +26,7 @@ import {
   NAVIGATION_DEPARTMENTS,
   getActiveDepartment,
   getActiveSubsection,
+  getActiveSubpageInfo,
   type NavDepartment,
   type NavSubsection,
 } from "./navigationRegistry";
@@ -93,6 +94,11 @@ export function AppBreadcrumbBar({
     [activeDepartment, pathname, searchStr],
   );
 
+  const activeSubpage = useMemo(
+    () => getActiveSubpageInfo(pathname, searchStr),
+    [pathname, searchStr],
+  );
+
   // Hide breadcrumb bar on the main root hub unless a custom section is explicitly provided
   if (isRootDashboard && !customSection) {
     return null;
@@ -124,8 +130,14 @@ export function AppBreadcrumbBar({
       handleNavigate(backTo);
       return;
     }
+    if (activeSubpage) {
+      handleNavigate(activeSubpage.parentPath, { tab: activeSubpage.parentTab });
+      return;
+    }
     handleNavigate("/admin");
   };
+
+  const resolvedSubsectionBadge = customSubsection || activeSubpage;
 
   return (
     <nav
@@ -245,12 +257,12 @@ export function AppBreadcrumbBar({
           </>
         )}
 
-        {/* Optional Custom Subsection Label */}
-        {customSubsection && (
+        {/* 4. Active Subpage or Custom Subsection Badge */}
+        {resolvedSubsectionBadge && (
           <>
             <SeparatorChevron className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-primary/10 text-primary font-bold">
-              {isAr ? customSubsection.labelAr : customSubsection.labelEn}
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-700/10 border border-emerald-600/30 text-emerald-800 dark:text-emerald-300 font-bold">
+              {isAr ? resolvedSubsectionBadge.labelAr : resolvedSubsectionBadge.labelEn}
             </span>
           </>
         )}
@@ -266,7 +278,19 @@ export function AppBreadcrumbBar({
         >
           <BackArrow className="w-3.5 h-3.5" />
           <span className="hidden sm:inline">
-            {isAr ? "رجوع للأقسام الرئيسية" : "Back to Hub"}
+            {activeSubpage
+              ? isAr
+                ? `رجوع إلى ${
+                    activeSubpage.parentTab === "definitions"
+                      ? "التعريفات"
+                      : activeSubpage.parentTab === "reports"
+                        ? "التقارير"
+                        : "العمليات"
+                  }`
+                : "Back to Section"
+              : isAr
+                ? "رجوع للأقسام الرئيسية"
+                : "Back to Hub"}
           </span>
         </Button>
       </div>

@@ -4215,38 +4215,29 @@ export class ERPStore {
     }
 
     if (Array.isArray(this.state.journalEntries)) {
-      const seenJeKeys = new Set<string>();
-      const deduplicatedJeReversed: any[] = [];
-      let jeChanged = false;
-      for (let i = this.state.journalEntries.length - 1; i >= 0; i--) {
-        const je = this.state.journalEntries[i];
-        if (!je) continue;
+      const filteredJes = this.state.journalEntries.filter((je) => {
+        if (!je) return false;
         const desc = String(je.description || "");
-        const salesJeMatch = desc.match(
-          /(?:فاتورة مبيعات POS|إيرادات مبيعات المطعم)\s*-\s*طلب رقم #(\S+)/,
-        );
-        const returnJeMatch = desc.match(
-          /(?:مرتجع مبيعات POS|مرتجع مبيعات المطعم)\s*-\s*طلب رقم #(\S+)/,
-        );
-        if (salesJeMatch && salesJeMatch[1]) {
-          const key = `INV-${salesJeMatch[1]}`;
-          if (seenJeKeys.has(key)) {
-            jeChanged = true;
-            continue;
-          }
-          seenJeKeys.add(key);
-        } else if (returnJeMatch && returnJeMatch[1]) {
-          const key = `SRT-${returnJeMatch[1]}`;
-          if (seenJeKeys.has(key)) {
-            jeChanged = true;
-            continue;
-          }
-          seenJeKeys.add(key);
+        const ref = String(je.reference || "");
+        // Filter out per-order / per-ticket individual sales & refund entries so only consolidated shift entries appear in General Ledger
+        if (
+          ref.startsWith("INV-") ||
+          ref.startsWith("SRT-") ||
+          ref.startsWith("CON-") ||
+          desc.includes("فاتورة مبيعات POS - طلب رقم") ||
+          desc.includes("مرتجع مبيعات POS - طلب رقم") ||
+          desc.includes("قيد مردودات ومسترجعات مبيعات المطعم - طلب") ||
+          desc.includes("قيد استهلاك بوم المطبخ") ||
+          desc.includes("قيد مبيعات تذاكر الحديقة - فاتورة/إيصال") ||
+          desc.includes("قيد إرجاع/استرداد تذاكر الحديقة - للمعاملة الأصلية") ||
+          desc.includes("ترحيل إغلاق وردية تذاكر الحديقة")
+        ) {
+          return false;
         }
-        deduplicatedJeReversed.push(je);
-      }
-      if (jeChanged) {
-        this.state.journalEntries = deduplicatedJeReversed.reverse();
+        return true;
+      });
+      if (filteredJes.length !== this.state.journalEntries.length) {
+        this.state.journalEntries = filteredJes;
         changed = true;
       }
     }
@@ -4314,10 +4305,10 @@ export class ERPStore {
   postSalesInvoiceJournal(
     orderNumber,
     total,
-    subtotal,
+    _subtotal,
     tax,
     paymentMethod = "cash",
-    branchId,
+    _branchId,
     currency = "EGP",
     treasuryId = "tr-1",
     containerId,
@@ -4334,54 +4325,11 @@ export class ERPStore {
       return;
     }
 
-    let treasuryAccount = "101000";
-    if (paymentMethod === "card") treasuryAccount = "102000";
-    else if (paymentMethod === "wallet") treasuryAccount = "103000";
-    const rate = this.getExchangeRate(currency);
     const numericTotal = Number(total || 0);
     const numericTax = Math.max(0, Number(tax || 0));
-    const numericSubtotal =
-      numericTax > 0 ? Math.max(0, numericTotal - numericTax) : numericTotal;
 
-    if (numericTotal > 0) {
-      const lines: any[] = [
-        {
-          account_code: treasuryAccount,
-          debit: numericTotal,
-          credit: 0,
-          currency: currency,
-          rate: rate,
-        },
-        {
-          account_code: "401000",
-          debit: 0,
-          credit: numericSubtotal,
-          currency: currency,
-          rate: rate,
-        },
-      ];
-      if (numericTax > 0) {
-        lines.push({
-          account_code: "202000",
-          debit: 0,
-          credit: numericTax,
-          currency: currency,
-          rate: rate,
-        });
-      }
-      try {
-        this.addJournalEntry(
-          `فاتورة مبيعات POS - طلب رقم #${orderNumber}`,
-          lines,
-          orderRef,
-          currency,
-        );
-      } catch (err) {
-        console.warn("Could not post sales journal entry:", err);
-      }
-    }
-
-    // Track in active restaurant shift if one is open
+    // Individual sales are recorded in the active shift and shift closing report ONLY;
+    // a single consolidated journal entry is posted to General Ledger upon shift close.
     const activeShift = this.getActiveRestaurantShift();
     if (activeShift) {
       if (!activeShift.generated_journal_refs) activeShift.generated_journal_refs = [];
@@ -4529,44 +4477,12 @@ export class ERPStore {
     orderNumber,
     total,
     paymentMethod = "cash",
-    branchId,
+    _branchId,
     currency = "EGP",
     treasuryId = "tr-1",
     containerId,
   ) {
-    let treasuryAccount = "101000";
-    if (paymentMethod === "card") treasuryAccount = "102000";
-    else if (paymentMethod === "wallet") treasuryAccount = "103000";
-    const rate = this.getExchangeRate(currency);
     const numericTotal = Number(total || 0);
-    if (numericTotal > 0) {
-      const lines = [
-        {
-          account_code: "401000",
-          debit: numericTotal,
-          credit: 0,
-          currency: currency,
-          rate: rate,
-        },
-        {
-          account_code: treasuryAccount,
-          debit: 0,
-          credit: numericTotal,
-          currency: currency,
-          rate: rate,
-        },
-      ];
-      try {
-        this.addJournalEntry(
-          `مرتجع مبيعات POS - طلب رقم #${orderNumber}`,
-          lines,
-          `SRT-${orderNumber}`,
-          currency,
-        );
-      } catch (err) {
-        console.warn("Could not post sales return journal entry:", err);
-      }
-    }
     try {
       this.addTreasuryTransaction(
         treasuryId,
@@ -4857,30 +4773,8 @@ export class ERPStore {
       currency,
     );
   }
-  postInventoryConsumptionJournal(orderNumber, totalCost, branchId, currency = "USD") {
-    const rate = this.getExchangeRate(currency);
-    const lines = [
-      {
-        account_code: "501000",
-        debit: totalCost,
-        credit: 0,
-        currency: currency,
-        rate: rate,
-      },
-      {
-        account_code: "103000",
-        debit: 0,
-        credit: totalCost,
-        currency: currency,
-        rate: rate,
-      },
-    ];
-    this.addJournalEntry(
-      `قيد استهلاك بوم المطبخ (Recipe Consumption) - طلب #${orderNumber}`,
-      lines,
-      `CON-${orderNumber}`,
-      currency,
-    );
+  postInventoryConsumptionJournal(_orderNumber, _totalCost, _branchId, _currency = "USD") {
+    // Individual order recipe consumption is tracked in inventory movements; do not create per-sale journal entries in General Ledger.
   }
   createPurchaseOrder(
     supplierId: string,
@@ -8544,17 +8438,28 @@ export class ERPStore {
       credit: "آجل على الحساب",
     };
 
-    // Requirement 3: Generate all Park Tickets journal entries automatically ONLY when "End Shift" is executed.
+    const shiftDate = (activeShift.start_at || now.toISOString()).split("T")[0];
+    const cashierName = activeShift.cashier_name || "كاشير الحديقة";
+    const consolidatedRef = `SHIFT-PARK-${activeShift.auto_shift_number || activeShift.id}`;
+
+    // Collect all shift transactions (do NOT create individual General Ledger entries per ticket)
     const shiftTransactions = (this.state.parkTicketTransactions || []).filter(
       (t) =>
         t.shift_id === activeShift.id ||
+        t.shift_number === activeShift.shift_number ||
         !t.journal_entry_ref ||
         t.journal_entry_ref.includes("معلقة"),
     );
 
+    const netByAccountAndCurrency = new Map<
+      string,
+      { account_code: string; currency: "USD" | "SSP"; rate: number; netAmount: number }
+    >();
+
     shiftTransactions.forEach((tx) => {
-      // Avoid duplicate journal entry creation if already posted
-      if (tx.journal_entry_ref && !tx.journal_entry_ref.includes("معلقة")) {
+      tx.journal_entry_ref = consolidatedRef;
+      if (tx.status === "refunded") {
+        tx.refund_journal_ref = consolidatedRef;
         return;
       }
 
@@ -8568,88 +8473,35 @@ export class ERPStore {
         (this.state.treasuries || []).find(
           (t) => t.id === (opTr?.linked_real_treasury_id || tx.linked_real_treasury_id),
         ) || this.state.treasuries[0];
+      if (realTr?.account_code && tx.payment_method !== "credit") {
+        debitAccountCode = realTr.account_code;
+      }
 
-      const opTrName = opTr ? opTr.name_ar : "خزينة تشغيلية مؤقتة";
-      const realTrName = realTr ? realTr.name_ar : "الخزينة الرئيسية";
-
-      const itemNotesArray = (tx.items || [])
-        .filter((i) => i.note && i.note.trim())
-        .map((i) => `${i.name_ar} [ملاحظة: ${i.note.trim()}]`);
-      const fullNotes = itemNotesArray
-        .concat(tx.notes ? [tx.notes] : [])
-        .filter(Boolean)
-        .join(" | ");
-
-      // Requirement 1 & 6 & 7: Record exact rate used for this specific transaction, item notes, operational treasury, linked real treasury, shift number, receipt number
-      const entryDesc = `قيد مبيعات تذاكر الحديقة - فاتورة/إيصال (${tx.tx_number}) - وردية (${activeShift.shift_number}) - طريقة الدفع: ${methodArMap[tx.payment_method] || tx.payment_method} - العملة: ${tx.currency} - Rate (المعامل): ${tx.exchange_rate} - الخزينة التشغيلية: (${opTrName}) - الخزينة الرئيسية المرتبطة: (${realTrName})${fullNotes ? ` - ملاحظات: ${fullNotes}` : ""}`;
-
-      const saleJE = this.addJournalEntry(
-        entryDesc,
-        [
-          {
+      const curr = (tx.currency || "USD") as "USD" | "SSP";
+      const rate =
+        curr === "USD"
+          ? 1
+          : Number(tx.exchange_rate) > 0
+            ? Number(tx.exchange_rate)
+            : this.getExchangeRate(curr);
+      const amt = Number(tx.total_paid_in_currency || 0);
+      if (amt > 0) {
+        const key = `${debitAccountCode}:${curr}:${rate}`;
+        const prev = netByAccountAndCurrency.get(key);
+        if (prev) {
+          prev.netAmount += amt;
+        } else {
+          netByAccountAndCurrency.set(key, {
             account_code: debitAccountCode,
-            debit: tx.total_paid_in_currency,
-            credit: 0,
-            currency: tx.currency,
-            rate: tx.exchange_rate, // Exact rate for this specific transaction!
-            description: `دفع قيمة التذاكر (${methodArMap[tx.payment_method] || tx.payment_method}) - إيصال ${tx.tx_number} - Rate (المعامل): ${tx.exchange_rate}${fullNotes ? ` [${fullNotes}]` : ""}`,
-          },
-          {
-            account_code: "401000",
-            debit: 0,
-            credit: tx.total_paid_in_currency,
-            currency: tx.currency,
-            rate: tx.exchange_rate, // Exact rate for this specific transaction!
-            description: `إيرادات تذاكر الحديقة - إيصال ${tx.tx_number} - Rate (المعامل): ${tx.exchange_rate}${fullNotes ? ` [${fullNotes}]` : ""}`,
-          },
-        ],
-        undefined,
-        tx.currency,
-        tx.transaction_date || now.toISOString().split("T")[0],
-      );
-
-      const saleRef = saleJE.reference || saleJE.id;
-      tx.journal_entry_ref = saleRef;
-      generatedJournalRefs.push(saleRef);
-
-      // Handle refund accounting entry if transaction was refunded during this shift
-      if (
-        tx.status === "refunded" &&
-        (!tx.refund_journal_ref || tx.refund_journal_ref.includes("معلقة"))
-      ) {
-        const refundDesc = `قيد إرجاع/استرداد تذاكر الحديقة - للمعاملة الأصلية (${tx.tx_number}) - وردية (${activeShift.shift_number}) - سبب الإرجاع: (${tx.refund_reason || "إلغاء وتجميع"}) - طريقة الدفع: ${methodArMap[tx.payment_method] || tx.payment_method} - العملة: ${tx.currency} - Rate (المعامل): ${tx.exchange_rate}`;
-        const refundJE = this.addJournalEntry(
-          refundDesc,
-          [
-            {
-              account_code: "401000",
-              debit: tx.total_paid_in_currency,
-              credit: 0,
-              currency: tx.currency,
-              rate: tx.exchange_rate,
-              description: `إرجاع إيراد تذاكر - إيصال ${tx.tx_number} - Rate (المعامل): ${tx.exchange_rate}`,
-            },
-            {
-              account_code: debitAccountCode,
-              debit: 0,
-              credit: tx.total_paid_in_currency,
-              currency: tx.currency,
-              rate: tx.exchange_rate,
-              description: `استرداد للمشتري (${methodArMap[tx.payment_method] || tx.payment_method}) - إيصال ${tx.tx_number} - Rate (المعامل): ${tx.exchange_rate}`,
-            },
-          ],
-          undefined,
-          tx.currency,
-          tx.transaction_date || now.toISOString().split("T")[0],
-        );
-
-        const refundRef = refundJE.reference || refundJE.id;
-        tx.refund_journal_ref = refundRef;
-        generatedJournalRefs.push(refundRef);
+            currency: curr,
+            rate,
+            netAmount: amt,
+          });
+        }
       }
     });
 
-    // Requirement 4 & 5: Transfer balances from operational treasuries to linked real treasuries & create transfer entries
+    // Transfer balances from operational treasuries to linked real treasuries
     opTreasuries.forEach((opTr) => {
       const amt = opTr.balance || 0;
       opBalancesAtClose[opTr.id] = amt;
@@ -8659,43 +8511,7 @@ export class ERPStore {
           (this.state.treasuries || []).find((t) => t.id === opTr.linked_real_treasury_id) ||
           this.state.treasuries[0];
         const realTrName = realTr ? realTr.name_ar : "الخزينة الرئيسية";
-        const realAccountCode = realTr ? realTr.account_code || "101000" : "101000";
-
-        let opAccountCode = "101000";
-        if (opTr.payment_method === "visa") opAccountCode = "102000";
-        else if (opTr.payment_method === "bank_transfer") opAccountCode = "103000";
-        else if (opTr.payment_method === "credit") opAccountCode = "120100";
-
         const rate = opTr.currency === "SSP" ? this.getExchangeRate("SSP") : 1;
-        const transferDesc = `ترحيل إغلاق وردية تذاكر الحديقة (${activeShift.shift_number}) - من الخزينة التشغيلية المؤقتة (${opTr.name_ar}) إلى الخزينة الرئيسية المرتبطة (${realTrName}) - المبلغ: ${amt} ${opTr.currency} - Rate (المعامل): ${rate}`;
-
-        const transferJE = this.addJournalEntry(
-          transferDesc,
-          [
-            {
-              account_code: realAccountCode,
-              debit: amt,
-              credit: 0,
-              currency: opTr.currency,
-              rate: rate,
-              description: `إيداع حديقة - وردية ${activeShift.shift_number} - من (${opTr.name_ar}) إلى الخزينة المرتبطة (${realTrName})`,
-            },
-            {
-              account_code: opAccountCode,
-              debit: 0,
-              credit: amt,
-              currency: opTr.currency,
-              rate: rate,
-              description: `إقفال رصيد الخزينة التشغيلية المؤقتة (${opTr.name_ar})`,
-            },
-          ],
-          undefined,
-          opTr.currency,
-          now.toISOString().split("T")[0],
-        );
-
-        const jRef = transferJE.reference || transferJE.id;
-        generatedJournalRefs.push(jRef);
 
         if (realTr) {
           realTr.balance = (realTr.balance || 0) + (opTr.currency === "USD" ? amt : amt / rate);
@@ -8708,12 +8524,46 @@ export class ERPStore {
           real_treasury_name: realTrName,
           currency: opTr.currency,
           amount: amt,
-          journal_ref: jRef,
+          journal_ref: consolidatedRef,
         });
 
         opTr.balance = 0;
       }
     });
+
+    // Create ONE single consolidated journal entry in General Ledger for the closed Park shift
+    const consolidatedLines: any[] = [];
+    for (const bucket of netByAccountAndCurrency.values()) {
+      if (bucket.netAmount > 0) {
+        consolidatedLines.push({
+          account_code: bucket.account_code,
+          debit: bucket.netAmount,
+          credit: 0,
+          currency: bucket.currency,
+          rate: bucket.rate,
+          description: `إيداع صافي مبيعات الحديقة - الكاشير: ${cashierName} - التاريخ: ${shiftDate}`,
+        });
+        consolidatedLines.push({
+          account_code: "401000",
+          debit: 0,
+          credit: bucket.netAmount,
+          currency: bucket.currency,
+          rate: bucket.rate,
+          description: `إيرادات مبيعات الحديقة - الكاشير: ${cashierName} - التاريخ: ${shiftDate}`,
+        });
+      }
+    }
+
+    if (consolidatedLines.length >= 2) {
+      const shiftJE = this.addJournalEntry(
+        `مبيعات الحديقة - التاريخ: ${shiftDate} - الكاشير: ${cashierName} (${activeShift.shift_number})`,
+        consolidatedLines,
+        consolidatedRef,
+        activeShift.currency || "USD",
+        shiftDate,
+      );
+      generatedJournalRefs.push(shiftJE.reference || shiftJE.id);
+    }
 
     activeShift.status = "closed";
     activeShift.end_at = now.toISOString();
@@ -8735,7 +8585,7 @@ export class ERPStore {
       status_after: "closed",
       cashier_name: activeShift.cashier_name,
       performed_by: this.state.currentUser || activeShift.cashier_name,
-      details: `تم إغلاق وردية التذاكر (${activeShift.shift_number}) وتوليد ${generatedJournalRefs.length} قيود محاسبية تلقائية`,
+      details: `تم إغلاق وردية التذاكر (${activeShift.shift_number}) وترحيل قيد مبيعات الحديقة الموحد لدفتر الأستاذ`,
       metadata: {
         end_at: activeShift.end_at,
         transactions_count: shiftTransactions.length,
@@ -8749,7 +8599,7 @@ export class ERPStore {
     this.logAction(
       "POS",
       "إغلاق وردية تذاكر",
-      `تم إغلاق الوردية (${activeShift.shift_number}) وتوليد ${generatedJournalRefs.length} قيود محاسبية تلقائية بنجاح`,
+      `تم إغلاق الوردية (${activeShift.shift_number}) وترحيل قيد مبيعات الحديقة الموحد لدفتر الأستاذ بنجاح`,
       "UPDATE",
     );
     return activeShift;
@@ -9169,6 +9019,103 @@ export class ERPStore {
     activeShift.refunds_count = shiftRefunds.length;
     activeShift.net_total = Math.max(0, Number(activeShift.total_sales || 0) - totalRefundAmt);
 
+    // Post ONE single consolidated journal entry to General Ledger for this shift's sales
+    const netSales = Number(activeShift.net_total || 0);
+    const shiftDate = (activeShift.start_at || now.toISOString()).split("T")[0];
+    const cashierName = activeShift.cashier_name || "كاشير المطعم";
+    const shiftCurrency = (activeShift.currency || "USD").toUpperCase();
+    const shiftRate =
+      shiftCurrency === "USD"
+        ? 1
+        : Number(activeShift.exchange_rate) > 0
+          ? Number(activeShift.exchange_rate)
+          : this.getExchangeRate(shiftCurrency);
+    const consolidatedRef = `SHIFT-REST-${activeShift.auto_shift_number || activeShift.id}`;
+
+    if (netSales > 0) {
+      const existingConsolidated = (this.state.journalEntries || []).find(
+        (je) => je.reference === consolidatedRef,
+      );
+      if (!existingConsolidated) {
+        const pb = activeShift.payment_breakdown || { cash: 0, card: 0, wallet: 0 };
+        const rawSum = (Number(pb.cash) || 0) + (Number(pb.card) || 0) + (Number(pb.wallet) || 0);
+        const lines: any[] = [];
+        const linkedRestTreasury = (this.state.treasuries || []).find(
+          (t) => t.linked_to_restaurant && !t.deleted,
+        );
+        const cashAcc = linkedRestTreasury?.account_code || "101000";
+
+        if (rawSum > 0) {
+          const ratio = netSales / rawSum;
+          const netCash = Number(((Number(pb.cash) || 0) * ratio).toFixed(2));
+          const netCard = Number(((Number(pb.card) || 0) * ratio).toFixed(2));
+          const netWallet = Number(Math.max(0, netSales - netCash - netCard).toFixed(2));
+
+          if (netCash > 0) {
+            lines.push({
+              account_code: cashAcc,
+              debit: netCash,
+              credit: 0,
+              currency: shiftCurrency,
+              rate: shiftRate,
+              description: `مبيعات المطعم (نقدي) - الكاشير: ${cashierName} - التاريخ: ${shiftDate}`,
+            });
+          }
+          if (netCard > 0) {
+            lines.push({
+              account_code: "102000",
+              debit: netCard,
+              credit: 0,
+              currency: shiftCurrency,
+              rate: shiftRate,
+              description: `مبيعات المطعم (بطاقة) - الكاشير: ${cashierName} - التاريخ: ${shiftDate}`,
+            });
+          }
+          if (netWallet > 0) {
+            lines.push({
+              account_code: "103000",
+              debit: netWallet,
+              credit: 0,
+              currency: shiftCurrency,
+              rate: shiftRate,
+              description: `مبيعات المطعم (محفظة) - الكاشير: ${cashierName} - التاريخ: ${shiftDate}`,
+            });
+          }
+        } else {
+          lines.push({
+            account_code: cashAcc,
+            debit: netSales,
+            credit: 0,
+            currency: shiftCurrency,
+            rate: shiftRate,
+            description: `صافي مبيعات المطعم - الكاشير: ${cashierName} - التاريخ: ${shiftDate}`,
+          });
+        }
+
+        lines.push({
+          account_code: "401000",
+          debit: 0,
+          credit: netSales,
+          currency: shiftCurrency,
+          rate: shiftRate,
+          description: `إيرادات مبيعات المطعم - الكاشير: ${cashierName} - التاريخ: ${shiftDate} (${activeShift.shift_number})`,
+        });
+
+        try {
+          const je = this.addJournalEntry(
+            `مبيعات المطعم - التاريخ: ${shiftDate} - الكاشير: ${cashierName} (${activeShift.shift_number})`,
+            lines,
+            consolidatedRef,
+            shiftCurrency,
+            shiftDate,
+          );
+          activeShift.generated_journal_refs = [je.reference || je.id];
+        } catch (err) {
+          console.warn("Could not post consolidated restaurant shift journal entry:", err);
+        }
+      }
+    }
+
     // Requirement 2: Do NOT open a new shift automatically upon closing
     if (this.state.restaurantActiveShift?.id === activeShift.id) {
       this.state.restaurantActiveShift = null;
@@ -9187,7 +9134,7 @@ export class ERPStore {
       cashier_name: activeShift.cashier_name,
       cashier_id: activeShift.cashier_id,
       performed_by: this.state.currentUser || activeShift.cashier_name,
-      details: `تم إغلاق وردية المطعم (${activeShift.shift_number}) وتحديث التقارير المحاسبية`,
+      details: `تم إغلاق وردية المطعم (${activeShift.shift_number}) وترحيل قيد مبيعات المطعم الموحد لدفتر الأستاذ`,
       metadata: {
         end_at: activeShift.end_at,
         closing_notes: closingNotes,
@@ -9203,7 +9150,7 @@ export class ERPStore {
     this.logAction(
       "POS",
       "إغلاق وردية مطعم",
-      `تم إغلاق وردية المطعم (${activeShift.shift_number}) وتحديث التقارير المحاسبية`,
+      `تم إغلاق وردية المطعم (${activeShift.shift_number}) وترحيل قيد مبيعات المطعم الموحد لدفتر الأستاذ`,
       "UPDATE",
     );
     return activeShift;
@@ -9327,45 +9274,13 @@ export class ERPStore {
     }
     this.state.restaurantRefundRecords.unshift(refundRecord);
 
-    // Double entry accounting for refund:
-    // Debit: Sales Returns (401000 or 402000)
-    // Credit: Cashier / Bank Treasury Account (101000 or 102000 or 103000)
-    let treasuryAccount = "101000";
-    if (paymentMethod === "card") treasuryAccount = "102000";
-    else if (paymentMethod === "wallet") treasuryAccount = "103000";
-
-    const rate = this.getExchangeRate(currency);
-    const journalLines = [
-      {
-        account_code: "401000", // Sales / Sales Returns
-        debit: refundAmt,
-        credit: 0,
-        currency: currency,
-        rate: rate,
-      },
-      {
-        account_code: treasuryAccount,
-        debit: 0,
-        credit: refundAmt,
-        currency: currency,
-        rate: rate,
-      },
-    ];
-
-    this.addJournalEntry(
-      `قيد مردودات ومسترجعات مبيعات المطعم - طلب #${payload.order_number} - وردية (${currentShift.shift_number}) - سبب الإرجاع: (${payload.refund_reason})`,
-      journalLines,
-      journalRef,
-      currency,
-    );
-
     if (currentShift.generated_journal_refs) {
       currentShift.generated_journal_refs.push(journalRef);
     } else {
       currentShift.generated_journal_refs = [journalRef];
     }
 
-    // Deduct from treasury transactions
+    // Deduct from treasury transactions (skip per-order journal entry; shift close posts consolidated net sales)
     const targetTreasuryId =
       payload.treasury_id ||
       this.state.treasuries.find((t) => t.linked_to_restaurant && !t.deleted)?.id ||
@@ -9380,6 +9295,8 @@ export class ERPStore {
         `مرتجع مبيعات المطعم - طلب رقم #${payload.order_number} - سبب: ${payload.refund_reason}`,
         journalRef,
         paymentMethod,
+        undefined,
+        true,
       );
     } catch (err) {
       console.error("Error adding treasury transaction for refund:", err);

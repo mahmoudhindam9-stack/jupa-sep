@@ -294,14 +294,21 @@ function LedgerPage() {
   // UI state — Unified 3-Section Architecture (definitions | operations | reports)
   const location = useLocation();
   const [viewMode, setViewMode] = useViewMode("ledger", "grid");
-  const [activeDefTool, setActiveDefTool] = useState<null | "accounts" | "treasury">("accounts");
+  const [activeDefTool, setActiveDefTool] = useState<null | "accounts" | "treasury">(null);
   const [activeOperationTool, setActiveOperationTool] = useState<
-    null | "vouchers" | "transfers" | "journal"
+    null | "vouchers" | "transfers" | "journal" | "general_ledger"
   >(null);
   const [activeReportTool, setActiveReportTool] = useState<
-    null | "vouchers_register" | "unified_reports" | "general_ledger" | "treasury_report"
-  >("vouchers_register");
+    null | "vouchers_register" | "unified_reports" | "treasury_report"
+  >(null);
   const [isTreasuryReportModalOpen, setIsTreasuryReportModalOpen] = useState(false);
+
+  const navigateToLedgerSubpage = (tabKey: string) => {
+    navigate({
+      to: "/admin/ledger" as any,
+      search: { tab: tabKey } as any,
+    });
+  };
 
   // Treasury Transfer State (عمليات التحويل بين الخزائن)
   const [transferSourceId, setTransferSourceId] = useState("");
@@ -364,8 +371,9 @@ function LedgerPage() {
     if (
       tabParam === "reports" ||
       tabParam === "vouchers_register" ||
+      tabParam === "unified_reports" ||
+      tabParam === "treasury_report" ||
       tabParam === "financial_position" ||
-      tabParam === "ledger" ||
       tabParam === "trial" ||
       tabParam === "statements"
     ) {
@@ -381,9 +389,13 @@ function LedgerPage() {
 
   useEffect(() => {
     const tabParam = extractTabParam(location.search, (location as any).searchStr);
-    if (tabParam === "accounts") setActiveDefTool("accounts");
-    else if (tabParam === "treasury") setActiveDefTool("treasury");
-    else if (
+    if (tabParam === "definitions") {
+      setActiveDefTool(null);
+    } else if (tabParam === "accounts") {
+      setActiveDefTool("accounts");
+    } else if (tabParam === "treasury") {
+      setActiveDefTool("treasury");
+    } else if (
       tabParam === "vouchers" ||
       tabParam === "payments" ||
       tabParam === "expenses" ||
@@ -394,21 +406,26 @@ function LedgerPage() {
       setActiveOperationTool("transfers");
     } else if (tabParam === "journal") {
       setActiveOperationTool("journal");
+    } else if (tabParam === "general_ledger" || tabParam === "ledger") {
+      setActiveOperationTool("general_ledger");
     } else if (!tabParam || tabParam === "operations" || tabParam === "hub") {
       setActiveOperationTool(null);
+    } else if (tabParam === "reports") {
+      setActiveReportTool(null);
     } else if (tabParam === "vouchers_register") {
       setActiveReportTool("vouchers_register");
     } else if (
+      tabParam === "unified_reports" ||
       tabParam === "financial_position" ||
       tabParam === "trial" ||
       tabParam === "statements"
     ) {
       setActiveReportTool("unified_reports");
-    } else if (tabParam === "ledger") {
-      setActiveReportTool("general_ledger");
+    } else if (tabParam === "treasury_report") {
+      setActiveReportTool("treasury_report");
     }
     setSelectedTab(normalizeLedgerTab(tabParam));
-  }, [location.search]);
+  }, [location.search, (location as any).searchStr]);
 
   useSyncedSubTab("/admin/ledger", selectedTab, setSelectedTab as any, "operations");
 
@@ -3116,26 +3133,33 @@ function LedgerPage() {
       {/* ===================================================================== */}
       {selectedTab === "definitions" && (
         <div className="space-y-4 animate-in fade-in duration-200">
-          {renderCards([
-            {
-              id: "def-accounts",
-              title: "دليل وشجرة الحسابات",
-              icon: Layers,
-              badge: `${accounts.length} حساب`,
-              toneClass: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
-              active: activeDefTool === "accounts",
-              onClick: () => setActiveDefTool("accounts"),
-            },
-            {
-              id: "def-treasury",
-              title: "إدارة الخزائن النقدية والبنكية",
-              icon: Wallet,
-              badge: `${treasuries.length} خزينة`,
-              toneClass: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
-              active: activeDefTool === "treasury",
-              onClick: () => setActiveDefTool("treasury"),
-            },
-          ])}
+          {activeDefTool === null &&
+            renderCards([
+              {
+                id: "def-accounts",
+                title: "دليل وشجرة الحسابات",
+                icon: Layers,
+                badge: `${accounts.length} حساب`,
+                toneClass: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
+                active: false,
+                onClick: () => {
+                  setActiveDefTool("accounts");
+                  navigateToLedgerSubpage("accounts");
+                },
+              },
+              {
+                id: "def-treasury",
+                title: "إدارة الخزائن النقدية والبنكية",
+                icon: Wallet,
+                badge: `${treasuries.length} خزينة`,
+                toneClass: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+                active: false,
+                onClick: () => {
+                  setActiveDefTool("treasury");
+                  navigateToLedgerSubpage("treasury");
+                },
+              },
+            ])}
 
           {activeDefTool === "accounts" && (
             <div className="bg-card rounded-2xl border border-border p-3 sm:p-4">
@@ -3151,77 +3175,104 @@ function LedgerPage() {
       )}
 
       {/* ===================================================================== */}
-      {/* SECTION 2: OPERATIONS (العمليات) — 3 مربعات: سند جديد / تحويل / قيد مزدوج */}
+      {/* SECTION 2: OPERATIONS (العمليات) — 4 مربعات: سند جديد / تحويل / قيد مزدوج / دفتر الأستاذ */}
       {/* ===================================================================== */}
       {selectedTab === "operations" && (
         <div className="space-y-4 animate-in fade-in duration-200 min-w-0 w-full">
-          {renderCards([
-            {
-              id: "op-new-voucher",
-              title: "إصدار سند جديد",
-              icon: Receipt,
-              toneClass: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
-              active: activeOperationTool === "vouchers",
-              onClick: () => {
-                setActiveOperationTool("vouchers");
-                setAutoOpenVoucherModal(true);
-              },
-            },
-            {
-              id: "op-treasury-transfer",
-              title: "عملية تحويل بين الخزائن",
-              icon: ArrowUpDown,
-              toneClass: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
-              active: activeOperationTool === "transfers",
-              onClick: () => setActiveOperationTool("transfers"),
-            },
-            {
-              id: "op-double-entry",
-              title: "القيد المزدوج",
-              icon: Scale,
-              badge: `${journalEntries.length} قيد`,
-              toneClass: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
-              active: activeOperationTool === "journal",
-              onClick: () => {
-                setActiveOperationTool("journal");
-                handleOpenNewEntry();
-              },
-            },
-          ])}
+          {activeOperationTool === null && (
+            <>
+              {renderCards([
+                {
+                  id: "op-new-voucher",
+                  title: "إصدار سند جديد",
+                  icon: Receipt,
+                  toneClass: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+                  active: false,
+                  onClick: () => {
+                    setActiveOperationTool("vouchers");
+                    navigateToLedgerSubpage("vouchers");
+                  },
+                },
+                {
+                  id: "op-treasury-transfer",
+                  title: "عملية تحويل بين الخزائن",
+                  icon: ArrowUpDown,
+                  toneClass: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
+                  active: false,
+                  onClick: () => {
+                    setActiveOperationTool("transfers");
+                    navigateToLedgerSubpage("transfers");
+                  },
+                },
+                {
+                  id: "op-double-entry",
+                  title: "القيد المزدوج",
+                  icon: Scale,
+                  badge: `${journalEntries.length} قيد`,
+                  toneClass: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
+                  active: false,
+                  onClick: () => {
+                    setActiveOperationTool("journal");
+                    navigateToLedgerSubpage("journal");
+                    handleOpenNewEntry();
+                  },
+                },
+                {
+                  id: "op-general-ledger",
+                  title: "دفتر الأستاذ العام",
+                  icon: BookOpen,
+                  badge: `${accounts.length} حساب`,
+                  toneClass: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
+                  active: false,
+                  onClick: () => {
+                    setActiveOperationTool("general_ledger");
+                    navigateToLedgerSubpage("general_ledger");
+                  },
+                },
+              ])}
 
-          {journalDrafts.length > 0 && (
-            <div className="flex items-center gap-1.5 flex-wrap rounded-2xl border border-amber-500/30 bg-amber-500/5 px-3 py-2 print:hidden">
-              <span className="text-[11px] font-bold text-amber-700 dark:text-amber-300">
-                مسودات قيود محفوظة ({journalDrafts.length}):
-              </span>
-              {journalDrafts.slice(0, 3).map((draft) => (
-                <Button
-                  key={draft.id}
-                  size="sm"
-                  variant="outline"
-                  onClick={() => handleLoadJournalDraft(draft)}
-                  className="h-7 text-[11px] font-bold border-amber-500/40 text-amber-800 dark:text-amber-300 rounded-lg px-2"
-                >
-                  {draft.newEntryDesc || draft.newEntryRef}
-                </Button>
-              ))}
-            </div>
+              {journalDrafts.length > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap rounded-2xl border border-amber-500/30 bg-amber-500/5 px-3 py-2 print:hidden">
+                  <span className="text-[11px] font-bold text-amber-700 dark:text-amber-300">
+                    مسودات قيود محفوظة ({journalDrafts.length}):
+                  </span>
+                  {journalDrafts.slice(0, 3).map((draft) => (
+                    <Button
+                      key={draft.id}
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleLoadJournalDraft(draft)}
+                      className="h-7 text-[11px] font-bold border-amber-500/40 text-amber-800 dark:text-amber-300 rounded-lg px-2"
+                    >
+                      {draft.newEntryDesc || draft.newEntryRef}
+                    </Button>
+                  ))}
+                </div>
+              )}
+            </>
           )}
 
-          {/* Vouchers Modal Host (Always mounted in operations so clicking 'إصدار سند جديد' opens the modal directly) */}
-          <VouchersLedgerSection
-            mode="operations"
-            autoOpenNewModal={autoOpenVoucherModal}
-            onModalClosed={() => setAutoOpenVoucherModal(false)}
-            onOpenReports={() => {
-              setSelectedTab("reports");
-              setActiveReportTool("vouchers_register");
-            }}
-            onNavigateToJournal={(ref) => {
-              if (ref) setJournalSearch(ref);
-              setActiveOperationTool("journal");
-            }}
-          />
+          {activeOperationTool === "vouchers" && (
+            <VouchersLedgerSection
+              mode="operations"
+              autoOpenNewModal={true}
+              onModalClosed={() => {
+                setAutoOpenVoucherModal(false);
+                setActiveOperationTool(null);
+                navigateToLedgerSubpage("operations");
+              }}
+              onOpenReports={() => {
+                setSelectedTab("reports");
+                setActiveReportTool("vouchers_register");
+                navigateToLedgerSubpage("vouchers_register");
+              }}
+              onNavigateToJournal={(ref) => {
+                if (ref) setJournalSearch(ref);
+                setActiveOperationTool("journal");
+                navigateToLedgerSubpage("journal");
+              }}
+            />
+          )}
 
           {activeOperationTool === "transfers" && (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
@@ -3231,9 +3282,6 @@ function LedgerPage() {
                     <ArrowUpDown className="h-4 w-4 text-primary" />
                     <span>تحويل نقدي بين الخزائن والحسابات البنكية</span>
                   </CardTitle>
-                  <CardDescription className="text-xs font-semibold">
-                    يتم خصم المبلغ من الخزينة المحول منها وإيداعه في الخزينة المستلمة مع توليد قيد مناقلة محاسبي مزدوج تلقائياً.
-                  </CardDescription>
                 </CardHeader>
                 <CardContent className="pt-4">
                   <form onSubmit={handleExecuteTreasuryTransfer} className="space-y-4">
@@ -3972,74 +4020,9 @@ function LedgerPage() {
               </CardContent>
             </Card>
           )}
-        </div>
-      )}
 
-      {/* ===================================================================== */}
-      {/* SECTION 3: REPORTS (التقارير) — السندات، منظومة التقارير، الأستاذ، الخزائن */}
-      {/* ===================================================================== */}
-      {selectedTab === "reports" && (
-        <div className="space-y-4 animate-in fade-in duration-200">
-          {renderCards([
-            {
-              id: "rep-vouchers",
-              title: "تفقد وسجل سندات الدفع والقبض",
-              icon: Receipt,
-              toneClass: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
-              active: activeReportTool === "vouchers_register",
-              onClick: () => setActiveReportTool("vouchers_register"),
-            },
-            {
-              id: "rep-unified",
-              title: "المركز المالي والقوائم وميزان المراجعة",
-              icon: BarChart3,
-              toneClass: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
-              active: activeReportTool === "unified_reports",
-              onClick: () => setActiveReportTool("unified_reports"),
-            },
-            {
-              id: "rep-gl",
-              title: "كشف حساب الأستاذ العام",
-              icon: BookOpen,
-              toneClass: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
-              active: activeReportTool === "general_ledger",
-              onClick: () => setActiveReportTool("general_ledger"),
-            },
-            {
-              id: "rep-treasury",
-              title: "تقرير وحركة الخزائن",
-              icon: Wallet,
-              toneClass: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
-              active: activeReportTool === "treasury_report",
-              onClick: () => {
-                setActiveReportTool("treasury_report");
-                setIsTreasuryReportModalOpen(true);
-              },
-            },
-          ])}
-
-          {/* 1. Vouchers Inspection & Register (تفقد وسجل سندات الدفع والقبض) */}
-          {activeReportTool === "vouchers_register" && (
-            <VouchersLedgerSection
-              mode="reports"
-              onNavigateToJournal={(ref) => {
-                if (ref) setJournalSearch(ref);
-                setSelectedTab("operations");
-                setActiveOperationTool("journal");
-              }}
-            />
-          )}
-
-          {/* 2. Unified Financial Reports & Financial Position (دمج المركز المالي الشامل ومنظومة التقارير) */}
-          {activeReportTool === "unified_reports" && (
-            <div className="space-y-6">
-              <ComprehensiveFinancialPositionCard />
-              <AdvancedFinancialReportsSuite initialSection="account_status" />
-            </div>
-          )}
-
-          {/* 3. General Ledger Account Statement (كشف حساب الأستاذ العام) */}
-          {activeReportTool === "general_ledger" && (
+          {/* 4. General Ledger Account Statement (دفتر الأستاذ العام — داخل العمليات) */}
+          {activeOperationTool === "general_ledger" && (
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
               <Card className="lg:col-span-1 rounded-2xl">
                 <CardHeader className="pb-4">
@@ -4286,8 +4269,74 @@ function LedgerPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
 
-          {/* 4. Treasury Report Launcher & Modal (تقرير وحركة الخزائن) */}
+      {/* ===================================================================== */}
+      {/* SECTION 3: REPORTS (التقارير) — السندات، منظومة التقارير، الخزائن         */}
+      {/* ===================================================================== */}
+      {selectedTab === "reports" && (
+        <div className="space-y-4 animate-in fade-in duration-200">
+          {activeReportTool === null &&
+            renderCards([
+              {
+                id: "rep-vouchers",
+                title: "تفقد وسجل سندات الدفع والقبض",
+                icon: Receipt,
+                toneClass: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
+                active: false,
+                onClick: () => {
+                  setActiveReportTool("vouchers_register");
+                  navigateToLedgerSubpage("vouchers_register");
+                },
+              },
+              {
+                id: "rep-unified",
+                title: "المركز المالي والقوائم وميزان المراجعة",
+                icon: BarChart3,
+                toneClass: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+                active: false,
+                onClick: () => {
+                  setActiveReportTool("unified_reports");
+                  navigateToLedgerSubpage("unified_reports");
+                },
+              },
+              {
+                id: "rep-treasury",
+                title: "تقرير وحركة الخزائن",
+                icon: Wallet,
+                toneClass: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
+                active: false,
+                onClick: () => {
+                  setActiveReportTool("treasury_report");
+                  navigateToLedgerSubpage("treasury_report");
+                  setIsTreasuryReportModalOpen(true);
+                },
+              },
+            ])}
+
+          {/* 1. Vouchers Inspection & Register (تفقد وسجل سندات الدفع والقبض) */}
+          {activeReportTool === "vouchers_register" && (
+            <VouchersLedgerSection
+              mode="reports"
+              onNavigateToJournal={(ref) => {
+                if (ref) setJournalSearch(ref);
+                setSelectedTab("operations");
+                setActiveOperationTool("journal");
+                navigateToLedgerSubpage("journal");
+              }}
+            />
+          )}
+
+          {/* 2. Unified Financial Reports & Financial Position (دمج المركز المالي الشامل ومنظومة التقارير) */}
+          {activeReportTool === "unified_reports" && (
+            <div className="space-y-6">
+              <ComprehensiveFinancialPositionCard />
+              <AdvancedFinancialReportsSuite initialSection="account_status" />
+            </div>
+          )}
+
+          {/* 3. Treasury Report Launcher & Modal (تقرير وحركة الخزائن) */}
           {activeReportTool === "treasury_report" && (
             <Card className="rounded-2xl border-border">
               <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">

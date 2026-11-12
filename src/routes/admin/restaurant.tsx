@@ -74,7 +74,7 @@ function resolveRestaurantTab(tabParam: string | undefined): RestaurantSectionTa
   ) {
     return "definitions";
   }
-  if (tabParam === "reports") {
+  if (tabParam === "reports" || tabParam.startsWith("rep_") || tabParam === "daily_summary") {
     return "reports";
   }
   return "operations";
@@ -165,6 +165,7 @@ function RestaurantHubPage() {
   const [activePerms, setActivePerms] = useState<Record<string, boolean>>(() =>
     getActiveUserPermissionsSync(),
   );
+  const activeReportSubpage = tabParam === "rep_shifts" ? "rep_shifts" : null;
 
   useEffect(() => {
     const refreshStateAndPerms = () => {
@@ -431,6 +432,32 @@ function RestaurantHubPage() {
       : []),
   ].filter((m) => hasAnyRequestedPermission(activePerms, m.permissionKeys));
 
+  const reportCards: ActionCardItem[] = [
+    {
+      title: "سجل وتقارير ورديات المطعم",
+      icon: FileSpreadsheet,
+      color: "from-emerald-500/20 to-teal-500/20 text-emerald-600 dark:text-emerald-400",
+      badge: `${restaurantShifts.length} وردية`,
+      onClick: () => navigate({ to: "/admin/restaurant", search: { tab: "rep_shifts" } as any }),
+      permissionKeys: ["page_restaurant", "pos", "pos_access", "orders", "reports"],
+    },
+    ...(!isCashier
+      ? [
+          {
+            title: "سجل تدقيق الورديات",
+            icon: History,
+            color: "from-indigo-500/20 to-purple-500/20 text-indigo-600 dark:text-indigo-400",
+            badge: "تدقيق",
+            onClick: () => {
+              setSelectedShiftForAudit(null);
+              setIsShiftAuditLogOpen(true);
+            },
+            permissionKeys: ["page_restaurant", "pos", "pos_access", "orders", "reports"],
+          },
+        ]
+      : []),
+  ];
+
   const totalRestaurantSales = restaurantShifts.reduce(
     (sum, s) => sum + Number(s.total_sales || 0),
     0,
@@ -637,113 +664,117 @@ function RestaurantHubPage() {
       {/* SECTION 3: REPORTS (التقارير) */}
       {activeTab === "reports" && (
         <div className="space-y-4 animate-in fade-in duration-200">
-          <Card className="border border-border shadow-xs rounded-2xl">
-            <CardHeader className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60">
-              <div className="flex items-center gap-2 flex-wrap">
-                <CardTitle className="text-base font-black">تقارير الورديات</CardTitle>
-                <span className="px-2.5 py-0.5 rounded-lg bg-muted text-xs font-bold font-mono">
-                  {restaurantShifts.length} وردية
-                </span>
-              </div>
-              {!isCashier && (
-                <Button
-                  onClick={() => {
-                    setSelectedShiftForAudit(null);
-                    setIsShiftAuditLogOpen(true);
-                  }}
-                  variant="outline"
-                  size="sm"
-                  className="font-bold rounded-xl text-xs gap-1.5 border-indigo-500/30 text-indigo-600 dark:text-indigo-400 cursor-pointer h-8"
-                >
-                  <History size={14} />
-                  سجل التدقيق
-                </Button>
-              )}
-            </CardHeader>
-            <CardContent className="p-0 overflow-x-auto">
-              <table className="w-full text-right text-xs">
-                <thead className="bg-muted/50 border-b border-border text-muted-foreground font-bold">
-                  <tr>
-                    <th className="p-3">رقم الوردية الفريد</th>
-                    <th className="p-3">اسم الوردية</th>
-                    <th className="p-3">الكاشير المسؤول</th>
-                    <th className="p-3">وقت الفتح</th>
-                    <th className="p-3">وقت الإغلاق</th>
-                    <th className="p-3">المبيعات</th>
-                    <th className="p-3">الحالة</th>
-                    <th className="p-3 text-center">التقرير</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/60">
-                  {restaurantShifts.length === 0 ? (
+          {!activeReportSubpage && renderCards(reportCards)}
+
+          {activeReportSubpage === "rep_shifts" && (
+            <Card className="border border-border shadow-xs rounded-2xl">
+              <CardHeader className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <CardTitle className="text-base font-black">تقارير الورديات</CardTitle>
+                  <span className="px-2.5 py-0.5 rounded-lg bg-muted text-xs font-bold font-mono">
+                    {restaurantShifts.length} وردية
+                  </span>
+                </div>
+                {!isCashier && (
+                  <Button
+                    onClick={() => {
+                      setSelectedShiftForAudit(null);
+                      setIsShiftAuditLogOpen(true);
+                    }}
+                    variant="outline"
+                    size="sm"
+                    className="font-bold rounded-xl text-xs gap-1.5 border-indigo-500/30 text-indigo-600 dark:text-indigo-400 cursor-pointer h-8"
+                  >
+                    <History size={14} />
+                    سجل التدقيق
+                  </Button>
+                )}
+              </CardHeader>
+              <CardContent className="p-0 overflow-x-auto">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-muted/50 border-b border-border text-muted-foreground font-bold">
                     <tr>
-                      <td colSpan={8} className="text-center py-10 text-muted-foreground">
-                        لا توجد تقارير ورديات مسجلة
-                      </td>
+                      <th className="p-3">رقم الوردية الفريد</th>
+                      <th className="p-3">اسم الوردية</th>
+                      <th className="p-3">الكاشير المسؤول</th>
+                      <th className="p-3">وقت الفتح</th>
+                      <th className="p-3">وقت الإغلاق</th>
+                      <th className="p-3">المبيعات</th>
+                      <th className="p-3">الحالة</th>
+                      <th className="p-3 text-center">التقرير</th>
                     </tr>
-                  ) : (
-                    restaurantShifts.map((s) => (
-                      <tr key={s.id} className="hover:bg-muted/30 transition">
-                        <td className="p-3 font-mono font-black text-indigo-600 dark:text-indigo-400">
-                          {s.auto_shift_number || s.id.slice(0, 8)}
+                  </thead>
+                  <tbody className="divide-y divide-border/60">
+                    {restaurantShifts.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="text-center py-10 text-muted-foreground">
+                          لا توجد تقارير ورديات مسجلة
                         </td>
-                        <td className="p-3 font-black text-foreground">{s.shift_number}</td>
-                        <td className="p-3 font-bold text-foreground">{s.cashier_name}</td>
-                        <td className="p-3 text-muted-foreground font-mono">
-                          {new Date(s.start_at).toLocaleString("ar-EG")}
-                        </td>
-                        <td className="p-3 text-muted-foreground font-mono">
-                          {s.end_at
-                            ? new Date(s.end_at).toLocaleString("ar-EG")
-                            : "— نشطة حالياً —"}
-                        </td>
-                        <td className="p-3 font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                          {s.orders_count || 0} طلب ({Number(s.total_sales || 0).toLocaleString()})
-                        </td>
-                        <td className="p-3">
-                          <span
-                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                              s.status === "open"
-                                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
-                                : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                            }`}
-                          >
-                            {s.status === "open" ? "مفتوحة" : "مغلقة"}
-                          </span>
-                        </td>
-                        <td className="p-3 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => setViewingClosedShift(s)}
-                              className="h-7 px-2 text-xs font-bold cursor-pointer"
+                      </tr>
+                    ) : (
+                      restaurantShifts.map((s) => (
+                        <tr key={s.id} className="hover:bg-muted/30 transition">
+                          <td className="p-3 font-mono font-black text-indigo-600 dark:text-indigo-400">
+                            {s.auto_shift_number || s.id.slice(0, 8)}
+                          </td>
+                          <td className="p-3 font-black text-foreground">{s.shift_number}</td>
+                          <td className="p-3 font-bold text-foreground">{s.cashier_name}</td>
+                          <td className="p-3 text-muted-foreground font-mono">
+                            {new Date(s.start_at).toLocaleString("ar-EG")}
+                          </td>
+                          <td className="p-3 text-muted-foreground font-mono">
+                            {s.end_at
+                              ? new Date(s.end_at).toLocaleString("ar-EG")
+                              : "— نشطة حالياً —"}
+                          </td>
+                          <td className="p-3 font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                            {s.orders_count || 0} طلب ({Number(s.total_sales || 0).toLocaleString()})
+                          </td>
+                          <td className="p-3">
+                            <span
+                              className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                s.status === "open"
+                                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
+                                  : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                              }`}
                             >
-                              <FileSpreadsheet size={13} className="ml-1 text-emerald-600" />
-                              تقرير الوردية
-                            </Button>
-                            {canCloseShifts && !isCashier && (
+                              {s.status === "open" ? "مفتوحة" : "مغلقة"}
+                            </span>
+                          </td>
+                          <td className="p-3 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
                               <Button
                                 size="sm"
                                 variant="ghost"
-                                onClick={() => {
-                                  setSelectedShiftForAudit(s);
-                                  setIsShiftAuditLogOpen(true);
-                                }}
-                                className="h-7 px-2 text-xs font-bold text-indigo-600 cursor-pointer"
+                                onClick={() => setViewingClosedShift(s)}
+                                className="h-7 px-2 text-xs font-bold cursor-pointer"
                               >
-                                سجل التدقيق
+                                <FileSpreadsheet size={13} className="ml-1 text-emerald-600" />
+                                تقرير الوردية
                               </Button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </CardContent>
-          </Card>
+                              {canCloseShifts && !isCashier && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    setSelectedShiftForAudit(s);
+                                    setIsShiftAuditLogOpen(true);
+                                  }}
+                                  className="h-7 px-2 text-xs font-bold text-indigo-600 cursor-pointer"
+                                >
+                                  سجل التدقيق
+                                </Button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </CardContent>
+            </Card>
+          )}
         </div>
       )}
 

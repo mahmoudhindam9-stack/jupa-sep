@@ -75,7 +75,7 @@ function resolveParkTab(tabParam: string | undefined): ParkSectionTab {
   ) {
     return "definitions";
   }
-  if (tabParam === "reports") {
+  if (tabParam === "reports" || tabParam.startsWith("rep_")) {
     return "reports";
   }
   return "operations";
@@ -137,10 +137,14 @@ function ParkManagementPage() {
   // POS full screen view & Cashier Treasury Manager view
   const [isParkPosOpen, setIsParkPosOpen] = useState(false);
   const [isParkCashierTreasuryOpen, setIsParkCashierTreasuryOpen] = useState(false);
+  const activeReportSubpage =
+    tabParam === "rep_shifts" || tabParam === "rep_sales" ? tabParam : null;
 
   useEffect(() => {
-    setIsParkCashierTreasuryOpen(false);
-  }, [activeTab]);
+    if (tabParam !== "cashier_treasury") {
+      setIsParkCashierTreasuryOpen(false);
+    }
+  }, [activeTab, tabParam]);
 
   // Modals state
   const [isParkRefundModalOpen, setIsParkRefundModalOpen] = useState(false);
@@ -322,10 +326,27 @@ function ParkManagementPage() {
             icon: Wallet,
             color: "from-emerald-500/25 to-teal-500/25 text-emerald-600 dark:text-emerald-400",
             badge: "الخزينة",
-            onClick: () => setIsParkCashierTreasuryOpen(true),
+            onClick: () => navigate({ to: "/admin/park", search: { tab: "cashier_treasury" } as any }),
           },
         ]
       : []),
+  ];
+
+  const reportCards: ActionCardItem[] = [
+    {
+      title: "تقارير الورديات",
+      icon: FileSpreadsheet,
+      color: "from-emerald-500/20 to-teal-500/20 text-emerald-600 dark:text-emerald-400",
+      badge: `${shifts.length} وردية`,
+      onClick: () => navigate({ to: "/admin/park", search: { tab: "rep_shifts" } as any }),
+    },
+    {
+      title: "سجل تذاكر الدخول والمبيعات",
+      icon: ShoppingBag,
+      color: "from-blue-500/20 to-indigo-500/20 text-blue-600 dark:text-blue-400",
+      badge: `${filteredTransactions.length} تذكرة`,
+      onClick: () => navigate({ to: "/admin/park", search: { tab: "rep_sales" } as any }),
+    },
   ];
 
   const renderCards = (items: ActionCardItem[]) => {
@@ -418,11 +439,14 @@ function ParkManagementPage() {
 
       {/* SECTION 2: OPERATIONS (العمليات) */}
       {activeTab === "operations" &&
-        (isParkCashierTreasuryOpen ? (
+        (isParkCashierTreasuryOpen || tabParam === "cashier_treasury" ? (
           <ParkCashierTreasuryManagerView
             shifts={rawShifts}
             transactions={transactions}
-            onBack={() => setIsParkCashierTreasuryOpen(false)}
+            onBack={() => {
+              setIsParkCashierTreasuryOpen(false);
+              navigate({ to: "/admin/park", search: { tab: "operations" } as any });
+            }}
             onCloseShift={(shift) => {
               erpStore.setActiveParkShift(shift.id);
               setClosingShift(shift);
@@ -560,241 +584,246 @@ function ParkManagementPage() {
 
       {/* SECTION 3: REPORTS (التقارير) */}
       {activeTab === "reports" && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start animate-in fade-in duration-200">
-          <Card className="border border-border shadow-xs rounded-2xl flex flex-col max-h-[calc(100vh-200px)]">
-            <CardHeader className="p-3.5 flex flex-row items-center justify-between gap-2 border-b border-border/60 shrink-0">
-              <div className="flex items-center gap-2">
-                <CardTitle className="text-sm sm:text-base font-black">تقارير الورديات</CardTitle>
-                <Badge variant="outline" className="font-mono text-xs">
-                  {shifts.length} وردية
-                </Badge>
-              </div>
-              {!isCashier && (
-                <Button
-                  onClick={() => {
-                    setSelectedShiftForAudit(null);
-                    setIsShiftAuditLogOpen(true);
-                  }}
-                  variant="outline"
-                  size="sm"
-                  className="font-bold rounded-xl text-xs gap-1.5 border-indigo-500/30 text-indigo-600 dark:text-indigo-400 cursor-pointer h-8"
-                >
-                  <History size={13} />
-                  سجل التدقيق
-                </Button>
-              )}
-            </CardHeader>
-            <CardContent className="p-0 overflow-auto flex-1">
-              <table className="w-full text-right text-xs">
-                <thead className="bg-muted/50 border-b border-border text-muted-foreground font-bold sticky top-0">
-                  <tr>
-                    <th className="p-2.5">الوردية</th>
-                    <th className="p-2.5">الكاشير</th>
-                    <th className="p-2.5">المبيعات</th>
-                    <th className="p-2.5">الحالة</th>
-                    <th className="p-2.5 text-center">التقرير</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/60">
-                  {shifts.length === 0 ? (
+        <div className="space-y-4 animate-in fade-in duration-200">
+          {!activeReportSubpage && renderCards(reportCards)}
+
+          {activeReportSubpage === "rep_shifts" && (
+            <Card className="border border-border shadow-xs rounded-2xl flex flex-col">
+              <CardHeader className="p-3.5 flex flex-row items-center justify-between gap-2 border-b border-border/60 shrink-0">
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-sm sm:text-base font-black">تقارير الورديات</CardTitle>
+                  <Badge variant="outline" className="font-mono text-xs">
+                    {shifts.length} وردية
+                  </Badge>
+                </div>
+                {!isCashier && (
+                  <Button
+                    onClick={() => {
+                      setSelectedShiftForAudit(null);
+                      setIsShiftAuditLogOpen(true);
+                    }}
+                    variant="outline"
+                    size="sm"
+                    className="font-bold rounded-xl text-xs gap-1.5 border-indigo-500/30 text-indigo-600 dark:text-indigo-400 cursor-pointer h-8"
+                  >
+                    <History size={13} />
+                    سجل التدقيق
+                  </Button>
+                )}
+              </CardHeader>
+              <CardContent className="p-0 overflow-auto flex-1">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-muted/50 border-b border-border text-muted-foreground font-bold sticky top-0">
                     <tr>
-                      <td colSpan={5} className="text-center py-8 text-muted-foreground">
-                        لا توجد تقارير ورديات مسجلة
-                      </td>
+                      <th className="p-2.5">الوردية</th>
+                      <th className="p-2.5">الكاشير</th>
+                      <th className="p-2.5">المبيعات</th>
+                      <th className="p-2.5">الحالة</th>
+                      <th className="p-2.5 text-center">التقرير</th>
                     </tr>
-                  ) : (
-                    shifts.map((s: any) => {
-                      const shiftTxs = (transactions || []).filter(
-                        (t: any) =>
-                          (t.shift_id === s.id || t.shift_number === s.shift_number) &&
-                          t.status !== "refunded",
-                      );
-                      const shiftUsdTotal = shiftTxs.reduce(
-                        (acc: number, t: any) =>
-                          acc + Number(t.total_usd || t.total_amount_usd || 0),
-                        0,
-                      );
-                      return (
-                        <tr key={s.id} className="hover:bg-muted/30 transition">
-                          <td className="p-2.5">
-                            <div className="font-black text-foreground">{s.shift_number}</div>
-                            <div className="font-mono text-[10px] text-indigo-600 dark:text-indigo-400">
-                              {s.auto_shift_number || s.id.slice(0, 8)}
-                            </div>
+                  </thead>
+                  <tbody className="divide-y divide-border/60">
+                    {shifts.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="text-center py-8 text-muted-foreground">
+                          لا توجد تقارير ورديات مسجلة
+                        </td>
+                      </tr>
+                    ) : (
+                      shifts.map((s: any) => {
+                        const shiftTxs = (transactions || []).filter(
+                          (t: any) =>
+                            (t.shift_id === s.id || t.shift_number === s.shift_number) &&
+                            t.status !== "refunded",
+                        );
+                        const shiftUsdTotal = shiftTxs.reduce(
+                          (acc: number, t: any) =>
+                            acc + Number(t.total_usd || t.total_amount_usd || 0),
+                          0,
+                        );
+                        return (
+                          <tr key={s.id} className="hover:bg-muted/30 transition">
+                            <td className="p-2.5">
+                              <div className="font-black text-foreground">{s.shift_number}</div>
+                              <div className="font-mono text-[10px] text-indigo-600 dark:text-indigo-400">
+                                {s.auto_shift_number || s.id.slice(0, 8)}
+                              </div>
+                            </td>
+                            <td className="p-2.5 font-bold text-foreground">{s.cashier_name}</td>
+                            <td className="p-2.5 font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                              {shiftTxs.length} (${shiftUsdTotal.toLocaleString()})
+                            </td>
+                            <td className="p-2.5">
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  s.status === "open"
+                                    ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
+                                    : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                                }`}
+                              >
+                                {s.status === "open" ? "مفتوحة" : "مغلقة"}
+                              </span>
+                            </td>
+                            <td className="p-2.5 text-center">
+                              <div className="flex items-center justify-center gap-1">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => setViewingClosedShift(s)}
+                                  className="h-7 px-2 text-[11px] font-bold cursor-pointer"
+                                >
+                                  <FileSpreadsheet size={12} className="ml-1 text-emerald-600" />
+                                  التقرير
+                                </Button>
+                                {canCloseShifts && !isCashier && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => {
+                                      setSelectedShiftForAudit(s);
+                                      setIsShiftAuditLogOpen(true);
+                                    }}
+                                    className="h-7 px-2 text-[11px] font-bold text-indigo-600 cursor-pointer"
+                                  >
+                                    تدقيق
+                                  </Button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </CardContent>
+            </Card>
+          )}
+
+          {activeReportSubpage === "rep_sales" && (
+            <Card className="border border-border shadow-xs rounded-2xl flex flex-col">
+              <CardHeader className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/60 shrink-0">
+                <CardTitle className="text-sm sm:text-base font-black">
+                  سجل تذاكر الدخول ({filteredTransactions.length})
+                </CardTitle>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <div className="relative w-44">
+                    <Search size={14} className="absolute right-2.5 top-2 text-muted-foreground" />
+                    <Input
+                      value={txSearch}
+                      onChange={(e) => setTxSearch(e.target.value)}
+                      placeholder="بحث..."
+                      className="pr-8 h-8 text-xs rounded-xl"
+                    />
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleExportExcel}
+                    className="rounded-xl text-xs font-bold gap-1 h-8 px-2.5 cursor-pointer"
+                  >
+                    <FileSpreadsheet size={13} />
+                    Excel
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0 overflow-auto flex-1">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-muted/50 border-b border-border text-muted-foreground font-bold">
+                    <tr>
+                      <th className="p-3">رقم الحركة</th>
+                      <th className="p-3">التاريخ</th>
+                      <th className="p-3">العميل</th>
+                      <th className="p-3">الكاشير</th>
+                      <th className="p-3">طريقة الدفع</th>
+                      <th className="p-3">الإجمالي ($)</th>
+                      <th className="p-3">الحالة</th>
+                      <th className="p-3 text-center">إجراءات</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/60">
+                    {filteredTransactions.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="text-center py-10 text-muted-foreground">
+                          لا توجد حركات تذاكر مسجلة
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredTransactions.map((tx: any) => (
+                        <tr key={tx.id} className="hover:bg-muted/30 transition">
+                          <td className="p-3 font-mono font-bold text-foreground">
+                            {tx.transaction_number || tx.tx_number || tx.id.slice(0, 8)}
                           </td>
-                          <td className="p-2.5 font-bold text-foreground">{s.cashier_name}</td>
-                          <td className="p-2.5 font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                            {shiftTxs.length} (${shiftUsdTotal.toLocaleString()})
+                          <td className="p-3 text-muted-foreground font-mono">
+                            {new Date(tx.created_at).toLocaleString("ar-EG")}
                           </td>
-                          <td className="p-2.5">
+                          <td className="p-3 font-semibold text-foreground">
+                            {tx.customer_name || "عميل نقدي"}
+                          </td>
+                          <td className="p-3 text-muted-foreground">
+                            {tx.cashier_name || tx.created_by || "كاشير عام"}
+                          </td>
+                          <td className="p-3 font-medium">
+                            <Badge variant="outline" className="text-[10px] font-bold">
+                              {tx.payment_method === "cash"
+                                ? "كاش"
+                                : tx.payment_method === "card" || tx.payment_method === "visa"
+                                  ? "بطاقة"
+                                  : tx.payment_method || "نقدي"}
+                            </Badge>
+                          </td>
+                          <td className="p-3 font-mono font-black text-emerald-600 dark:text-emerald-400">
+                            ${Number(tx.total_usd || tx.total_amount_usd || 0).toLocaleString()}
+                          </td>
+                          <td className="p-3">
                             <span
                               className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                s.status === "open"
-                                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
-                                  : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                                tx.status === "refunded"
+                                  ? "bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300"
+                                  : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300"
                               }`}
                             >
-                              {s.status === "open" ? "مفتوحة" : "مغلقة"}
+                              {tx.status === "refunded" ? "مسترجع" : "مكتمل"}
                             </span>
                           </td>
-                          <td className="p-2.5 text-center">
-                            <div className="flex items-center justify-center gap-1">
+                          <td className="p-3 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
                               <Button
                                 size="sm"
                                 variant="ghost"
-                                onClick={() => setViewingClosedShift(s)}
-                                className="h-7 px-2 text-[11px] font-bold cursor-pointer"
+                                onClick={() => {
+                                  setSelectedTxForDetails(tx);
+                                  setIsParkTxDetailsModalOpen(true);
+                                }}
+                                className="h-7 px-2 text-xs font-bold"
                               >
-                                <FileSpreadsheet size={12} className="ml-1 text-emerald-600" />
-                                التقرير
+                                <Eye size={13} className="ml-1" />
+                                عرض
                               </Button>
-                              {canCloseShifts && !isCashier && (
+                              {tx.status !== "refunded" && (
                                 <Button
                                   size="sm"
                                   variant="ghost"
                                   onClick={() => {
-                                    setSelectedShiftForAudit(s);
-                                    setIsShiftAuditLogOpen(true);
+                                    setSelectedTxForRefund(tx);
+                                    setIsParkRefundModalOpen(true);
                                   }}
-                                  className="h-7 px-2 text-[11px] font-bold text-indigo-600 cursor-pointer"
+                                  className="h-7 px-2 text-xs font-bold text-rose-600 hover:bg-rose-50"
                                 >
-                                  تدقيق
+                                  <RotateCcw size={13} className="ml-1" />
+                                  استرجاع
                                 </Button>
                               )}
                             </div>
                           </td>
                         </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </CardContent>
-          </Card>
-
-          {/* Tickets & Transactions Table */}
-          <Card className="border border-border shadow-xs rounded-2xl flex flex-col max-h-[calc(100vh-200px)]">
-            <CardHeader className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/60 shrink-0">
-              <CardTitle className="text-sm sm:text-base font-black">
-                سجل تذاكر الدخول ({filteredTransactions.length})
-              </CardTitle>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <div className="relative w-44">
-                  <Search size={14} className="absolute right-2.5 top-2 text-muted-foreground" />
-                  <Input
-                    value={txSearch}
-                    onChange={(e) => setTxSearch(e.target.value)}
-                    placeholder="بحث..."
-                    className="pr-8 h-8 text-xs rounded-xl"
-                  />
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleExportExcel}
-                  className="rounded-xl text-xs font-bold gap-1 h-8 px-2.5 cursor-pointer"
-                >
-                  <FileSpreadsheet size={13} />
-                  Excel
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="p-0 overflow-auto flex-1">
-              <table className="w-full text-right text-xs">
-                <thead className="bg-muted/50 border-b border-border text-muted-foreground font-bold">
-                  <tr>
-                    <th className="p-3">رقم الحركة</th>
-                    <th className="p-3">التاريخ</th>
-                    <th className="p-3">العميل</th>
-                    <th className="p-3">الكاشير</th>
-                    <th className="p-3">طريقة الدفع</th>
-                    <th className="p-3">الإجمالي ($)</th>
-                    <th className="p-3">الحالة</th>
-                    <th className="p-3 text-center">إجراءات</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/60">
-                  {filteredTransactions.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className="text-center py-10 text-muted-foreground">
-                        لا توجد حركات تذاكر مسجلة
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredTransactions.map((tx: any) => (
-                      <tr key={tx.id} className="hover:bg-muted/30 transition">
-                        <td className="p-3 font-mono font-bold text-foreground">
-                          {tx.transaction_number || tx.tx_number || tx.id.slice(0, 8)}
-                        </td>
-                        <td className="p-3 text-muted-foreground font-mono">
-                          {new Date(tx.created_at).toLocaleString("ar-EG")}
-                        </td>
-                        <td className="p-3 font-semibold text-foreground">
-                          {tx.customer_name || "عميل نقدي"}
-                        </td>
-                        <td className="p-3 text-muted-foreground">
-                          {tx.cashier_name || tx.created_by || "كاشير عام"}
-                        </td>
-                        <td className="p-3 font-medium">
-                          <Badge variant="outline" className="text-[10px] font-bold">
-                            {tx.payment_method === "cash"
-                              ? "كاش"
-                              : tx.payment_method === "card" || tx.payment_method === "visa"
-                                ? "بطاقة"
-                                : tx.payment_method || "نقدي"}
-                          </Badge>
-                        </td>
-                        <td className="p-3 font-mono font-black text-emerald-600 dark:text-emerald-400">
-                          ${Number(tx.total_usd || tx.total_amount_usd || 0).toLocaleString()}
-                        </td>
-                        <td className="p-3">
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              tx.status === "refunded"
-                                ? "bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300"
-                                : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300"
-                            }`}
-                          >
-                            {tx.status === "refunded" ? "مسترجع" : "مكتمل"}
-                          </span>
-                        </td>
-                        <td className="p-3 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                setSelectedTxForDetails(tx);
-                                setIsParkTxDetailsModalOpen(true);
-                              }}
-                              className="h-7 px-2 text-xs font-bold"
-                            >
-                              <Eye size={13} className="ml-1" />
-                              عرض
-                            </Button>
-                            {tx.status !== "refunded" && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => {
-                                  setSelectedTxForRefund(tx);
-                                  setIsParkRefundModalOpen(true);
-                                }}
-                                className="h-7 px-2 text-xs font-bold text-rose-600 hover:bg-rose-50"
-                              >
-                                <RotateCcw size={13} className="ml-1" />
-                                استرجاع
-                              </Button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </CardContent>
-          </Card>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </CardContent>
+            </Card>
+          )}
         </div>
       )}
 

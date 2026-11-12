@@ -84,6 +84,13 @@ export function useSyncedSubTab(
     const url = new URL(window.location.href);
     const existingTab = url.searchParams.get("tab");
     if (currentTab === defaultTab && !existingTab) return;
+    // If existingTab is a subpage belonging to currentTab, keep existingTab in the URL
+    if (existingTab) {
+      const subInfo = getActiveSubpageInfo(url.pathname, url.search);
+      if (subInfo && subInfo.parentTab === currentTab) {
+        return;
+      }
+    }
     if (existingTab !== currentTab) {
       url.searchParams.set("tab", currentTab);
       window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}`);
@@ -193,7 +200,10 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         icon: FileBarChart,
         matchPath: (p, s) =>
           (p === "/admin" && s.includes("tab=reports")) ||
-          (p.startsWith("/admin/restaurant") && s.includes("tab=reports")),
+          (p.startsWith("/admin/restaurant") &&
+            (s.includes("tab=reports") ||
+              s.includes("tab=rep_") ||
+              s.includes("tab=daily_summary"))),
       },
     ],
   },
@@ -238,7 +248,8 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
           p.startsWith("/admin/park") &&
           (!s.includes("tab=") ||
             s.includes("tab=operations") ||
-            s.includes("tab=tickets")),
+            s.includes("tab=tickets") ||
+            s.includes("tab=cashier_treasury")),
       },
       {
         id: "park-reports",
@@ -248,7 +259,8 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "reports" },
         icon: FileBarChart,
         matchPath: (p, s) =>
-          p.startsWith("/admin/park") && s.includes("tab=reports"),
+          p.startsWith("/admin/park") &&
+          (s.includes("tab=reports") || s.includes("tab=rep_")),
       },
     ],
   },
@@ -300,7 +312,8 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "reports" },
         icon: FileBarChart,
         matchPath: (p, s) =>
-          p.startsWith("/admin/mall") && s.includes("tab=reports"),
+          p.startsWith("/admin/mall") &&
+          (s.includes("tab=reports") || s.includes("tab=rep_")),
       },
     ],
   },
@@ -356,7 +369,10 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
               s.includes("tab=hub") ||
               s.includes("tab=operations") ||
               s.includes("tab=vouchers") ||
+              s.includes("tab=transfers") ||
               s.includes("tab=journal") ||
+              s.includes("tab=general_ledger") ||
+              s.includes("tab=ledger") ||
               s.includes("tab=mall_finance"))),
       },
       {
@@ -369,8 +385,10 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         matchPath: (p, s) =>
           p.startsWith("/admin/ledger") &&
           (s.includes("tab=reports") ||
+            s.includes("tab=vouchers_register") ||
+            s.includes("tab=unified_reports") ||
+            s.includes("tab=treasury_report") ||
             s.includes("tab=financial_position") ||
-            s.includes("tab=ledger") ||
             s.includes("tab=trial") ||
             s.includes("tab=statements")),
       },
@@ -433,7 +451,8 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "reports" },
         icon: FileBarChart,
         matchPath: (p, s) =>
-          p.startsWith("/admin/inventory") && s.includes("tab=reports"),
+          p.startsWith("/admin/inventory") &&
+          (s.includes("tab=reports") || s.includes("tab=rep_")),
       },
     ],
   },
@@ -493,7 +512,8 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         search: { tab: "reports" },
         icon: FileBarChart,
         matchPath: (p, s) =>
-          p.startsWith("/admin/hr") && s.includes("tab=reports"),
+          p.startsWith("/admin/hr") &&
+          (s.includes("tab=reports") || s.includes("tab=rep_")),
       },
     ],
   },
@@ -589,7 +609,10 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
         icon: FolderCog,
         matchPath: (p, s) =>
           p.startsWith("/admin/system-update") &&
-          (s.includes("tab=definitions") || s.includes("tab=access")),
+          (s.includes("tab=definitions") ||
+            s.includes("tab=access") ||
+            s.includes("tab=access_package") ||
+            s.includes("tab=github_vercel_config")),
       },
       {
         id: "sys-operations",
@@ -605,7 +628,9 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
             (!s.includes("tab=") ||
               s.includes("tab=operations") ||
               s.includes("tab=system") ||
-              s.includes("tab=sync"))),
+              s.includes("tab=sync") ||
+              s.includes("tab=github_sync") ||
+              s.includes("tab=backup_restore"))),
       },
       {
         id: "sys-reports",
@@ -618,11 +643,136 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
           p.startsWith("/admin/system-update") &&
           (s.includes("tab=reports") ||
             s.includes("tab=audit") ||
-            s.includes("tab=status")),
+            s.includes("tab=status") ||
+            s.includes("tab=tables_report") ||
+            s.includes("tab=release_status")),
       },
     ],
   },
 ];
+
+export interface ActiveSubpageInfo {
+  labelAr: string;
+  labelEn: string;
+  parentTab: "definitions" | "operations" | "reports";
+  parentPath: string;
+}
+
+const SUBPAGE_REGISTRY: Record<
+  string,
+  Record<
+    string,
+    { labelAr: string; labelEn: string; parentTab: "definitions" | "operations" | "reports" }
+  >
+> = {
+  "/admin/ledger": {
+    accounts: { labelAr: "شجرة ودليل الحسابات", labelEn: "Chart of Accounts", parentTab: "definitions" },
+    treasury: { labelAr: "تعريف الخزائن والبنوك", labelEn: "Treasuries & Banks", parentTab: "definitions" },
+    vouchers: { labelAr: "إصدار سند مالي جديد", labelEn: "Issue Financial Voucher", parentTab: "operations" },
+    transfers: { labelAr: "التحويل بين الخزائن", labelEn: "Treasury Transfers", parentTab: "operations" },
+    journal: { labelAr: "قيود اليومية المحاسبية", labelEn: "Journal Entries", parentTab: "operations" },
+    general_ledger: { labelAr: "دفتر الأستاذ العام", labelEn: "General Ledger", parentTab: "operations" },
+    ledger: { labelAr: "دفتر الأستاذ العام", labelEn: "General Ledger", parentTab: "operations" },
+    vouchers_register: { labelAr: "تفقد وسجل سندات القبض والصرف", labelEn: "Vouchers Register", parentTab: "reports" },
+    unified_reports: { labelAr: "النظام المحاسبي والتقارير المالية الشاملة", labelEn: "Comprehensive Financial Reports", parentTab: "reports" },
+    financial_position: { labelAr: "النظام المحاسبي والتقارير المالية الشاملة", labelEn: "Comprehensive Financial Reports", parentTab: "reports" },
+    trial: { labelAr: "النظام المحاسبي والتقارير المالية الشاملة", labelEn: "Comprehensive Financial Reports", parentTab: "reports" },
+    statements: { labelAr: "النظام المحاسبي والتقارير المالية الشاملة", labelEn: "Comprehensive Financial Reports", parentTab: "reports" },
+    treasury_report: { labelAr: "تقرير أرصدة وحركة الخزائن", labelEn: "Treasury Movement Report", parentTab: "reports" },
+  },
+  "/admin/inventory": {
+    stock: { labelAr: "دليل الأصناف والمواد الخام", labelEn: "Items & Raw Materials", parentTab: "definitions" },
+    warehouses: { labelAr: "تعريف المستودعات والمخازن", labelEn: "Warehouses Definition", parentTab: "definitions" },
+    suppliers: { labelAr: "دليل الموردين والشركات", labelEn: "Suppliers Directory", parentTab: "definitions" },
+    settings: { labelAr: "ربط الحسابات وسياسات المخزون", labelEn: "Inventory Settings", parentTab: "definitions" },
+    purchases: { labelAr: "فواتير المشتريات والتوريد", labelEn: "Purchase Invoices", parentTab: "operations" },
+    transfers: { labelAr: "التحويلات المخزنية والصرف", labelEn: "Warehouse Transfers", parentTab: "operations" },
+    transactions: { labelAr: "سجل الحركات والأذون المخزنية", labelEn: "Inventory Transactions", parentTab: "operations" },
+    waste: { labelAr: "تسجيل الهالك والتسويات الجردية", labelEn: "Waste & Adjustments", parentTab: "operations" },
+    expiry: { labelAr: "متابعة تواريخ الصلاحية", labelEn: "Expiry Tracking", parentTab: "operations" },
+    rep_current_stock: { labelAr: "تقرير أرصدة المخزون الحالية", labelEn: "Current Stock Report", parentTab: "reports" },
+    rep_valuation: { labelAr: "تقييم المخزون المالي", labelEn: "Inventory Valuation Report", parentTab: "reports" },
+    rep_movement: { labelAr: "تقرير حركة الأصناف والتوريد", labelEn: "Item Movement Report", parentTab: "reports" },
+    rep_low_stock: { labelAr: "تقرير النواقص وحد الطلب", labelEn: "Low Stock Report", parentTab: "reports" },
+    rep_waste: { labelAr: "تقرير الهالك والتالف", labelEn: "Waste Report", parentTab: "reports" },
+    rep_food_cost: { labelAr: "تقرير تكلفة الأغذية (Food Cost)", labelEn: "Food Cost Report", parentTab: "reports" },
+  },
+  "/admin/hr": {
+    employees: { labelAr: "سجل وبيانات الموظفين", labelEn: "Employees Directory", parentTab: "definitions" },
+    users: { labelAr: "حسابات المستخدمين والصلاحيات", labelEn: "Users & Permissions", parentTab: "definitions" },
+    attendance: { labelAr: "تسجيل الحضور والانصراف", labelEn: "Attendance Tracking", parentTab: "operations" },
+    payroll: { labelAr: "مسير الرواتب والأجور", labelEn: "Payroll Management", parentTab: "operations" },
+    loans: { labelAr: "السلف والخصومات", labelEn: "Loans & Deductions", parentTab: "operations" },
+    rep_payroll: { labelAr: "تقرير مسير الرواتب", labelEn: "Payroll Report", parentTab: "reports" },
+    rep_attendance: { labelAr: "تقرير الحضور والغياب", labelEn: "Attendance Report", parentTab: "reports" },
+    rep_loans: { labelAr: "تقرير السلف والخصومات", labelEn: "Loans Report", parentTab: "reports" },
+  },
+  "/admin/mall": {
+    shops: { labelAr: "دليل المحلات والوحدات", labelEn: "Shops & Units", parentTab: "definitions" },
+    units: { labelAr: "دليل المحلات والوحدات", labelEn: "Shops & Units", parentTab: "definitions" },
+    tenants: { labelAr: "سجل المستأجرين", labelEn: "Tenants Directory", parentTab: "definitions" },
+    readings: { labelAr: "قراءات العدادات والمرافق", labelEn: "Meter Readings", parentTab: "definitions" },
+    contracts: { labelAr: "عقود الإيجار النشطة", labelEn: "Active Lease Contracts", parentTab: "operations" },
+    collections: { labelAr: "تحصيل الإيجارات والمرافق", labelEn: "Rent & Utility Collections", parentTab: "operations" },
+    arrears: { labelAr: "متابعة المتأخرات والمديونيات", labelEn: "Arrears & Dues", parentTab: "operations" },
+    rep_revenue: { labelAr: "تقرير إيرادات وتحصيلات المول", labelEn: "Mall Revenue Report", parentTab: "reports" },
+    rep_arrears: { labelAr: "تقرير المتأخرات والمديونيات", labelEn: "Mall Arrears Report", parentTab: "reports" },
+    rep_occupancy: { labelAr: "تقرير نسب الإشغال والوحدات", labelEn: "Occupancy Report", parentTab: "reports" },
+  },
+  "/admin/park": {
+    games: { labelAr: "تعريف الألعاب والأنشطة", labelEn: "Games & Activities", parentTab: "definitions" },
+    prices: { labelAr: "فئات وأسعار التذاكر", labelEn: "Ticket Categories & Prices", parentTab: "definitions" },
+    customers: { labelAr: "سجل عملاء الحديقة", labelEn: "Park Customers", parentTab: "definitions" },
+    treasury: { labelAr: "ربط خزينة وحسابات الحديقة", labelEn: "Park Treasury Settings", parentTab: "definitions" },
+    tickets: { labelAr: "نقطة بيع التذاكر والورديات", labelEn: "Tickets POS & Shifts", parentTab: "operations" },
+    cashier_treasury: { labelAr: "شاشة الكاشير والخزينة", labelEn: "Cashier & Treasury", parentTab: "operations" },
+    rep_sales: { labelAr: "سجل تذاكر الدخول والمبيعات", labelEn: "Tickets Sales Report", parentTab: "reports" },
+    rep_shifts: { labelAr: "تقارير ورديات الحديقة", labelEn: "Park Shifts Report", parentTab: "reports" },
+    rep_games: { labelAr: "تقرير أداء الألعاب", labelEn: "Games Performance Report", parentTab: "reports" },
+  },
+  "/admin/restaurant": {
+    menu: { labelAr: "قائمة الطعام والأصناف", labelEn: "Menu & Categories", parentTab: "definitions" },
+    tables: { labelAr: "إدارة الطاولات والصالات", labelEn: "Tables & Dining Areas", parentTab: "definitions" },
+    inventory: { labelAr: "الريسبي ومكونات الأصناف", labelEn: "Recipes & Ingredients", parentTab: "definitions" },
+    rep_sales: { labelAr: "تقرير مبيعات المطعم التفصيلي", labelEn: "Restaurant Sales Report", parentTab: "reports" },
+    rep_shifts: { labelAr: "سجل وتقارير ورديات المطعم", labelEn: "Restaurant Shifts Report", parentTab: "reports" },
+    rep_items: { labelAr: "تقرير الأصناف الأكثر مبيعاً", labelEn: "Top Selling Items Report", parentTab: "reports" },
+    daily_summary: { labelAr: "ملخص المبيعات اليومي", labelEn: "Daily Sales Summary", parentTab: "reports" },
+  },
+  "/admin/system-update": {
+    access: { labelAr: "إعدادات الفروع وقواعد البيانات", labelEn: "Branches & Access DB", parentTab: "definitions" },
+    access_package: { labelAr: "حزمة وجداول قاعدة بيانات أكسس", labelEn: "Access DB Package", parentTab: "definitions" },
+    github_vercel_config: { labelAr: "إعدادات مستودع GitHub والربط السحابي", labelEn: "GitHub & Vercel Config", parentTab: "definitions" },
+    system: { labelAr: "النسخ الاحتياطي والتحديثات", labelEn: "Backups & System Updates", parentTab: "operations" },
+    github_sync: { labelAr: "تحديث ومزامنة النظام و GitHub", labelEn: "GitHub Sync & Updates", parentTab: "operations" },
+    backup_restore: { labelAr: "النسخ الاحتياطي واستعادة البيانات", labelEn: "Backup & Restore", parentTab: "operations" },
+    sync: { labelAr: "المزامنة السحابية والربط", labelEn: "Cloud Sync & Integration", parentTab: "operations" },
+    audit: { labelAr: "سجل التدقيق والعمليات", labelEn: "System Audit Logs", parentTab: "reports" },
+    status: { labelAr: "حالة النظام والفحص الذاتي", labelEn: "System Health & Diagnostics", parentTab: "reports" },
+    tables_report: { labelAr: "تقرير إحصائيات جداول النظام والسجلات", labelEn: "System Tables Report", parentTab: "reports" },
+    release_status: { labelAr: "تقرير حالة الإصدارات والربط السحابي", labelEn: "Release & Cloud Status", parentTab: "reports" },
+  },
+};
+
+export function getActiveSubpageInfo(
+  pathname: string,
+  searchStr: string,
+): ActiveSubpageInfo | undefined {
+  const tab = extractTabParam(undefined, searchStr);
+  if (!tab || tab === "definitions" || tab === "operations" || tab === "reports" || tab === "hub" || tab === "grid" || tab === "overview") {
+    return undefined;
+  }
+
+  for (const [basePath, map] of Object.entries(SUBPAGE_REGISTRY)) {
+    if (pathname.startsWith(basePath) && map[tab]) {
+      return {
+        ...map[tab],
+        parentPath: basePath,
+      };
+    }
+  }
+  return undefined;
+}
 
 export function getActiveDepartment(
   pathname: string,

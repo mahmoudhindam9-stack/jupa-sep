@@ -150,7 +150,7 @@ export function ParkShiftClosingReportModal({
   );
   const netRevenueSsp = grossSalesSsp - refundsSsp;
 
-  // Generated Journal Entries for this Shift
+  // Generated Journal Entries for this Shift (consolidated GL entry + detailed shift ticket entries)
   const linkedJournalEntries: JournalEntry[] = useMemo(() => {
     if (!currentShift) return [];
     const allJEs = erpStore.getJournalEntries();
@@ -158,13 +158,10 @@ export function ParkShiftClosingReportModal({
     const transferRefs = (currentShift.destination_transfers || [])
       .map((tr) => tr.journal_ref)
       .filter(Boolean);
-    const txRefs = shiftTransactions
-      .map((t) => t.journal_entry_ref)
-      .filter((r): r is string => Boolean(r && !r.includes("معلقة")));
 
-    const allTargetRefs = Array.from(new Set([...refs, ...transferRefs, ...txRefs]));
+    const allTargetRefs = Array.from(new Set([...refs, ...transferRefs]));
 
-    return allJEs.filter((je) => {
+    const matchedGL = allJEs.filter((je) => {
       if (allTargetRefs.includes(je.reference || je.id)) return true;
       if (je.description) {
         if (currentShift.shift_number && je.description.includes(currentShift.shift_number))
@@ -178,6 +175,63 @@ export function ParkShiftClosingReportModal({
       }
       return false;
     });
+
+    const shiftEntryList: JournalEntry[] = [...matchedGL];
+
+    // Synthesize detailed shift ticket entries for the shift closing report only
+    shiftTransactions.forEach((tx) => {
+      const refCode = tx.journal_entry_ref || tx.tx_number;
+      if (shiftEntryList.some((e) => e.reference === refCode)) return;
+      const amt = Number(tx.total_usd || 0);
+      if (amt <= 0) return;
+      const isRefund = tx.status === "refunded";
+      const itemsText = (tx.items || []).map((i) => `${i.name_ar} (×${i.quantity})`).join("، ");
+      shiftEntryList.push({
+        id: `SHIFT-TX-${tx.id}`,
+        date: tx.transaction_date || (currentShift.opened_at || new Date().toISOString()).split("T")[0],
+        description: `${isRefund ? "مرتجع تذاكر الحديقة" : "مبيعات تذاكر الحديقة"} - إيصال ${tx.manual_tx_number || tx.tx_number} (${itemsText || "تذاكر"}) - الكاشير: ${tx.created_by || currentShift.cashier_name}`,
+        reference: refCode,
+        total_debit: amt,
+        total_credit: amt,
+        status: "posted",
+        created_by: tx.created_by || currentShift.cashier_name,
+        lines: isRefund
+          ? [
+              {
+                id: `PTL1-${tx.id}`,
+                account_code: "4103",
+                account_name: "إيرادات تذاكر وألعاب الحديقة (مرتجع)",
+                debit: amt,
+                credit: 0,
+              },
+              {
+                id: `PTL2-${tx.id}`,
+                account_code: "1101",
+                account_name: `خزينة كاشير الحديقة (${tx.currency})`,
+                debit: 0,
+                credit: amt,
+              },
+            ]
+          : [
+              {
+                id: `PTL1-${tx.id}`,
+                account_code: "1101",
+                account_name: `خزينة كاشير الحديقة (${tx.currency})`,
+                debit: amt,
+                credit: 0,
+              },
+              {
+                id: `PTL2-${tx.id}`,
+                account_code: "4103",
+                account_name: "إيرادات تذاكر وألعاب الحديقة",
+                debit: 0,
+                credit: amt,
+              },
+            ],
+      });
+    });
+
+    return shiftEntryList;
   }, [currentShift, closedResult, isOpen, shiftTransactions]);
 
   // Execute Close Shift

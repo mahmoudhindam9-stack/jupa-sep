@@ -136,33 +136,38 @@ function HRPage() {
   const navigate = useNavigate();
   const tabParam = extractTabParam(location.search, (location as any).searchStr);
 
+  const openHrSubpage = (tabKey: string) => {
+    navigate({
+      to: "/admin/hr" as any,
+      search: { tab: tabKey } as any,
+    });
+  };
+
   const resolveHrSection = (
     raw?: string | null,
   ): "definitions" | "operations" | "reports" => {
     if (raw === "definitions" || raw === "employees" || raw === "users") {
       return "definitions";
     }
-    if (raw === "reports") {
+    if (raw === "reports" || (raw && raw.startsWith("rep_"))) {
       return "reports";
     }
     return "operations";
   };
 
   const resolveHrSubTool = (raw?: string | null): string => {
+    if (!raw || raw === "grid" || raw === "operations" || raw === "overview") {
+      return "operations_hub";
+    }
+    if (raw === "definitions") return "definitions_hub";
+    if (raw === "reports") return "reports_hub";
+    if (raw.startsWith("rep_")) return "reports";
     if (raw === "employees" && canViewEmployees) return "employees";
     if (raw === "users" && canViewUsers) return "users";
-    if (raw === "definitions") {
-      return canViewEmployees ? "employees" : canViewUsers ? "users" : "employees";
-    }
-    if (raw === "reports") return "reports";
     if (raw === "payroll" && canViewPayroll) return "payroll";
     if (raw === "loans" && canViewLoans) return "loans";
     if (raw === "attendance" && canViewAttendance) return "attendance";
-    if (canViewAttendance) return "attendance";
-    if (canViewPayroll) return "payroll";
-    if (canViewLoans) return "loans";
-    if (canViewEmployees) return "employees";
-    return "attendance";
+    return "operations_hub";
   };
 
   const [hrSection, setHrSection] = useState<"definitions" | "operations" | "reports">(
@@ -176,9 +181,12 @@ function HRPage() {
   useEffect(() => {
     setHrSection(resolveHrSection(tabParam));
     setActiveTab(resolveHrSubTool(tabParam));
+    if (tabParam === "rep_payroll") setActiveHrReportView("payroll_report");
+    else if (tabParam === "rep_attendance") setActiveHrReportView("attendance_report");
+    else if (tabParam === "rep_loans") setActiveHrReportView("loans_report");
   }, [tabParam, canViewEmployees, canViewAttendance, canViewPayroll, canViewLoans, canViewUsers]);
 
-  useSyncedSubTab("/admin/hr", activeTab, setActiveTab, "attendance");
+  useSyncedSubTab("/admin/hr", hrSection, setHrSection as any, "operations");
 
   // Search & Filter States
   const [empSearch, setEmpSearch] = useState("");
@@ -1527,23 +1535,13 @@ function HRPage() {
           </h1>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {hrSection === "definitions" && canViewEmployees && (
+          {activeTab === "employees" && canViewEmployees && (
             <Button
               onClick={openAddEmployeeDialog}
               className="gap-1.5 rounded-xl font-bold text-xs h-9 px-4"
             >
               <UserPlus size={15} />
               إضافة موظف جديد
-            </Button>
-          )}
-          {hrSection === "operations" && canViewLoans && (
-            <Button
-              variant="outline"
-              onClick={openLoanDialog}
-              className="gap-1.5 rounded-xl font-bold text-xs h-9 px-3.5"
-            >
-              <Coins size={15} />
-              صرف سلفة جديدة
             </Button>
           )}
           <ViewModeToggle mode={viewMode} onChange={setViewMode} />
@@ -1553,7 +1551,7 @@ function HRPage() {
       {/* =================================================================== */}
       {/* SECTION 1: DEFINITIONS (التعريفات) — الموظفين والمستخدمين             */}
       {/* =================================================================== */}
-      {hrSection === "definitions" &&
+      {activeTab === "definitions_hub" &&
         renderCards([
           ...(canViewEmployees
             ? [
@@ -1564,8 +1562,8 @@ function HRPage() {
                   badge: `${employees.length} موظف`,
                   toneClass:
                     "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
-                  active: activeTab === "employees",
-                  onClick: () => setActiveTab("employees"),
+                  active: false,
+                  onClick: () => openHrSubpage("employees"),
                 },
               ]
             : []),
@@ -1577,8 +1575,8 @@ function HRPage() {
                   icon: UserCheck,
                   toneClass:
                     "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
-                  active: activeTab === "users",
-                  onClick: () => setActiveTab("users"),
+                  active: false,
+                  onClick: () => openHrSubpage("users"),
                 },
               ]
             : []),
@@ -1587,7 +1585,7 @@ function HRPage() {
       {/* =================================================================== */}
       {/* SECTION 2: OPERATIONS (العمليات) — الحضور والرواتب والسلف            */}
       {/* =================================================================== */}
-      {hrSection === "operations" &&
+      {activeTab === "operations_hub" &&
         renderCards([
           ...(canViewAttendance
             ? [
@@ -1598,8 +1596,8 @@ function HRPage() {
                   badge: `${attendanceStatsForDate.present}/${attendanceStatsForDate.total}`,
                   toneClass:
                     "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
-                  active: activeTab === "attendance",
-                  onClick: () => setActiveTab("attendance"),
+                  active: false,
+                  onClick: () => openHrSubpage("attendance"),
                 },
               ]
             : []),
@@ -1611,8 +1609,8 @@ function HRPage() {
                   icon: FileSpreadsheet,
                   toneClass:
                     "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
-                  active: activeTab === "payroll",
-                  onClick: () => setActiveTab("payroll"),
+                  active: false,
+                  onClick: () => openHrSubpage("payroll"),
                 },
               ]
             : []),
@@ -1625,11 +1623,54 @@ function HRPage() {
                   badge: `${activeLoansCount} سلفة`,
                   toneClass:
                     "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
-                  active: activeTab === "loans",
-                  onClick: () => setActiveTab("loans"),
+                  active: false,
+                  onClick: () => openHrSubpage("loans"),
                 },
               ]
             : []),
+        ])}
+
+      {/* =================================================================== */}
+      {/* SECTION 3: REPORTS HUB (التقارير) — 3 مربعات تقارير فقط              */}
+      {/* =================================================================== */}
+      {activeTab === "reports_hub" &&
+        renderCards([
+          {
+            id: "hr-rep-payroll",
+            title: "تقرير وكشف مسيرات الرواتب الشهرية",
+            icon: FileSpreadsheet,
+            toneClass:
+              "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
+            active: false,
+            onClick: () => {
+              setActiveHrReportView("payroll_report");
+              openHrSubpage("rep_payroll");
+            },
+          },
+          {
+            id: "hr-rep-attendance",
+            title: "تقرير انضباط الحضور والدوام",
+            icon: CalendarDays,
+            toneClass:
+              "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+            active: false,
+            onClick: () => {
+              setActiveHrReportView("attendance_report");
+              openHrSubpage("rep_attendance");
+            },
+          },
+          {
+            id: "hr-rep-loans",
+            title: "كشف أرصدة القروض والسلف الجارية",
+            icon: Coins,
+            toneClass:
+              "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
+            active: false,
+            onClick: () => {
+              setActiveHrReportView("loans_report");
+              openHrSubpage("rep_loans");
+            },
+          },
         ])}
 
       {/* Tabs Content Container */}
@@ -2155,18 +2196,6 @@ function HRPage() {
                 <Coins className="text-primary" size={18} />
                 متابعة تسديد السلف من رواتب الموظفين
               </h3>
-              <Button
-                onClick={() =>
-                  navigate({
-                    to: "/admin/ledger",
-                    search: { tab: "vouchers" } as any,
-                  })
-                }
-                className="gap-2 rounded-xl font-bold px-5 cursor-pointer"
-              >
-                <CreditCard size={16} />
-                <span>إصدار سند صرف سلفة لموظف (الإدارة المالية)</span>
-              </Button>
             </div>
 
             <Card className="border border-border shadow-sm rounded-2xl bg-card overflow-hidden">
@@ -2260,87 +2289,6 @@ function HRPage() {
 
           {/* TAB 6: SECTION 3 — HR REPORTS SUITE (التقارير) */}
           <TabsContent value="reports" className="mt-2 space-y-4">
-            {/* Overview KPI Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <Card className="border border-border shadow-2xs rounded-2xl bg-card p-4">
-                <div className="text-xs font-bold text-muted-foreground flex items-center gap-1.5">
-                  <Users size={14} className="text-primary" />
-                  إجمالي الكادر الوظيفي
-                </div>
-                <div className="text-2xl font-black text-foreground mt-1">
-                  {employees.length} موظف ({activeEmployeesCount} نشط)
-                </div>
-              </Card>
-
-              <Card className="border border-border shadow-2xs rounded-2xl bg-card p-4">
-                <div className="text-xs font-bold text-muted-foreground flex items-center gap-1.5">
-                  <Building2 size={14} className="text-emerald-600" />
-                  إجمالي الراتب المقوم الشهري
-                </div>
-                <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1 tabular-nums">
-                  {formatConvertedPrice(totalPayrollCost)}
-                </div>
-              </Card>
-
-              <Card className="border border-border shadow-2xs rounded-2xl bg-card p-4">
-                <div className="text-xs font-bold text-muted-foreground flex items-center gap-1.5">
-                  <Coins size={14} className="text-amber-600" />
-                  القروض والسلف الجارية
-                </div>
-                <div className="text-2xl font-black text-amber-600 dark:text-amber-400 mt-1 tabular-nums">
-                  {formatConvertedPrice(activeLoansAmount)} ({activeLoansCount})
-                </div>
-              </Card>
-
-              <Card className="border border-border shadow-2xs rounded-2xl bg-card p-4">
-                <div className="text-xs font-bold text-muted-foreground flex items-center gap-1.5">
-                  <Clock size={14} className="text-sky-600" />
-                  انضباط الحضور والدوام اليوم
-                </div>
-                <div className="text-2xl font-black text-sky-600 dark:text-sky-400 mt-1">
-                  {attendanceStatsForDate.total > 0
-                    ? Math.round(
-                        ((attendanceStatsForDate.present + attendanceStatsForDate.late) /
-                          attendanceStatsForDate.total) *
-                          100,
-                      )
-                    : 0}
-                  %
-                </div>
-              </Card>
-            </div>
-
-            {/* Sub-Report Cards */}
-            {renderCards([
-              {
-                id: "hr-rep-payroll",
-                title: "تقرير وكشف مسيرات الرواتب الشهرية",
-                icon: FileSpreadsheet,
-                toneClass:
-                  "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
-                active: activeHrReportView === "payroll_report",
-                onClick: () => setActiveHrReportView("payroll_report"),
-              },
-              {
-                id: "hr-rep-attendance",
-                title: "تقرير انضباط الحضور والدوام",
-                icon: CalendarDays,
-                toneClass:
-                  "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
-                active: activeHrReportView === "attendance_report",
-                onClick: () => setActiveHrReportView("attendance_report"),
-              },
-              {
-                id: "hr-rep-loans",
-                title: "كشف أرصدة القروض والسلف الجارية",
-                icon: Coins,
-                toneClass:
-                  "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
-                active: activeHrReportView === "loans_report",
-                onClick: () => setActiveHrReportView("loans_report"),
-              },
-            ])}
-
             <div className="flex flex-wrap items-center justify-end gap-2 print:hidden">
               <Button
                 size="sm"

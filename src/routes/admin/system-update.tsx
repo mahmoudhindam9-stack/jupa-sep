@@ -104,9 +104,33 @@ function SystemUpdatePage() {
   const tabParam = extractTabParam(location.search, (location as any).searchStr);
 
   const normalizeSystemTab = (raw?: string | null) => {
-    if (!raw || raw === "operations" || raw === "system") return "system";
-    if (raw === "definitions" || raw === "access") return "access";
-    if (raw === "reports") return "reports";
+    if (
+      !raw ||
+      raw === "operations" ||
+      raw === "system" ||
+      raw === "github_sync" ||
+      raw === "backup_restore" ||
+      raw === "sync"
+    ) {
+      return "system";
+    }
+    if (
+      raw === "definitions" ||
+      raw === "access" ||
+      raw === "access_package" ||
+      raw === "github_vercel_config"
+    ) {
+      return "access";
+    }
+    if (
+      raw === "reports" ||
+      raw === "tables_report" ||
+      raw === "release_status" ||
+      raw === "audit" ||
+      raw === "status"
+    ) {
+      return "reports";
+    }
     return "system";
   };
 
@@ -117,13 +141,12 @@ function SystemUpdatePage() {
   }, [tabParam]);
 
   useSyncedSubTab("/admin/system-update", currentTab, setCurrentTab, "system");
-  const [devDefTool, setDevDefTool] = useState<"access_package" | "github_vercel_config">(
-    "access_package",
-  );
-  const [devOpsTool, setDevOpsTool] = useState<"github_sync" | "backup_restore">("github_sync");
-  const [devReportTool, setDevReportTool] = useState<"tables_report" | "release_status">(
-    "tables_report",
-  );
+  const devDefTool: "access_package" | "github_vercel_config" | null =
+    tabParam === "access_package" || tabParam === "github_vercel_config" ? tabParam : null;
+  const devOpsTool: "github_sync" | "backup_restore" | null =
+    tabParam === "github_sync" || tabParam === "backup_restore" ? tabParam : null;
+  const devReportTool: "tables_report" | "release_status" | null =
+    tabParam === "tables_report" || tabParam === "release_status" ? tabParam : null;
   const [viewMode, setViewMode] = useViewMode("developer-options", "grid");
 
   const renderCards = (
@@ -818,38 +841,44 @@ function SystemUpdatePage() {
 
         {/* SECTION 1: OPERATIONS (العمليات: تحديث النظام والنسخ الاحتياطي) */}
         <TabsContent value="system" className="space-y-6 mt-4">
-          {renderCards([
-            {
-              id: "github_sync",
-              title: "تحديث ومزامنة النظام و GitHub",
-              icon: Github,
-              colorClass: "text-purple-600",
-              bgClass: "bg-purple-500/10",
-              badge: `v${CURRENT_VERSION}`,
-              active: devOpsTool === "github_sync",
-              onClick: () => setDevOpsTool("github_sync"),
-            },
-            {
-              id: "backup_restore",
-              title: "النسخ الاحتياطي واستعادة وتصفير البيانات",
-              icon: Database,
-              colorClass: "text-blue-600",
-              bgClass: "bg-blue-500/10",
-              badge: "نسخ احتياطي",
-              active: devOpsTool === "backup_restore",
-              onClick: () => setDevOpsTool("backup_restore"),
-            },
-            {
-              id: "developer_studio",
-              title: "استوديو المطور Pro",
-              icon: Sparkles,
-              colorClass: "text-indigo-600",
-              bgClass: "bg-indigo-500/10",
-              badge: "متقدم",
-              active: false,
-              onClick: () => navigate({ to: "/admin/studio" }),
-            },
-          ])}
+          {!devOpsTool &&
+            renderCards([
+              {
+                id: "github_sync",
+                title: "تحديث ومزامنة النظام و GitHub",
+                icon: Github,
+                colorClass: "text-purple-600",
+                bgClass: "bg-purple-500/10",
+                badge: `v${CURRENT_VERSION}`,
+                active: false,
+                onClick: () =>
+                  navigate({ to: "/admin/system-update", search: { tab: "github_sync" } as any }),
+              },
+              {
+                id: "backup_restore",
+                title: "النسخ الاحتياطي واستعادة وتصفير البيانات",
+                icon: Database,
+                colorClass: "text-blue-600",
+                bgClass: "bg-blue-500/10",
+                badge: "نسخ احتياطي",
+                active: false,
+                onClick: () =>
+                  navigate({
+                    to: "/admin/system-update",
+                    search: { tab: "backup_restore" } as any,
+                  }),
+              },
+              {
+                id: "developer_studio",
+                title: "استوديو المطور Pro",
+                icon: Sparkles,
+                colorClass: "text-indigo-600",
+                bgClass: "bg-indigo-500/10",
+                badge: "متقدم",
+                active: false,
+                onClick: () => navigate({ to: "/admin/studio" }),
+              },
+            ])}
 
           {devOpsTool === "github_sync" && (
             <div className="space-y-6">
@@ -1372,28 +1401,37 @@ git push origin ${releaseTagName}`}
 
         {/* SECTION 2: DEFINITIONS (التعريفات: حزمة أكسس وإعدادات الربط السحابي) */}
         <TabsContent value="access" className="space-y-6 mt-4">
-          {renderCards([
-            {
-              id: "access_package",
-              title: "حزمة وجداول قاعدة بيانات أكسس (MS Access & SQL Schema)",
-              icon: FileSpreadsheet,
-              colorClass: "text-emerald-600",
-              bgClass: "bg-emerald-500/10",
-              badge: `${accessTablesList.length} جداول`,
-              active: devDefTool === "access_package",
-              onClick: () => setDevDefTool("access_package"),
-            },
-            {
-              id: "github_vercel_config",
-              title: "إعدادات مستودع GitHub والربط السحابي (Vercel)",
-              icon: Globe,
-              colorClass: "text-sky-600",
-              bgClass: "bg-sky-500/10",
-              badge: "ربط سحابي",
-              active: devDefTool === "github_vercel_config",
-              onClick: () => setDevDefTool("github_vercel_config"),
-            },
-          ])}
+          {!devDefTool &&
+            renderCards([
+              {
+                id: "access_package",
+                title: "حزمة وجداول قاعدة بيانات أكسس (MS Access & SQL Schema)",
+                icon: FileSpreadsheet,
+                colorClass: "text-emerald-600",
+                bgClass: "bg-emerald-500/10",
+                badge: `${accessTablesList.length} جداول`,
+                active: false,
+                onClick: () =>
+                  navigate({
+                    to: "/admin/system-update",
+                    search: { tab: "access_package" } as any,
+                  }),
+              },
+              {
+                id: "github_vercel_config",
+                title: "إعدادات مستودع GitHub والربط السحابي (Vercel)",
+                icon: Globe,
+                colorClass: "text-sky-600",
+                bgClass: "bg-sky-500/10",
+                badge: "ربط سحابي",
+                active: false,
+                onClick: () =>
+                  navigate({
+                    to: "/admin/system-update",
+                    search: { tab: "github_vercel_config" } as any,
+                  }),
+              },
+            ])}
 
           {devDefTool === "access_package" && (
             <div className="space-y-6">
@@ -1709,71 +1747,49 @@ vercel --prod`}
 
         {/* SECTION 3: REPORTS (التقارير: حالة الجداول وسجل الإصدارات والمزامنة) */}
         <TabsContent value="reports" className="space-y-6 mt-4">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <Card className="border-border/80 rounded-2xl bg-card p-5">
-              <div className="text-xs font-bold text-muted-foreground">إصدار النظام الحالي</div>
-              <div className="text-2xl font-black text-purple-600 dark:text-purple-400 mt-1 font-mono">
-                v{CURRENT_VERSION}
-              </div>
-              <div className="text-[11px] text-muted-foreground mt-1">
-                مستودع: {updateSettings.repo} (main)
-              </div>
-            </Card>
-            <Card className="border-border/80 rounded-2xl bg-card p-5">
-              <div className="text-xs font-bold text-muted-foreground">إجمالي جداول النظام</div>
-              <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
-                {accessTablesList.length} جداول رئيسية
-              </div>
-              <div className="text-[11px] text-muted-foreground mt-1">
-                إجمالي السجلات:{" "}
-                {accessTablesList.reduce((sum, tbl) => sum + (tbl.count || 0), 0)} سجل
-              </div>
-            </Card>
-            <Card className="border-border/80 rounded-2xl bg-card p-5">
-              <div className="text-xs font-bold text-muted-foreground">حالة المزامنة الحية</div>
-              <div className="text-2xl font-black text-blue-600 dark:text-blue-400 mt-1">
-                {isLiveSynced ? "متصل ومتزامن" : "جاري المزامنة"}
-              </div>
-              <div className="text-[11px] text-muted-foreground mt-1">
-                آخر مزامنة: {lastSyncTime}
-              </div>
-            </Card>
-          </div>
+          {!devReportTool &&
+            renderCards([
+              {
+                id: "tables_report",
+                title: "تقرير إحصائيات جداول النظام والسجلات",
+                icon: Table,
+                colorClass: "text-emerald-600",
+                bgClass: "bg-emerald-500/10",
+                badge: `${accessTablesList.length} جداول`,
+                active: false,
+                onClick: () =>
+                  navigate({
+                    to: "/admin/system-update",
+                    search: { tab: "tables_report" } as any,
+                  }),
+              },
+              {
+                id: "release_status",
+                title: "تقرير حالة الإصدارات والربط السحابي",
+                icon: GitBranch,
+                colorClass: "text-purple-600",
+                bgClass: "bg-purple-500/10",
+                badge: `v${CURRENT_VERSION}`,
+                active: false,
+                onClick: () =>
+                  navigate({
+                    to: "/admin/system-update",
+                    search: { tab: "release_status" } as any,
+                  }),
+              },
+              {
+                id: "sql_schema_preview",
+                title: "معاينة مخطط SQL",
+                icon: FileCode,
+                colorClass: "text-blue-600",
+                bgClass: "bg-blue-500/10",
+                badge: "SQL",
+                active: false,
+                onClick: () => setShowSchemaDialog(true),
+              },
+            ])}
 
-          {renderCards([
-            {
-              id: "tables_report",
-              title: "تقرير إحصائيات جداول النظام والسجلات",
-              icon: Table,
-              colorClass: "text-emerald-600",
-              bgClass: "bg-emerald-500/10",
-              badge: `${accessTablesList.length} جداول`,
-              active: devReportTool === "tables_report",
-              onClick: () => setDevReportTool("tables_report"),
-            },
-            {
-              id: "release_status",
-              title: "تقرير حالة الإصدارات والربط السحابي",
-              icon: GitBranch,
-              colorClass: "text-purple-600",
-              bgClass: "bg-purple-500/10",
-              badge: `v${CURRENT_VERSION}`,
-              active: devReportTool === "release_status",
-              onClick: () => setDevReportTool("release_status"),
-            },
-            {
-              id: "sql_schema_preview",
-              title: "معاينة مخطط SQL",
-              icon: FileCode,
-              colorClass: "text-blue-600",
-              bgClass: "bg-blue-500/10",
-              badge: "SQL",
-              active: false,
-              onClick: () => setShowSchemaDialog(true),
-            },
-          ])}
-
-          {devReportTool === "tables_report" ? (
+          {devReportTool === "tables_report" && (
             <Card className="border-border/80 rounded-2xl bg-card overflow-hidden">
               <CardHeader className="border-b border-border/50 p-4 sm:p-5">
                 <CardTitle className="text-base font-black text-foreground">
@@ -1815,7 +1831,9 @@ vercel --prod`}
                 </div>
               </CardContent>
             </Card>
-          ) : (
+          )}
+
+          {devReportTool === "release_status" && (
             <Card className="border-border/80 rounded-2xl bg-card p-5 space-y-4">
               <h3 className="text-base font-black text-foreground">
                 ملخص الإصدار البرمجي وحالة الربط السحابي (GitHub & Vercel)
