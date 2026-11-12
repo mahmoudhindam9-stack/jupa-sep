@@ -4,7 +4,7 @@ import { OracleAccountsViewer } from "@/components/admin/OracleAccountsViewer";
 import { VouchersLedgerSection } from "@/components/admin/VouchersLedgerSection";
 import { DepartmentsGridHub } from "@/components/admin/DepartmentsGridHub";
 import { ComprehensiveFinancialPositionCard } from "@/components/admin/ComprehensiveFinancialPositionCard";
-import { createFileRoute, Link, useLocation } from "@tanstack/react-router";
+import { createFileRoute, Link, useLocation, useNavigate } from "@tanstack/react-router";
 import {
   extractTabParam,
   useSyncedSubTab,
@@ -108,6 +108,7 @@ function AdminDashboard() {
   const { formatPrice } = useSettings();
   const [auditViewMode, setAuditViewMode] = useViewMode("shift-audit", "grid");
   const location = useLocation();
+  const navigate = useNavigate();
   const tabParam = extractTabParam(location.search, (location as any).searchStr);
   const rawSearchStr =
     (location as any).searchStr ??
@@ -125,30 +126,47 @@ function AdminDashboard() {
     return "operations" as const;
   }, [rawSearchStr]);
 
+  const auditToolParam = useMemo(() => {
+    try {
+      const sp = new URLSearchParams(rawSearchStr);
+      return sp.get("tool");
+    } catch {
+      return null;
+    }
+  }, [rawSearchStr]);
+
+  const openShiftAuditSubpage = (
+    section: "definitions" | "operations" | "reports",
+    tool: string,
+  ) => {
+    navigate({
+      to: "/admin" as any,
+      search: { tab: "shift_audit", section, tool } as any,
+    });
+  };
+
   const [activeTab, setActiveTab] = useState(tabParam || "grid");
   const [auditSection, setAuditSection] = useState<"definitions" | "operations" | "reports">(
     sectionParam,
   );
-  const [activeAuditDefTool, setActiveAuditDefTool] = useState<"shift_rules" | "audit_rules">(
-    "shift_rules",
-  );
-  const [activeAuditOpTool, setActiveAuditOpTool] = useState<"shifts" | "operations_log">(
-    tabParam === "audit_logs" ? "operations_log" : "shifts",
-  );
-  const [activeAuditReportTool, setActiveAuditReportTool] = useState<
-    "shift_summary" | "audit_summary"
-  >("shift_summary");
+  const activeAuditDefTool: "shift_rules" | "audit_rules" | null =
+    auditToolParam === "shift_rules" || auditToolParam === "audit_rules" ? auditToolParam : null;
+  const activeAuditOpTool: "shifts" | "operations_log" | null =
+    auditToolParam === "shifts" || auditToolParam === "operations_log"
+      ? auditToolParam
+      : tabParam === "audit_logs"
+        ? "operations_log"
+        : null;
+  const activeAuditReportTool: "shift_summary" | "audit_summary" | null =
+    auditToolParam === "shift_summary" || auditToolParam === "audit_summary"
+      ? auditToolParam
+      : null;
   const [isAuditOperationsOpen, setIsAuditOperationsOpen] = useState(false);
   const [isShiftAuditModalOpen, setIsShiftAuditModalOpen] = useState(false);
 
   useEffect(() => {
     if (tabParam) {
       setActiveTab(tabParam);
-      if (tabParam === "audit_logs") {
-        setActiveAuditOpTool("operations_log");
-      } else if (tabParam === "shift_audit" || tabParam === "shifts") {
-        setActiveAuditOpTool("shifts");
-      }
     } else {
       setActiveTab("grid");
     }
@@ -2040,30 +2058,31 @@ function AdminDashboard() {
                   {/* ============================================================== */}
                   {auditSection === "definitions" && (
                     <div className="space-y-4 animate-in fade-in duration-200">
-                      {renderAuditCards([
-                        {
-                          id: "audit-def-shift-rules",
-                          title: "قنوات وضوابط تدقيق الورديات",
-                          icon: ClipboardList,
-                          badge: "المطعم والحديقة",
-                          toneClass:
-                            "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
-                          active: activeAuditDefTool === "shift_rules",
-                          onClick: () => setActiveAuditDefTool("shift_rules"),
-                        },
-                        {
-                          id: "audit-def-audit-rules",
-                          title: "إعدادات وقواعد سجل العمليات",
-                          icon: History,
-                          badge: "الرقابة",
-                          toneClass:
-                            "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
-                          active: activeAuditDefTool === "audit_rules",
-                          onClick: () => setActiveAuditDefTool("audit_rules"),
-                        },
-                      ])}
+                      {!activeAuditDefTool &&
+                        renderAuditCards([
+                          {
+                            id: "audit-def-shift-rules",
+                            title: "قنوات وضوابط تدقيق الورديات",
+                            icon: ClipboardList,
+                            badge: "المطعم والحديقة",
+                            toneClass:
+                              "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
+                            active: false,
+                            onClick: () => openShiftAuditSubpage("definitions", "shift_rules"),
+                          },
+                          {
+                            id: "audit-def-audit-rules",
+                            title: "إعدادات وقواعد سجل العمليات",
+                            icon: History,
+                            badge: "الرقابة",
+                            toneClass:
+                              "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+                            active: false,
+                            onClick: () => openShiftAuditSubpage("definitions", "audit_rules"),
+                          },
+                        ])}
 
-                      {activeAuditDefTool === "shift_rules" ? (
+                      {activeAuditDefTool === "shift_rules" && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <Card className="rounded-2xl border border-border bg-card shadow-xs">
                             <CardHeader className="pb-3 border-b border-border/50">
@@ -2147,7 +2166,9 @@ function AdminDashboard() {
                             </CardContent>
                           </Card>
                         </div>
-                      ) : (
+                      )}
+
+                      {activeAuditDefTool === "audit_rules" && (
                         <Card className="rounded-2xl border border-border bg-card shadow-xs">
                           <CardHeader className="pb-3 border-b border-border/50">
                             <CardTitle className="text-sm font-black text-foreground">
@@ -2188,32 +2209,35 @@ function AdminDashboard() {
                   {/* ============================================================== */}
                   {auditSection === "operations" && (
                     <div className="space-y-4 animate-in fade-in duration-200">
-                      {renderAuditCards([
-                        {
-                          id: "audit-op-shifts",
-                          title: "تدقيق ومطابقة الورديات",
-                          icon: ClipboardList,
-                          badge: `${(erpStore.getRestaurantShifts() || []).length + (erpStore.getParkShifts() || []).length} وردية`,
-                          toneClass:
-                            "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
-                          active: activeAuditOpTool === "shifts",
-                          onClick: () => setActiveAuditOpTool("shifts"),
-                        },
-                        {
-                          id: "audit-op-logs",
-                          title: "سجل العمليات والرقابة المباشر",
-                          icon: History,
-                          badge: `${(erpState.auditLogs || []).length} عملية`,
-                          toneClass:
-                            "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
-                          active: activeAuditOpTool === "operations_log",
-                          onClick: () => setActiveAuditOpTool("operations_log"),
-                        },
-                      ])}
+                      {!activeAuditOpTool &&
+                        renderAuditCards([
+                          {
+                            id: "audit-op-shifts",
+                            title: "تدقيق ومطابقة الورديات",
+                            icon: ClipboardList,
+                            badge: `${(erpStore.getRestaurantShifts() || []).length + (erpStore.getParkShifts() || []).length} وردية`,
+                            toneClass:
+                              "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
+                            active: false,
+                            onClick: () => openShiftAuditSubpage("operations", "shifts"),
+                          },
+                          {
+                            id: "audit-op-logs",
+                            title: "سجل العمليات والرقابة المباشر",
+                            icon: History,
+                            badge: `${(erpState.auditLogs || []).length} عملية`,
+                            toneClass:
+                              "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
+                            active: false,
+                            onClick: () => openShiftAuditSubpage("operations", "operations_log"),
+                          },
+                        ])}
 
-                      {activeAuditOpTool === "shifts" ? (
+                      {activeAuditOpTool === "shifts" && (
                         <ShiftAuditLogViewer showHeaderTitle={false} />
-                      ) : (
+                      )}
+
+                      {activeAuditOpTool === "operations_log" && (
                         <AuditOperationsView logs={erpState.auditLogs || []} />
                       )}
                     </div>
@@ -2224,70 +2248,35 @@ function AdminDashboard() {
                   {/* ============================================================== */}
                   {auditSection === "reports" && (
                     <div className="space-y-4 animate-in fade-in duration-200">
-                      {renderAuditCards([
-                        {
-                          id: "audit-rep-shifts",
-                          title: "تقرير وسجل تدقيق الورديات الشامل",
-                          icon: FileBarChart,
-                          badge: "الورديات",
-                          toneClass:
-                            "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
-                          active: activeAuditReportTool === "shift_summary",
-                          onClick: () => setActiveAuditReportTool("shift_summary"),
-                        },
-                        {
-                          id: "audit-rep-logs",
-                          title: "تقرير وطباعة سجل العمليات الرقابي",
-                          icon: Printer,
-                          badge: `${(erpState.auditLogs || []).length} سجل`,
-                          toneClass:
-                            "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20",
-                          active: activeAuditReportTool === "audit_summary",
-                          onClick: () => setActiveAuditReportTool("audit_summary"),
-                        },
-                      ])}
+                      {!activeAuditReportTool &&
+                        renderAuditCards([
+                          {
+                            id: "audit-rep-shifts",
+                            title: "تقرير وسجل تدقيق الورديات الشامل",
+                            icon: FileBarChart,
+                            badge: "الورديات",
+                            toneClass:
+                              "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+                            active: false,
+                            onClick: () => openShiftAuditSubpage("reports", "shift_summary"),
+                          },
+                          {
+                            id: "audit-rep-logs",
+                            title: "تقرير وطباعة سجل العمليات الرقابي",
+                            icon: Printer,
+                            badge: `${(erpState.auditLogs || []).length} سجل`,
+                            toneClass:
+                              "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20",
+                            active: false,
+                            onClick: () => openShiftAuditSubpage("reports", "audit_summary"),
+                          },
+                        ])}
 
-                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                        <Card className="rounded-2xl border border-border bg-card p-4 shadow-2xs">
-                          <div className="text-xs font-bold text-muted-foreground">
-                            إجمالي ورديات المطعم
-                          </div>
-                          <div className="text-2xl font-black text-foreground mt-1 font-mono">
-                            {(erpStore.getRestaurantShifts() || []).length}
-                          </div>
-                        </Card>
-                        <Card className="rounded-2xl border border-border bg-card p-4 shadow-2xs">
-                          <div className="text-xs font-bold text-muted-foreground">
-                            إجمالي ورديات الحديقة
-                          </div>
-                          <div className="text-2xl font-black text-emerald-600 mt-1 font-mono">
-                            {(erpStore.getParkShifts() || []).length}
-                          </div>
-                        </Card>
-                        <Card className="rounded-2xl border border-border bg-card p-4 shadow-2xs">
-                          <div className="text-xs font-bold text-muted-foreground">
-                            الورديات المفتوحة الآن
-                          </div>
-                          <div className="text-2xl font-black text-amber-600 mt-1 font-mono">
-                            {(erpStore.getRestaurantShifts() || []).filter((s) => s.status === "open")
-                              .length +
-                              (erpStore.getParkShifts() || []).filter((s) => s.status === "open")
-                                .length}
-                          </div>
-                        </Card>
-                        <Card className="rounded-2xl border border-border bg-card p-4 shadow-2xs">
-                          <div className="text-xs font-bold text-muted-foreground">
-                            إجمالي العمليات المرصودة
-                          </div>
-                          <div className="text-2xl font-black text-primary mt-1 font-mono">
-                            {(erpState.auditLogs || []).length}
-                          </div>
-                        </Card>
-                      </div>
-
-                      {activeAuditReportTool === "shift_summary" ? (
+                      {activeAuditReportTool === "shift_summary" && (
                         <ShiftAuditLogViewer showHeaderTitle={false} compact={true} />
-                      ) : (
+                      )}
+
+                      {activeAuditReportTool === "audit_summary" && (
                         <AuditOperationsView logs={erpState.auditLogs || []} />
                       )}
                     </div>

@@ -656,7 +656,44 @@ export interface ActiveSubpageInfo {
   labelEn: string;
   parentTab: "definitions" | "operations" | "reports";
   parentPath: string;
+  parentSearch?: Record<string, string>;
 }
+
+const SHIFT_AUDIT_SUBPAGES: Record<
+  string,
+  { labelAr: string; labelEn: string; parentTab: "definitions" | "operations" | "reports" }
+> = {
+  shift_rules: {
+    labelAr: "قنوات وضوابط تدقيق الورديات",
+    labelEn: "Shift Audit Channels & Rules",
+    parentTab: "definitions",
+  },
+  audit_rules: {
+    labelAr: "إعدادات وقواعد سجل العمليات",
+    labelEn: "Operations Log Rules",
+    parentTab: "definitions",
+  },
+  shifts: {
+    labelAr: "تدقيق ومطابقة الورديات",
+    labelEn: "Shift Audit & Reconciliation",
+    parentTab: "operations",
+  },
+  operations_log: {
+    labelAr: "سجل العمليات والرقابة المباشر",
+    labelEn: "Live Operations Audit Log",
+    parentTab: "operations",
+  },
+  shift_summary: {
+    labelAr: "تقرير وسجل تدقيق الورديات الشامل",
+    labelEn: "Comprehensive Shift Audit Report",
+    parentTab: "reports",
+  },
+  audit_summary: {
+    labelAr: "تقرير وطباعة سجل العمليات الرقابي",
+    labelEn: "Operations Audit Log Report",
+    parentTab: "reports",
+  },
+};
 
 const SUBPAGE_REGISTRY: Record<
   string,
@@ -759,6 +796,27 @@ export function getActiveSubpageInfo(
   searchStr: string,
 ): ActiveSubpageInfo | undefined {
   const tab = extractTabParam(undefined, searchStr);
+  if (
+    pathname === "/admin" &&
+    (tab === "shift_audit" || tab === "audit_logs" || tab === "shifts")
+  ) {
+    try {
+      const sp = new URLSearchParams(searchStr.startsWith("?") ? searchStr.slice(1) : searchStr);
+      const tool = sp.get("tool");
+      if (tool && SHIFT_AUDIT_SUBPAGES[tool]) {
+        const sub = SHIFT_AUDIT_SUBPAGES[tool];
+        return {
+          ...sub,
+          parentPath: "/admin",
+          parentSearch: { tab: "shift_audit", section: sub.parentTab },
+        };
+      }
+    } catch {
+      // ignore
+    }
+    return undefined;
+  }
+
   if (!tab || tab === "definitions" || tab === "operations" || tab === "reports" || tab === "hub" || tab === "grid" || tab === "overview") {
     return undefined;
   }

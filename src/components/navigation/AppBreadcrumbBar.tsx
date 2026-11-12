@@ -131,7 +131,10 @@ export function AppBreadcrumbBar({
       return;
     }
     if (activeSubpage) {
-      handleNavigate(activeSubpage.parentPath, { tab: activeSubpage.parentTab });
+      handleNavigate(
+        activeSubpage.parentPath,
+        activeSubpage.parentSearch || { tab: activeSubpage.parentTab },
+      );
       return;
     }
     handleNavigate("/admin");
