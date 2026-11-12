@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { ViewModeToggle, useViewMode } from "@/components/ui/view-mode-toggle";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -122,6 +123,78 @@ function SystemUpdatePage() {
   const [devOpsTool, setDevOpsTool] = useState<"github_sync" | "backup_restore">("github_sync");
   const [devReportTool, setDevReportTool] = useState<"tables_report" | "release_status">(
     "tables_report",
+  );
+  const [viewMode, setViewMode] = useViewMode("developer-options", "grid");
+
+  const renderCards = (
+    items: Array<{
+      id: string;
+      title: string;
+      icon: any;
+      colorClass: string;
+      bgClass: string;
+      badge?: string;
+      active?: boolean;
+      onClick: () => void;
+    }>,
+  ) => (
+    <div
+      className={
+        viewMode === "grid"
+          ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+          : "flex flex-col gap-3"
+      }
+    >
+      {items.map((item) => {
+        const Icon = item.icon;
+        return (
+          <Card
+            key={item.id}
+            onClick={item.onClick}
+            className={`cursor-pointer transition-all hover:shadow-md border-2 group ${
+              item.active
+                ? "border-primary bg-primary/5 shadow-sm"
+                : "border-border/70 hover:border-primary/40 bg-card"
+            }`}
+          >
+            <CardContent
+              className={
+                viewMode === "grid"
+                  ? "p-5 flex flex-col justify-between gap-4 h-full"
+                  : "p-4 flex items-center justify-between gap-4"
+              }
+            >
+              <div className="flex items-start gap-3.5">
+                <div className={`p-3 rounded-2xl shrink-0 ${item.bgClass} ${item.colorClass}`}>
+                  <Icon className="w-6 h-6" />
+                </div>
+                <div className="space-y-1 text-right">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-black text-base text-foreground group-hover:text-primary transition-colors">
+                      {item.title}
+                    </h3>
+                    {item.badge && (
+                      <Badge variant="secondary" className="text-[10px] font-bold">
+                        {item.badge}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className={viewMode === "grid" ? "flex justify-end pt-1" : "shrink-0"}>
+                <Button
+                  size="sm"
+                  variant={item.active ? "default" : "outline"}
+                  className="font-bold text-xs gap-1.5 rounded-xl"
+                >
+                  <span>فتح</span>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })}
+    </div>
   );
 
   const handleTabChange = (newTab: string) => {
@@ -707,82 +780,76 @@ function SystemUpdatePage() {
       {/* Page Content (Controlled by AppBreadcrumbBar: التعريفات / العمليات / التقارير) */}
       <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full space-y-6">
         {/* Clean Section Header */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b pb-3 border-border/60">
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl sm:text-2xl font-black tracking-tight text-foreground">
-                {currentTab === "access"
-                  ? "خيارات المطور — التعريفات (حزمة أكسس وإعدادات الربط السحابي)"
-                  : currentTab === "reports"
-                    ? "خيارات المطور — التقارير (حالة الجداول والإصدارات)"
-                    : "خيارات المطور — العمليات (تحديث النظام والنسخ الاحتياطي)"}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-card p-4 rounded-2xl border shadow-xs">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-600">
+              <Code className="w-6 h-6" />
+            </div>
+            <div>
+              <h1 className="text-xl font-black text-foreground">
+                خيارات المطور والنسخ الاحتياطي
               </h1>
-              <Badge
-                variant="outline"
-                className={`gap-1.5 px-2.5 py-0.5 font-bold text-xs rounded-full ${
-                  isLiveSynced
-                    ? "bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800"
-                    : "bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800"
-                }`}
-              >
-                <span
-                  className={`w-2 h-2 rounded-full ${
-                    isLiveSynced ? "bg-emerald-500 animate-pulse" : "bg-amber-500"
-                  }`}
-                />
-                {isLiveSynced ? "متزامن لحظياً" : "إعادة المزامنة..."}
-              </Badge>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge
+              variant="outline"
+              className={`gap-1.5 px-2.5 py-1 font-bold text-xs rounded-xl ${
+                isLiveSynced
+                  ? "bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800"
+                  : "bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800"
+              }`}
+            >
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  isLiveSynced ? "bg-emerald-500 animate-pulse" : "bg-amber-500"
+                }`}
+              />
+              {isLiveSynced ? "متزامن لحظياً" : "إعادة المزامنة..."}
+            </Badge>
             <div className="flex items-center gap-1.5 px-3 py-1.5 bg-muted/50 border border-border rounded-xl text-xs font-bold">
               <span className="text-muted-foreground">الإصدار:</span>
               <span className="font-mono text-primary font-black">v{CURRENT_VERSION}</span>
             </div>
-            <span className="text-xs font-bold text-muted-foreground flex items-center gap-1">
-              <Activity size={13} className="text-primary" /> آخر مزامنة: {lastSyncTime}
-            </span>
+            <ViewModeToggle mode={viewMode} onChange={setViewMode} />
           </div>
         </div>
 
         {/* SECTION 1: OPERATIONS (العمليات: تحديث النظام والنسخ الاحتياطي) */}
         <TabsContent value="system" className="space-y-6 mt-4">
-          {/* Sub-tools bar for Operations */}
-          <div className="flex flex-wrap items-center justify-between gap-2 bg-card border border-border/80 p-2.5 rounded-2xl shadow-xs">
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                variant={devOpsTool === "github_sync" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setDevOpsTool("github_sync")}
-                className="rounded-xl font-black text-xs gap-1.5 cursor-pointer"
-              >
-                <Github size={15} />
-                تحديث ومزامنة النظام و GitHub
-              </Button>
-              <Button
-                type="button"
-                variant={devOpsTool === "backup_restore" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setDevOpsTool("backup_restore")}
-                className="rounded-xl font-black text-xs gap-1.5 cursor-pointer"
-              >
-                <Database size={15} />
-                النسخ الاحتياطي واستعادة وتصفير البيانات
-              </Button>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => navigate({ to: "/admin/studio" })}
-              className="rounded-xl font-black text-xs gap-1.5 border-indigo-300 dark:border-indigo-800 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 cursor-pointer"
-            >
-              <Sparkles size={15} />
-              استوديو المطور Pro
-            </Button>
-          </div>
+          {renderCards([
+            {
+              id: "github_sync",
+              title: "تحديث ومزامنة النظام و GitHub",
+              icon: Github,
+              colorClass: "text-purple-600",
+              bgClass: "bg-purple-500/10",
+              badge: `v${CURRENT_VERSION}`,
+              active: devOpsTool === "github_sync",
+              onClick: () => setDevOpsTool("github_sync"),
+            },
+            {
+              id: "backup_restore",
+              title: "النسخ الاحتياطي واستعادة وتصفير البيانات",
+              icon: Database,
+              colorClass: "text-blue-600",
+              bgClass: "bg-blue-500/10",
+              badge: "نسخ احتياطي",
+              active: devOpsTool === "backup_restore",
+              onClick: () => setDevOpsTool("backup_restore"),
+            },
+            {
+              id: "developer_studio",
+              title: "استوديو المطور Pro",
+              icon: Sparkles,
+              colorClass: "text-indigo-600",
+              bgClass: "bg-indigo-500/10",
+              badge: "متقدم",
+              active: false,
+              onClick: () => navigate({ to: "/admin/studio" }),
+            },
+          ])}
 
           {devOpsTool === "github_sync" && (
             <div className="space-y-6">
@@ -1305,31 +1372,28 @@ git push origin ${releaseTagName}`}
 
         {/* SECTION 2: DEFINITIONS (التعريفات: حزمة أكسس وإعدادات الربط السحابي) */}
         <TabsContent value="access" className="space-y-6 mt-4">
-          {/* Sub-tools bar for Definitions */}
-          <div className="flex flex-wrap items-center justify-between gap-2 bg-card border border-border/80 p-2.5 rounded-2xl shadow-xs">
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                variant={devDefTool === "access_package" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setDevDefTool("access_package")}
-                className="rounded-xl font-black text-xs gap-1.5 cursor-pointer"
-              >
-                <FileSpreadsheet size={15} />
-                حزمة وجداول قاعدة بيانات أكسس (MS Access & SQL Schema)
-              </Button>
-              <Button
-                type="button"
-                variant={devDefTool === "github_vercel_config" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setDevDefTool("github_vercel_config")}
-                className="rounded-xl font-black text-xs gap-1.5 cursor-pointer"
-              >
-                <Globe size={15} />
-                إعدادات مستودع GitHub والربط السحابي (Vercel)
-              </Button>
-            </div>
-          </div>
+          {renderCards([
+            {
+              id: "access_package",
+              title: "حزمة وجداول قاعدة بيانات أكسس (MS Access & SQL Schema)",
+              icon: FileSpreadsheet,
+              colorClass: "text-emerald-600",
+              bgClass: "bg-emerald-500/10",
+              badge: `${accessTablesList.length} جداول`,
+              active: devDefTool === "access_package",
+              onClick: () => setDevDefTool("access_package"),
+            },
+            {
+              id: "github_vercel_config",
+              title: "إعدادات مستودع GitHub والربط السحابي (Vercel)",
+              icon: Globe,
+              colorClass: "text-sky-600",
+              bgClass: "bg-sky-500/10",
+              badge: "ربط سحابي",
+              active: devDefTool === "github_vercel_config",
+              onClick: () => setDevDefTool("github_vercel_config"),
+            },
+          ])}
 
           {devDefTool === "access_package" && (
             <div className="space-y-6">
@@ -1676,40 +1740,38 @@ vercel --prod`}
             </Card>
           </div>
 
-          {/* Sub-report switcher */}
-          <div className="flex flex-wrap items-center justify-between gap-2 bg-card border border-border/80 p-2.5 rounded-2xl shadow-xs">
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                variant={devReportTool === "tables_report" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setDevReportTool("tables_report")}
-                className="rounded-xl font-black text-xs gap-1.5 cursor-pointer"
-              >
-                <Table size={15} />
-                تقرير إحصائيات جداول النظام والسجلات
-              </Button>
-              <Button
-                type="button"
-                variant={devReportTool === "release_status" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setDevReportTool("release_status")}
-                className="rounded-xl font-black text-xs gap-1.5 cursor-pointer"
-              >
-                <GitBranch size={15} />
-                تقرير حالة الإصدارات والربط السحابي
-              </Button>
-            </div>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setShowSchemaDialog(true)}
-              className="font-bold text-xs gap-1.5 rounded-xl cursor-pointer"
-            >
-              <FileCode size={14} />
-              معاينة مخطط SQL
-            </Button>
-          </div>
+          {renderCards([
+            {
+              id: "tables_report",
+              title: "تقرير إحصائيات جداول النظام والسجلات",
+              icon: Table,
+              colorClass: "text-emerald-600",
+              bgClass: "bg-emerald-500/10",
+              badge: `${accessTablesList.length} جداول`,
+              active: devReportTool === "tables_report",
+              onClick: () => setDevReportTool("tables_report"),
+            },
+            {
+              id: "release_status",
+              title: "تقرير حالة الإصدارات والربط السحابي",
+              icon: GitBranch,
+              colorClass: "text-purple-600",
+              bgClass: "bg-purple-500/10",
+              badge: `v${CURRENT_VERSION}`,
+              active: devReportTool === "release_status",
+              onClick: () => setDevReportTool("release_status"),
+            },
+            {
+              id: "sql_schema_preview",
+              title: "معاينة مخطط SQL",
+              icon: FileCode,
+              colorClass: "text-blue-600",
+              bgClass: "bg-blue-500/10",
+              badge: "SQL",
+              active: false,
+              onClick: () => setShowSchemaDialog(true),
+            },
+          ])}
 
           {devReportTool === "tables_report" ? (
             <Card className="border-border/80 rounded-2xl bg-card overflow-hidden">

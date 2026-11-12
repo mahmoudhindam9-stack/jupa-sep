@@ -42,7 +42,9 @@ import {
   X,
   Loader2,
   ArrowRight,
+  ArrowUpLeft,
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { WarehouseManagement } from "@/features/inventory/components/WarehouseManagement";
 import { SupplierManagement } from "@/features/inventory/components/SupplierManagement";
 import { PurchaseManagement } from "@/features/inventory/components/PurchaseManagement";
@@ -1279,23 +1281,126 @@ function InventoryPage() {
     };
   }, [txForm, inventoryQuery.data]);
 
-  return (
-    <div className="space-y-6 text-right">
-      {/* Header Bar */}
-      <div className="flex items-center justify-between gap-3 pt-2 pb-3 border-b border-border/60 flex-wrap">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-black text-foreground">
-            {invSection === "definitions"
-              ? "إدارة المخزون — التعريفات (الأصناف والمخازن والموردين)"
-              : invSection === "reports"
-                ? "إدارة المخزون — التقارير والجرد الذكي"
-                : "إدارة المخزون — العمليات والتوريد والحركات"}
-          </h1>
+  const renderCards = (
+    cards: Array<{
+      id: string;
+      title: string;
+      icon: any;
+      badge?: string;
+      toneClass: string;
+      active?: boolean;
+      onClick: () => void;
+    }>,
+  ) => {
+    if (hubViewMode === "list") {
+      return (
+        <div className="space-y-2.5 print:hidden">
+          {cards.map((card) => {
+            const Icon = card.icon;
+            return (
+              <div
+                key={card.id}
+                onClick={card.onClick}
+                className={`group flex items-center justify-between gap-4 rounded-2xl border bg-card p-4 shadow-xs transition hover:border-primary/50 hover:shadow-md cursor-pointer ${
+                  card.active
+                    ? "border-primary ring-2 ring-primary/20 bg-primary/5"
+                    : "border-border/80"
+                }`}
+              >
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div
+                    className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${card.toneClass}`}
+                  >
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-sm font-black text-foreground group-hover:text-primary transition-colors">
+                        {card.title}
+                      </h3>
+                      {card.badge && (
+                        <span className="rounded-full border border-border/60 bg-muted px-2.5 py-0.5 text-[11px] font-bold text-primary">
+                          {card.badge}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <ArrowUpRight className="h-4 w-4 text-muted-foreground group-hover:text-primary shrink-0" />
+              </div>
+            );
+          })}
         </div>
-        <div className="flex items-center gap-2">
-          <span className="bg-emerald-500/10 text-emerald-600 text-xs px-2.5 py-1 rounded-full font-bold">
+      );
+    }
+
+    return (
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 print:hidden">
+        {cards.map((card) => {
+          const Icon = card.icon;
+          return (
+            <div
+              key={card.id}
+              onClick={card.onClick}
+              className={`group flex items-center justify-between gap-4 rounded-2xl border bg-card p-5 shadow-xs transition-all duration-200 hover:border-primary/50 hover:shadow-md cursor-pointer ${
+                card.active
+                  ? "border-primary ring-2 ring-primary/20 bg-primary/5"
+                  : "border-border/80"
+              }`}
+            >
+              <div className="flex items-center gap-3.5 min-w-0">
+                <div
+                  className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border ${card.toneClass}`}
+                >
+                  <Icon className="h-6 w-6" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base font-black text-foreground group-hover:text-primary transition-colors">
+                    {card.title}
+                  </h3>
+                  {card.badge && (
+                    <span className="mt-1 inline-block rounded-full border border-border/60 bg-muted px-2.5 py-0.5 text-[11px] font-bold text-muted-foreground">
+                      {card.badge}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <ArrowUpRight className="h-5 w-5 text-muted-foreground opacity-60 transition-transform group-hover:opacity-100 group-hover:text-primary shrink-0" />
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-6 text-right" dir="rtl">
+      {/* Compact Single-Row Header */}
+      <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3 shadow-xs print:hidden">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/12 text-amber-600 dark:text-amber-400 border border-amber-500/25">
+            <Layers3 size={18} />
+          </div>
+          <h1 className="text-lg sm:text-xl font-black text-foreground">
+            إدارة المخزون والمستودعات
+          </h1>
+          <span className="bg-emerald-500/10 text-emerald-600 text-xs px-2.5 py-0.5 rounded-full font-bold">
             {currentBranch.name_ar}
           </span>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {invSection === "definitions" && (
+            <Button
+              type="button"
+              size="sm"
+              onClick={openAddInventoryModal}
+              className="rounded-xl font-black text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer h-9 px-3.5"
+            >
+              <Plus size={15} />
+              إضافة صنف مخزني جديد
+            </Button>
+          )}
+          <ViewModeToggle mode={hubViewMode} onChange={setHubViewMode} />
         </div>
       </div>
 
@@ -1326,175 +1431,190 @@ function InventoryPage() {
           </div>
         )}
 
-      {/* Section Sub-Tools Bar */}
-      {invSection === "definitions" && (
-        <div className="flex flex-wrap items-center justify-between gap-2 bg-card border border-border/80 p-2.5 rounded-2xl shadow-xs">
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              variant={activeTab === "stock" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setActiveTab("stock")}
-              className="rounded-xl font-black text-xs gap-1.5 cursor-pointer"
-            >
-              <Layers3 size={15} />
-              الأصناف المخزنية والباركود ({stats.totalItems})
-            </Button>
-            <Button
-              type="button"
-              variant={activeTab === "warehouses" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setActiveTab("warehouses")}
-              className="rounded-xl font-black text-xs gap-1.5 cursor-pointer"
-            >
-              <Building2 size={15} />
-              إدارة المخازن والفروع
-            </Button>
-            <Button
-              type="button"
-              variant={activeTab === "suppliers" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setActiveTab("suppliers")}
-              className="rounded-xl font-black text-xs gap-1.5 cursor-pointer"
-            >
-              <Users2 size={15} />
-              سجل الشركات والموردين
-            </Button>
-            <Button
-              type="button"
-              variant={activeTab === "settings" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setActiveTab("settings")}
-              className="rounded-xl font-black text-xs gap-1.5 cursor-pointer"
-            >
-              <Settings size={15} />
-              إعدادات المخزن والربط
-            </Button>
-          </div>
-          <Button
-            type="button"
-            size="sm"
-            onClick={openAddInventoryModal}
-            className="rounded-xl font-black text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
-          >
-            <Plus size={15} />
-            إضافة صنف مخزني جديد
-          </Button>
-        </div>
-      )}
+      {/* Section Sub-Tools Cards */}
+      {invSection === "definitions" &&
+        renderCards([
+          {
+            id: "inv-def-stock",
+            title: "الأصناف المخزنية والباركود",
+            icon: Layers3,
+            badge: `${stats.totalItems} صنف`,
+            toneClass:
+              "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
+            active: activeTab === "stock",
+            onClick: () => setActiveTab("stock"),
+          },
+          {
+            id: "inv-def-warehouses",
+            title: "إدارة المخازن والفروع",
+            icon: Building2,
+            toneClass:
+              "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
+            active: activeTab === "warehouses",
+            onClick: () => setActiveTab("warehouses"),
+          },
+          {
+            id: "inv-def-suppliers",
+            title: "سجل الشركات والموردين",
+            icon: Users2,
+            toneClass:
+              "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+            active: activeTab === "suppliers",
+            onClick: () => setActiveTab("suppliers"),
+          },
+          {
+            id: "inv-def-settings",
+            title: "إعدادات المخزن والربط",
+            icon: Settings,
+            toneClass:
+              "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20",
+            active: activeTab === "settings",
+            onClick: () => setActiveTab("settings"),
+          },
+        ])}
 
-      {invSection === "operations" && (
-        <div className="flex flex-wrap items-center justify-between gap-2 bg-card border border-border/80 p-2.5 rounded-2xl shadow-xs">
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              variant={activeTab === "purchases" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setActiveTab("purchases")}
-              className="rounded-xl font-black text-xs gap-1.5 cursor-pointer"
-            >
-              <Truck size={15} />
-              أوامر التوريد والمشتريات
-            </Button>
-            <Button
-              type="button"
-              variant={activeTab === "transfers" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setActiveTab("transfers")}
-              className="rounded-xl font-black text-xs gap-1.5 cursor-pointer"
-            >
-              <ArrowUpRight size={15} />
-              التحويلات بين المخازن
-            </Button>
-            <Button
-              type="button"
-              variant={activeTab === "transactions" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setActiveTab("transactions")}
-              className="rounded-xl font-black text-xs gap-1.5 cursor-pointer"
-            >
-              <RefreshCw size={15} />
-              تسجيل الحركات والتسويات
-            </Button>
-            <Button
-              type="button"
-              variant={activeTab === "waste" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setActiveTab("waste")}
-              className="rounded-xl font-black text-xs gap-1.5 cursor-pointer"
-            >
-              <AlertTriangle size={15} />
-              التوالف والهالك
-            </Button>
-            <Button
-              type="button"
-              variant={activeTab === "expiry" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setActiveTab("expiry")}
-              className="rounded-xl font-black text-xs gap-1.5 cursor-pointer"
-            >
-              <Calendar size={15} />
-              صلاحية وتتبع الدفعات
-            </Button>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() =>
+      {invSection === "operations" &&
+        renderCards([
+          {
+            id: "inv-op-purchases",
+            title: "أوامر التوريد والمشتريات",
+            icon: Truck,
+            toneClass:
+              "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
+            active: activeTab === "purchases",
+            onClick: () => setActiveTab("purchases"),
+          },
+          {
+            id: "inv-op-transfers",
+            title: "التحويلات بين المخازن",
+            icon: ArrowUpRight,
+            toneClass:
+              "bg-teal-500/10 text-teal-600 dark:text-teal-400 border-teal-500/20",
+            active: activeTab === "transfers",
+            onClick: () => setActiveTab("transfers"),
+          },
+          {
+            id: "inv-op-transactions",
+            title: "تسجيل الحركات والتسويات",
+            icon: RefreshCw,
+            toneClass:
+              "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
+            active: activeTab === "transactions",
+            onClick: () => setActiveTab("transactions"),
+          },
+          {
+            id: "inv-op-waste",
+            title: "التوالف والهالك",
+            icon: AlertTriangle,
+            toneClass:
+              "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20",
+            active: activeTab === "waste",
+            onClick: () => setActiveTab("waste"),
+          },
+          {
+            id: "inv-op-expiry",
+            title: "صلاحية وتتبع الدفعات",
+            icon: Calendar,
+            toneClass:
+              "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20",
+            active: activeTab === "expiry",
+            onClick: () => setActiveTab("expiry"),
+          },
+          {
+            id: "inv-op-supplier-vouchers",
+            title: "سندات صرف الموردين",
+            icon: DollarSign,
+            badge: "المالية",
+            toneClass:
+              "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+            active: false,
+            onClick: () =>
               navigate({
                 to: "/admin/ledger",
                 search: { tab: "vouchers", dept: "restaurant" },
-              })
-            }
-            className="rounded-xl font-black text-xs gap-1.5 border-emerald-500/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 cursor-pointer"
-          >
-            <DollarSign size={15} />
-            سندات صرف الموردين
-          </Button>
-        </div>
-      )}
+              }),
+          },
+        ])}
 
       {invSection === "reports" && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="bg-card border border-border p-5 rounded-2xl flex items-center justify-between shadow-xs">
-            <div className="space-y-1">
-              <span className="text-xs text-muted-foreground block">إجمالي الأصناف بالمخازن</span>
-              <span className="text-2xl font-black block">{stats.totalItems} أصناف</span>
-            </div>
-            <div className="p-3 bg-primary/10 text-primary rounded-xl">
-              <Layers size={20} />
-            </div>
-          </div>
-
-          <div
-            className={`bg-card border p-5 rounded-2xl flex items-center justify-between shadow-xs transition-all ${stats.lowStockItems > 0 ? "border-destructive/30 bg-destructive/5" : "border-border"}`}
-          >
-            <div className="space-y-1">
-              <span className="text-xs text-muted-foreground block">أصناف منخفضة المخزون</span>
-              <span
-                className={`text-2xl font-black block ${stats.lowStockItems > 0 ? "text-destructive animate-pulse" : "text-foreground"}`}
-              >
-                {stats.lowStockItems} تنبيهات
-              </span>
-            </div>
-            <div
-              className={`p-3 rounded-xl ${stats.lowStockItems > 0 ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground"}`}
-            >
-              <TrendingDown size={20} />
-            </div>
-          </div>
-
-          <div className="bg-card border border-border p-5 rounded-2xl flex items-center justify-between shadow-xs">
-            <div className="space-y-1">
-              <span className="text-xs text-muted-foreground block">
-                تقييم المخزون الحالي (جرد دفتري)
-              </span>
-              <span className="text-2xl font-black block text-emerald-600 dark:text-emerald-500">
-                {formatPrice(stats.totalValue)}
-              </span>
-            </div>
-          </div>
+        <div className="space-y-4">
+          {renderCards([
+            {
+              id: "inv-rep-current-stock",
+              title: "جرد المخزون الحالي",
+              icon: Layers,
+              badge: `${stats.totalItems} صنف`,
+              toneClass:
+                "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
+              active: selectedReportType === "current_stock",
+              onClick: () => {
+                setActiveTab("reports");
+                setSelectedReportType("current_stock");
+              },
+            },
+            {
+              id: "inv-rep-valuation",
+              title: "تقييم المخزون المالي",
+              icon: DollarSign,
+              badge: formatPrice(stats.totalValue),
+              toneClass:
+                "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+              active: selectedReportType === "valuation",
+              onClick: () => {
+                setActiveTab("reports");
+                setSelectedReportType("valuation");
+              },
+            },
+            {
+              id: "inv-rep-movement",
+              title: "كشف حركة المخزن",
+              icon: FileText,
+              toneClass:
+                "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
+              active: selectedReportType === "movement",
+              onClick: () => {
+                setActiveTab("reports");
+                setSelectedReportType("movement");
+              },
+            },
+            {
+              id: "inv-rep-low-stock",
+              title: "تنبيهات النقص والحد الأدنى",
+              icon: TrendingDown,
+              badge: `${stats.lowStockItems} تنبيه`,
+              toneClass:
+                "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20",
+              active: selectedReportType === "low_stock",
+              onClick: () => {
+                setActiveTab("reports");
+                setSelectedReportType("low_stock");
+              },
+            },
+            {
+              id: "inv-rep-waste",
+              title: "تقرير الهدر والتسويات",
+              icon: AlertTriangle,
+              toneClass:
+                "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20",
+              active: selectedReportType === "waste_adjustments",
+              onClick: () => {
+                setActiveTab("reports");
+                setSelectedReportType("waste_adjustments");
+              },
+            },
+            {
+              id: "inv-rep-food-cost",
+              title: "تحليل تكلفة الوجبات",
+              icon: CheckCircle,
+              toneClass:
+                "bg-teal-500/10 text-teal-600 dark:text-teal-400 border-teal-500/20",
+              active: selectedReportType === "food_cost",
+              onClick: () => {
+                setActiveTab("reports");
+                setSelectedReportType("food_cost");
+              },
+            },
+          ])}
         </div>
       )}
 

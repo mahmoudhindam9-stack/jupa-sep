@@ -51,7 +51,9 @@ import {
   Lock,
   Eye,
   ShieldCheck,
+  ArrowUpLeft,
 } from "lucide-react";
+import { ViewModeToggle, useViewMode } from "@/components/ui/view-mode-toggle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -66,7 +68,6 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ViewModeToggle, useViewMode } from "@/components/ui/view-mode-toggle";
 
 export const Route = createFileRoute("/admin/hr")({
   head: () => ({ meta: [{ title: "إدارة الموارد البشرية وشؤون الموظفين" }] }),
@@ -1419,52 +1420,114 @@ function HRPage() {
     return { present, absent, late, leave, total, unrecorded };
   }, [attendance, attendanceDate, employees]);
 
-  return (
-    <div className="space-y-4 pt-2">
-      {/* =================================================================== */}
-      {/* SECTION 1: DEFINITIONS (التعريفات) — الموظفين والمستخدمين             */}
-      {/* =================================================================== */}
-      {hrSection === "definitions" && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-border bg-card p-2 shadow-2xs print:hidden">
-          <div className="flex flex-wrap items-center gap-2">
-            {canViewEmployees && (
-              <button
-                type="button"
-                onClick={() => setActiveTab("employees")}
-                className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
-                  activeTab === "employees"
-                    ? "bg-primary text-primary-foreground shadow-xs"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+  const [viewMode, setViewMode] = useViewMode("hr", "grid");
+
+  const renderCards = (
+    cards: Array<{
+      id: string;
+      title: string;
+      icon: any;
+      badge?: string;
+      toneClass: string;
+      active?: boolean;
+      onClick: () => void;
+    }>,
+  ) => {
+    if (viewMode === "list") {
+      return (
+        <div className="space-y-2.5 print:hidden">
+          {cards.map((card) => {
+            const Icon = card.icon;
+            return (
+              <div
+                key={card.id}
+                onClick={card.onClick}
+                className={`group flex items-center justify-between gap-4 rounded-2xl border bg-card p-4 shadow-xs transition hover:border-primary/50 hover:shadow-md cursor-pointer ${
+                  card.active
+                    ? "border-primary ring-2 ring-primary/20 bg-primary/5"
+                    : "border-border/80"
                 }`}
               >
-                <Users className="h-4 w-4" />
-                <span>دليل الكادر الوظيفي والموظفين</span>
-                <Badge
-                  variant="secondary"
-                  className="bg-black/15 text-current text-[10px] px-1.5 py-0 font-mono"
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div
+                    className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${card.toneClass}`}
+                  >
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-sm font-black text-foreground group-hover:text-primary transition-colors">
+                        {card.title}
+                      </h3>
+                      {card.badge && (
+                        <Badge variant="secondary" className="text-[11px] font-bold">
+                          {card.badge}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <ArrowUpLeft className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-transform group-hover:-translate-x-0.5 group-hover:-translate-y-0.5 shrink-0" />
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    return (
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 print:hidden">
+        {cards.map((card) => {
+          const Icon = card.icon;
+          return (
+            <div
+              key={card.id}
+              onClick={card.onClick}
+              className={`group flex items-center justify-between gap-4 rounded-2xl border bg-card p-5 shadow-xs transition-all duration-200 hover:border-primary/50 hover:shadow-md cursor-pointer ${
+                card.active
+                  ? "border-primary ring-2 ring-primary/20 bg-primary/5"
+                  : "border-border/80"
+              }`}
+            >
+              <div className="flex items-center gap-3.5 min-w-0">
+                <div
+                  className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border ${card.toneClass}`}
                 >
-                  {employees.length}
-                </Badge>
-              </button>
-            )}
+                  <Icon className="h-6 w-6" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base font-black text-foreground group-hover:text-primary transition-colors">
+                    {card.title}
+                  </h3>
+                  {card.badge && (
+                    <Badge variant="secondary" className="mt-1 text-[11px] font-bold">
+                      {card.badge}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+              <ArrowUpLeft className="h-5 w-5 text-muted-foreground opacity-60 transition-transform group-hover:opacity-100 group-hover:text-primary group-hover:-translate-x-0.5 group-hover:-translate-y-0.5 shrink-0" />
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
 
-            {canViewUsers && (
-              <button
-                type="button"
-                onClick={() => setActiveTab("users")}
-                className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
-                  activeTab === "users"
-                    ? "bg-primary text-primary-foreground shadow-xs"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                }`}
-              >
-                <UserCheck className="h-4 w-4" />
-                <span>المستخدمين والصلاحيات</span>
-              </button>
-            )}
+  return (
+    <div className="space-y-4 font-['Tajawal']" dir="rtl">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3 shadow-xs print:hidden">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/12 text-primary border border-primary/25">
+            <Users size={18} />
           </div>
-
-          {canViewEmployees && (
+          <h1 className="text-lg sm:text-xl font-black text-foreground">
+            إدارة الموارد البشرية
+          </h1>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {hrSection === "definitions" && canViewEmployees && (
             <Button
               onClick={openAddEmployeeDialog}
               className="gap-1.5 rounded-xl font-bold text-xs h-9 px-4"
@@ -1473,74 +1536,7 @@ function HRPage() {
               إضافة موظف جديد
             </Button>
           )}
-        </div>
-      )}
-
-      {/* =================================================================== */}
-      {/* SECTION 2: OPERATIONS (العمليات) — الحضور والرواتب والسلف            */}
-      {/* =================================================================== */}
-      {hrSection === "operations" && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-border bg-card p-2 shadow-2xs print:hidden">
-          <div className="flex flex-wrap items-center gap-2">
-            {canViewAttendance && (
-              <button
-                type="button"
-                onClick={() => setActiveTab("attendance")}
-                className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
-                  activeTab === "attendance"
-                    ? "bg-primary text-primary-foreground shadow-xs"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                }`}
-              >
-                <CalendarDays className="h-4 w-4" />
-                <span>تسجيل الحضور والانصراف اليومي</span>
-                <Badge
-                  variant="secondary"
-                  className="bg-black/15 text-current text-[10px] px-1.5 py-0 font-mono"
-                >
-                  {attendanceStatsForDate.present}/{attendanceStatsForDate.total}
-                </Badge>
-              </button>
-            )}
-
-            {canViewPayroll && (
-              <button
-                type="button"
-                onClick={() => setActiveTab("payroll")}
-                className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
-                  activeTab === "payroll"
-                    ? "bg-primary text-primary-foreground shadow-xs"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                }`}
-              >
-                <FileSpreadsheet className="h-4 w-4" />
-                <span>مسيرات الأجور والرواتب الشهرية</span>
-              </button>
-            )}
-
-            {canViewLoans && (
-              <button
-                type="button"
-                onClick={() => setActiveTab("loans")}
-                className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
-                  activeTab === "loans"
-                    ? "bg-primary text-primary-foreground shadow-xs"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                }`}
-              >
-                <Coins className="h-4 w-4" />
-                <span>القروض والسلف المالية</span>
-                <Badge
-                  variant="secondary"
-                  className="bg-black/15 text-current text-[10px] px-1.5 py-0 font-mono"
-                >
-                  {activeLoansCount}
-                </Badge>
-              </button>
-            )}
-          </div>
-
-          {canViewLoans && (
+          {hrSection === "operations" && canViewLoans && (
             <Button
               variant="outline"
               onClick={openLoanDialog}
@@ -1550,8 +1546,91 @@ function HRPage() {
               صرف سلفة جديدة
             </Button>
           )}
+          <ViewModeToggle mode={viewMode} onChange={setViewMode} />
         </div>
-      )}
+      </div>
+
+      {/* =================================================================== */}
+      {/* SECTION 1: DEFINITIONS (التعريفات) — الموظفين والمستخدمين             */}
+      {/* =================================================================== */}
+      {hrSection === "definitions" &&
+        renderCards([
+          ...(canViewEmployees
+            ? [
+                {
+                  id: "hr-def-employees",
+                  title: "دليل الكادر الوظيفي والموظفين",
+                  icon: Users,
+                  badge: `${employees.length} موظف`,
+                  toneClass:
+                    "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
+                  active: activeTab === "employees",
+                  onClick: () => setActiveTab("employees"),
+                },
+              ]
+            : []),
+          ...(canViewUsers
+            ? [
+                {
+                  id: "hr-def-users",
+                  title: "المستخدمين والصلاحيات",
+                  icon: UserCheck,
+                  toneClass:
+                    "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+                  active: activeTab === "users",
+                  onClick: () => setActiveTab("users"),
+                },
+              ]
+            : []),
+        ])}
+
+      {/* =================================================================== */}
+      {/* SECTION 2: OPERATIONS (العمليات) — الحضور والرواتب والسلف            */}
+      {/* =================================================================== */}
+      {hrSection === "operations" &&
+        renderCards([
+          ...(canViewAttendance
+            ? [
+                {
+                  id: "hr-op-attendance",
+                  title: "تسجيل الحضور والانصراف اليومي",
+                  icon: CalendarDays,
+                  badge: `${attendanceStatsForDate.present}/${attendanceStatsForDate.total}`,
+                  toneClass:
+                    "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+                  active: activeTab === "attendance",
+                  onClick: () => setActiveTab("attendance"),
+                },
+              ]
+            : []),
+          ...(canViewPayroll
+            ? [
+                {
+                  id: "hr-op-payroll",
+                  title: "مسيرات الأجور والرواتب الشهرية",
+                  icon: FileSpreadsheet,
+                  toneClass:
+                    "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
+                  active: activeTab === "payroll",
+                  onClick: () => setActiveTab("payroll"),
+                },
+              ]
+            : []),
+          ...(canViewLoans
+            ? [
+                {
+                  id: "hr-op-loans",
+                  title: "القروض والسلف المالية",
+                  icon: Coins,
+                  badge: `${activeLoansCount} سلفة`,
+                  toneClass:
+                    "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
+                  active: activeTab === "loans",
+                  onClick: () => setActiveTab("loans"),
+                },
+              ]
+            : []),
+        ])}
 
       {/* Tabs Content Container */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -2231,69 +2310,56 @@ function HRPage() {
               </Card>
             </div>
 
-            {/* Sub-Report Switcher */}
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-border bg-card p-2 shadow-2xs print:hidden">
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setActiveHrReportView("payroll_report")}
-                  className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
-                    activeHrReportView === "payroll_report"
-                      ? "bg-primary text-primary-foreground shadow-xs"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                  }`}
-                >
-                  <FileSpreadsheet className="h-4 w-4" />
-                  <span>تقرير وكشف مسيرات الرواتب الشهرية</span>
-                </button>
+            {/* Sub-Report Cards */}
+            {renderCards([
+              {
+                id: "hr-rep-payroll",
+                title: "تقرير وكشف مسيرات الرواتب الشهرية",
+                icon: FileSpreadsheet,
+                toneClass:
+                  "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
+                active: activeHrReportView === "payroll_report",
+                onClick: () => setActiveHrReportView("payroll_report"),
+              },
+              {
+                id: "hr-rep-attendance",
+                title: "تقرير انضباط الحضور والدوام",
+                icon: CalendarDays,
+                toneClass:
+                  "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+                active: activeHrReportView === "attendance_report",
+                onClick: () => setActiveHrReportView("attendance_report"),
+              },
+              {
+                id: "hr-rep-loans",
+                title: "كشف أرصدة القروض والسلف الجارية",
+                icon: Coins,
+                toneClass:
+                  "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
+                active: activeHrReportView === "loans_report",
+                onClick: () => setActiveHrReportView("loans_report"),
+              },
+            ])}
 
-                <button
-                  type="button"
-                  onClick={() => setActiveHrReportView("attendance_report")}
-                  className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
-                    activeHrReportView === "attendance_report"
-                      ? "bg-primary text-primary-foreground shadow-xs"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                  }`}
-                >
-                  <CalendarDays className="h-4 w-4" />
-                  <span>تقرير انضباط الحضور والدوام</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setActiveHrReportView("loans_report")}
-                  className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
-                    activeHrReportView === "loans_report"
-                      ? "bg-primary text-primary-foreground shadow-xs"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                  }`}
-                >
-                  <Coins className="h-4 w-4" />
-                  <span>كشف أرصدة القروض والسلف الجارية</span>
-                </button>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => handlePrintGeneralManagerApproval("sheet")}
-                  className="gap-1.5 rounded-xl font-bold text-xs h-9"
-                >
-                  <Printer size={14} />
-                  طباعة كشف الرواتب للاعتماد
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setIsCuttableSlipsOpen(true)}
-                  className="gap-1.5 rounded-xl font-bold text-xs h-9"
-                >
-                  <Scissors size={14} />
-                  إيصالات الرواتب للتقطيع
-                </Button>
-              </div>
+            <div className="flex flex-wrap items-center justify-end gap-2 print:hidden">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => handlePrintGeneralManagerApproval("sheet")}
+                className="gap-1.5 rounded-xl font-bold text-xs h-9"
+              >
+                <Printer size={14} />
+                طباعة كشف الرواتب للاعتماد
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setIsCuttableSlipsOpen(true)}
+                className="gap-1.5 rounded-xl font-bold text-xs h-9"
+              >
+                <Scissors size={14} />
+                إيصالات الرواتب للتقطيع
+              </Button>
             </div>
 
             {activeHrReportView === "payroll_report" && (

@@ -92,6 +92,8 @@ import {
   Store,
   BarChart3,
   Receipt,
+  Vault,
+  ArrowUpLeft,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -291,12 +293,13 @@ function LedgerPage() {
 
   // UI state — Unified 3-Section Architecture (definitions | operations | reports)
   const location = useLocation();
-  const [activeDefTool, setActiveDefTool] = useState<"accounts" | "treasury">("accounts");
+  const [viewMode, setViewMode] = useViewMode("ledger", "grid");
+  const [activeDefTool, setActiveDefTool] = useState<null | "accounts" | "treasury">("accounts");
   const [activeOperationTool, setActiveOperationTool] = useState<
-    "vouchers" | "transfers" | "journal"
-  >("vouchers");
+    null | "vouchers" | "transfers" | "journal"
+  >(null);
   const [activeReportTool, setActiveReportTool] = useState<
-    "vouchers_register" | "unified_reports" | "general_ledger" | "treasury_report"
+    null | "vouchers_register" | "unified_reports" | "general_ledger" | "treasury_report"
   >("vouchers_register");
   const [isTreasuryReportModalOpen, setIsTreasuryReportModalOpen] = useState(false);
 
@@ -391,6 +394,8 @@ function LedgerPage() {
       setActiveOperationTool("transfers");
     } else if (tabParam === "journal") {
       setActiveOperationTool("journal");
+    } else if (!tabParam || tabParam === "operations" || tabParam === "hub") {
+      setActiveOperationTool(null);
     } else if (tabParam === "vouchers_register") {
       setActiveReportTool("vouchers_register");
     } else if (
@@ -1882,25 +1887,117 @@ function LedgerPage() {
     toast({ title: "تم التصدير بنجاح", description: "تم تحميل ميزان المراجعة بصيغة Excel" });
   };
 
+  const renderCards = (
+    cards: Array<{
+      id: string;
+      title: string;
+      icon: any;
+      badge?: string;
+      toneClass: string;
+      active?: boolean;
+      onClick: () => void;
+    }>,
+  ) => {
+    if (viewMode === "list") {
+      return (
+        <div className="space-y-2.5 print:hidden">
+          {cards.map((card) => {
+            const Icon = card.icon;
+            return (
+              <div
+                key={card.id}
+                onClick={card.onClick}
+                className={`group flex items-center justify-between gap-4 rounded-2xl border bg-card p-4 shadow-xs transition hover:border-primary/50 hover:shadow-md cursor-pointer ${
+                  card.active
+                    ? "border-primary ring-2 ring-primary/20 bg-primary/5"
+                    : "border-border/80"
+                }`}
+              >
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div
+                    className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${card.toneClass}`}
+                  >
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-sm font-black text-foreground group-hover:text-primary transition-colors">
+                        {card.title}
+                      </h3>
+                      {card.badge && (
+                        <Badge variant="secondary" className="text-[11px] font-bold">
+                          {card.badge}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <ArrowUpLeft className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-transform group-hover:-translate-x-0.5 group-hover:-translate-y-0.5 shrink-0" />
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    return (
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 print:hidden">
+        {cards.map((card) => {
+          const Icon = card.icon;
+          return (
+            <div
+              key={card.id}
+              onClick={card.onClick}
+              className={`group flex items-center justify-between gap-4 rounded-2xl border bg-card p-5 shadow-xs transition-all duration-200 hover:border-primary/50 hover:shadow-md cursor-pointer ${
+                card.active
+                  ? "border-primary ring-2 ring-primary/20 bg-primary/5"
+                  : "border-border/80"
+              }`}
+            >
+              <div className="flex items-center gap-3.5 min-w-0">
+                <div
+                  className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border ${card.toneClass}`}
+                >
+                  <Icon className="h-6 w-6" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base font-black text-foreground group-hover:text-primary transition-colors">
+                    {card.title}
+                  </h3>
+                  {card.badge && (
+                    <Badge variant="secondary" className="mt-1 text-[11px] font-bold">
+                      {card.badge}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+              <ArrowUpLeft className="h-5 w-5 text-muted-foreground opacity-60 transition-transform group-hover:opacity-100 group-hover:text-primary group-hover:-translate-x-0.5 group-hover:-translate-y-0.5 shrink-0" />
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   return (
-    <div className="p-3 sm:p-6 space-y-5 sm:space-y-6 max-w-7xl mx-auto w-full min-w-0">
+    <div className="space-y-4 font-['Tajawal']" dir="rtl">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <Landmark className="h-6 w-6 text-primary shrink-0" />
-            <h1 className="text-xl sm:text-2xl font-black tracking-tight text-foreground">
-              الإدارة المالية
-            </h1>
-            {hasUnsavedChanges && (
-              <Badge className="bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold px-2 py-0.5 animate-pulse">
-                {unsavedEntries.length} قيد بحاجة للحفظ
-              </Badge>
-            )}
+      <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3 shadow-xs print:hidden">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/12 text-primary border border-primary/25">
+            <Landmark size={18} />
           </div>
+          <h1 className="text-lg sm:text-xl font-black text-foreground">
+            الإدارة المالية
+          </h1>
+          {hasUnsavedChanges && (
+            <Badge className="bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold px-2 py-0.5 animate-pulse">
+              {unsavedEntries.length} قيد بحاجة للحفظ
+            </Badge>
+          )}
         </div>
 
-        <div className="flex items-center gap-2 self-start md:self-auto flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
           {/* Save & Persist All Data */}
           <Button
             onClick={() => setIsSaveConfirmOpen(true)}
@@ -1921,7 +2018,9 @@ function LedgerPage() {
             </Badge>
           </Button>
 
-          {/* Add Manual Entry Dialog — Unified Accounting Voucher */}
+          <ViewModeToggle mode={viewMode} onChange={setViewMode} />
+
+          {/* Add Manual Entry Dialog — Unified Accounting Voucher (Opened via القيد المزدوج card) */}
           <Dialog
             open={isNewEntryOpen}
             onOpenChange={(open) => {
@@ -1932,10 +2031,6 @@ function LedgerPage() {
               }
             }}
           >
-            <Button onClick={handleOpenNewEntry} className="gap-2 rounded-xl">
-              <Plus className="h-4 w-4" />
-              إضافة قيد يومي مزدوج
-            </Button>
             <DialogContent
               className="w-[calc(100vw-1rem)] sm:w-[calc(100vw-2rem)] lg:w-[calc(100vw-4rem)] max-w-6xl max-h-[92vh] overflow-y-auto overflow-x-hidden p-0 gap-0 border-2 border-primary/20 shadow-2xl rounded-2xl [&>button]:hidden"
               dir="rtl"
@@ -3021,51 +3116,33 @@ function LedgerPage() {
       {/* ===================================================================== */}
       {selectedTab === "definitions" && (
         <div className="space-y-4 animate-in fade-in duration-200">
-          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card p-2 shadow-2xs print:hidden">
-            <button
-              type="button"
-              onClick={() => setActiveDefTool("accounts")}
-              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
-                activeDefTool === "accounts"
-                  ? "bg-primary text-primary-foreground shadow-xs"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
-            >
-              <Layers className="h-4 w-4" />
-              <span>دليل وشجرة الحسابات (4 مستويات)</span>
-              <Badge
-                variant="secondary"
-                className="bg-black/15 text-current text-[10px] px-1.5 py-0 font-mono"
-              >
-                {accounts.length}
-              </Badge>
-            </button>
+          {renderCards([
+            {
+              id: "def-accounts",
+              title: "دليل وشجرة الحسابات",
+              icon: Layers,
+              badge: `${accounts.length} حساب`,
+              toneClass: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
+              active: activeDefTool === "accounts",
+              onClick: () => setActiveDefTool("accounts"),
+            },
+            {
+              id: "def-treasury",
+              title: "إدارة الخزائن النقدية والبنكية",
+              icon: Wallet,
+              badge: `${treasuries.length} خزينة`,
+              toneClass: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+              active: activeDefTool === "treasury",
+              onClick: () => setActiveDefTool("treasury"),
+            },
+          ])}
 
-            <button
-              type="button"
-              onClick={() => setActiveDefTool("treasury")}
-              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
-                activeDefTool === "treasury"
-                  ? "bg-primary text-primary-foreground shadow-xs"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
-            >
-              <Wallet className="h-4 w-4" />
-              <span>إدارة الخزائن النقدية والبنكية</span>
-              <Badge
-                variant="secondary"
-                className="bg-black/15 text-current text-[10px] px-1.5 py-0 font-mono"
-              >
-                {treasuries.length}
-              </Badge>
-            </button>
-          </div>
-
-          {activeDefTool === "accounts" ? (
+          {activeDefTool === "accounts" && (
             <div className="bg-card rounded-2xl border border-border p-3 sm:p-4">
               <AccountsPage />
             </div>
-          ) : (
+          )}
+          {activeDefTool === "treasury" && (
             <div className="bg-card rounded-2xl border border-border p-3 sm:p-4">
               <TreasuryManagementView />
             </div>
@@ -3074,93 +3151,77 @@ function LedgerPage() {
       )}
 
       {/* ===================================================================== */}
-      {/* SECTION 2: OPERATIONS (العمليات) — إصدار السندات ودفتر اليومية        */}
+      {/* SECTION 2: OPERATIONS (العمليات) — 3 مربعات: سند جديد / تحويل / قيد مزدوج */}
       {/* ===================================================================== */}
       {selectedTab === "operations" && (
         <div className="space-y-4 animate-in fade-in duration-200 min-w-0 w-full">
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-border bg-card p-2 shadow-2xs print:hidden">
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setActiveOperationTool("vouchers")}
-                className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
-                  activeOperationTool === "vouchers"
-                    ? "bg-primary text-primary-foreground shadow-xs"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                }`}
-              >
-                <Receipt className="h-4 w-4" />
-                <span>إصدار سند جديد (قبض / صرف / مشتريات)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveOperationTool("transfers")}
-                className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
-                  activeOperationTool === "transfers"
-                    ? "bg-primary text-primary-foreground shadow-xs"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                }`}
-              >
-                <ArrowUpDown className="h-4 w-4" />
-                <span>عمليات التحويل بين الخزائن</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveOperationTool("journal")}
-                className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
-                  activeOperationTool === "journal"
-                    ? "bg-primary text-primary-foreground shadow-xs"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                }`}
-              >
-                <FileText className="h-4 w-4" />
-                <span>دفتر اليومية والقيود المزدوجة</span>
-                <Badge
-                  variant="secondary"
-                  className="bg-black/15 text-current text-[10px] px-1.5 py-0 font-mono"
-                >
-                  {journalEntries.length}
-                </Badge>
-              </button>
-            </div>
-
-            {journalDrafts.length > 0 && (
-              <div className="flex items-center gap-1.5 flex-wrap px-2">
-                <span className="text-[11px] font-bold text-amber-700 dark:text-amber-300">
-                  مسودات محفوظة ({journalDrafts.length}):
-                </span>
-                {journalDrafts.slice(0, 2).map((draft) => (
-                  <Button
-                    key={draft.id}
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleLoadJournalDraft(draft)}
-                    className="h-7 text-[11px] font-bold border-amber-500/40 text-amber-800 dark:text-amber-300 rounded-lg px-2"
-                  >
-                    {draft.newEntryDesc || draft.newEntryRef}
-                  </Button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {activeOperationTool === "vouchers" && (
-            <VouchersLedgerSection
-              mode="operations"
-              autoOpenNewModal={autoOpenVoucherModal}
-              onModalClosed={() => setAutoOpenVoucherModal(false)}
-              onOpenReports={() => {
-                setSelectedTab("reports");
-                setActiveReportTool("vouchers_register");
-              }}
-              onNavigateToJournal={(ref) => {
-                if (ref) setJournalSearch(ref);
+          {renderCards([
+            {
+              id: "op-new-voucher",
+              title: "إصدار سند جديد",
+              icon: Receipt,
+              toneClass: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+              active: activeOperationTool === "vouchers",
+              onClick: () => {
+                setActiveOperationTool("vouchers");
+                setAutoOpenVoucherModal(true);
+              },
+            },
+            {
+              id: "op-treasury-transfer",
+              title: "عملية تحويل بين الخزائن",
+              icon: ArrowUpDown,
+              toneClass: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
+              active: activeOperationTool === "transfers",
+              onClick: () => setActiveOperationTool("transfers"),
+            },
+            {
+              id: "op-double-entry",
+              title: "القيد المزدوج",
+              icon: Scale,
+              badge: `${journalEntries.length} قيد`,
+              toneClass: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
+              active: activeOperationTool === "journal",
+              onClick: () => {
                 setActiveOperationTool("journal");
-              }}
-            />
+                handleOpenNewEntry();
+              },
+            },
+          ])}
+
+          {journalDrafts.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap rounded-2xl border border-amber-500/30 bg-amber-500/5 px-3 py-2 print:hidden">
+              <span className="text-[11px] font-bold text-amber-700 dark:text-amber-300">
+                مسودات قيود محفوظة ({journalDrafts.length}):
+              </span>
+              {journalDrafts.slice(0, 3).map((draft) => (
+                <Button
+                  key={draft.id}
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleLoadJournalDraft(draft)}
+                  className="h-7 text-[11px] font-bold border-amber-500/40 text-amber-800 dark:text-amber-300 rounded-lg px-2"
+                >
+                  {draft.newEntryDesc || draft.newEntryRef}
+                </Button>
+              ))}
+            </div>
           )}
+
+          {/* Vouchers Modal Host (Always mounted in operations so clicking 'إصدار سند جديد' opens the modal directly) */}
+          <VouchersLedgerSection
+            mode="operations"
+            autoOpenNewModal={autoOpenVoucherModal}
+            onModalClosed={() => setAutoOpenVoucherModal(false)}
+            onOpenReports={() => {
+              setSelectedTab("reports");
+              setActiveReportTool("vouchers_register");
+            }}
+            onNavigateToJournal={(ref) => {
+              if (ref) setJournalSearch(ref);
+              setActiveOperationTool("journal");
+            }}
+          />
 
           {activeOperationTool === "transfers" && (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
@@ -3918,64 +3979,44 @@ function LedgerPage() {
       {/* SECTION 3: REPORTS (التقارير) — السندات، منظومة التقارير، الأستاذ، الخزائن */}
       {/* ===================================================================== */}
       {selectedTab === "reports" && (
-        <div className="space-y-5 animate-in fade-in duration-200">
-          {/* Unified 4-Report Selector Bar */}
-          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card p-2 shadow-2xs print:hidden">
-            <button
-              type="button"
-              onClick={() => setActiveReportTool("vouchers_register")}
-              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
-                activeReportTool === "vouchers_register"
-                  ? "bg-primary text-primary-foreground shadow-xs"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
-            >
-              <Receipt className="h-4 w-4" />
-              <span>تفقد وسجل سندات الدفع والقبض</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveReportTool("unified_reports")}
-              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
-                activeReportTool === "unified_reports"
-                  ? "bg-primary text-primary-foreground shadow-xs"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
-            >
-              <BarChart3 className="h-4 w-4" />
-              <span>المركز المالي والقوائم وميزان المراجعة الموحد</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveReportTool("general_ledger")}
-              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
-                activeReportTool === "general_ledger"
-                  ? "bg-primary text-primary-foreground shadow-xs"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
-            >
-              <BookOpen className="h-4 w-4" />
-              <span>كشف حساب الأستاذ العام</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
+        <div className="space-y-4 animate-in fade-in duration-200">
+          {renderCards([
+            {
+              id: "rep-vouchers",
+              title: "تفقد وسجل سندات الدفع والقبض",
+              icon: Receipt,
+              toneClass: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
+              active: activeReportTool === "vouchers_register",
+              onClick: () => setActiveReportTool("vouchers_register"),
+            },
+            {
+              id: "rep-unified",
+              title: "المركز المالي والقوائم وميزان المراجعة",
+              icon: BarChart3,
+              toneClass: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+              active: activeReportTool === "unified_reports",
+              onClick: () => setActiveReportTool("unified_reports"),
+            },
+            {
+              id: "rep-gl",
+              title: "كشف حساب الأستاذ العام",
+              icon: BookOpen,
+              toneClass: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
+              active: activeReportTool === "general_ledger",
+              onClick: () => setActiveReportTool("general_ledger"),
+            },
+            {
+              id: "rep-treasury",
+              title: "تقرير وحركة الخزائن",
+              icon: Wallet,
+              toneClass: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
+              active: activeReportTool === "treasury_report",
+              onClick: () => {
                 setActiveReportTool("treasury_report");
                 setIsTreasuryReportModalOpen(true);
-              }}
-              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
-                activeReportTool === "treasury_report"
-                  ? "bg-primary text-primary-foreground shadow-xs"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
-            >
-              <Wallet className="h-4 w-4" />
-              <span>تقرير وحركة الخزائن</span>
-            </button>
-          </div>
+              },
+            },
+          ])}
 
           {/* 1. Vouchers Inspection & Register (تفقد وسجل سندات الدفع والقبض) */}
           {activeReportTool === "vouchers_register" && (

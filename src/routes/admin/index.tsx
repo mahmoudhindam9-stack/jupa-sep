@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ViewModeToggle, useViewMode } from "@/components/ui/view-mode-toggle";
 import { erpStore, type Account } from "@/shared/services/erpStore";
 import { inventoryService } from "@/features/inventory/services/inventoryService";
 import { AuditOperationsModal, AuditOperationsView } from "@/components/admin/AuditOperationsModal";
@@ -75,6 +76,7 @@ import {
   Loader2,
   Printer,
   Sparkles,
+  ArrowUpLeft,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -104,6 +106,7 @@ export const Route = createFileRoute("/admin/")({
 function AdminDashboard() {
   const { toast } = useToast();
   const { formatPrice } = useSettings();
+  const [auditViewMode, setAuditViewMode] = useViewMode("shift-audit", "grid");
   const location = useLocation();
   const tabParam = extractTabParam(location.search, (location as any).searchStr);
   const rawSearchStr =
@@ -1922,259 +1925,376 @@ function AdminDashboard() {
         {/* TAB 5 & 6 MERGED: SHIFT AUDIT & OPERATIONS LOG (تدقيق الورديات وسجل العمليات - 3 أقسام) */}
         {(activeTab === "shift_audit" || activeTab === "audit_logs" || activeTab === "shifts") && (
           <div data-tab-panel="shift_audit" className="space-y-4 mt-4" dir="rtl">
-            {/* ============================================================== */}
-            {/* SECTION 1: DEFINITIONS (التعريفات)                             */}
-            {/* ============================================================== */}
-            {auditSection === "definitions" && (
-              <div className="space-y-4 animate-in fade-in duration-200">
-                <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card p-2 shadow-2xs print:hidden">
-                  <button
-                    type="button"
-                    onClick={() => setActiveAuditDefTool("shift_rules")}
-                    className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
-                      activeAuditDefTool === "shift_rules"
-                        ? "bg-primary text-primary-foreground shadow-xs"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                    }`}
-                  >
-                    <ClipboardList className="h-4 w-4" />
-                    <span>قنوات وضوابط تدقيق الورديات (المطعم والحديقة)</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setActiveAuditDefTool("audit_rules")}
-                    className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
-                      activeAuditDefTool === "audit_rules"
-                        ? "bg-primary text-primary-foreground shadow-xs"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                    }`}
-                  >
-                    <History className="h-4 w-4" />
-                    <span>إعدادات وقواعد سجل العمليات والرقابة</span>
-                  </button>
+            {/* Compact Single-Row Header */}
+            <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3 shadow-xs print:hidden">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-500/12 text-indigo-600 dark:text-indigo-400 border border-indigo-500/25">
+                  <ClipboardList size={18} />
                 </div>
+                <h1 className="text-lg sm:text-xl font-black text-foreground">
+                  تدقيق الورديات وسجل العمليات
+                </h1>
+              </div>
+              <div className="flex items-center gap-2">
+                <ViewModeToggle mode={auditViewMode} onChange={setAuditViewMode} />
+              </div>
+            </div>
 
-                {activeAuditDefTool === "shift_rules" ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Card className="rounded-2xl border border-border bg-card shadow-xs">
-                      <CardHeader className="pb-3 border-b border-border/50">
-                        <CardTitle className="text-sm font-black text-foreground flex items-center justify-between">
-                          <span>قناة ورديات المطعم (Restaurant POS Shifts)</span>
-                          <Badge className="bg-emerald-500/15 text-emerald-600 border border-emerald-500/30 text-xs">
-                            مربوط تلقائياً
-                          </Badge>
-                        </CardTitle>
-                        <CardDescription className="text-xs">
-                          قواعد فتح وإغلاق ومطابقة ورديات كاشير المطعم مع الخزينة الرئيسية
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="pt-4 space-y-3 text-xs">
-                        <div className="flex items-center justify-between py-1.5 border-b border-border/40">
-                          <span className="text-muted-foreground font-bold">إجمالي الورديات المسجلة:</span>
-                          <span className="font-mono font-black text-foreground">
-                            {(erpStore.getRestaurantShifts() || []).length} وردية
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between py-1.5 border-b border-border/40">
-                          <span className="text-muted-foreground font-bold">طريقة المطابقة الدفترية:</span>
-                          <span className="font-bold text-emerald-600">مطابقة آلية مع مبيعات الكاشير</span>
-                        </div>
-                        <div className="pt-2 flex justify-end">
-                          <Link to="/admin/restaurant" search={{ tab: "operations" }}>
-                            <Button size="sm" variant="outline" className="rounded-xl text-xs font-bold gap-1.5">
-                              <span>فتح شاشة ورديات المطعم</span>
-                              <ArrowRight size={14} className="rotate-180" />
-                            </Button>
-                          </Link>
-                        </div>
-                      </CardContent>
-                    </Card>
+            {(() => {
+              const renderAuditCards = (
+                cards: Array<{
+                  id: string;
+                  title: string;
+                  icon: any;
+                  badge?: string;
+                  toneClass: string;
+                  active?: boolean;
+                  onClick: () => void;
+                }>,
+              ) => {
+                if (auditViewMode === "list") {
+                  return (
+                    <div className="space-y-2.5 print:hidden">
+                      {cards.map((card) => {
+                        const Icon = card.icon;
+                        return (
+                          <div
+                            key={card.id}
+                            onClick={card.onClick}
+                            className={`group flex items-center justify-between gap-4 rounded-2xl border bg-card p-4 shadow-xs transition hover:border-primary/50 hover:shadow-md cursor-pointer ${
+                              card.active
+                                ? "border-primary ring-2 ring-primary/20 bg-primary/5"
+                                : "border-border/80"
+                            }`}
+                          >
+                            <div className="flex items-center gap-3.5 min-w-0">
+                              <div
+                                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${card.toneClass}`}
+                              >
+                                <Icon className="h-5 w-5" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <h3 className="text-sm font-black text-foreground group-hover:text-primary transition-colors">
+                                    {card.title}
+                                  </h3>
+                                  {card.badge && (
+                                    <span className="rounded-full border border-border/60 bg-muted px-2.5 py-0.5 text-[11px] font-bold text-primary">
+                                      {card.badge}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <ArrowUpRight className="h-4 w-4 text-muted-foreground group-hover:text-primary shrink-0" />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                }
 
-                    <Card className="rounded-2xl border border-border bg-card shadow-xs">
-                      <CardHeader className="pb-3 border-b border-border/50">
-                        <CardTitle className="text-sm font-black text-foreground flex items-center justify-between">
-                          <span>قناة ورديات تذاكر الحديقة (Park POS Shifts)</span>
-                          <Badge className="bg-emerald-500/15 text-emerald-600 border border-emerald-500/30 text-xs">
-                            مربوط تلقائياً
-                          </Badge>
-                        </CardTitle>
-                        <CardDescription className="text-xs">
-                          قواعد فتح وإغلاق ومطابقة ورديات شباك تذاكر الحديقة بعملتي USD و SSP
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="pt-4 space-y-3 text-xs">
-                        <div className="flex items-center justify-between py-1.5 border-b border-border/40">
-                          <span className="text-muted-foreground font-bold">إجمالي الورديات المسجلة:</span>
-                          <span className="font-mono font-black text-foreground">
-                            {(erpStore.getParkShifts() || []).length} وردية
-                          </span>
+                return (
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 print:hidden">
+                    {cards.map((card) => {
+                      const Icon = card.icon;
+                      return (
+                        <div
+                          key={card.id}
+                          onClick={card.onClick}
+                          className={`group flex items-center justify-between gap-4 rounded-2xl border bg-card p-5 shadow-xs transition-all duration-200 hover:border-primary/50 hover:shadow-md cursor-pointer ${
+                            card.active
+                              ? "border-primary ring-2 ring-primary/20 bg-primary/5"
+                              : "border-border/80"
+                          }`}
+                        >
+                          <div className="flex items-center gap-3.5 min-w-0">
+                            <div
+                              className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border ${card.toneClass}`}
+                            >
+                              <Icon className="h-6 w-6" />
+                            </div>
+                            <div className="min-w-0">
+                              <h3 className="text-base font-black text-foreground group-hover:text-primary transition-colors">
+                                {card.title}
+                              </h3>
+                              {card.badge && (
+                                <span className="mt-1 inline-block rounded-full border border-border/60 bg-muted px-2.5 py-0.5 text-[11px] font-bold text-muted-foreground">
+                                  {card.badge}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <ArrowUpRight className="h-5 w-5 text-muted-foreground opacity-60 transition-transform group-hover:opacity-100 group-hover:text-primary shrink-0" />
                         </div>
-                        <div className="flex items-center justify-between py-1.5 border-b border-border/40">
-                          <span className="text-muted-foreground font-bold">طريقة المطابقة الدفترية:</span>
-                          <span className="font-bold text-emerald-600">مطابقة متعددة العملات (USD / SSP)</span>
-                        </div>
-                        <div className="pt-2 flex justify-end">
-                          <Link to="/admin/park" search={{ tab: "operations" }}>
-                            <Button size="sm" variant="outline" className="rounded-xl text-xs font-bold gap-1.5">
-                              <span>فتح شاشة ورديات الحديقة</span>
-                              <ArrowRight size={14} className="rotate-180" />
-                            </Button>
-                          </Link>
-                        </div>
-                      </CardContent>
-                    </Card>
+                      );
+                    })}
                   </div>
-                ) : (
-                  <Card className="rounded-2xl border border-border bg-card shadow-xs">
-                    <CardHeader className="pb-3 border-b border-border/50">
-                      <CardTitle className="text-sm font-black text-foreground">
-                        تصنيفات وقواعد سجل العمليات والرقابة العامة
-                      </CardTitle>
-                      <CardDescription className="text-xs">
-                        الأقسام المشمولة بالرصد التلقائي ومستويات الأهمية الرقابية
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="pt-4 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-                      <div className="rounded-xl border border-border p-3.5 bg-muted/20 space-y-1">
-                        <div className="font-black text-sky-600">عمليات اعتيادية (Info)</div>
-                        <p className="text-muted-foreground leading-relaxed">
-                          تسجيل الدخول، إنشاء الفواتير، إضافة الأصناف، والحركات اليومية المعتادة.
-                        </p>
+                );
+              };
+
+              return (
+                <>
+                  {/* ============================================================== */}
+                  {/* SECTION 1: DEFINITIONS (التعريفات)                             */}
+                  {/* ============================================================== */}
+                  {auditSection === "definitions" && (
+                    <div className="space-y-4 animate-in fade-in duration-200">
+                      {renderAuditCards([
+                        {
+                          id: "audit-def-shift-rules",
+                          title: "قنوات وضوابط تدقيق الورديات",
+                          icon: ClipboardList,
+                          badge: "المطعم والحديقة",
+                          toneClass:
+                            "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
+                          active: activeAuditDefTool === "shift_rules",
+                          onClick: () => setActiveAuditDefTool("shift_rules"),
+                        },
+                        {
+                          id: "audit-def-audit-rules",
+                          title: "إعدادات وقواعد سجل العمليات",
+                          icon: History,
+                          badge: "الرقابة",
+                          toneClass:
+                            "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+                          active: activeAuditDefTool === "audit_rules",
+                          onClick: () => setActiveAuditDefTool("audit_rules"),
+                        },
+                      ])}
+
+                      {activeAuditDefTool === "shift_rules" ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <Card className="rounded-2xl border border-border bg-card shadow-xs">
+                            <CardHeader className="pb-3 border-b border-border/50">
+                              <CardTitle className="text-sm font-black text-foreground flex items-center justify-between">
+                                <span>قناة ورديات المطعم (Restaurant POS Shifts)</span>
+                                <Badge className="bg-emerald-500/15 text-emerald-600 border border-emerald-500/30 text-xs">
+                                  مربوط تلقائياً
+                                </Badge>
+                              </CardTitle>
+                            </CardHeader>
+                            <CardContent className="pt-4 space-y-3 text-xs">
+                              <div className="flex items-center justify-between py-1.5 border-b border-border/40">
+                                <span className="text-muted-foreground font-bold">
+                                  إجمالي الورديات المسجلة:
+                                </span>
+                                <span className="font-mono font-black text-foreground">
+                                  {(erpStore.getRestaurantShifts() || []).length} وردية
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between py-1.5 border-b border-border/40">
+                                <span className="text-muted-foreground font-bold">
+                                  طريقة المطابقة الدفترية:
+                                </span>
+                                <span className="font-bold text-emerald-600">
+                                  مطابقة آلية مع مبيعات الكاشير
+                                </span>
+                              </div>
+                              <div className="pt-2 flex justify-end">
+                                <Link to="/admin/restaurant" search={{ tab: "operations" }}>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="rounded-xl text-xs font-bold gap-1.5"
+                                  >
+                                    <span>فتح شاشة ورديات المطعم</span>
+                                    <ArrowRight size={14} className="rotate-180" />
+                                  </Button>
+                                </Link>
+                              </div>
+                            </CardContent>
+                          </Card>
+
+                          <Card className="rounded-2xl border border-border bg-card shadow-xs">
+                            <CardHeader className="pb-3 border-b border-border/50">
+                              <CardTitle className="text-sm font-black text-foreground flex items-center justify-between">
+                                <span>قناة ورديات تذاكر الحديقة (Park POS Shifts)</span>
+                                <Badge className="bg-emerald-500/15 text-emerald-600 border border-emerald-500/30 text-xs">
+                                  مربوط تلقائياً
+                                </Badge>
+                              </CardTitle>
+                            </CardHeader>
+                            <CardContent className="pt-4 space-y-3 text-xs">
+                              <div className="flex items-center justify-between py-1.5 border-b border-border/40">
+                                <span className="text-muted-foreground font-bold">
+                                  إجمالي الورديات المسجلة:
+                                </span>
+                                <span className="font-mono font-black text-foreground">
+                                  {(erpStore.getParkShifts() || []).length} وردية
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between py-1.5 border-b border-border/40">
+                                <span className="text-muted-foreground font-bold">
+                                  طريقة المطابقة الدفترية:
+                                </span>
+                                <span className="font-bold text-emerald-600">
+                                  مطابقة متعددة العملات (USD / SSP)
+                                </span>
+                              </div>
+                              <div className="pt-2 flex justify-end">
+                                <Link to="/admin/park" search={{ tab: "operations" }}>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="rounded-xl text-xs font-bold gap-1.5"
+                                  >
+                                    <span>فتح شاشة ورديات الحديقة</span>
+                                    <ArrowRight size={14} className="rotate-180" />
+                                  </Button>
+                                </Link>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </div>
+                      ) : (
+                        <Card className="rounded-2xl border border-border bg-card shadow-xs">
+                          <CardHeader className="pb-3 border-b border-border/50">
+                            <CardTitle className="text-sm font-black text-foreground">
+                              تصنيفات وقواعد سجل العمليات والرقابة العامة
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent className="pt-4 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                            <div className="rounded-xl border border-border p-3.5 bg-muted/20 space-y-1">
+                              <div className="font-black text-sky-600">عمليات اعتيادية (Info)</div>
+                              <p className="text-muted-foreground leading-relaxed">
+                                تسجيل الدخول، إنشاء الفواتير، إضافة الأصناف، والحركات اليومية المعتادة.
+                              </p>
+                            </div>
+                            <div className="rounded-xl border border-border p-3.5 bg-muted/20 space-y-1">
+                              <div className="font-black text-amber-600">
+                                عمليات تنبيهية (Warning)
+                              </div>
+                              <p className="text-muted-foreground leading-relaxed">
+                                تعديل الأسعار، التسويات المخزنية، إغلاق الخزائن، واسترجاع حالة الورديات.
+                              </p>
+                            </div>
+                            <div className="rounded-xl border border-border p-3.5 bg-muted/20 space-y-1">
+                              <div className="font-black text-rose-600">
+                                عمليات حساسة (Critical)
+                              </div>
+                              <p className="text-muted-foreground leading-relaxed">
+                                حذف السندات أو القيود، تصفير البيانات، تعديل صلاحيات المستخدمين، والمرتجعات المالية.
+                              </p>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ============================================================== */}
+                  {/* SECTION 2: OPERATIONS (العمليات)                               */}
+                  {/* ============================================================== */}
+                  {auditSection === "operations" && (
+                    <div className="space-y-4 animate-in fade-in duration-200">
+                      {renderAuditCards([
+                        {
+                          id: "audit-op-shifts",
+                          title: "تدقيق ومطابقة الورديات",
+                          icon: ClipboardList,
+                          badge: `${(erpStore.getRestaurantShifts() || []).length + (erpStore.getParkShifts() || []).length} وردية`,
+                          toneClass:
+                            "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
+                          active: activeAuditOpTool === "shifts",
+                          onClick: () => setActiveAuditOpTool("shifts"),
+                        },
+                        {
+                          id: "audit-op-logs",
+                          title: "سجل العمليات والرقابة المباشر",
+                          icon: History,
+                          badge: `${(erpState.auditLogs || []).length} عملية`,
+                          toneClass:
+                            "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
+                          active: activeAuditOpTool === "operations_log",
+                          onClick: () => setActiveAuditOpTool("operations_log"),
+                        },
+                      ])}
+
+                      {activeAuditOpTool === "shifts" ? (
+                        <ShiftAuditLogViewer showHeaderTitle={false} />
+                      ) : (
+                        <AuditOperationsView logs={erpState.auditLogs || []} />
+                      )}
+                    </div>
+                  )}
+
+                  {/* ============================================================== */}
+                  {/* SECTION 3: REPORTS (التقارير)                                  */}
+                  {/* ============================================================== */}
+                  {auditSection === "reports" && (
+                    <div className="space-y-4 animate-in fade-in duration-200">
+                      {renderAuditCards([
+                        {
+                          id: "audit-rep-shifts",
+                          title: "تقرير وسجل تدقيق الورديات الشامل",
+                          icon: FileBarChart,
+                          badge: "الورديات",
+                          toneClass:
+                            "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+                          active: activeAuditReportTool === "shift_summary",
+                          onClick: () => setActiveAuditReportTool("shift_summary"),
+                        },
+                        {
+                          id: "audit-rep-logs",
+                          title: "تقرير وطباعة سجل العمليات الرقابي",
+                          icon: Printer,
+                          badge: `${(erpState.auditLogs || []).length} سجل`,
+                          toneClass:
+                            "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20",
+                          active: activeAuditReportTool === "audit_summary",
+                          onClick: () => setActiveAuditReportTool("audit_summary"),
+                        },
+                      ])}
+
+                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                        <Card className="rounded-2xl border border-border bg-card p-4 shadow-2xs">
+                          <div className="text-xs font-bold text-muted-foreground">
+                            إجمالي ورديات المطعم
+                          </div>
+                          <div className="text-2xl font-black text-foreground mt-1 font-mono">
+                            {(erpStore.getRestaurantShifts() || []).length}
+                          </div>
+                        </Card>
+                        <Card className="rounded-2xl border border-border bg-card p-4 shadow-2xs">
+                          <div className="text-xs font-bold text-muted-foreground">
+                            إجمالي ورديات الحديقة
+                          </div>
+                          <div className="text-2xl font-black text-emerald-600 mt-1 font-mono">
+                            {(erpStore.getParkShifts() || []).length}
+                          </div>
+                        </Card>
+                        <Card className="rounded-2xl border border-border bg-card p-4 shadow-2xs">
+                          <div className="text-xs font-bold text-muted-foreground">
+                            الورديات المفتوحة الآن
+                          </div>
+                          <div className="text-2xl font-black text-amber-600 mt-1 font-mono">
+                            {(erpStore.getRestaurantShifts() || []).filter((s) => s.status === "open")
+                              .length +
+                              (erpStore.getParkShifts() || []).filter((s) => s.status === "open")
+                                .length}
+                          </div>
+                        </Card>
+                        <Card className="rounded-2xl border border-border bg-card p-4 shadow-2xs">
+                          <div className="text-xs font-bold text-muted-foreground">
+                            إجمالي العمليات المرصودة
+                          </div>
+                          <div className="text-2xl font-black text-primary mt-1 font-mono">
+                            {(erpState.auditLogs || []).length}
+                          </div>
+                        </Card>
                       </div>
-                      <div className="rounded-xl border border-border p-3.5 bg-muted/20 space-y-1">
-                        <div className="font-black text-amber-600">عمليات تنبيهية (Warning)</div>
-                        <p className="text-muted-foreground leading-relaxed">
-                          تعديل الأسعار، التسويات المخزنية، إغلاق الخزائن، واسترجاع حالة الورديات.
-                        </p>
-                      </div>
-                      <div className="rounded-xl border border-border p-3.5 bg-muted/20 space-y-1">
-                        <div className="font-black text-rose-600">عمليات حساسة (Critical)</div>
-                        <p className="text-muted-foreground leading-relaxed">
-                          حذف السندات أو القيود، تصفير البيانات، تعديل صلاحيات المستخدمين، والمرتجعات المالية.
-                        </p>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
-              </div>
-            )}
 
-            {/* ============================================================== */}
-            {/* SECTION 2: OPERATIONS (العمليات)                               */}
-            {/* ============================================================== */}
-            {auditSection === "operations" && (
-              <div className="space-y-4 animate-in fade-in duration-200">
-                <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card p-2 shadow-2xs print:hidden">
-                  <button
-                    type="button"
-                    onClick={() => setActiveAuditOpTool("shifts")}
-                    className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
-                      activeAuditOpTool === "shifts"
-                        ? "bg-primary text-primary-foreground shadow-xs"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                    }`}
-                  >
-                    <ClipboardList className="h-4 w-4" />
-                    <span>تدقيق ومطابقة الورديات (المطعم والحديقة)</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setActiveAuditOpTool("operations_log")}
-                    className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
-                      activeAuditOpTool === "operations_log"
-                        ? "bg-primary text-primary-foreground shadow-xs"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                    }`}
-                  >
-                    <History className="h-4 w-4" />
-                    <span>سجل العمليات والرقابة المباشر</span>
-                    <Badge
-                      variant="secondary"
-                      className="bg-black/15 text-current text-[10px] px-1.5 py-0 font-mono"
-                    >
-                      {(erpState.auditLogs || []).length}
-                    </Badge>
-                  </button>
-                </div>
-
-                {activeAuditOpTool === "shifts" ? (
-                  <ShiftAuditLogViewer showHeaderTitle={false} />
-                ) : (
-                  <AuditOperationsView logs={erpState.auditLogs || []} />
-                )}
-              </div>
-            )}
-
-            {/* ============================================================== */}
-            {/* SECTION 3: REPORTS (التقارير)                                  */}
-            {/* ============================================================== */}
-            {auditSection === "reports" && (
-              <div className="space-y-4 animate-in fade-in duration-200">
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                  <Card className="rounded-2xl border border-border bg-card p-4 shadow-2xs">
-                    <div className="text-xs font-bold text-muted-foreground">إجمالي ورديات المطعم</div>
-                    <div className="text-2xl font-black text-foreground mt-1 font-mono">
-                      {(erpStore.getRestaurantShifts() || []).length}
+                      {activeAuditReportTool === "shift_summary" ? (
+                        <ShiftAuditLogViewer showHeaderTitle={false} compact={true} />
+                      ) : (
+                        <AuditOperationsView logs={erpState.auditLogs || []} />
+                      )}
                     </div>
-                  </Card>
-                  <Card className="rounded-2xl border border-border bg-card p-4 shadow-2xs">
-                    <div className="text-xs font-bold text-muted-foreground">إجمالي ورديات الحديقة</div>
-                    <div className="text-2xl font-black text-emerald-600 mt-1 font-mono">
-                      {(erpStore.getParkShifts() || []).length}
-                    </div>
-                  </Card>
-                  <Card className="rounded-2xl border border-border bg-card p-4 shadow-2xs">
-                    <div className="text-xs font-bold text-muted-foreground">الورديات المفتوحة الآن</div>
-                    <div className="text-2xl font-black text-amber-600 mt-1 font-mono">
-                      {(erpStore.getRestaurantShifts() || []).filter((s) => s.status === "open").length +
-                        (erpStore.getParkShifts() || []).filter((s) => s.status === "open").length}
-                    </div>
-                  </Card>
-                  <Card className="rounded-2xl border border-border bg-card p-4 shadow-2xs">
-                    <div className="text-xs font-bold text-muted-foreground">إجمالي العمليات المرصودة</div>
-                    <div className="text-2xl font-black text-primary mt-1 font-mono">
-                      {(erpState.auditLogs || []).length}
-                    </div>
-                  </Card>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card p-2 shadow-2xs print:hidden">
-                  <button
-                    type="button"
-                    onClick={() => setActiveAuditReportTool("shift_summary")}
-                    className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
-                      activeAuditReportTool === "shift_summary"
-                        ? "bg-primary text-primary-foreground shadow-xs"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                    }`}
-                  >
-                    <FileBarChart className="h-4 w-4" />
-                    <span>تقرير وسجل تدقيق الورديات الشامل</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setActiveAuditReportTool("audit_summary")}
-                    className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
-                      activeAuditReportTool === "audit_summary"
-                        ? "bg-primary text-primary-foreground shadow-xs"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                    }`}
-                  >
-                    <Printer className="h-4 w-4" />
-                    <span>تقرير وطباعة سجل العمليات الرقابي</span>
-                  </button>
-                </div>
-
-                {activeAuditReportTool === "shift_summary" ? (
-                  <ShiftAuditLogViewer showHeaderTitle={false} compact={true} />
-                ) : (
-                  <AuditOperationsView logs={erpState.auditLogs || []} />
-                )}
-              </div>
-            )}
+                  )}
+                </>
+              );
+            })()}
           </div>
         )}
       </div>
