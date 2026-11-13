@@ -590,11 +590,11 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
     );
   }
 
-  const searchParams = new URLSearchParams(location.search);
-  const hasRouteSearch = searchParams.has("tab");
+  const activeTabParam = extractTabParam(location.search, (location as any).searchStr);
+  const hasRouteSearch = Boolean(activeTabParam);
   const isNavItemActive = (item: (typeof nav)[number]) => {
     if (item.search) {
-      return pathname === item.to && searchParams.get("tab") === item.search.tab;
+      return pathname === item.to && activeTabParam === item.search.tab;
     }
     if (item.exact) {
       // Do not mark the base dashboard active while a tab-specific view is open.

@@ -75,6 +75,7 @@ export type SelectedDomElement = {
   ancestors: Array<{ selector: string; tag: string; label: string }>;
   tag: string;
   text: string;
+  originalText?: string;
   color: string;
   backgroundColor: string;
   fontSize: string;
@@ -1046,6 +1047,9 @@ export function LiveAppPreview({
       const rememberOriginal = (selector, el) => {
         const existing = originalStates.get(selector);
         if (existing?.el === el) return;
+        if (!el.dataset.studioOrigText) {
+          el.dataset.studioOrigText = (el.innerText || el.textContent || "").trim().slice(0, 500);
+        }
         originalStates.set(selector, {
           el,
           styleAttribute: el.getAttribute("style"),
@@ -1106,6 +1110,7 @@ export function LiveAppPreview({
           ancestors: buildAncestors(el),
           tag: el.tagName.toLowerCase(),
           text: (el.innerText || el.textContent || "").trim().slice(0, 1000),
+          originalText: el.dataset.studioOrigText || (el.innerText || el.textContent || "").trim().slice(0, 500),
           color: css.color,
           backgroundColor: css.backgroundColor,
           fontSize: css.fontSize,
@@ -1178,13 +1183,29 @@ export function LiveAppPreview({
           }
         });
       };
-      const applyText = (el, value) => {
+      const applyText = (el, value, origHint) => {
+        const origTxt = (origHint || el.dataset.studioOrigText || "").trim();
+        const prevTxt = (el.dataset.codingStudioTextApplied || origTxt || "").trim();
         const textNodes = Array.from(el.childNodes).filter((child) => child.nodeType === 3);
         const nonEmpty = textNodes.find((child) => (child.nodeValue || "").trim());
         if (nonEmpty) nonEmpty.nodeValue = String(value);
         else if (textNodes[0]) textNodes[0].nodeValue = String(value);
         else if (!el.children.length) el.textContent = String(value);
         el.dataset.codingStudioTextApplied = String(value);
+        const newTrimmed = String(value || "").trim();
+        if (origTxt.length >= 2 && newTrimmed.length > 0 && origTxt !== newTrimmed) {
+          document.querySelectorAll("h1, h2, h3, h4, h5, h6, a, button, span, [role='menuitem']").forEach((node) => {
+            if (node === el) return;
+            Array.from(node.childNodes).forEach((child) => {
+              if (child.nodeType === 3 && child.nodeValue) {
+                const t = child.nodeValue.trim();
+                if (t === origTxt || (prevTxt.length >= 2 && t === prevTxt)) {
+                  child.nodeValue = newTrimmed;
+                }
+              }
+            });
+          });
+        }
       };
       const applyAnimation = (el, anim) => {
         if (!anim || !anim.type || anim.type === "none") return;
@@ -1804,8 +1825,13 @@ export function LiveAppPreview({
     setTextValue(value);
     if (!selected || previewSource === "published") return;
     if (editsRef.current[selected.selector]?.locked) return;
-    commitEdits(selected.selector, { text: value });
-    send({ action: "text", selector: selected.selector, text: value, silent: true });
+    const prevEdit = editsRef.current[selected.selector];
+    const origText = prevEdit?.originalText || selected.originalText || selected.text;
+    commitEdits(selected.selector, {
+      text: value,
+      ...(origText ? { originalText: origText } : {}),
+    });
+    send({ action: "text", selector: selected.selector, text: value, originalText: origText, silent: true });
   };
 
   const action = (name: string, patch?: StudioDomEdit) => {

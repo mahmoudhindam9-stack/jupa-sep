@@ -3478,7 +3478,7 @@ function LedgerPage() {
                 <div className="flex flex-wrap items-center gap-2 max-w-full">
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="print"
                     size="sm"
                     onClick={() =>
                       printLedgerDocument(
@@ -3498,7 +3498,7 @@ function LedgerPage() {
 
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="print"
                     size="sm"
                     onClick={() =>
                       printLedgerDocument(
@@ -3517,7 +3517,7 @@ function LedgerPage() {
                   </Button>
 
                   <Button
-                    variant="outline"
+                    variant="excel"
                     size="sm"
                     onClick={handleExportJournal}
                     className="gap-1.5 rounded-xl text-xs font-bold"
@@ -3536,10 +3536,10 @@ function LedgerPage() {
                       title="اختر ملف إكسيل لرفعه"
                     />
                     <Button
-                      variant="default"
+                      variant="excel"
                       size="sm"
                       disabled={isImportingOracle}
-                      className="gap-1.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white pointer-events-none text-xs font-bold"
+                      className="gap-1.5 rounded-xl pointer-events-none text-xs font-bold"
                     >
                       <ArrowUpDown className="h-4 w-4" />
                       {isImportingOracle ? "جاري الاستيراد..." : "رفع قيود Excel"}
@@ -3547,22 +3547,22 @@ function LedgerPage() {
                   </div>
 
                   <Button
-                    variant="default"
+                    variant="edit"
                     size="sm"
                     onClick={() => {
                       setIsPasteModalOpen(true);
                     }}
-                    className="gap-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold shadow-sm text-xs"
+                    className="gap-1.5 rounded-xl font-semibold shadow-sm text-xs"
                   >
                     <ClipboardPaste className="h-4 w-4" />
                     لصق نصي للقيود
                   </Button>
 
                   <Button
-                    variant="outline"
+                    variant="delete"
                     size="sm"
                     onClick={() => setIsClearConfirmOpen(true)}
-                    className="gap-1.5 rounded-xl border-rose-500/30 text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 font-semibold text-xs"
+                    className="gap-1.5 rounded-xl font-semibold text-xs"
                   >
                     <Trash2 className="h-4 w-4" />
                     مسح القيود
@@ -3882,18 +3882,18 @@ function LedgerPage() {
                                   <Eye className="h-3.5 w-3.5" />
                                 </Button>
                                 <Button
-                                  variant="outline"
+                                  variant="edit"
                                   size="icon"
-                                  className="h-7 w-7 rounded-md text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/40"
+                                  className="h-7 w-7 rounded-md"
                                   title="تعديل القيد"
                                   onClick={() => handleRequestEditEntry(entry)}
                                 >
                                   <Edit className="h-3.5 w-3.5" />
                                 </Button>
                                 <Button
-                                  variant="outline"
+                                  variant="delete"
                                   size="icon"
-                                  className="h-7 w-7 rounded-md text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
+                                  className="h-7 w-7 rounded-md"
                                   title="حذف القيد"
                                   onClick={() => handleRequestDeleteEntry(entry)}
                                 >
@@ -3901,9 +3901,9 @@ function LedgerPage() {
                                 </Button>
                                 {!isBalanced && (
                                   <Button
-                                    variant="outline"
+                                    variant="draft"
                                     size="sm"
-                                    className="h-7 rounded-md px-2 text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/40"
+                                    className="h-7 rounded-md px-2"
                                     title={`تسوية فرق القيد ${formatCurrency(balanceDiff, "USD")}`}
                                     onClick={() => setBalanceAdjustmentEntry(entry)}
                                   >
@@ -3914,7 +3914,7 @@ function LedgerPage() {
                                   </Button>
                                 )}
                                 <Button
-                                  variant="outline"
+                                  variant="print"
                                   size="icon"
                                   className="h-7 w-7 rounded-md"
                                   title="طباعة القيد"
@@ -4135,6 +4135,7 @@ function LedgerPage() {
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <Button
+                        variant="print"
                         size="sm"
                         onClick={() => {
                           if (!currentAccount) return;
@@ -4199,16 +4200,16 @@ function LedgerPage() {
                             ],
                           });
                         }}
-                        className="gap-1.5 rounded-xl bg-primary text-primary-foreground font-bold"
+                        className="gap-1.5 rounded-xl font-bold"
                       >
                         <Printer className="h-4 w-4" />
                         طباعة كشف الحساب
                       </Button>
                       <Button
-                        variant="outline"
+                        variant="excel"
                         size="sm"
                         onClick={handleExportLedger}
-                        className="gap-1.5 rounded-xl"
+                        className="gap-1.5 rounded-xl font-bold"
                       >
                         <FileSpreadsheet className="h-4 w-4" />
                         تصدير Excel
@@ -4444,7 +4445,7 @@ function LedgerPage() {
           <DialogFooter className="pt-2">
             <Button
               type="button"
-              variant="outline"
+              variant="close"
               onClick={() => setIsAttachmentOpen(false)}
               className="rounded-xl font-bold text-xs"
             >
@@ -4769,16 +4770,17 @@ function LedgerPage() {
             })()}
 
           <DialogFooter className="print:hidden flex justify-between sm:justify-between items-center w-full gap-2">
-            <Button variant="outline" onClick={() => setIsViewJournalOpen(false)}>
+            <Button variant="close" onClick={() => setIsViewJournalOpen(false)}>
               إغلاق
             </Button>
             <Button
+              variant="print"
               onClick={() => {
                 if (selectedJournal) {
                   printJournalEntryDocument(selectedJournal, accounts, formatCurrency);
                 }
               }}
-              className="gap-2 bg-primary text-primary-foreground font-bold"
+              className="gap-2 font-bold"
             >
               <Printer size={16} />
               طباعة سند القيد
@@ -4965,16 +4967,17 @@ function LedgerPage() {
 
           <DialogFooter className="gap-2">
             <Button
-              variant="outline"
+              variant="close"
               onClick={() => setIsPasteModalOpen(false)}
               className="rounded-xl"
             >
               إلغاء
             </Button>
             <Button
+              variant="save"
               onClick={handleConfirmPasteImport}
               disabled={parsedEntriesPreview.length === 0}
-              className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl"
+              className="gap-2 font-bold rounded-xl"
             >
               <Check className="h-4 w-4" />
               تأكيد واستيراد {parsedEntriesPreview.length} قيد إلى دفتر اليومية

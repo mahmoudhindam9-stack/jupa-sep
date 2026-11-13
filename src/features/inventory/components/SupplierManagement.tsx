@@ -1,7 +1,9 @@
 // @ts-nocheck
-import { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import * as XLSX from "xlsx";
 import { erpStore, Supplier } from "@/shared/services/erpStore";
+import { printAccountingDocument } from "@/shared/utils/printAccountingDocument";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,10 +25,8 @@ import {
   CheckCircle2,
   Receipt,
   FileSpreadsheet,
-  AlertCircle,
-  HelpCircle,
-  Building2,
-  Layers,
+  Printer,
+  X,
 } from "lucide-react";
 import {
   Dialog,
@@ -44,6 +44,8 @@ export function SupplierManagement() {
   const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [deleteTargetSupplier, setDeleteTargetSupplier] = useState<Supplier | null>(null);
+  const [statementSupplier, setStatementSupplier] = useState<Supplier | null>(null);
 
   // Subscribe to store updates
   useEffect(() => {
@@ -142,6 +144,129 @@ export function SupplierManagement() {
     );
   }, [erpState.suppliers, search]);
 
+  // Statement rows for selected supplier
+  const supplierStatementData = useMemo(() => {
+    if (!statementSupplier) return null;
+    const accCode = statementSupplier.account_code || "24010";
+    const rows: Array<{
+      id: string;
+      date: string;
+      reference: string;
+      description: string;
+      debit: number;
+      credit: number;
+      currency: string;
+      runningBalance: number;
+    }> = [];
+
+    let running = 0;
+    const sortedJournals = [...(erpState.journalEntries || [])].sort((a, b) =>
+      String(a.date || "").localeCompare(String(b.date || "")),
+    );
+
+    sortedJournals.forEach((entry) => {
+      (entry.lines || []).forEach((line, idx) => {
+        const matchesAccount = line.account_code === accCode;
+        const matchesName =
+          statementSupplier.name_ar &&
+          (entry.description?.includes(statementSupplier.name_ar) ||
+            line.description?.includes(statementSupplier.name_ar)) &&
+          line.account_code?.startsWith("240");
+        if (matchesAccount || matchesName) {
+          const debit = Number(line.debit) || 0;
+          const credit = Number(line.credit) || 0;
+          // Liability account: credit increases supplier balance, debit decreases it
+          running += credit - debit;
+          rows.push({
+            id: `${entry.id}-${idx}`,
+            date: entry.date,
+            reference: entry.reference,
+            description: line.description || entry.description || "حركة محاسبية",
+            debit,
+            credit,
+            currency: line.currency || entry.currency || "USD",
+            runningBalance: running,
+          });
+        }
+      });
+    });
+
+    const totalDebit = rows.reduce((s, r) => s + r.debit, 0);
+    const totalCredit = rows.reduce((s, r) => s + r.credit, 0);
+    return {
+      accCode,
+      rows,
+      totalDebit,
+      totalCredit,
+      closingBalance: running,
+    };
+  }, [statementSupplier, erpState.journalEntries]);
+
+  const handleExportSupplierStatementExcel = () => {
+    if (!statementSupplier || !supplierStatementData) return;
+    const exportRows = supplierStatementData.rows.map((r, i) => ({
+      م: i + 1,
+      التاريخ: r.date,
+      المرجع: r.reference,
+      البيان: r.description,
+      "مدين (سداد للمورد)": r.debit,
+      "دائن (مشتريات / استحقاق)": r.credit,
+      العملة: r.currency,
+      "الرصيد التراكمي": r.runningBalance,
+    }));
+    const ws = XLSX.utils.json_to_sheet(exportRows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "كشف حساب مورد");
+    XLSX.writeFile(
+      wb,
+      `statement_${statementSupplier.account_code || statementSupplier.id}.xlsx`,
+    );
+  };
+
+  const handlePrintSupplierStatement = () => {
+    if (!statementSupplier || !supplierStatementData) return;
+    printAccountingDocument({
+      title: `كشف حساب مورد تفصيلي — ${statementSupplier.name_ar}`,
+      subtitle: `رقم الحساب المحاسبي: ${supplierStatementData.accCode} | الهاتف: ${statementSupplier.phone || "---"}`,
+      metaItems: [
+        { label: "اسم المورد", value: statementSupplier.name_ar },
+        { label: "رقم الحساب", value: supplierStatementData.accCode },
+        { label: "إجمالي السداد (مدين)", value: `${supplierStatementData.totalDebit.toLocaleString()} $` },
+        { label: "إجمالي الاستحقاق (دائن)", value: `${supplierStatementData.totalCredit.toLocaleString()} $` },
+      ],
+      columns: [
+        { key: "date", label: "التاريخ" },
+        { key: "reference", label: "المرجع" },
+        { key: "description", label: "البيان وتفاصيل الحركة" },
+        { key: "debit", label: "مدين (سداد)" },
+        { key: "credit", label: "دائن (استحقاق)" },
+        { key: "runningBalance", label: "الرصيد التراكمي" },
+      ],
+      rows: supplierStatementData.rows.map((r) => ({
+        date: r.date,
+        reference: r.reference,
+        description: r.description,
+        debit: r.debit > 0 ? `${r.debit.toLocaleString()} ${r.currency}` : "-",
+        credit: r.credit > 0 ? `${r.credit.toLocaleString()} ${r.currency}` : "-",
+        runningBalance: `${r.runningBalance.toLocaleString()} ${r.currency}`,
+      })),
+      totals: [
+        {
+          label: "إجمالي المدين (المسدد)",
+          value: `${supplierStatementData.totalDebit.toLocaleString()} $`,
+        },
+        {
+          label: "إجمالي الدائن (المستحق)",
+          value: `${supplierStatementData.totalCredit.toLocaleString()} $`,
+        },
+        {
+          label: "صافي رصيد المورد",
+          value: `${supplierStatementData.closingBalance.toLocaleString()} $`,
+        },
+      ],
+    });
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name_ar.trim()) {
@@ -172,7 +297,6 @@ export function SupplierManagement() {
         form.currency,
       );
 
-      // Open celebration / alert modal showing account number created
       setCreatedNotification({
         open: true,
         supplierName: form.name_ar,
@@ -204,36 +328,15 @@ export function SupplierManagement() {
     });
   };
 
-  const handleDelete = (id: string) => {
-    if (
-      confirm(
-        "هل أنت متأكد من حذف هذا المورد؟ سيبقى سجل القيود والمعاملات المحاسبية محفوظاً دائماً.",
-      )
-    ) {
-      erpStore.deleteSupplier(id);
-      toast({
-        title: "تم الحذف",
-        description: "تم نقل المورد إلى المحذوفات مع بقاء أرصدته في القيود العامة.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const openTransactionDialog = (
-    s: Supplier,
-    type: "payment" | "invoice" | "adjustment" = "payment",
-  ) => {
-    const defaultTreasury = activeTreasuries[0]?.id || "";
-    setTxModal({
-      open: true,
-      supplier: s,
-      type,
-      amount: "",
-      currency: "USD",
-      exchangeRate: "2800",
-      treasuryId: defaultTreasury,
-      note: "",
+  const confirmDeleteSupplier = () => {
+    if (!deleteTargetSupplier) return;
+    erpStore.deleteSupplier(deleteTargetSupplier.id);
+    toast({
+      title: "تم الحذف",
+      description: "تم نقل المورد إلى المحذوفات مع بقاء أرصدته في القيود العامة.",
+      variant: "destructive",
     });
+    setDeleteTargetSupplier(null);
   };
 
   const handleExecuteTransaction = () => {
@@ -288,10 +391,6 @@ export function SupplierManagement() {
             <Truck className="text-primary" size={24} />
             إدارة الموردين والربط المحاسبي التلقائي
           </h2>
-          <p className="text-xs text-muted-foreground mt-1">
-            عند إضافة أي مورد يتم إنشاء حساب محاسبي له تلقائياً في شجرة الحسابات (الموردون 24010) أو
-            الربط مع حساب موجود، مع توليد القيود المزدوجة فوراً عند أي حركة.
-          </p>
         </div>
         <div className="flex items-center gap-2">
           <div className="bg-background px-3 py-1.5 rounded-xl border border-border shadow-xs flex items-center gap-2 text-xs font-bold">
@@ -308,9 +407,6 @@ export function SupplierManagement() {
             <UserPlus className="text-primary" size={18} />
             <span>{editingId ? "تعديل بيانات المورد" : "إضافة مورد جديد مع الربط المحاسبي"}</span>
           </CardTitle>
-          <CardDescription className="text-xs">
-            اختر إنشاء حساب جديد تلقائياً في شجرة الحسابات أو الربط مع حساب مورد مسجل مسبقاً.
-          </CardDescription>
         </CardHeader>
         <CardContent className="pt-4">
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -382,20 +478,12 @@ export function SupplierManagement() {
                   <label htmlFor="mode-auto" className="cursor-pointer text-xs space-y-1.5 flex-1">
                     <div className="flex items-center justify-between gap-2 flex-wrap">
                       <span className="font-black block text-foreground">
-                        إنشاء حساب محاسبي تلقائي جديد بالشجرة
+                        إنشاء حساب محاسبي تلقائي جديد بالشجرة (المستوى الرابع)
                       </span>
                       <span className="font-mono font-black text-[11px] px-2 py-0.5 rounded-md bg-primary/15 text-primary border border-primary/30">
                         رقم الحساب القادم: {erpStore.getNextSupplierAccountCode()}
                       </span>
                     </div>
-                    <span className="text-muted-foreground block text-[11px]">
-                      يتم إدراجه تلقائياً في شجرة الحسابات: <strong>2 الالتزامات</strong> ←{" "}
-                      <strong>240 أرصدة دائنة</strong> ← <strong>24010 الموردون</strong> ←{" "}
-                      <strong className="font-mono text-primary">
-                        {erpStore.getNextSupplierAccountCode()} (مورد -{" "}
-                        {form.name_ar.trim() || "اسم المورد"})
-                      </strong>
-                    </span>
                   </label>
                 </div>
 
@@ -411,9 +499,6 @@ export function SupplierManagement() {
                   <label htmlFor="mode-existing" className="cursor-pointer text-xs space-y-1">
                     <span className="font-black block text-foreground">
                       ربط مع حساب مورد موجود مسبقاً في الدليل
-                    </span>
-                    <span className="text-muted-foreground block text-[11px]">
-                      اختر من قائمة حسابات الموردين المزامنة حالياً مع دليل الحسابات العام.
                     </span>
                   </label>
                 </div>
@@ -446,7 +531,7 @@ export function SupplierManagement() {
               {editingId && (
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="close"
                   onClick={() => {
                     setEditingId(null);
                     setForm({
@@ -463,7 +548,11 @@ export function SupplierManagement() {
                   إلغاء التعديل
                 </Button>
               )}
-              <Button type="submit" className="rounded-xl font-black h-10 px-6 gap-2 shadow-sm">
+              <Button
+                type="submit"
+                variant={editingId ? "edit" : "save"}
+                className="rounded-xl font-black h-10 px-6 gap-2 shadow-sm"
+              >
                 {editingId ? <Pencil size={16} /> : <Plus size={16} />}
                 {editingId ? "تحديث بيانات المورد" : "حفظ المورد وإنشاء الحساب المحاسبي"}
               </Button>
@@ -478,11 +567,8 @@ export function SupplierManagement() {
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div>
               <CardTitle className="text-base font-black">
-                قائمة الموردين والأرصدة المحاسبية
+                قائمة الموردين والأرصدة المحاسبية (اضغط على اسم المورد لفتح كشف حسابه)
               </CardTitle>
-              <CardDescription className="text-xs">
-                انقر على زر "تسجيل حركة" لتسجيل سداد، استحقاق فاتورة، أو تسوية رصيد بالقيد المزدوج.
-              </CardDescription>
             </div>
             <div className="relative w-full md:w-72">
               <Search
@@ -502,7 +588,7 @@ export function SupplierManagement() {
           <table className="w-full text-xs text-right">
             <thead className="bg-muted/50 text-muted-foreground font-bold border-b border-border/50">
               <tr>
-                <th className="px-4 py-3">اسم المورد</th>
+                <th className="px-4 py-3">اسم المورد (رابط كشف الحساب)</th>
                 <th className="px-4 py-3 text-center">رقم الحساب المحاسبي</th>
                 <th className="px-4 py-3 text-center">الهاتف</th>
                 <th className="px-4 py-3 text-center">الرصيد المالي الحالي</th>
@@ -518,7 +604,14 @@ export function SupplierManagement() {
                         {s.name_ar.substring(0, 1)}
                       </div>
                       <div>
-                        <div>{s.name_ar}</div>
+                        <button
+                          type="button"
+                          onClick={() => setStatementSupplier(s)}
+                          className="app-link text-right font-black text-primary hover:text-primary/80"
+                          title="اضغط لفتح كشف حساب المورد التفصيلي"
+                        >
+                          {s.name_ar}
+                        </button>
                         {s.currency && (
                           <div className="text-[10px] text-muted-foreground">
                             العملة:{" "}
@@ -530,10 +623,15 @@ export function SupplierManagement() {
                   </td>
                   <td className="px-4 py-3 text-center">
                     {s.account_code ? (
-                      <span className="inline-flex items-center gap-1 font-mono font-bold bg-muted/80 text-foreground px-2.5 py-1 rounded-lg border border-border text-xs">
+                      <button
+                        type="button"
+                        onClick={() => setStatementSupplier(s)}
+                        className="app-link inline-flex items-center gap-1 font-mono font-bold bg-muted/80 text-primary px-2.5 py-1 rounded-lg border border-border text-xs"
+                        title="فتح كشف حساب المورد"
+                      >
                         <BookOpen size={12} className="text-primary" />
                         {s.account_code}
-                      </span>
+                      </button>
                     ) : (
                       <span className="text-muted-foreground italic text-[11px]">24010 (عام)</span>
                     )}
@@ -563,8 +661,17 @@ export function SupplierManagement() {
                     <div className="flex justify-end items-center gap-1.5">
                       <Button
                         size="sm"
-                        variant="default"
-                        className="h-8 rounded-lg text-xs font-bold gap-1 bg-primary text-primary-foreground shadow-xs cursor-pointer"
+                        variant="print"
+                        className="h-8 rounded-lg text-xs font-bold gap-1"
+                        onClick={() => setStatementSupplier(s)}
+                      >
+                        <BookOpen size={13} />
+                        <span>كشف الحساب</span>
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="save"
+                        className="h-8 rounded-lg text-xs font-bold gap-1"
                         onClick={() =>
                           navigate({
                             to: "/admin/ledger",
@@ -573,12 +680,12 @@ export function SupplierManagement() {
                         }
                       >
                         <Receipt size={13} />
-                        <span>سند صرف / فاتورة (المالية)</span>
+                        <span>سند صرف / فاتورة</span>
                       </Button>
                       <Button
                         size="icon"
-                        variant="ghost"
-                        className="h-8 w-8 rounded-lg text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                        variant="edit"
+                        className="h-8 w-8 rounded-lg"
                         onClick={() => handleEdit(s)}
                         title="تعديل المورد"
                       >
@@ -586,9 +693,9 @@ export function SupplierManagement() {
                       </Button>
                       <Button
                         size="icon"
-                        variant="ghost"
-                        className="h-8 w-8 rounded-lg text-destructive hover:bg-destructive/10"
-                        onClick={() => handleDelete(s.id)}
+                        variant="delete"
+                        className="h-8 w-8 rounded-lg"
+                        onClick={() => setDeleteTargetSupplier(s)}
                         title="حذف المورد"
                       >
                         <Trash2 size={14} />
@@ -610,6 +717,173 @@ export function SupplierManagement() {
         </div>
       </Card>
 
+      {/* Dialog: Supplier Detailed Account Statement (كشف حساب المورد التفصيلي) */}
+      <Dialog
+        open={Boolean(statementSupplier)}
+        onOpenChange={(open) => !open && setStatementSupplier(null)}
+      >
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto text-right rounded-2xl">
+          <DialogHeader>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <DialogTitle className="text-lg font-black flex items-center gap-2">
+                  <BookOpen className="text-primary" size={20} />
+                  كشف حساب المورد: {statementSupplier?.name_ar}
+                </DialogTitle>
+                <DialogDescription className="text-xs font-bold mt-1">
+                  رقم الحساب المحاسبي:{" "}
+                  <span className="font-mono text-primary">
+                    #{supplierStatementData?.accCode}
+                  </span>{" "}
+                  | الهاتف: {statementSupplier?.phone || "---"}
+                </DialogDescription>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="print"
+                  size="sm"
+                  onClick={handlePrintSupplierStatement}
+                  className="gap-1.5 rounded-xl text-xs font-bold"
+                >
+                  <Printer size={14} />
+                  طباعة كشف الحساب
+                </Button>
+                <Button
+                  type="button"
+                  variant="excel"
+                  size="sm"
+                  onClick={handleExportSupplierStatementExcel}
+                  className="gap-1.5 rounded-xl text-xs font-bold"
+                >
+                  <FileSpreadsheet size={14} />
+                  طباعة إكسيل (Excel)
+                </Button>
+                <Button
+                  type="button"
+                  variant="close"
+                  size="sm"
+                  onClick={() => setStatementSupplier(null)}
+                  className="gap-1 rounded-xl text-xs font-bold"
+                >
+                  <X size={14} />
+                  إغلاق
+                </Button>
+              </div>
+            </div>
+          </DialogHeader>
+
+          {supplierStatementData && (
+            <div className="space-y-4 my-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                  <span className="text-xs text-muted-foreground block">
+                    إجمالي المسدد للمورد (مدين)
+                  </span>
+                  <span className="text-base font-black font-mono text-emerald-700 dark:text-emerald-400">
+                    {supplierStatementData.totalDebit.toLocaleString()} $
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20">
+                  <span className="text-xs text-muted-foreground block">
+                    إجمالي المشتريات الآجلة / الفواتير (دائن)
+                  </span>
+                  <span className="text-base font-black font-mono text-rose-700 dark:text-rose-400">
+                    {supplierStatementData.totalCredit.toLocaleString()} $
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-primary/10 border border-primary/20">
+                  <span className="text-xs text-muted-foreground block">
+                    صافي الرصيد الحالي للمورد
+                  </span>
+                  <span className="text-base font-black font-mono text-primary">
+                    {supplierStatementData.closingBalance.toLocaleString()} $
+                  </span>
+                </div>
+              </div>
+
+              <div className="border rounded-xl overflow-hidden">
+                <table className="w-full text-xs text-right">
+                  <thead className="bg-muted/60 text-muted-foreground font-bold border-b">
+                    <tr>
+                      <th className="p-3">التاريخ</th>
+                      <th className="p-3">المرجع</th>
+                      <th className="p-3">البيان وتفاصيل العملية</th>
+                      <th className="p-3 text-center text-emerald-700">مدين (سداد)</th>
+                      <th className="p-3 text-center text-rose-700">دائن (شراء آجل / فاتورة)</th>
+                      <th className="p-3 text-center">الرصيد التراكمي</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {supplierStatementData.rows.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="p-8 text-center text-muted-foreground">
+                          لا توجد حركات مسجلة لهذا المورد حتى الآن.
+                        </td>
+                      </tr>
+                    ) : (
+                      supplierStatementData.rows.map((row) => (
+                        <tr key={row.id} className="hover:bg-muted/20">
+                          <td className="p-3 font-mono">{row.date}</td>
+                          <td className="p-3 font-mono font-bold">{row.reference}</td>
+                          <td className="p-3 font-medium">{row.description}</td>
+                          <td className="p-3 text-center font-mono font-bold text-emerald-700">
+                            {row.debit > 0 ? `${row.debit.toLocaleString()} ${row.currency}` : "-"}
+                          </td>
+                          <td className="p-3 text-center font-mono font-bold text-rose-700">
+                            {row.credit > 0
+                              ? `${row.credit.toLocaleString()} ${row.currency}`
+                              : "-"}
+                          </td>
+                          <td className="p-3 text-center font-mono font-black text-foreground">
+                            {row.runningBalance.toLocaleString()} {row.currency}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: Delete Supplier Confirmation */}
+      <Dialog
+        open={Boolean(deleteTargetSupplier)}
+        onOpenChange={(open) => !open && setDeleteTargetSupplier(null)}
+      >
+        <DialogContent className="max-w-md text-right rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-black">
+              تأكيد حذف المورد ({deleteTargetSupplier?.name_ar})
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              سيتم نقل المورد إلى المحذوفات مع الاحتفاظ بكافة قيوده وسنداته في دفتر اليومية العام.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex gap-2 sm:justify-start">
+            <Button
+              type="button"
+              variant="delete"
+              onClick={confirmDeleteSupplier}
+              className="rounded-xl font-bold"
+            >
+              تأكيد الحذف
+            </Button>
+            <Button
+              type="button"
+              variant="close"
+              onClick={() => setDeleteTargetSupplier(null)}
+              className="rounded-xl font-bold"
+            >
+              إلغاء
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Dialog: Celebration Notification on Supplier Creation with Account Number */}
       <Dialog
         open={createdNotification.open}
@@ -625,9 +899,6 @@ export function SupplierManagement() {
                 <DialogTitle className="text-lg font-black text-foreground">
                   تم تسجيل المورد وإنشاء الحساب بنجاح!
                 </DialogTitle>
-                <DialogDescription className="text-xs">
-                  تم ربط المورد تلقائياً بدليل الحسابات وإعداده لكافة العمليات المالية.
-                </DialogDescription>
               </div>
             </div>
           </DialogHeader>
@@ -645,24 +916,21 @@ export function SupplierManagement() {
                 {createdNotification.accountCode}
               </span>
             </div>
-            <div className="flex justify-between items-center text-[11px] text-muted-foreground border-t border-border/50 pt-2">
-              <span>المستوى في الشجرة:</span>
-              <span>الموردون (24010) - خصوم متداولة</span>
-            </div>
           </div>
 
           <DialogFooter className="sm:justify-start">
             <Button
+              variant="close"
               className="w-full rounded-xl font-black"
               onClick={() => setCreatedNotification((prev) => ({ ...prev, open: false }))}
             >
-              تم، موافق
+              إغلاق
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Dialog: Record Supplier Transaction (Debit / Credit / Adjustment) */}
+      {/* Dialog: Record Supplier Transaction */}
       <Dialog
         open={txModal.open}
         onOpenChange={(open) => setTxModal((prev) => ({ ...prev, open }))}
@@ -683,85 +951,39 @@ export function SupplierManagement() {
           </DialogHeader>
 
           <div className="space-y-4 py-2">
-            {/* Transaction Type */}
             <div className="space-y-1.5">
               <Label className="text-xs font-bold">نوع الحركة المحاسبية:</Label>
               <div className="grid grid-cols-3 gap-2">
                 <Button
                   type="button"
-                  variant={txModal.type === "payment" ? "default" : "outline"}
+                  variant={txModal.type === "payment" ? "save" : "outline"}
                   onClick={() => setTxModal((prev) => ({ ...prev, type: "payment" }))}
                   className="rounded-xl text-xs font-bold h-9"
                 >
-                  <ArrowDownLeft size={14} className="ml-1 text-emerald-400" />
+                  <ArrowDownLeft size={14} className="ml-1" />
                   سداد للمورد (مدين)
                 </Button>
                 <Button
                   type="button"
-                  variant={txModal.type === "invoice" ? "default" : "outline"}
+                  variant={txModal.type === "invoice" ? "draft" : "outline"}
                   onClick={() => setTxModal((prev) => ({ ...prev, type: "invoice" }))}
                   className="rounded-xl text-xs font-bold h-9"
                 >
-                  <ArrowUpRight size={14} className="ml-1 text-rose-400" />
+                  <ArrowUpRight size={14} className="ml-1" />
                   استحقاق بضاعة (دائن)
                 </Button>
                 <Button
                   type="button"
-                  variant={txModal.type === "adjustment" ? "default" : "outline"}
+                  variant={txModal.type === "adjustment" ? "edit" : "outline"}
                   onClick={() => setTxModal((prev) => ({ ...prev, type: "adjustment" }))}
                   className="rounded-xl text-xs font-bold h-9"
                 >
-                  <RefreshCw size={14} className="ml-1 text-blue-400" />
+                  <RefreshCw size={14} className="ml-1" />
                   تسوية رصيد
                 </Button>
               </div>
             </div>
 
-            {/* Currency Selection & Exchange Rate */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 bg-muted/40 rounded-xl border border-border/60">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-bold">العملة الأساسية للحركة:</Label>
-                <select
-                  className="flex h-9 w-full rounded-lg border border-input bg-background px-3 py-1 text-xs ring-offset-background focus:outline-none focus:ring-2 focus:ring-primary font-bold"
-                  value={txModal.currency}
-                  onChange={(e) =>
-                    setTxModal((prev) => ({
-                      ...prev,
-                      currency: e.target.value as "USD" | "SSP",
-                    }))
-                  }
-                >
-                  <option value="USD">دولار أمريكي (USD $)</option>
-                  <option value="SSP">جنيه سوداني (SSP)</option>
-                </select>
-              </div>
-
-              {txModal.currency === "SSP" ? (
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-bold">سعر الصرف مقابل الدولار ($):</Label>
-                  <Input
-                    type="number"
-                    value={txModal.exchangeRate}
-                    onChange={(e) =>
-                      setTxModal((prev) => ({ ...prev, exchangeRate: e.target.value }))
-                    }
-                    placeholder="مثال: 2800"
-                    className="h-9 rounded-lg bg-background text-xs font-mono font-bold"
-                  />
-                </div>
-              ) : (
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-bold text-muted-foreground">
-                    العملة المعتمدة للنظام:
-                  </Label>
-                  <div className="h-9 flex items-center px-3 rounded-lg bg-background/50 border border-border text-xs text-muted-foreground">
-                    الدولار هو العملة الأساسية للمطعم
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Amount and Treasury */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs font-bold">
@@ -776,7 +998,7 @@ export function SupplierManagement() {
                 />
               </div>
 
-              {txModal.type === "payment" ? (
+              {txModal.type === "payment" && (
                 <div className="space-y-1.5">
                   <Label className="text-xs font-bold">الخزينة المسدد منها: *</Label>
                   <select
@@ -793,29 +1015,9 @@ export function SupplierManagement() {
                     ))}
                   </select>
                 </div>
-              ) : (
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-bold text-muted-foreground">
-                    التوجيه المحاسبي:
-                  </Label>
-                  <div className="h-10 flex items-center px-3 rounded-xl bg-muted/40 border border-border text-xs text-muted-foreground">
-                    {txModal.type === "invoice" ? "103000 (مخزون خامات)" : "17010100 (حساب تسويات)"}
-                  </div>
-                </div>
               )}
             </div>
 
-            {/* Live Conversion Preview */}
-            {txModal.currency === "SSP" && Number(txModal.amount) > 0 && (
-              <div className="p-2.5 rounded-xl bg-primary/5 border border-primary/20 text-xs flex justify-between items-center">
-                <span className="text-muted-foreground font-bold">المعادل بالدولار الأساسي:</span>
-                <span className="font-mono font-black text-primary text-sm">
-                  $ {(Number(txModal.amount) / (Number(txModal.exchangeRate) || 1)).toFixed(2)} USD
-                </span>
-              </div>
-            )}
-
-            {/* Note / Statement */}
             <div className="space-y-1.5">
               <Label className="text-xs font-bold">البيان / ملاحظات القيد:</Label>
               <Input
@@ -829,13 +1031,14 @@ export function SupplierManagement() {
 
           <DialogFooter className="sm:justify-start gap-2">
             <Button
-              variant="outline"
+              variant="close"
               onClick={() => setTxModal((prev) => ({ ...prev, open: false }))}
               className="rounded-xl font-bold"
             >
               إلغاء
             </Button>
             <Button
+              variant="save"
               onClick={handleExecuteTransaction}
               className="rounded-xl font-black gap-2 flex-1 shadow-sm"
             >
@@ -861,9 +1064,6 @@ export function SupplierManagement() {
                 <DialogTitle className="text-lg font-black text-foreground">
                   تم ترحيل قيد المورد وتحديث الخزينة!
                 </DialogTitle>
-                <DialogDescription className="text-xs">
-                  تم إدراج الحركة في دفتر اليومية العامة وحساب الأستاذ العام تلقائياً.
-                </DialogDescription>
               </div>
             </div>
           </DialogHeader>
@@ -891,22 +1091,15 @@ export function SupplierManagement() {
                 {txSuccessResult.amount.toLocaleString()} {txSuccessResult.currency}
               </span>
             </div>
-            {txSuccessResult.currency !== "USD" && (
-              <div className="flex justify-between items-center text-[11px] text-muted-foreground border-t border-border/50 pt-2">
-                <span>المعادل بالدولار الأساسي:</span>
-                <span className="font-mono font-bold text-primary">
-                  $ {txSuccessResult.baseUsd.toFixed(2)} USD
-                </span>
-              </div>
-            )}
           </div>
 
           <DialogFooter className="sm:justify-start">
             <Button
+              variant="close"
               className="w-full rounded-xl font-black"
               onClick={() => setTxSuccessResult((prev) => ({ ...prev, open: false }))}
             >
-              تم، إغلاق
+              إغلاق
             </Button>
           </DialogFooter>
         </DialogContent>

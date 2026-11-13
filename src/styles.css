@@ -381,6 +381,30 @@ html[data-theme="luxury-gold"] {
       color 0.18s ease,
       opacity 0.18s ease;
   }
+
+  /* ==========================================================================
+     APPLICATION-WIDE UNIFORM: CLICKABLE LINKS VS DISABLED ELEMENTS
+     - Clickable text links always carry a crisp underline
+     - Disabled / non-clickable elements are dimmed with NO underline
+     ========================================================================== */
+  a:not([role="button"]):not(.no-underline),
+  [role="link"],
+  .app-link {
+    text-decoration: underline;
+    text-underline-offset: 4px;
+    text-decoration-thickness: 1.5px;
+    cursor: pointer;
+  }
+
+  :disabled,
+  [disabled],
+  [aria-disabled="true"],
+  .app-link-disabled {
+    opacity: 0.45 !important;
+    cursor: not-allowed !important;
+    text-decoration: none !important;
+  }
+
   input[type="number"]::-webkit-inner-spin-button,
   input[type="number"]::-webkit-outer-spin-button {
     -webkit-appearance: none;
@@ -409,6 +433,94 @@ html[data-theme="luxury-gold"] {
 }
 
 @layer utilities {
+  /* ==========================================================================
+     SEMANTIC BUTTON UNIFORM CLASSES (Global Design System)
+     - Save / Post / Approve: Primary Teal (#047857)
+     - Edit: Royal Blue (#2563eb)
+     - Delete / Refund / Revert: Crimson Red (#dc2626)
+     - Close / Cancel: Neutral Slate (#475569)
+     - Print / PDF: Indigo (#4f46e5)
+     - Excel Export / Print: Excel Green (#15803d)
+     - Save Draft: Amber (#d97706)
+     ========================================================================== */
+  .btn-uniform-save {
+    background-color: #047857 !important;
+    color: #ffffff !important;
+    border-color: #065f46 !important;
+    cursor: pointer;
+  }
+  .btn-uniform-save:hover:not(:disabled) {
+    background-color: #065f46 !important;
+  }
+
+  .btn-uniform-edit {
+    background-color: #2563eb !important;
+    color: #ffffff !important;
+    border-color: #1d4ed8 !important;
+    cursor: pointer;
+  }
+  .btn-uniform-edit:hover:not(:disabled) {
+    background-color: #1d4ed8 !important;
+  }
+
+  .btn-uniform-delete {
+    background-color: #dc2626 !important;
+    color: #ffffff !important;
+    border-color: #b91c1c !important;
+    cursor: pointer;
+  }
+  .btn-uniform-delete:hover:not(:disabled) {
+    background-color: #b91c1c !important;
+  }
+
+  .btn-uniform-close {
+    background-color: #e2e8f0 !important;
+    color: #1e293b !important;
+    border-color: #cbd5e1 !important;
+    cursor: pointer;
+  }
+  .btn-uniform-close:hover:not(:disabled) {
+    background-color: #cbd5e1 !important;
+  }
+  .dark .btn-uniform-close {
+    background-color: #1e293b !important;
+    color: #f1f5f9 !important;
+    border-color: #334155 !important;
+  }
+  .dark .btn-uniform-close:hover:not(:disabled) {
+    background-color: #334155 !important;
+  }
+
+  .btn-uniform-print {
+    background-color: #4f46e5 !important;
+    color: #ffffff !important;
+    border-color: #4338ca !important;
+    cursor: pointer;
+  }
+  .btn-uniform-print:hover:not(:disabled) {
+    background-color: #4338ca !important;
+  }
+
+  .btn-uniform-excel {
+    background-color: #15803d !important;
+    color: #ffffff !important;
+    border-color: #166534 !important;
+    cursor: pointer;
+  }
+  .btn-uniform-excel:hover:not(:disabled) {
+    background-color: #166534 !important;
+  }
+
+  .btn-uniform-draft {
+    background-color: #d97706 !important;
+    color: #ffffff !important;
+    border-color: #b45309 !important;
+    cursor: pointer;
+  }
+  .btn-uniform-draft:hover:not(:disabled) {
+    background-color: #b45309 !important;
+  }
+
   .app-surface {
     background: var(--color-card);
     border: 1px solid var(--color-border);

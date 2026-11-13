@@ -1,7 +1,8 @@
 // @ts-nocheck
-import { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { erpStore, PurchaseOrder } from "@/shared/services/erpStore";
+import { printRawHtml } from "@/shared/utils/printAccountingDocument";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -78,8 +79,6 @@ export function PurchaseManagement({
 
   const handlePrintPO = (po: PurchaseOrder) => {
     const supplier = erpState.suppliers.find((s) => s.id === po.supplier_id);
-    const printWin = window.open("", "_blank", "width=850,height=700");
-    if (!printWin) return;
 
     const rowsHtml = po.items
       .map(
@@ -95,7 +94,7 @@ export function PurchaseManagement({
       )
       .join("");
 
-    printWin.document.write(`
+    printRawHtml(`
       <html dir="rtl" lang="ar">
         <head>
           <title>فاتورة مشتريات وتوريد - ${po.invoice_number}</title>
@@ -133,11 +132,9 @@ export function PurchaseManagement({
           <div style="margin-top:20px;text-align:left;font-size:16px;font-weight:bold;">
             الإجمالي الكلي: ${po.total_amount.toLocaleString()} $
           </div>
-          <script>window.onload = () => { window.print(); }</script>
         </body>
       </html>
     `);
-    printWin.document.close();
   };
 
   return (
@@ -148,11 +145,9 @@ export function PurchaseManagement({
             <ShoppingBag size={18} className="text-primary" />
             <span>سجل فواتير المشتريات وأوامر التوريد المرتبطة بالإدارة المالية ({orders.length})</span>
           </h3>
-          <p className="text-xs text-muted-foreground mt-0.5 font-semibold">
-            يتم إصدار جميع فواتير الشراء وسندات الصرف للموردين مركزياً من خلال صفحة السندات في الإدارة المالية لضمان دقة القيود والخزائن.
-          </p>
         </div>
         <Button
+          variant="save"
           onClick={() =>
             navigate({
               to: "/admin/ledger",
@@ -206,9 +201,20 @@ export function PurchaseManagement({
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">
                     المورد:{" "}
-                    <span className="font-semibold text-foreground">
-                      {supplier?.name_ar || "غير محدد"}
-                    </span>{" "}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        navigate({
+                          to: "/admin/inventory",
+                          search: { tab: "suppliers" } as any,
+                        })
+                      }
+                      className="app-link underline font-black text-indigo-600 dark:text-indigo-400 cursor-pointer"
+                      title="فتح سجل وكشف حساب المورد"
+                    >
+                      {supplier?.name_ar || "غير محدد"}{" "}
+                      {supplier?.account_code ? `(#${supplier.account_code})` : ""}
+                    </button>{" "}
                     | التاريخ: {new Date(po.created_at).toLocaleDateString("ar-EG")}
                   </p>
                 </div>
@@ -251,23 +257,24 @@ export function PurchaseManagement({
                 <div className="flex items-center gap-2">
                   <Button
                     size="sm"
-                    variant="outline"
+                    variant="print"
                     onClick={() => handlePrintPO(po)}
-                    className="gap-1.5 text-xs font-bold h-8 border-primary/30 text-primary hover:bg-primary/10"
+                    className="gap-1.5 text-xs font-bold h-8"
                   >
                     <Printer size={13} /> طباعة الفاتورة
                   </Button>
                   <Button
                     size="sm"
-                    variant="ghost"
+                    variant="delete"
                     onClick={() => handleDeleteOrder(po)}
-                    className="gap-1 text-xs font-bold h-8 text-destructive hover:bg-destructive/10"
+                    className="gap-1 text-xs font-bold h-8"
                   >
                     <Trash2 size={13} /> حذف
                   </Button>
                   {po.status === "pending" && (
                     <Button
                       size="sm"
+                      variant="save"
                       onClick={() => handleReceiveOrder(po)}
                       className="gap-1 text-xs font-bold h-8"
                     >

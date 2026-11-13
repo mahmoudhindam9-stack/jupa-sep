@@ -5,6 +5,7 @@ import {
   Account,
   Treasury,
   Supplier,
+  ParkCustomer,
   VoucherPurchaseItem,
   isLevel4Account,
 } from "../../shared/services/erpStore";
@@ -23,6 +24,7 @@ import {
   Wallet,
   Building2,
   FileText,
+  FileSpreadsheet,
   Trash2,
   Printer,
   Filter,
@@ -39,6 +41,7 @@ import {
   Package,
   Truck,
   UserPlus,
+  Users,
   PackagePlus,
   ShoppingBag,
   Sparkles,
@@ -47,6 +50,27 @@ import {
 import { toast } from "sonner";
 import { printAccountingDocument } from "../../shared/utils/printAccountingDocument";
 import { ViewModeToggle, useViewMode } from "../ui/view-mode-toggle";
+
+function exportRowsToExcelCsv(filename: string, headers: string[], rows: string[][]) {
+  const escapeCsvCell = (val: string) => {
+    const str = String(val ?? "").replace(/"/g, '""');
+    return `"${str}"`;
+  };
+  const csvContent =
+    "\uFEFF" +
+    [headers.map(escapeCsvCell).join(","), ...rows.map((r) => r.map(escapeCsvCell).join(","))].join(
+      "\r\n",
+    );
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.setAttribute("download", filename.endsWith(".csv") ? filename : `${filename}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
 
 function printProfessionalReport(opts: {
   title: string;
@@ -81,6 +105,7 @@ export type VoucherDepartmentKey = "mall" | "park" | "restaurant" | "admin";
 interface DepartmentPreset {
   key: VoucherDepartmentKey;
   label: string;
+  entityTitle: string;
   costCenter: string;
   badgeClass: string;
   defaultPaymentCategories: Array<{ name: string; account_code: string }>;
@@ -91,6 +116,7 @@ const DEPARTMENT_PRESETS: Record<VoucherDepartmentKey, DepartmentPreset> = {
   restaurant: {
     key: "restaurant",
     label: "المطعم",
+    entityTitle: "مطعم جوبا",
     costCenter: "المطعم (Restaurant)",
     badgeClass: "bg-orange-50 text-orange-700 border-orange-200",
     defaultPaymentCategories: [
@@ -112,6 +138,7 @@ const DEPARTMENT_PRESETS: Record<VoucherDepartmentKey, DepartmentPreset> = {
   mall: {
     key: "mall",
     label: "المول التجاري",
+    entityTitle: "جوبا مول",
     costCenter: "المول التجاري (Mall)",
     badgeClass: "bg-indigo-50 text-indigo-700 border-indigo-200",
     defaultPaymentCategories: [
@@ -131,6 +158,7 @@ const DEPARTMENT_PRESETS: Record<VoucherDepartmentKey, DepartmentPreset> = {
   park: {
     key: "park",
     label: "الحديقة والملاهي",
+    entityTitle: "حديقة جوبا",
     costCenter: "الحديقة والملاهي (Garden & Park)",
     badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200",
     defaultPaymentCategories: [
@@ -150,6 +178,7 @@ const DEPARTMENT_PRESETS: Record<VoucherDepartmentKey, DepartmentPreset> = {
   admin: {
     key: "admin",
     label: "الإدارة العامة",
+    entityTitle: "إدارة جوبا",
     costCenter: "الإدارة (Administration)",
     badgeClass: "bg-slate-100 text-slate-700 border-slate-200",
     defaultPaymentCategories: [
@@ -201,6 +230,7 @@ export function VouchersLedgerSection({
   const [treasuries, setTreasuries] = useState<Treasury[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [customers, setCustomers] = useState<ParkCustomer[]>([]);
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [journalEntries, setJournalEntries] = useState<any[]>([]);
   const [exchangeRates, setExchangeRates] = useState<Record<string, number>>({
@@ -229,6 +259,8 @@ export function VouchersLedgerSection({
   const [formCategory, setFormCategory] = useState("شراء خامات ومواد");
   const [formAccountCode, setFormAccountCode] = useState("31010100");
   const [formAmount, setFormAmount] = useState("");
+  const [formInvoiceTotal, setFormInvoiceTotal] = useState("");
+  const [userEditedPaidAmount, setUserEditedPaidAmount] = useState(false);
   const [formCurrency, setFormCurrency] = useState("EGP");
   const [formExchangeRate, setFormExchangeRate] = useState("50");
   const [formTreasuryId, setFormTreasuryId] = useState("");
@@ -238,19 +270,32 @@ export function VouchersLedgerSection({
   const [formAttachment, setFormAttachment] = useState("");
 
   // Inline New Category Creator & Search
-  const [categorySearchQuery, setCategorySearchQuery] = useState("");
   const [isAddingCategory, setIsAddingCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newCategoryAccountCode, setNewCategoryAccountCode] = useState("");
 
-  // Restaurant Purchase & Inventory State
+  // Supplier & Customer Counterparty State (Supports Credit Purchases & Credit Sales)
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>("");
   const [isAddingSupplier, setIsAddingSupplier] = useState(false);
   const [newSupplierName, setNewSupplierName] = useState("");
   const [newSupplierPhone, setNewSupplierPhone] = useState("");
 
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
+  const [isAddingCustomer, setIsAddingCustomer] = useState(false);
+  const [newCustomerName, setNewCustomerName] = useState("");
+  const [newCustomerPhone, setNewCustomerPhone] = useState("");
+
+  // Counterparty Account Statement Modal State (Supplier or Customer)
+  const [statementTarget, setStatementTarget] = useState<{
+    kind: "supplier" | "customer";
+    id: string;
+    name_ar: string;
+    phone?: string;
+    account_code: string;
+    opening_balance?: number;
+  } | null>(null);
+
   const [purchaseItems, setPurchaseItems] = useState<VoucherPurchaseItem[]>([]);
-  const [itemSearchQuery, setItemSearchQuery] = useState("");
   const [selectedInventoryIdToAdd, setSelectedInventoryIdToAdd] = useState("");
   const [isAddingInventoryItem, setIsAddingInventoryItem] = useState(false);
   const [newItemName, setNewItemName] = useState("");
@@ -274,12 +319,14 @@ export function VouchersLedgerSection({
       category: string;
       account_code: string;
       amount: string;
+      invoice_total?: string;
       currency: string;
       exchange_rate: string;
       treasury_id: string;
       description: string;
       beneficiary: string;
       supplier_id?: string;
+      customer_id?: string;
       purchase_items?: VoucherPurchaseItem[];
     }>
   >(() => {
@@ -292,9 +339,7 @@ export function VouchersLedgerSection({
     }
   });
 
-  const saveVoucherDraftsList = (
-    nextDrafts: typeof voucherDrafts,
-  ) => {
+  const saveVoucherDraftsList = (nextDrafts: typeof voucherDrafts) => {
     setVoucherDrafts(nextDrafts);
     if (typeof window !== "undefined") {
       try {
@@ -316,8 +361,9 @@ export function VouchersLedgerSection({
     setVouchers([...(state.vouchers || [])]);
     const activeTreasuries = (state.treasuries || []).filter((t) => !t.deleted);
     setTreasuries(activeTreasuries);
-    setAccounts([...(state.accounts || [])]);
-    setSuppliers([...(state.suppliers || [])]);
+    setSuppliers([...(erpStore.getSuppliers() || [])]);
+    setCustomers([...(erpStore.getParkCustomers() || [])]);
+    setAccounts([...(erpStore.getState().accounts || [])]);
     setJournalEntries([...(state.journalEntries || [])]);
     setInventoryItems([...(localWarehouseStore.getInventory() || [])]);
 
@@ -400,7 +446,7 @@ export function VouchersLedgerSection({
     );
   }, [formDepartment, formType, formCategory]);
 
-  // Auto-calculate purchase items total & sync to formAmount when in Restaurant Purchase Mode
+  // Auto-calculate purchase items total & sync to formInvoiceTotal / formAmount
   const purchaseInvoiceTotal = useMemo(() => {
     return purchaseItems.reduce(
       (sum, item) => sum + Number(item.quantity || 0) * Number(item.unit_price || 0),
@@ -410,9 +456,13 @@ export function VouchersLedgerSection({
 
   useEffect(() => {
     if (isRestaurantPurchaseMode && purchaseItems.length > 0) {
-      setFormAmount(String(Number(purchaseInvoiceTotal.toFixed(2))));
+      const totalStr = String(Number(purchaseInvoiceTotal.toFixed(2)));
+      setFormInvoiceTotal(totalStr);
+      if (!userEditedPaidAmount) {
+        setFormAmount(totalStr);
+      }
     }
-  }, [isRestaurantPurchaseMode, purchaseInvoiceTotal, purchaseItems.length]);
+  }, [isRestaurantPurchaseMode, purchaseInvoiceTotal, purchaseItems.length, userEditedPaidAmount]);
 
   const resolveDefaultTreasuryForDepartment = (dept: VoucherDepartmentKey): Treasury | undefined => {
     if (treasuries.length === 0) return undefined;
@@ -442,12 +492,16 @@ export function VouchersLedgerSection({
     setConfirmAction(null);
     setPrintedVoucherAfterPost(null);
     setFormAmount("");
+    setFormInvoiceTotal("");
+    setUserEditedPaidAmount(false);
     setFormDescription("");
     setFormBeneficiary("");
     setFormNotes("");
     setFormAttachment("");
     setSelectedSupplierId("");
     setIsAddingSupplier(false);
+    setSelectedCustomerId("");
+    setIsAddingCustomer(false);
     setPurchaseItems([]);
     setIsAddingInventoryItem(false);
     setIsAddingCategory(false);
@@ -459,11 +513,14 @@ export function VouchersLedgerSection({
     setActiveDraftId(null);
     setFormType(chosenType);
     setFormAmount("");
+    setFormInvoiceTotal("");
+    setUserEditedPaidAmount(false);
     setFormDescription("");
     setFormBeneficiary("");
     setFormNotes("");
     setFormAttachment("");
     setSelectedSupplierId("");
+    setSelectedCustomerId("");
     setPurchaseItems([]);
     setWizardStep("select_dept");
   };
@@ -500,12 +557,15 @@ export function VouchersLedgerSection({
     setFormCategory(draft.category);
     setFormAccountCode(draft.account_code);
     setFormAmount(draft.amount);
+    setFormInvoiceTotal(draft.invoice_total || draft.amount);
+    setUserEditedPaidAmount(Boolean(draft.invoice_total && draft.invoice_total !== draft.amount));
     setFormCurrency(draft.currency);
     setFormExchangeRate(draft.exchange_rate);
     setFormTreasuryId(draft.treasury_id);
     setFormDescription(draft.description);
     setFormBeneficiary(draft.beneficiary);
     setSelectedSupplierId(draft.supplier_id || "");
+    setSelectedCustomerId(draft.customer_id || "");
     setPurchaseItems(Array.isArray(draft.purchase_items) ? draft.purchase_items : []);
     setWizardStep("entry_form");
     toast.success("تم استرجاع مسودة السند لاستكمالها");
@@ -540,6 +600,8 @@ export function VouchersLedgerSection({
     setFormCategory(firstCat.name);
     setFormAccountCode(firstCat.account_code);
     setFormAmount("");
+    setFormInvoiceTotal("");
+    setUserEditedPaidAmount(false);
     setFormDescription("");
     setFormBeneficiary("");
     setFormNotes("");
@@ -555,6 +617,8 @@ export function VouchersLedgerSection({
 
     setSelectedSupplierId("");
     setIsAddingSupplier(false);
+    setSelectedCustomerId("");
+    setIsAddingCustomer(false);
     setPurchaseItems([]);
     setIsAddingInventoryItem(false);
     setIsAddingCategory(false);
@@ -592,15 +656,20 @@ export function VouchersLedgerSection({
     setFormAccountCode(
       v.account_code || (vType === "payment" ? "31010110" : "41020100"),
     );
-    setFormAmount(String(v.amount || ""));
+    const paidVal = v.paid_amount !== undefined ? v.paid_amount : v.amount;
+    const invTotalVal = v.invoice_total !== undefined ? v.invoice_total : v.amount;
+    setFormAmount(String(paidVal ?? ""));
+    setFormInvoiceTotal(String(invTotalVal ?? ""));
+    setUserEditedPaidAmount(invTotalVal !== paidVal);
     setFormCurrency(v.currency || "EGP");
     setFormExchangeRate(String(v.exchange_rate || exchangeRates[v.currency] || 1));
     setFormTreasuryId(v.treasury_id || treasuries[0]?.id || "");
     setFormDescription(v.description || "");
-    setFormBeneficiary(v.beneficiary || v.supplier_name || "");
+    setFormBeneficiary(v.beneficiary || v.supplier_name || v.customer_name || "");
     setFormNotes(v.notes || "");
     setFormAttachment(v.attachment || "");
     setSelectedSupplierId(v.supplier_id || "");
+    setSelectedCustomerId(v.customer_id || "");
     setPurchaseItems(
       Array.isArray(v.purchase_items)
         ? v.purchase_items.map((it) => ({ ...it }))
@@ -608,6 +677,7 @@ export function VouchersLedgerSection({
     );
     setIsAddingCategory(false);
     setIsAddingSupplier(false);
+    setIsAddingCustomer(false);
     setIsAddingInventoryItem(false);
     setWizardStep("entry_form");
     setIsAddModalOpen(true);
@@ -712,6 +782,7 @@ export function VouchersLedgerSection({
       );
       loadData();
       setSelectedSupplierId(result.supplier.id);
+      setSelectedCustomerId("");
       setFormBeneficiary(result.supplier.name_ar);
       setNewSupplierName("");
       setNewSupplierPhone("");
@@ -722,6 +793,52 @@ export function VouchersLedgerSection({
     } catch (err: any) {
       toast.error(err?.message || "تعذر إنشاء المورد الجديد");
     }
+  };
+
+  // Inline Customer Creation (auto-assigns Level 4 account under 13020)
+  const handleCreateInlineCustomer = () => {
+    const cleanName = newCustomerName.trim();
+    if (!cleanName) {
+      toast.error("يرجى إدخال اسم العميل الجديد");
+      return;
+    }
+    try {
+      const result = erpStore.addCustomer(cleanName, newCustomerPhone.trim() || "");
+      loadData();
+      setSelectedCustomerId(result.customer.id);
+      setSelectedSupplierId("");
+      setFormBeneficiary(result.customer.name_ar);
+      setNewCustomerName("");
+      setNewCustomerPhone("");
+      setIsAddingCustomer(false);
+      toast.success(
+        `تم تسجيل العميل "${result.customer.name_ar}" وإنشاء حسابه المحاسبي الفرعي (المستوى 4) رقم #${result.account_code}`,
+      );
+    } catch (err: any) {
+      toast.error(err?.message || "تعذر إنشاء العميل الجديد");
+    }
+  };
+
+  const openSupplierStatement = (sup: Supplier) => {
+    setStatementTarget({
+      kind: "supplier",
+      id: sup.id,
+      name_ar: sup.name_ar,
+      phone: sup.phone,
+      account_code: sup.account_code || "24010391",
+      opening_balance: Number(sup.opening_balance || 0),
+    });
+  };
+
+  const openCustomerStatement = (cust: ParkCustomer) => {
+    setStatementTarget({
+      kind: "customer",
+      id: cust.id,
+      name_ar: cust.name_ar,
+      phone: cust.phone,
+      account_code: cust.account_code || "13020101",
+      opening_balance: 0,
+    });
   };
 
   // Add Existing Inventory Item to Purchase Invoice
@@ -777,7 +894,6 @@ export function VouchersLedgerSection({
         undefined,
         "wh-main-default",
       );
-      // Sync in background with Supabase inventory service if available
       inventoryService
         .upsertInventoryItem(
           {
@@ -871,9 +987,17 @@ export function VouchersLedgerSection({
         const matchRef = v.reference_number?.toLowerCase().includes(q);
         const matchJe = v.journal_reference?.toLowerCase().includes(q);
         const matchSup = v.supplier_name?.toLowerCase().includes(q);
+        const matchCust = v.customer_name?.toLowerCase().includes(q);
         const matchBen = v.beneficiary?.toLowerCase().includes(q);
         return (
-          matchDesc || matchCat || matchId || matchRef || matchJe || matchSup || matchBen
+          matchDesc ||
+          matchCat ||
+          matchId ||
+          matchRef ||
+          matchJe ||
+          matchSup ||
+          matchCust ||
+          matchBen
         );
       }
 
@@ -931,20 +1055,50 @@ export function VouchersLedgerSection({
     [treasuries, formTreasuryId],
   );
 
-  const computedVoucherAmount = useMemo(() => {
-    return isRestaurantPurchaseMode
-      ? Number(purchaseInvoiceTotal.toFixed(2))
-      : Number(formAmount) || 0;
-  }, [isRestaurantPurchaseMode, purchaseInvoiceTotal, formAmount]);
+  const selectedSupplierObj = useMemo(
+    () => (selectedSupplierId ? suppliers.find((s) => s.id === selectedSupplierId) : undefined),
+    [suppliers, selectedSupplierId],
+  );
+
+  const selectedCustomerObj = useMemo(
+    () => (selectedCustomerId ? customers.find((c) => c.id === selectedCustomerId) : undefined),
+    [customers, selectedCustomerId],
+  );
+
+  // Paid / Received Cash Amount vs Total Invoice Amount (for Credit Purchase / Credit Sale)
+  const computedPaidAmount = useMemo(() => {
+    if (formAmount === "" && isRestaurantPurchaseMode && !userEditedPaidAmount) {
+      return Number(purchaseInvoiceTotal.toFixed(2));
+    }
+    return Math.max(0, Number(formAmount) || 0);
+  }, [formAmount, isRestaurantPurchaseMode, userEditedPaidAmount, purchaseInvoiceTotal]);
+
+  const computedInvoiceTotal = useMemo(() => {
+    if (isRestaurantPurchaseMode && purchaseItems.length > 0) {
+      return Number(purchaseInvoiceTotal.toFixed(2));
+    }
+    const explicitInv = Number(formInvoiceTotal);
+    if (!isNaN(explicitInv) && explicitInv > computedPaidAmount) {
+      return Number(explicitInv.toFixed(2));
+    }
+    return computedPaidAmount;
+  }, [isRestaurantPurchaseMode, purchaseItems.length, purchaseInvoiceTotal, formInvoiceTotal, computedPaidAmount]);
+
+  const computedRemainingCredit = useMemo(() => {
+    return Math.max(0, Number((computedInvoiceTotal - computedPaidAmount).toFixed(2)));
+  }, [computedInvoiceTotal, computedPaidAmount]);
+
+  const computedVoucherAmount = computedPaidAmount;
 
   const isExceedingTreasuryBalance = useMemo(() => {
     if (formType !== "payment" || !selectedTreasuryObj) return false;
-    return computedVoucherAmount > Number(selectedTreasuryObj.balance || 0);
-  }, [formType, selectedTreasuryObj, computedVoucherAmount]);
+    return computedPaidAmount > Number(selectedTreasuryObj.balance || 0);
+  }, [formType, selectedTreasuryObj, computedPaidAmount]);
 
   const handleRequestCancel = () => {
     const hasEnteredData =
       Number(formAmount) > 0 ||
+      Number(formInvoiceTotal) > 0 ||
       formDescription.trim().length > 0 ||
       formBeneficiary.trim().length > 0 ||
       purchaseItems.length > 0;
@@ -982,13 +1136,15 @@ export function VouchersLedgerSection({
       department: formDepartment,
       category: formCategory.trim() || "مصروفات نثرية وإدارية",
       account_code: formAccountCode,
-      amount: String(computedVoucherAmount || formAmount || ""),
+      amount: String(computedPaidAmount || formAmount || ""),
+      invoice_total: String(computedInvoiceTotal || ""),
       currency: formCurrency,
       exchange_rate: formExchangeRate,
       treasury_id: formTreasuryId,
       description: formDescription.trim(),
       beneficiary: formBeneficiary.trim(),
-      supplier_id: isRestaurantPurchaseMode ? selectedSupplierId : undefined,
+      supplier_id: selectedSupplierId || undefined,
+      customer_id: selectedCustomerId || undefined,
       purchase_items: isRestaurantPurchaseMode ? purchaseItems : undefined,
     };
 
@@ -1001,12 +1157,16 @@ export function VouchersLedgerSection({
   };
 
   const validateVoucherBeforePost = (): boolean => {
-    if (!computedVoucherAmount || computedVoucherAmount <= 0) {
+    if (computedInvoiceTotal <= 0 && computedPaidAmount <= 0) {
       toast.error(
         isRestaurantPurchaseMode
           ? "يرجى إضافة صنف واحد على الأقل بكمية وسعر أكبر من الصفر"
           : "يرجى إدخال مبلغ صحيح أكبر من الصفر",
       );
+      return false;
+    }
+    if (computedPaidAmount > computedInvoiceTotal && Number(formInvoiceTotal) > 0) {
+      toast.error("المبلغ المدفوع لا يمكن أن يتجاوز إجمالي قيمة الفاتورة");
       return false;
     }
     if (!formTreasuryId) {
@@ -1025,6 +1185,12 @@ export function VouchersLedgerSection({
       toast.error("يرجى إضافة الأصناف المشتراة");
       return false;
     }
+    if (computedRemainingCredit > 0 && !selectedSupplierId && !selectedCustomerId) {
+      toast.error(
+        "عند وجود مبلغ متبقٍ بالآجل يجب تحديد المورد أو العميل لترحيل المبلغ الآجل على حسابه",
+      );
+      return false;
+    }
     const selectedAccount = accounts.find((a) => a.code === formAccountCode);
     if (!isLevel4Account(selectedAccount)) {
       toast.error("يجب اختيار حساب محاسبي تشغيلي من المستوى الرابع");
@@ -1041,19 +1207,29 @@ export function VouchersLedgerSection({
   // Save Document (Create or Update) and Transition to Print View
   const handleSaveDocument = (shouldPrintAfterSave = true) => {
     if (!validateVoucherBeforePost()) return;
-    const computedAmt = computedVoucherAmount;
+    const paidAmt = computedPaidAmount;
+    const invTotalAmt = computedInvoiceTotal;
+    const remCreditAmt = computedRemainingCredit;
 
-    const supplierObj = selectedSupplierId
-      ? suppliers.find((s) => s.id === selectedSupplierId)
-      : undefined;
+    const supplierObj = selectedSupplierObj;
+    const customerObj = selectedCustomerObj;
+    const preset = DEPARTMENT_PRESETS[formDepartment];
+    const trName = getTreasuryName(formTreasuryId);
+    const counterpartyLabel =
+      supplierObj?.name_ar || customerObj?.name_ar || formBeneficiary.trim() || formCategory;
 
-    const autoDescription =
-      formDescription.trim() ||
-      (isRestaurantPurchaseMode
-        ? `فاتورة شراء خامات ومواد للمطعم من المورد (${supplierObj?.name_ar || ""}) بعدد ${purchaseItems.length} أصناف`
-        : `${formType === "receipt" ? "سند قبض" : "سند صرف"} - ${formCategory} (${DEPARTMENT_PRESETS[formDepartment].label})`);
+    const narrativePrefix =
+      formType === "payment"
+        ? `دفعنا نحن ${preset.entityTitle} مبلغ ${paidAmt.toLocaleString()} ${formCurrency}${remCreditAmt > 0 ? ` (من أصل فاتورة ${invTotalAmt.toLocaleString()} ${formCurrency} والباقي آجل ${remCreditAmt.toLocaleString()} ${formCurrency})` : ""} من خزينة ${trName} بمعامل ${formExchangeRate || 1} لـ ${counterpartyLabel} حساب #${formAccountCode}`
+        : `قبضنا نحن ${preset.entityTitle} مبلغ ${paidAmt.toLocaleString()} ${formCurrency}${remCreditAmt > 0 ? ` (من أصل فاتورة ${invTotalAmt.toLocaleString()} ${formCurrency} والباقي آجل ${remCreditAmt.toLocaleString()} ${formCurrency})` : ""} إلى خزينة ${trName} بمعامل ${formExchangeRate || 1} من ${counterpartyLabel} حساب #${formAccountCode}`;
 
-    const presetCostCenter = DEPARTMENT_PRESETS[formDepartment].costCenter;
+    const autoDescription = formDescription.trim()
+      ? `${narrativePrefix} — ${formDescription.trim()}`
+      : isRestaurantPurchaseMode
+        ? `${narrativePrefix} — فاتورة شراء خامات ومواد للمطعم (${purchaseItems.length} أصناف)`
+        : narrativePrefix;
+
+    const presetCostCenter = preset.costCenter;
     const rateNum = Number(formExchangeRate) || exchangeRates[formCurrency] || 1;
 
     try {
@@ -1062,21 +1238,26 @@ export function VouchersLedgerSection({
           type: formType,
           department: formDepartment,
           category: formCategory.trim(),
-          amount: computedAmt,
+          amount: paidAmt,
+          invoice_total: invTotalAmt,
+          paid_amount: paidAmt,
+          remaining_credit: remCreditAmt,
           currency: formCurrency,
           exchange_rate: rateNum,
           treasury_id: formTreasuryId,
           account_code: formAccountCode,
           description: autoDescription,
           cost_center: presetCostCenter,
-          beneficiary: formBeneficiary.trim() || supplierObj?.name_ar || undefined,
+          beneficiary:
+            formBeneficiary.trim() || supplierObj?.name_ar || customerObj?.name_ar || undefined,
           notes: formNotes.trim() || undefined,
           attachment: formAttachment.trim() || undefined,
-          supplier_id: isRestaurantPurchaseMode ? selectedSupplierId : undefined,
-          supplier_name: isRestaurantPurchaseMode ? supplierObj?.name_ar : undefined,
-          supplier_account_code: isRestaurantPurchaseMode
-            ? supplierObj?.account_code
-            : undefined,
+          supplier_id: selectedSupplierId || undefined,
+          supplier_name: supplierObj?.name_ar || undefined,
+          supplier_account_code: supplierObj?.account_code || undefined,
+          customer_id: selectedCustomerId || undefined,
+          customer_name: customerObj?.name_ar || undefined,
+          customer_account_code: customerObj?.account_code || undefined,
           purchase_items: isRestaurantPurchaseMode ? purchaseItems : [],
         });
 
@@ -1096,7 +1277,7 @@ export function VouchersLedgerSection({
         const created = erpStore.createVoucher(
           formType,
           formCategory.trim(),
-          computedAmt,
+          paidAmt,
           formTreasuryId,
           autoDescription,
           presetCostCenter,
@@ -1106,13 +1287,18 @@ export function VouchersLedgerSection({
           formAccountCode,
           {
             department: formDepartment,
-            beneficiary: formBeneficiary.trim() || supplierObj?.name_ar || undefined,
+            beneficiary:
+              formBeneficiary.trim() || supplierObj?.name_ar || customerObj?.name_ar || undefined,
             notes: formNotes.trim() || undefined,
-            supplier_id: isRestaurantPurchaseMode ? selectedSupplierId : undefined,
-            supplier_name: isRestaurantPurchaseMode ? supplierObj?.name_ar : undefined,
-            supplier_account_code: isRestaurantPurchaseMode
-              ? supplierObj?.account_code
-              : undefined,
+            supplier_id: selectedSupplierId || undefined,
+            supplier_name: supplierObj?.name_ar || undefined,
+            supplier_account_code: supplierObj?.account_code || undefined,
+            customer_id: selectedCustomerId || undefined,
+            customer_name: customerObj?.name_ar || undefined,
+            customer_account_code: customerObj?.account_code || undefined,
+            invoice_total: invTotalAmt,
+            paid_amount: paidAmt,
+            remaining_credit: remCreditAmt,
             purchase_items: isRestaurantPurchaseMode ? purchaseItems : undefined,
           },
         );
@@ -1217,12 +1403,12 @@ export function VouchersLedgerSection({
         value: docRef,
       },
       {
-        label: "النوع والقسم",
-        value: `${v.type === "receipt" ? "سند قبض" : "سند صرف"} - ${deptPreset.label}`,
+        label: "الجهة والقسم",
+        value: `${deptPreset.entityTitle} (${v.type === "receipt" ? "سند قبض" : "سند صرف"})`,
       },
       {
-        label: "المبلغ والعملة",
-        value: `${Number(v.amount).toLocaleString()} ${v.currency} (سعر الصرف: ${v.exchange_rate || 1})`,
+        label: "المبلغ النقدي والعملة",
+        value: `${Number(v.amount).toLocaleString()} ${v.currency} (معامل الصرف: ${v.exchange_rate || 1})`,
       },
       {
         label: "الخزينة والحساب",
@@ -1230,12 +1416,25 @@ export function VouchersLedgerSection({
       },
     ];
 
-    if (v.supplier_name || v.beneficiary) {
+    if (v.remaining_credit && v.remaining_credit > 0) {
       summaryCards.push({
-        label: v.supplier_name ? "المورد وحسابه المحاسبي" : "المستفيد / الجهة",
+        label: "إجمالي الفاتورة والمتبقي آجل",
+        value: `الفاتورة: ${Number(v.invoice_total || v.amount).toLocaleString()} ${v.currency} | متبقي آجل: ${Number(v.remaining_credit).toLocaleString()} ${v.currency}`,
+      });
+    }
+
+    if (v.supplier_name || v.customer_name || v.beneficiary) {
+      summaryCards.push({
+        label: v.supplier_name
+          ? "المورد وحسابه المحاسبي"
+          : v.customer_name
+            ? "العميل وحسابه المحاسبي"
+            : "المستفيد / الجهة",
         value: v.supplier_name
           ? `${v.supplier_name} ${v.supplier_account_code ? `(حساب #${v.supplier_account_code})` : ""}`
-          : String(v.beneficiary || "—"),
+          : v.customer_name
+            ? `${v.customer_name} ${v.customer_account_code ? `(حساب #${v.customer_account_code})` : ""}`
+            : String(v.beneficiary || "—"),
       });
     }
 
@@ -1243,8 +1442,8 @@ export function VouchersLedgerSection({
 
     if (hasPurchaseItems) {
       printProfessionalReport({
-        title: `فاتورة وسند صرف مشتريات مطعم #${docRef}`,
-        subtitle: `التاريخ: ${new Date(v.created_at).toLocaleString("ar-EG")} | القسم: ${deptPreset.label} | المورد: ${v.supplier_name || "—"} (${v.supplier_account_code || "—"})`,
+        title: `فاتورة وسند صرف مشتريات (${deptPreset.entityTitle}) #${docRef}`,
+        subtitle: `التاريخ: ${new Date(v.created_at).toLocaleString("ar-EG")} | المورد: ${v.supplier_name || "—"} (${v.supplier_account_code || "—"})`,
         summaryCards,
         columns: [
           "#",
@@ -1265,11 +1464,11 @@ export function VouchersLedgerSection({
           ]),
           [
             "—",
-            "الإجمالي النهائي للفاتورة والسند",
+            "إجمالي الفاتورة / المدفوع نقداً / المتبقي آجل",
             "—",
             String(v.purchase_items!.reduce((s, i) => s + Number(i.quantity || 0), 0)),
-            "—",
-            `${Number(v.amount).toLocaleString()} ${v.currency}`,
+            `المدفوع: ${Number(v.amount).toLocaleString()} ${v.currency}`,
+            `الفاتورة: ${Number(v.invoice_total || v.amount).toLocaleString()} ${v.currency} (آجل: ${Number(v.remaining_credit || 0).toLocaleString()})`,
           ],
         ],
       });
@@ -1277,7 +1476,7 @@ export function VouchersLedgerSection({
     }
 
     printProfessionalReport({
-      title: `${v.type === "receipt" ? "سند قبض نقدية / بنكي" : "سند صرف نقدية / بنكي"} #${docRef}`,
+      title: `${v.type === "receipt" ? `سند قبض — ${deptPreset.entityTitle}` : `سند صرف — ${deptPreset.entityTitle}`} #${docRef}`,
       subtitle: `التاريخ: ${new Date(v.created_at).toLocaleString("ar-EG")} | القسم: ${deptPreset.label} | الحالة: ${v.reverted ? "معكوس / ملغي" : "معتمد ومرحّل"}`,
       summaryCards,
       columns: ["البند / التصنيف", "الحساب المحاسبي", "البيان التفصيلي", "رقم القيد", "المبلغ"],
@@ -1316,32 +1515,79 @@ export function VouchersLedgerSection({
         "رقم السند",
         "التاريخ",
         "النوع",
-        "القسم",
-        "البند / المورد",
+        "الجهة / القسم",
+        "البند / المورد / العميل",
         "الخزينة",
         "الحساب المحاسبي",
-        "المبلغ",
+        "المدفوع",
+        "المتبقي آجل",
         "العملة",
         "رقم القيد",
         "الحالة",
       ],
       rows: filteredVouchers.map((v) => {
         const dept = getVoucherDepartmentPreset(v);
+        const party = v.supplier_name || v.customer_name || v.beneficiary;
         return [
           v.reference_number || v.id.substring(4, 10).toUpperCase(),
           new Date(v.created_at).toLocaleDateString("ar-EG"),
           v.type === "receipt" ? "سند قبض" : "سند صرف",
-          dept.label,
-          v.supplier_name ? `${v.category} (${v.supplier_name})` : v.category,
+          dept.entityTitle,
+          party ? `${v.category} (${party})` : v.category,
           getTreasuryName(v.treasury_id),
           getAccountName(v.account_code),
           Number(v.amount).toLocaleString(),
+          Number(v.remaining_credit || 0).toLocaleString(),
           v.currency,
           v.journal_reference || "—",
           v.deleted ? "محذوف" : v.reverted ? "معكوس" : "معتمد",
         ];
       }),
     });
+  };
+
+  const handleExportAllFilteredExcel = () => {
+    const headers = [
+      "رقم السند",
+      "التاريخ",
+      "النوع",
+      "الجهة / القسم",
+      "البند",
+      "المورد / العميل / المستفيد",
+      "الخزينة",
+      "الحساب المحاسبي",
+      "إجمالي الفاتورة",
+      "المبلغ المدفوع / المقبوض",
+      "المتبقي آجل",
+      "العملة",
+      "معامل الصرف",
+      "رقم القيد",
+      "البيان",
+      "الحالة",
+    ];
+    const rows = filteredVouchers.map((v) => {
+      const dept = getVoucherDepartmentPreset(v);
+      return [
+        v.reference_number || v.id.substring(4, 10).toUpperCase(),
+        new Date(v.created_at).toLocaleDateString("ar-EG"),
+        v.type === "receipt" ? "سند قبض" : "سند صرف",
+        dept.entityTitle,
+        v.category,
+        v.supplier_name || v.customer_name || v.beneficiary || "—",
+        getTreasuryName(v.treasury_id),
+        getAccountName(v.account_code),
+        String(v.invoice_total ?? v.amount ?? 0),
+        String(v.amount ?? 0),
+        String(v.remaining_credit ?? 0),
+        v.currency,
+        String(v.exchange_rate || 1),
+        v.journal_reference || "—",
+        v.description || "",
+        v.deleted ? "محذوف" : v.reverted ? "معكوس" : "معتمد",
+      ];
+    });
+    exportRowsToExcelCsv(`سجل_السندات_المالية_${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
+    toast.success("تم تصدير سجل السندات إلى ملف إكسيل بنجاح");
   };
 
   return (
@@ -1366,7 +1612,7 @@ export function VouchersLedgerSection({
               <button
                 type="button"
                 onClick={() => handleOpenCreateModal("receipt")}
-                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-xs flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                className="btn-uniform-save px-3.5 py-2 rounded-xl font-black text-xs flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
               >
                 <ArrowDownLeft className="w-4 h-4" />
                 سند قبض جديد
@@ -1374,7 +1620,7 @@ export function VouchersLedgerSection({
               <button
                 type="button"
                 onClick={() => handleOpenCreateModal("payment")}
-                className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-black text-xs flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                className="btn-uniform-save px-3.5 py-2 rounded-xl font-black text-xs flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
               >
                 <ArrowUpRight className="w-4 h-4" />
                 سند صرف جديد
@@ -1382,10 +1628,18 @@ export function VouchersLedgerSection({
               <button
                 type="button"
                 onClick={handlePrintAllFiltered}
-                className="px-3.5 py-2 bg-muted hover:bg-muted/80 text-foreground border border-border rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                className="btn-uniform-print px-3.5 py-2 rounded-xl font-black text-xs flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
               >
                 <Printer className="w-4 h-4" />
                 طباعة سجل السندات
+              </button>
+              <button
+                type="button"
+                onClick={handleExportAllFilteredExcel}
+                className="btn-uniform-excel px-3.5 py-2 rounded-xl font-black text-xs flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                طباعة إكسيل (Excel)
               </button>
             </div>
           </div>
@@ -1665,12 +1919,55 @@ export function VouchersLedgerSection({
                       <p className="text-xs text-slate-600 mt-1 line-clamp-2">{v.description}</p>
                     </div>
 
-                    {v.supplier_name && (
+                    {(v.supplier_name || v.customer_name) && (
                       <div className="text-xs font-bold text-slate-700 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200 flex items-center justify-between">
-                        <span>المورد: {v.supplier_name}</span>
-                        {v.supplier_account_code && (
+                        {v.supplier_name ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const sup = suppliers.find(
+                                (s) => s.id === v.supplier_id || s.name_ar === v.supplier_name,
+                              );
+                              openSupplierStatement(
+                                sup || {
+                                  id: v.supplier_id || "sup",
+                                  name_ar: v.supplier_name!,
+                                  phone: "",
+                                  account_code: v.supplier_account_code || "24010391",
+                                  balance: 0,
+                                },
+                              );
+                            }}
+                            className="app-link text-indigo-700 hover:text-indigo-900 font-black text-xs"
+                            title="اضغط لعرض كشف حساب المورد"
+                          >
+                            المورد: {v.supplier_name}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const cust = customers.find(
+                                (c) => c.id === v.customer_id || c.name_ar === v.customer_name,
+                              );
+                              openCustomerStatement(
+                                cust || {
+                                  id: v.customer_id || "cust",
+                                  name_ar: v.customer_name!,
+                                  phone: "",
+                                  account_code: v.customer_account_code || "13020101",
+                                },
+                              );
+                            }}
+                            className="app-link text-teal-700 hover:text-teal-900 font-black text-xs"
+                            title="اضغط لعرض كشف حساب العميل"
+                          >
+                            العميل: {v.customer_name}
+                          </button>
+                        )}
+                        {(v.supplier_account_code || v.customer_account_code) && (
                           <span className="font-mono text-[11px] text-indigo-600">
-                            #{v.supplier_account_code}
+                            #{v.supplier_account_code || v.customer_account_code}
                           </span>
                         )}
                       </div>
@@ -1706,6 +2003,11 @@ export function VouchersLedgerSection({
                         {isReceipt ? "+" : "-"}
                         {Number(v.amount).toLocaleString()} {v.currency}
                       </span>
+                      {Number(v.remaining_credit || 0) > 0 && (
+                        <span className="block text-[10px] font-black text-amber-700">
+                          متبقي آجل: {Number(v.remaining_credit).toLocaleString()} {v.currency}
+                        </span>
+                      )}
                       <span className="block text-[10px] text-slate-400">
                         {new Date(v.created_at).toLocaleDateString("ar-EG")}
                       </span>
@@ -1723,7 +2025,7 @@ export function VouchersLedgerSection({
                       <button
                         type="button"
                         onClick={() => handlePrintSingleVoucher(v)}
-                        className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors cursor-pointer"
+                        className="btn-uniform-print p-1.5 rounded-lg transition-colors cursor-pointer"
                         title="طباعة السند"
                       >
                         <Printer className="w-4 h-4" />
@@ -1732,7 +2034,7 @@ export function VouchersLedgerSection({
                         <button
                           type="button"
                           onClick={() => handleOpenEditModal(v)}
-                          className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg transition-colors cursor-pointer"
+                          className="btn-uniform-edit p-1.5 rounded-lg transition-colors cursor-pointer"
                           title="تعديل السند"
                         >
                           <Edit3 className="w-4 h-4" />
@@ -1753,7 +2055,7 @@ export function VouchersLedgerSection({
                             setVoucherToDelete(v);
                             setDeleteReason("");
                           }}
-                          className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg transition-colors cursor-pointer"
+                          className="btn-uniform-delete p-1.5 rounded-lg transition-colors cursor-pointer"
                           title="حذف السند وعكس القيد"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -1839,7 +2141,7 @@ export function VouchersLedgerSection({
                             <span
                               className={`px-2 py-0.5 rounded text-[10px] font-black border ${dept.badgeClass}`}
                             >
-                              {dept.label}
+                              {dept.entityTitle}
                             </span>
                           </div>
                         </td>
@@ -1856,13 +2158,56 @@ export function VouchersLedgerSection({
                           <div className="text-xs text-slate-600 mt-0.5 line-clamp-2">
                             {v.description}
                           </div>
-                          {(v.supplier_name || v.beneficiary) && (
-                            <div className="text-[11px] font-bold text-indigo-700 mt-1">
-                              {v.supplier_name
-                                ? `المورد: ${v.supplier_name} ${v.supplier_account_code ? `(#${v.supplier_account_code})` : ""}`
-                                : `المستفيد: ${v.beneficiary}`}
+                          {v.supplier_name ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const sup = suppliers.find(
+                                  (s) => s.id === v.supplier_id || s.name_ar === v.supplier_name,
+                                );
+                                openSupplierStatement(
+                                  sup || {
+                                    id: v.supplier_id || "sup",
+                                    name_ar: v.supplier_name!,
+                                    phone: "",
+                                    account_code: v.supplier_account_code || "24010391",
+                                    balance: 0,
+                                  },
+                                );
+                              }}
+                              className="app-link text-[11px] font-black text-indigo-700 hover:text-indigo-900 mt-1 inline-block"
+                              title="اضغط لعرض كشف حساب المورد"
+                            >
+                              المورد: {v.supplier_name}{" "}
+                              {v.supplier_account_code ? `(#${v.supplier_account_code})` : ""}
+                            </button>
+                          ) : v.customer_name ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const cust = customers.find(
+                                  (c) => c.id === v.customer_id || c.name_ar === v.customer_name,
+                                );
+                                openCustomerStatement(
+                                  cust || {
+                                    id: v.customer_id || "cust",
+                                    name_ar: v.customer_name!,
+                                    phone: "",
+                                    account_code: v.customer_account_code || "13020101",
+                                  },
+                                );
+                              }}
+                              className="app-link text-[11px] font-black text-teal-700 hover:text-teal-900 mt-1 inline-block"
+                              title="اضغط لعرض كشف حساب العميل"
+                            >
+                              العميل: {v.customer_name}{" "}
+                              {v.customer_account_code ? `(#${v.customer_account_code})` : ""}
+                            </button>
+                          ) : v.beneficiary ? (
+                            <div className="text-[11px] font-bold text-slate-700 mt-1">
+                              المستفيد: {v.beneficiary}
                             </div>
-                          )}
+                          ) : null}
                         </td>
 
                         <td className="py-3.5 px-4">
@@ -1889,6 +2234,11 @@ export function VouchersLedgerSection({
                             {isReceipt ? "+" : "-"}
                             {Number(v.amount).toLocaleString()} {v.currency}
                           </div>
+                          {Number(v.remaining_credit || 0) > 0 && (
+                            <div className="text-[10px] font-black text-amber-700 mt-0.5">
+                              آجل: {Number(v.remaining_credit).toLocaleString()} {v.currency}
+                            </div>
+                          )}
                           {v.currency !== "USD" && (
                             <div className="text-[10px] text-slate-500 font-mono mt-0.5">
                               الصرف: {v.exchange_rate || exchangeRates[v.currency] || 1}
@@ -1901,7 +2251,7 @@ export function VouchersLedgerSection({
                             <button
                               type="button"
                               onClick={() => setSelectedVoucherForJournal(v)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-black font-mono transition-colors cursor-pointer"
+                              className="app-link inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-black font-mono transition-colors cursor-pointer"
                             >
                               <BookOpen className="w-3.5 h-3.5" />
                               {v.journal_reference || linkedJe?.reference || "عرض القيد"}
@@ -1935,7 +2285,7 @@ export function VouchersLedgerSection({
                             <button
                               type="button"
                               onClick={() => handlePrintSingleVoucher(v)}
-                              className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors cursor-pointer"
+                              className="btn-uniform-print p-1.5 rounded-lg transition-colors cursor-pointer"
                               title="طباعة السند"
                             >
                               <Printer className="w-3.5 h-3.5" />
@@ -1944,7 +2294,7 @@ export function VouchersLedgerSection({
                               <button
                                 type="button"
                                 onClick={() => handleOpenEditModal(v)}
-                                className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg transition-colors cursor-pointer"
+                                className="btn-uniform-edit p-1.5 rounded-lg transition-colors cursor-pointer"
                                 title="تعديل السند وتحديث القيد"
                               >
                                 <Edit3 className="w-3.5 h-3.5" />
@@ -1965,7 +2315,7 @@ export function VouchersLedgerSection({
                                   setVoucherToRevert(v);
                                   setRevertReason("");
                                 }}
-                                className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-lg transition-colors cursor-pointer"
+                                className="btn-uniform-delete p-1.5 rounded-lg transition-colors cursor-pointer"
                                 title="عكس السند بقيد عكسي"
                               >
                                 <RotateCcw className="w-3.5 h-3.5" />
@@ -1978,7 +2328,7 @@ export function VouchersLedgerSection({
                                   setVoucherToDelete(v);
                                   setDeleteReason("");
                                 }}
-                                className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg transition-colors cursor-pointer"
+                                className="btn-uniform-delete p-1.5 rounded-lg transition-colors cursor-pointer"
                                 title="حذف السند وعكس الأثر المالي"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
@@ -2015,23 +2365,15 @@ export function VouchersLedgerSection({
             }`}
           >
             {/* Compact Step Header Bar (No explanatory subtitles) */}
-            <div
-              className={`px-4 py-2.5 text-white flex flex-wrap items-center justify-between gap-2 ${
-                wizardStep === "select_type"
-                  ? "bg-slate-900"
-                  : formType === "receipt"
-                    ? "bg-emerald-700"
-                    : "bg-rose-700"
-              }`}
-            >
+            <div className="px-4 py-2.5 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center">
                   {wizardStep === "select_type" ? (
                     <Receipt className="w-4 h-4" />
                   ) : formType === "receipt" ? (
-                    <ArrowDownLeft className="w-4 h-4" />
+                    <ArrowDownLeft className="w-4 h-4 text-emerald-400" />
                   ) : (
-                    <ArrowUpRight className="w-4 h-4" />
+                    <ArrowUpRight className="w-4 h-4 text-amber-400" />
                   )}
                 </div>
                 <h3 className="text-sm sm:text-base font-black">
@@ -2043,41 +2385,47 @@ export function VouchersLedgerSection({
                         ? `إصدار ${formType === "receipt" ? "سند قبض" : "سند صرف"} — الخطوة 2: اختر القسم المطلوب`
                         : wizardStep === "print_preview"
                           ? `تم الحفظ والترحيل بنجاح — طباعة السند #${printedVoucherAfterPost?.reference_number || ""}`
-                          : `بيانات ${formType === "receipt" ? "سند القبض" : "سند الصرف"} — ${DEPARTMENT_PRESETS[formDepartment].label}`}
+                          : `${formType === "receipt" ? "إيصال سند قبض" : "إيصال سند صرف"} — ${DEPARTMENT_PRESETS[formDepartment].entityTitle}`}
                 </h3>
               </div>
 
               {/* Step Progress Badges */}
               <div className="flex items-center gap-1.5 text-[11px] font-black">
-                <span
-                  className={`px-2 py-0.5 rounded-md ${
+                <button
+                  type="button"
+                  onClick={() => setWizardStep("select_type")}
+                  className={`px-2 py-0.5 rounded-md underline cursor-pointer ${
                     wizardStep === "select_type"
                       ? "bg-white text-slate-900"
-                      : "bg-white/15 text-white/90"
+                      : "bg-white/15 text-white/90 hover:bg-white/25"
                   }`}
                 >
                   1. النوع
-                </span>
+                </button>
                 <span className="text-white/50">←</span>
-                <span
-                  className={`px-2 py-0.5 rounded-md ${
+                <button
+                  type="button"
+                  onClick={() => setWizardStep("select_dept")}
+                  className={`px-2 py-0.5 rounded-md underline cursor-pointer ${
                     wizardStep === "select_dept"
                       ? "bg-white text-slate-900"
-                      : "bg-white/15 text-white/90"
+                      : "bg-white/15 text-white/90 hover:bg-white/25"
                   }`}
                 >
                   2. القسم
-                </span>
+                </button>
                 <span className="text-white/50">←</span>
-                <span
-                  className={`px-2 py-0.5 rounded-md ${
+                <button
+                  type="button"
+                  onClick={() => setWizardStep("entry_form")}
+                  className={`px-2 py-0.5 rounded-md underline cursor-pointer ${
                     wizardStep === "entry_form"
                       ? "bg-white text-slate-900"
-                      : "bg-white/15 text-white/90"
+                      : "bg-white/15 text-white/90 hover:bg-white/25"
                   }`}
                 >
-                  3. البيانات
-                </span>
+                  3. تحرير السند
+                </button>
 
                 {mode !== "operations" && (
                   <button
@@ -2086,9 +2434,9 @@ export function VouchersLedgerSection({
                       setIsAddModalOpen(false);
                       setEditingVoucher(null);
                     }}
-                    className="mr-2 px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 text-white text-xs font-black cursor-pointer"
+                    className="btn-uniform-close mr-2 px-2.5 py-1 rounded-lg text-xs font-black cursor-pointer"
                   >
-                    ✕
+                    إغلاق ✕
                   </button>
                 )}
               </div>
@@ -2103,12 +2451,12 @@ export function VouchersLedgerSection({
                   <button
                     type="button"
                     onClick={() => handleSelectWizardType("payment")}
-                    className="group p-6 sm:p-8 rounded-2xl border-2 border-rose-500/30 bg-rose-500/[0.04] hover:bg-rose-500/[0.10] hover:border-rose-500 transition-all flex flex-col items-center justify-center gap-3 text-center cursor-pointer shadow-xs"
+                    className="group p-6 sm:p-8 rounded-2xl border-2 border-amber-500/40 bg-amber-500/[0.04] hover:bg-amber-500/[0.10] hover:border-amber-600 transition-all flex flex-col items-center justify-center gap-3 text-center cursor-pointer shadow-xs"
                   >
-                    <div className="w-14 h-14 rounded-2xl bg-rose-600 text-white flex items-center justify-center shadow-md group-hover:scale-105 transition-transform">
+                    <div className="w-14 h-14 rounded-2xl bg-amber-600 text-white flex items-center justify-center shadow-md group-hover:scale-105 transition-transform">
                       <ArrowUpRight className="w-7 h-7" />
                     </div>
-                    <span className="text-xl font-black text-rose-700 dark:text-rose-400">
+                    <span className="text-xl font-black text-amber-800 dark:text-amber-300 underline">
                       سند صرف
                     </span>
                   </button>
@@ -2116,12 +2464,12 @@ export function VouchersLedgerSection({
                   <button
                     type="button"
                     onClick={() => handleSelectWizardType("receipt")}
-                    className="group p-6 sm:p-8 rounded-2xl border-2 border-emerald-500/30 bg-emerald-500/[0.04] hover:bg-emerald-500/[0.10] hover:border-emerald-500 transition-all flex flex-col items-center justify-center gap-3 text-center cursor-pointer shadow-xs"
+                    className="group p-6 sm:p-8 rounded-2xl border-2 border-teal-500/40 bg-teal-500/[0.04] hover:bg-teal-500/[0.10] hover:border-teal-600 transition-all flex flex-col items-center justify-center gap-3 text-center cursor-pointer shadow-xs"
                   >
-                    <div className="w-14 h-14 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-md group-hover:scale-105 transition-transform">
+                    <div className="w-14 h-14 rounded-2xl bg-teal-700 text-white flex items-center justify-center shadow-md group-hover:scale-105 transition-transform">
                       <ArrowDownLeft className="w-7 h-7" />
                     </div>
-                    <span className="text-xl font-black text-emerald-700 dark:text-emerald-400">
+                    <span className="text-xl font-black text-teal-800 dark:text-teal-300 underline">
                       سند قبض
                     </span>
                   </button>
@@ -2142,18 +2490,18 @@ export function VouchersLedgerSection({
                           <button
                             type="button"
                             onClick={() => handleLoadVoucherDraft(draft)}
-                            className="font-bold text-foreground hover:text-primary cursor-pointer flex items-center gap-1.5"
+                            className="app-link underline font-bold text-foreground hover:text-primary cursor-pointer flex items-center gap-1.5"
                           >
                             <span
-                              className={`px-1.5 py-0.5 rounded text-[10px] font-black ${
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-black no-underline ${
                                 draft.type === "receipt"
-                                  ? "bg-emerald-500/15 text-emerald-700"
-                                  : "bg-rose-500/15 text-rose-700"
+                                  ? "bg-teal-500/15 text-teal-700"
+                                  : "bg-amber-500/15 text-amber-700"
                               }`}
                             >
                               {draft.type === "receipt" ? "قبض" : "صرف"}
                             </span>
-                            <span>{DEPARTMENT_PRESETS[draft.department]?.label}</span>
+                            <span>{DEPARTMENT_PRESETS[draft.department]?.entityTitle}</span>
                             <span>—</span>
                             <span>{draft.category}</span>
                             {Number(draft.amount) > 0 && (
@@ -2165,10 +2513,10 @@ export function VouchersLedgerSection({
                           <button
                             type="button"
                             onClick={() => handleDeleteVoucherDraft(draft.id)}
-                            className="text-rose-500 hover:text-rose-700 px-1 font-black cursor-pointer"
+                            className="btn-uniform-delete px-1.5 py-0.5 rounded text-[10px] font-black cursor-pointer"
                             title="حذف المسودة"
                           >
-                            ✕
+                            حذف
                           </button>
                         </div>
                       ))}
@@ -2189,8 +2537,8 @@ export function VouchersLedgerSection({
                     <span
                       className={`px-3 py-1 rounded-lg text-xs font-black ${
                         formType === "receipt"
-                          ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                          : "bg-rose-500/15 text-rose-700 dark:text-rose-300"
+                          ? "bg-teal-500/15 text-teal-800 dark:text-teal-300"
+                          : "bg-amber-500/15 text-amber-800 dark:text-amber-300"
                       }`}
                     >
                       {formType === "receipt" ? "سند قبض" : "سند صرف"}
@@ -2199,7 +2547,7 @@ export function VouchersLedgerSection({
                   <button
                     type="button"
                     onClick={() => setWizardStep("select_type")}
-                    className="px-3 py-1.5 rounded-xl bg-muted hover:bg-muted/80 text-foreground text-xs font-black cursor-pointer"
+                    className="btn-uniform-close px-3 py-1.5 rounded-xl text-xs font-black cursor-pointer"
                   >
                     تغيير نوع السند
                   </button>
@@ -2210,28 +2558,28 @@ export function VouchersLedgerSection({
                     [
                       {
                         key: "restaurant",
-                        label: "إدارة المطعم",
+                        label: "مطعم جوبا",
                         icon: Utensils,
                         tone: "border-orange-500/30 bg-orange-500/[0.04] hover:bg-orange-500/[0.12] hover:border-orange-500 text-orange-700 dark:text-orange-400",
                         iconBg: "bg-orange-600 text-white",
                       },
                       {
                         key: "park",
-                        label: "إدارة الحديقة",
+                        label: "حديقة جوبا",
                         icon: Sparkles,
                         tone: "border-emerald-500/30 bg-emerald-500/[0.04] hover:bg-emerald-500/[0.12] hover:border-emerald-500 text-emerald-700 dark:text-emerald-400",
                         iconBg: "bg-emerald-600 text-white",
                       },
                       {
                         key: "mall",
-                        label: "إدارة المول",
+                        label: "جوبا مول",
                         icon: Building2,
                         tone: "border-blue-500/30 bg-blue-500/[0.04] hover:bg-blue-500/[0.12] hover:border-blue-500 text-blue-700 dark:text-blue-400",
                         iconBg: "bg-blue-600 text-white",
                       },
                       {
                         key: "admin",
-                        label: "الإدارة العامة",
+                        label: "إدارة جوبا",
                         icon: Landmark,
                         tone: "border-indigo-500/30 bg-indigo-500/[0.04] hover:bg-indigo-500/[0.12] hover:border-indigo-500 text-indigo-700 dark:text-indigo-400",
                         iconBg: "bg-indigo-600 text-white",
@@ -2251,7 +2599,7 @@ export function VouchersLedgerSection({
                         >
                           <Icon className="w-6 h-6" />
                         </div>
-                        <span className="text-base font-black">{dept.label}</span>
+                        <span className="text-base font-black underline">{dept.label}</span>
                       </button>
                     );
                   })}
@@ -2260,172 +2608,140 @@ export function VouchersLedgerSection({
             )}
 
             {/* =============================================================== */}
-            {/* STEP 3: VOUCHER DATA ENTRY FORM (Single Screen, No Scroll)      */}
+            {/* STEP 3: REAL PRINTED-VOUCHER ENTRY FORM (زي السند الحقيقي)     */}
             {/* =============================================================== */}
             {wizardStep === "entry_form" && (
-              <div className="p-4 space-y-3">
-                {/* Selected Type & Department Quick Switch Bar */}
-                <div className="flex flex-wrap items-center justify-between gap-2 bg-muted/40 px-3 py-2 rounded-xl border border-border">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => !editingVoucher && setWizardStep("select_type")}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-black flex items-center gap-1 cursor-pointer ${
-                        formType === "receipt"
-                          ? "bg-emerald-600 text-white"
-                          : "bg-rose-600 text-white"
-                      }`}
-                    >
-                      {formType === "receipt" ? (
-                        <ArrowDownLeft className="w-3.5 h-3.5" />
-                      ) : (
-                        <ArrowUpRight className="w-3.5 h-3.5" />
-                      )}
-                      <span>{formType === "receipt" ? "سند قبض" : "سند صرف"}</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => !editingVoucher && setWizardStep("select_dept")}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-black border cursor-pointer ${DEPARTMENT_PRESETS[formDepartment].badgeClass}`}
-                    >
-                      القسم: {DEPARTMENT_PRESETS[formDepartment].label}
-                    </button>
-                  </div>
-
-                  {selectedTreasuryObj && (
-                    <div className="flex items-center gap-2 text-xs font-bold">
-                      <span className="text-muted-foreground">رصيد الخزينة المتاح:</span>
-                      <span
-                        className={`font-mono font-black px-2 py-0.5 rounded-md ${
-                          isExceedingTreasuryBalance
-                            ? "bg-rose-500/15 text-rose-600 border border-rose-500/30"
-                            : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+              <div className="p-3.5 sm:p-4 space-y-2.5">
+                {/* Printed Voucher Slip Frame */}
+                <div className="rounded-2xl border-2 border-slate-300 dark:border-slate-700 bg-card p-3.5 space-y-3 shadow-xs">
+                  {/* Top Slip Header: Voucher Type Switcher + Entity Switcher + Treasury Balance */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b-2 border-dashed border-slate-300 dark:border-slate-700">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <select
+                        value={formType}
+                        onChange={(e) => handleTypeChange(e.target.value as "receipt" | "payment")}
+                        className={`h-8 px-3 rounded-xl text-xs sm:text-sm font-black cursor-pointer border-0 ${
+                          formType === "receipt"
+                            ? "bg-teal-700 text-white"
+                            : "bg-amber-700 text-white"
                         }`}
                       >
-                        {Number(selectedTreasuryObj.balance || 0).toLocaleString()}{" "}
-                        {selectedTreasuryObj.currency}
-                      </span>
-                      {isExceedingTreasuryBalance && (
-                        <span className="text-[11px] font-black text-rose-600">
-                          (المبلغ يتجاوز الرصيد)
-                        </span>
+                        <option value="payment" className="bg-slate-900 text-white">
+                          سند صرف — دفعنا نحن {DEPARTMENT_PRESETS[formDepartment].entityTitle}
+                        </option>
+                        <option value="receipt" className="bg-slate-900 text-white">
+                          سند قبض — قبضنا نحن {DEPARTMENT_PRESETS[formDepartment].entityTitle}
+                        </option>
+                      </select>
+
+                      <select
+                        value={formDepartment}
+                        onChange={(e) =>
+                          handleDepartmentChange(e.target.value as VoucherDepartmentKey)
+                        }
+                        className="h-8 px-2.5 rounded-xl border border-input bg-background text-xs font-black text-foreground cursor-pointer"
+                      >
+                        <option value="restaurant">مطعم جوبا</option>
+                        <option value="park">حديقة جوبا</option>
+                        <option value="mall">جوبا مول</option>
+                        <option value="admin">إدارة جوبا</option>
+                      </select>
+
+                      {!editingVoucher && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setWizardStep("select_type")}
+                            className="app-link underline text-xs font-black text-indigo-700 dark:text-indigo-400 px-1.5 cursor-pointer"
+                          >
+                            تغيير النوع
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setWizardStep("select_dept")}
+                            className="app-link underline text-xs font-black text-indigo-700 dark:text-indigo-400 px-1.5 cursor-pointer"
+                          >
+                            تغيير القسم
+                          </button>
+                        </>
                       )}
                     </div>
-                  )}
-                </div>
 
-                {/* Compact Main Fields Grid (Fits in 1 Screen without Scroll) */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3">
-                  {/* 1. Category */}
-                  <div className="lg:col-span-4 space-y-1">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-black text-foreground">
-                        البند <span className="text-rose-500">*</span>
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsAddingCategory(!isAddingCategory);
-                          setNewCategoryAccountCode(formAccountCode);
-                        }}
-                        className="text-[11px] font-black text-indigo-600 hover:text-indigo-800 flex items-center gap-0.5 cursor-pointer"
-                      >
-                        <Plus className="w-3 h-3" />
-                        {isAddingCategory ? "إغلاق" : "بند جديد"}
-                      </button>
-                    </div>
-                    <select
-                      value={formCategory}
-                      onChange={(e) => handleCategoryChange(e.target.value)}
-                      className="w-full h-9 px-2.5 bg-background border border-input rounded-xl text-xs font-bold text-foreground"
-                    >
-                      {availableCategories.map((c) => (
-                        <option key={c.name} value={c.name}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
-                    {isAddingCategory && (
-                      <div className="flex items-center gap-1.5 pt-1">
-                        <input
-                          type="text"
-                          value={newCategoryName}
-                          onChange={(e) => setNewCategoryName(e.target.value)}
-                          placeholder="اسم البند الجديد..."
-                          className="flex-1 h-8 px-2 bg-background border border-input rounded-lg text-xs font-bold"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleCreateCustomCategory}
-                          className="h-8 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-black cursor-pointer shrink-0"
+                    {selectedTreasuryObj && (
+                      <div className="flex items-center gap-1.5 text-xs font-bold">
+                        <span className="text-muted-foreground">رصيد الخزينة:</span>
+                        <span
+                          className={`font-mono font-black px-2 py-0.5 rounded-md ${
+                            isExceedingTreasuryBalance
+                              ? "bg-red-500/15 text-red-600 border border-red-500/30"
+                              : "bg-teal-500/10 text-teal-700 dark:text-teal-300"
+                          }`}
                         >
-                          حفظ
-                        </button>
+                          {Number(selectedTreasuryObj.balance || 0).toLocaleString()}{" "}
+                          {selectedTreasuryObj.currency}
+                        </span>
                       </div>
                     )}
                   </div>
 
-                  {/* 2. Amount */}
-                  <div className="lg:col-span-3 space-y-1">
-                    <label className="block text-xs font-black text-foreground">
-                      المبلغ <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={
-                        isRestaurantPurchaseMode && purchaseItems.length > 0
-                          ? Number(purchaseInvoiceTotal.toFixed(2))
-                          : formAmount
-                      }
-                      readOnly={isRestaurantPurchaseMode && purchaseItems.length > 0}
-                      onChange={(e) => setFormAmount(e.target.value)}
-                      placeholder="0.00"
-                      dir="ltr"
-                      className={`w-full h-9 px-3 border rounded-xl text-sm font-black font-mono text-left ${
-                        formType === "receipt"
-                          ? "bg-emerald-500/[0.04] border-emerald-500/40 text-emerald-700 dark:text-emerald-300"
-                          : "bg-rose-500/[0.04] border-rose-500/40 text-rose-700 dark:text-rose-300"
-                      }`}
-                    />
-                  </div>
+                  {/* VERBATIM REAL PRINTED VOUCHER SENTENCE WITH INLINE INPUTS:
+                      "دفعنا نحن / قبضنا نحن [الجهة] مبلغ [...] بالعملة [...] من/إلى خزينة [...] بمعامل [...] لـ/من [...] رقم حساب [...]" */}
+                  <div className="rounded-xl border-2 border-teal-600/30 bg-teal-500/[0.03] dark:bg-slate-900/60 p-3 space-y-2.5">
+                    <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm font-black text-foreground leading-loose">
+                      <span
+                        className={`px-2.5 py-1 rounded-lg font-black ${
+                          formType === "payment"
+                            ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
+                            : "bg-teal-500/15 text-teal-800 dark:text-teal-300"
+                        }`}
+                      >
+                        {formType === "payment" ? "دفعنا نحن" : "قبضنا نحن"}{" "}
+                        {DEPARTMENT_PRESETS[formDepartment].entityTitle}
+                      </span>
 
-                  {/* 3. Treasury */}
-                  <div className="lg:col-span-3 space-y-1">
-                    <label className="block text-xs font-black text-foreground">
-                      الخزينة / البنك <span className="text-rose-500">*</span>
-                    </label>
-                    <select
-                      value={formTreasuryId}
-                      onChange={(e) => handleTreasuryChange(e.target.value)}
-                      className="w-full h-9 px-2.5 bg-background border border-input rounded-xl text-xs font-bold text-foreground"
-                    >
-                      {treasuries.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name_ar} ({Number(t.balance).toLocaleString()} {t.currency})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                      <span>مبلغ</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={formAmount}
+                        onChange={(e) => {
+                          setUserEditedPaidAmount(true);
+                          setFormAmount(e.target.value);
+                        }}
+                        placeholder="0.00"
+                        dir="ltr"
+                        aria-label="المبلغ المدفوع أو المقبوض"
+                        className="w-28 sm:w-32 h-9 px-2.5 bg-background border-2 border-teal-600 rounded-xl text-sm font-black font-mono text-center text-foreground focus:outline-none focus:ring-2 focus:ring-teal-600"
+                      />
 
-                  {/* 4. Currency & Rate */}
-                  <div className="lg:col-span-2 grid grid-cols-2 gap-1.5">
-                    <div className="space-y-1">
-                      <label className="block text-xs font-black text-foreground">العملة</label>
+                      <span>بالعملة</span>
                       <select
                         value={formCurrency}
                         onChange={(e) => handleCurrencyChange(e.target.value)}
-                        className="w-full h-9 px-1.5 bg-background border border-input rounded-xl text-xs font-mono font-bold text-foreground"
+                        aria-label="العملة"
+                        className="h-9 px-2.5 bg-background border border-input rounded-xl text-xs font-mono font-black text-foreground"
                       >
-                        <option value="EGP">EGP</option>
-                        <option value="USD">USD</option>
-                        <option value="SSP">SSP</option>
+                        <option value="EGP">EGP (جنيه)</option>
+                        <option value="USD">USD (دولار)</option>
+                        <option value="SSP">SSP (جنوب سوداني)</option>
                       </select>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-xs font-black text-foreground">الصرف</label>
+
+                      <span>{formType === "payment" ? "من خزينة" : "إلى خزينة"}</span>
+                      <select
+                        value={formTreasuryId}
+                        onChange={(e) => handleTreasuryChange(e.target.value)}
+                        aria-label="الخزينة"
+                        className="h-9 px-2.5 bg-background border border-input rounded-xl text-xs font-bold text-foreground"
+                      >
+                        {treasuries.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name_ar} ({t.currency})
+                          </option>
+                        ))}
+                      </select>
+
+                      <span>بمعامل</span>
                       <input
                         type="number"
                         min="0.0001"
@@ -2433,237 +2749,444 @@ export function VouchersLedgerSection({
                         value={formExchangeRate}
                         disabled={formCurrency === "USD"}
                         onChange={(e) => setFormExchangeRate(e.target.value)}
-                        className="w-full h-9 px-1.5 bg-background border border-input rounded-xl text-xs font-black font-mono text-center disabled:opacity-50"
+                        aria-label="معامل الصرف"
+                        className="w-20 h-9 px-2 bg-background border border-input rounded-xl text-xs font-black font-mono text-center"
+                      />
+
+                      <span>{formType === "payment" ? "لـ" : "من"}</span>
+                      <select
+                        value={formCategory}
+                        onChange={(e) => handleCategoryChange(e.target.value)}
+                        aria-label="البند"
+                        className="h-9 px-2.5 bg-background border border-input rounded-xl text-xs font-bold text-foreground min-w-[150px]"
+                      >
+                        {availableCategories.map((c) => (
+                          <option key={c.name} value={c.name}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsAddingCategory(!isAddingCategory);
+                          setNewCategoryAccountCode(formAccountCode);
+                        }}
+                        className="app-link underline text-[11px] font-black text-indigo-600 dark:text-indigo-400 cursor-pointer"
+                      >
+                        {isAddingCategory ? "إغلاق" : "+ بند جديد"}
+                      </button>
+
+                      <span>رقم حساب</span>
+                      <select
+                        value={formAccountCode}
+                        onChange={(e) => setFormAccountCode(e.target.value)}
+                        aria-label="رقم الحساب المحاسبي"
+                        className="h-9 px-2.5 bg-background border border-input rounded-xl text-xs font-mono font-bold text-foreground max-w-[230px]"
+                      >
+                        {level4Accounts.map((acc) => (
+                          <option key={acc.code} value={acc.code}>
+                            #{acc.code} - {acc.name_ar}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {isAddingCategory && (
+                      <div className="flex items-center gap-1.5 pt-1">
+                        <input
+                          type="text"
+                          value={newCategoryName}
+                          onChange={(e) => setNewCategoryName(e.target.value)}
+                          placeholder="اسم البند الجديد..."
+                          className="flex-1 max-w-xs h-8 px-2.5 bg-background border border-input rounded-lg text-xs font-bold"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleCreateCustomCategory}
+                          className="btn-uniform-save h-8 px-3 rounded-lg text-xs font-black shrink-0 cursor-pointer"
+                        >
+                          حفظ البند
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Row 2: Supplier + Customer + Credit Invoice Total (Side-by-side with instant creation & statement links) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-start">
+                    {/* Supplier Field + Instant Supplier Creation + Clickable Statement Link */}
+                    <div className="sm:col-span-4 space-y-1">
+                      <div className="flex items-center justify-between gap-1">
+                        <label className="text-[11px] font-black text-foreground flex items-center gap-1">
+                          <Truck className="w-3 h-3 text-orange-600" />
+                          <span>المورد</span>
+                          {isRestaurantPurchaseMode && <span className="text-red-600">*</span>}
+                        </label>
+                        <div className="flex items-center gap-2">
+                          {selectedSupplierObj && (
+                            <button
+                              type="button"
+                              onClick={() => openSupplierStatement(selectedSupplierObj)}
+                              className="app-link underline text-[11px] font-black text-indigo-700 dark:text-indigo-400 cursor-pointer"
+                              title="فتح كشف حساب المورد"
+                            >
+                              كشف حساب: {selectedSupplierObj.name_ar} (#
+                              {selectedSupplierObj.account_code || "24010"})
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setIsAddingSupplier(!isAddingSupplier)}
+                            className="app-link underline text-[11px] font-black text-teal-700 dark:text-teal-400 cursor-pointer"
+                          >
+                            {isAddingSupplier ? "إغلاق" : "+ إضافة مورد فوري"}
+                          </button>
+                        </div>
+                      </div>
+                      <select
+                        value={selectedSupplierId}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setSelectedSupplierId(val);
+                          if (val) {
+                            setSelectedCustomerId("");
+                            const sup = suppliers.find((s) => s.id === val);
+                            if (sup) setFormBeneficiary(sup.name_ar);
+                          }
+                        }}
+                        className="w-full h-9 px-2 bg-background border border-input rounded-xl text-xs font-bold text-foreground"
+                      >
+                        <option value="">-- بدون مورد / اختر المورد --</option>
+                        {suppliers.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name_ar} — حساب #{s.account_code || "24010"}
+                          </option>
+                        ))}
+                      </select>
+                      {isAddingSupplier && (
+                        <div className="flex items-center gap-1 pt-1">
+                          <input
+                            type="text"
+                            value={newSupplierName}
+                            onChange={(e) => setNewSupplierName(e.target.value)}
+                            placeholder="اسم المورد الفوري..."
+                            className="flex-1 h-8 px-2 bg-background border border-input rounded-lg text-xs font-bold"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleCreateInlineSupplier}
+                            className="btn-uniform-save h-8 px-2.5 rounded-lg text-xs font-black shrink-0 cursor-pointer"
+                          >
+                            حفظ
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Customer Field + Instant Customer Creation (Auto Level-4 Account) + Statement Link */}
+                    <div className="sm:col-span-4 space-y-1">
+                      <div className="flex items-center justify-between gap-1">
+                        <label className="text-[11px] font-black text-foreground flex items-center gap-1">
+                          <Users className="w-3 h-3 text-teal-600" />
+                          <span>العميل (نقدي / آجل)</span>
+                        </label>
+                        <div className="flex items-center gap-2">
+                          {selectedCustomerObj && (
+                            <button
+                              type="button"
+                              onClick={() => openCustomerStatement(selectedCustomerObj)}
+                              className="app-link underline text-[11px] font-black text-indigo-700 dark:text-indigo-400 cursor-pointer"
+                              title="فتح كشف حساب العميل"
+                            >
+                              كشف حساب: {selectedCustomerObj.name_ar} (#
+                              {selectedCustomerObj.account_code || "13020"})
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setIsAddingCustomer(!isAddingCustomer)}
+                            className="app-link underline text-[11px] font-black text-teal-700 dark:text-teal-400 cursor-pointer"
+                          >
+                            {isAddingCustomer ? "إغلاق" : "+ إضافة عميل فوري"}
+                          </button>
+                        </div>
+                      </div>
+                      <select
+                        value={selectedCustomerId}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setSelectedCustomerId(val);
+                          if (val) {
+                            setSelectedSupplierId("");
+                            const cust = customers.find((c) => c.id === val);
+                            if (cust) setFormBeneficiary(cust.name_ar);
+                          }
+                        }}
+                        className="w-full h-9 px-2 bg-background border border-input rounded-xl text-xs font-bold text-foreground"
+                      >
+                        <option value="">-- بدون عميل / اختر العميل --</option>
+                        {customers.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name_ar} — حساب #{c.account_code || "13020"}
+                          </option>
+                        ))}
+                      </select>
+                      {isAddingCustomer && (
+                        <div className="flex items-center gap-1 pt-1">
+                          <input
+                            type="text"
+                            value={newCustomerName}
+                            onChange={(e) => setNewCustomerName(e.target.value)}
+                            placeholder="اسم العميل الفوري..."
+                            className="flex-1 h-8 px-2 bg-background border border-input rounded-lg text-xs font-bold"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleCreateInlineCustomer}
+                            className="btn-uniform-save h-8 px-2.5 rounded-lg text-xs font-black shrink-0 cursor-pointer"
+                          >
+                            حفظ
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Total Invoice Value (For Full or Partial Credit Purchase / Sale) */}
+                    <div className="sm:col-span-4 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[11px] font-black text-foreground">
+                          إجمالي الفاتورة (للشراء أو البيع الآجل)
+                        </label>
+                        {computedRemainingCredit > 0 && (
+                          <span className="text-[10px] font-mono font-black text-amber-700 dark:text-amber-400">
+                            المتبقي آجل: {computedRemainingCredit.toLocaleString()} {formCurrency}
+                          </span>
+                        )}
+                      </div>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={
+                          isRestaurantPurchaseMode && purchaseItems.length > 0
+                            ? Number(purchaseInvoiceTotal.toFixed(2))
+                            : formInvoiceTotal
+                        }
+                        readOnly={isRestaurantPurchaseMode && purchaseItems.length > 0}
+                        onChange={(e) => setFormInvoiceTotal(e.target.value)}
+                        placeholder={formAmount || "نفس المبلغ (نقدي بالكامل)"}
+                        dir="ltr"
+                        className="w-full h-9 px-2.5 bg-background border border-input rounded-xl text-xs font-black font-mono text-left"
                       />
                     </div>
                   </div>
 
-                  {/* 5. Beneficiary */}
-                  <div className="lg:col-span-3 space-y-1">
-                    <label className="block text-xs font-black text-foreground">
-                      {formType === "receipt" ? "المودع / الجهة" : "المستفيد / المستلم"}
-                    </label>
-                    <input
-                      type="text"
-                      value={formBeneficiary}
-                      onChange={(e) => setFormBeneficiary(e.target.value)}
-                      placeholder={formType === "receipt" ? "اسم الدافع..." : "اسم المستلم..."}
-                      className="w-full h-9 px-3 bg-background border border-input rounded-xl text-xs font-bold"
-                    />
-                  </div>
-
-                  {/* 6. Linked Accounting Account */}
-                  <div className="lg:col-span-4 space-y-1">
-                    <label className="block text-xs font-black text-foreground">
-                      الحساب المحاسبي
-                    </label>
-                    <select
-                      value={formAccountCode}
-                      onChange={(e) => setFormAccountCode(e.target.value)}
-                      className="w-full h-9 px-2.5 bg-background border border-input rounded-xl text-xs font-bold text-foreground"
-                    >
-                      {level4Accounts.map((acc) => (
-                        <option key={acc.code} value={acc.code}>
-                          {acc.code} - {acc.name_ar}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* 7. Description (Single Line, Auto-Generated if left empty) */}
-                  <div className="lg:col-span-5 space-y-1">
-                    <label className="block text-xs font-black text-foreground">
-                      البيان
-                    </label>
-                    <input
-                      type="text"
-                      value={formDescription}
-                      onChange={(e) => setFormDescription(e.target.value)}
-                      placeholder={`${formType === "receipt" ? "سند قبض" : "سند صرف"} - ${formCategory} (${DEPARTMENT_PRESETS[formDepartment].label})`}
-                      className="w-full h-9 px-3 bg-background border border-input rounded-xl text-xs font-bold"
-                    />
-                  </div>
-                </div>
-
-                {/* Compact Restaurant Purchase Section (Only when category is Goods Purchase) */}
-                {isRestaurantPurchaseMode && (
-                  <div className="bg-orange-500/[0.05] border border-orange-500/30 rounded-xl p-3 space-y-2">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="text-[11px] font-black text-foreground flex items-center gap-1">
-                            <Truck className="w-3.5 h-3.5 text-orange-600" />
-                            المورد <span className="text-rose-500">*</span>
-                          </label>
-                          <button
-                            type="button"
-                            onClick={() => setIsAddingSupplier(!isAddingSupplier)}
-                            className="text-[11px] font-black text-orange-600 cursor-pointer"
+                  {/* Compact Restaurant Purchase Items Section (Only when category is Goods Purchase) */}
+                  {isRestaurantPurchaseMode && (
+                    <div className="bg-orange-500/[0.04] border border-orange-500/30 rounded-xl p-2.5 space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 flex-1 min-w-[220px]">
+                          <Package className="w-4 h-4 text-orange-600 shrink-0" />
+                          <select
+                            value={selectedInventoryIdToAdd}
+                            onChange={(e) => handleAddInventoryItemLine(e.target.value)}
+                            className="flex-1 h-8 px-2.5 bg-background border border-orange-500/30 rounded-lg text-xs font-bold"
                           >
-                            {isAddingSupplier ? "إغلاق" : "+ مورد جديد"}
-                          </button>
-                        </div>
-                        <select
-                          value={selectedSupplierId}
-                          onChange={(e) => {
-                            setSelectedSupplierId(e.target.value);
-                            const sup = suppliers.find((s) => s.id === e.target.value);
-                            if (sup) setFormBeneficiary(sup.name_ar);
-                          }}
-                          className="w-full h-8 px-2.5 bg-background border border-orange-500/30 rounded-lg text-xs font-bold"
-                        >
-                          <option value="">-- اختر المورد --</option>
-                          {suppliers.map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.name_ar} {s.account_code ? `(#${s.account_code})` : ""}
-                            </option>
-                          ))}
-                        </select>
-                        {isAddingSupplier && (
-                          <div className="flex items-center gap-1.5 mt-1.5">
-                            <input
-                              type="text"
-                              value={newSupplierName}
-                              onChange={(e) => setNewSupplierName(e.target.value)}
-                              placeholder="اسم المورد..."
-                              className="flex-1 h-8 px-2 bg-background border border-input rounded-lg text-xs font-bold"
-                            />
-                            <button
-                              type="button"
-                              onClick={handleCreateInlineSupplier}
-                              className="h-8 px-3 bg-orange-600 text-white rounded-lg text-xs font-black cursor-pointer"
-                            >
-                              حفظ
-                            </button>
-                          </div>
-                        )}
-                      </div>
-
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="text-[11px] font-black text-foreground flex items-center gap-1">
-                            <Package className="w-3.5 h-3.5 text-orange-600" />
-                            إضافة صنف مخزني
-                          </label>
+                            <option value="">-- اختر صنفاً مخزنياً لإضافته للفاتورة --</option>
+                            {inventoryItems.map((item) => (
+                              <option key={item.id} value={item.id}>
+                                {item.name_ar} ({item.unit}) — الرصيد: {item.quantity}
+                              </option>
+                            ))}
+                          </select>
                           <button
                             type="button"
                             onClick={() => setIsAddingInventoryItem(!isAddingInventoryItem)}
-                            className="text-[11px] font-black text-orange-600 cursor-pointer"
+                            className="app-link text-xs font-black text-orange-700 shrink-0"
                           >
-                            {isAddingInventoryItem ? "إغلاق" : "+ صنف جديد"}
+                            {isAddingInventoryItem ? "إغلاق" : "+ صنف مخزني فوري"}
                           </button>
                         </div>
-                        <select
-                          value={selectedInventoryIdToAdd}
-                          onChange={(e) => handleAddInventoryItemLine(e.target.value)}
-                          className="w-full h-8 px-2.5 bg-background border border-orange-500/30 rounded-lg text-xs font-bold"
-                        >
-                          <option value="">-- اختر صنفاً لإضافته --</option>
-                          {inventoryItems.map((item) => (
-                            <option key={item.id} value={item.id}>
-                              {item.name_ar} ({item.unit}) — الرصيد: {item.quantity}
-                            </option>
-                          ))}
-                        </select>
-                        {isAddingInventoryItem && (
-                          <div className="flex items-center gap-1.5 mt-1.5">
-                            <input
-                              type="text"
-                              value={newItemName}
-                              onChange={(e) => setNewItemName(e.target.value)}
-                              placeholder="اسم الصنف..."
-                              className="flex-1 h-8 px-2 bg-background border border-input rounded-lg text-xs font-bold"
-                            />
-                            <input
-                              type="number"
-                              value={newItemCost}
-                              onChange={(e) => setNewItemCost(e.target.value)}
-                              placeholder="السعر"
-                              className="w-20 h-8 px-2 bg-background border border-input rounded-lg text-xs font-mono font-bold"
-                            />
-                            <button
-                              type="button"
-                              onClick={handleCreateInlineInventoryItem}
-                              className="h-8 px-3 bg-orange-600 text-white rounded-lg text-xs font-black cursor-pointer"
-                            >
-                              إضافة
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
 
-                    {purchaseItems.length > 0 && (
-                      <div className="bg-background rounded-lg border border-orange-500/20 max-h-28 overflow-y-auto">
-                        <table className="w-full text-right text-xs">
-                          <thead className="bg-orange-500/10 text-[11px] font-black sticky top-0">
-                            <tr>
-                              <th className="py-1.5 px-2">الصنف</th>
-                              <th className="py-1.5 px-2">الكمية</th>
-                              <th className="py-1.5 px-2">السعر</th>
-                              <th className="py-1.5 px-2">الإجمالي</th>
-                              <th className="py-1.5 px-2 text-center">حذف</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-border">
-                            {purchaseItems.map((row, idx) => (
-                              <tr key={`${row.inventory_id}-${idx}`}>
-                                <td className="py-1 px-2 font-bold">
-                                  {row.name_ar} ({row.unit})
-                                </td>
-                                <td className="py-1 px-2 w-24">
-                                  <input
-                                    type="number"
-                                    min="0.01"
-                                    step="0.01"
-                                    value={row.quantity}
-                                    onChange={(e) =>
-                                      handleUpdatePurchaseItemRow(idx, "quantity", e.target.value)
-                                    }
-                                    className="w-full h-7 px-1.5 bg-muted/40 border border-input rounded font-mono font-black text-center"
-                                  />
-                                </td>
-                                <td className="py-1 px-2 w-24">
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    value={row.unit_price}
-                                    onChange={(e) =>
-                                      handleUpdatePurchaseItemRow(idx, "unit_price", e.target.value)
-                                    }
-                                    className="w-full h-7 px-1.5 bg-muted/40 border border-input rounded font-mono font-black text-center"
-                                  />
-                                </td>
-                                <td className="py-1 px-2 font-mono font-black text-orange-600">
-                                  {Number(row.total).toLocaleString()} {formCurrency}
-                                </td>
-                                <td className="py-1 px-2 text-center">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleRemovePurchaseItemRow(idx)}
-                                    className="text-rose-600 hover:bg-rose-500/10 p-1 rounded cursor-pointer"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                        <div className="flex items-center gap-2 text-xs font-black">
+                          <span>
+                            إجمالي الفاتورة:{" "}
+                            <b className="font-mono text-orange-700">
+                              {purchaseInvoiceTotal.toLocaleString()} {formCurrency}
+                            </b>
+                          </span>
+                          {computedRemainingCredit > 0 && (
+                            <span className="px-2 py-0.5 rounded bg-amber-500/15 text-amber-800 dark:text-amber-300 font-mono">
+                              متبقي آجل للمورد ({selectedSupplierObj?.name_ar || "اختر المورد"}):{" "}
+                              {computedRemainingCredit.toLocaleString()} {formCurrency}
+                            </span>
+                          )}
+                        </div>
                       </div>
+
+                      {isAddingInventoryItem && (
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="text"
+                            value={newItemName}
+                            onChange={(e) => setNewItemName(e.target.value)}
+                            placeholder="اسم الصنف الجديد..."
+                            className="flex-1 h-8 px-2 bg-background border border-input rounded-lg text-xs font-bold"
+                          />
+                          <input
+                            type="number"
+                            value={newItemCost}
+                            onChange={(e) => setNewItemCost(e.target.value)}
+                            placeholder="سعر الوحدة"
+                            className="w-24 h-8 px-2 bg-background border border-input rounded-lg text-xs font-mono font-bold"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleCreateInlineInventoryItem}
+                            className="btn-uniform-save h-8 px-3 rounded-lg text-xs font-black"
+                          >
+                            إضافة الصنف
+                          </button>
+                        </div>
+                      )}
+
+                      {purchaseItems.length > 0 && (
+                        <div className="bg-background rounded-lg border border-orange-500/20 max-h-24 overflow-y-auto">
+                          <table className="w-full text-right text-xs">
+                            <thead className="bg-orange-500/10 text-[11px] font-black sticky top-0">
+                              <tr>
+                                <th className="py-1 px-2">الصنف</th>
+                                <th className="py-1 px-2">الكمية</th>
+                                <th className="py-1 px-2">السعر</th>
+                                <th className="py-1 px-2">الإجمالي</th>
+                                <th className="py-1 px-2 text-center">حذف</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border">
+                              {purchaseItems.map((row, idx) => (
+                                <tr key={`${row.inventory_id}-${idx}`}>
+                                  <td className="py-1 px-2 font-bold">
+                                    {row.name_ar} ({row.unit})
+                                  </td>
+                                  <td className="py-1 px-2 w-24">
+                                    <input
+                                      type="number"
+                                      min="0.01"
+                                      step="0.01"
+                                      value={row.quantity}
+                                      onChange={(e) =>
+                                        handleUpdatePurchaseItemRow(idx, "quantity", e.target.value)
+                                      }
+                                      className="w-full h-6 px-1.5 bg-muted/40 border border-input rounded font-mono font-black text-center"
+                                    />
+                                  </td>
+                                  <td className="py-1 px-2 w-24">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={row.unit_price}
+                                      onChange={(e) =>
+                                        handleUpdatePurchaseItemRow(
+                                          idx,
+                                          "unit_price",
+                                          e.target.value,
+                                        )
+                                      }
+                                      className="w-full h-6 px-1.5 bg-muted/40 border border-input rounded font-mono font-black text-center"
+                                    />
+                                  </td>
+                                  <td className="py-1 px-2 font-mono font-black text-orange-600">
+                                    {Number(row.total).toLocaleString()} {formCurrency}
+                                  </td>
+                                  <td className="py-1 px-2 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemovePurchaseItemRow(idx)}
+                                      className="btn-uniform-delete p-1 rounded cursor-pointer"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Real Voucher Narrative Row 3: Statement ("البيان") + Live Printed Preview Sentence */}
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center pt-1">
+                    <div className="sm:col-span-8 flex items-center gap-2">
+                      <label className="text-xs font-black text-foreground shrink-0">
+                        البيان:
+                      </label>
+                      <input
+                        type="text"
+                        value={formDescription}
+                        onChange={(e) => setFormDescription(e.target.value)}
+                        placeholder={`بيان ${formType === "receipt" ? "سند القبض" : "سند الصرف"} (${DEPARTMENT_PRESETS[formDepartment].entityTitle})...`}
+                        className="w-full h-9 px-3 bg-background border border-input rounded-xl text-xs font-bold"
+                      />
+                    </div>
+                    <div className="sm:col-span-4 flex items-center gap-2">
+                      <label className="text-xs font-black text-foreground shrink-0">
+                        المستلم/المودع:
+                      </label>
+                      <input
+                        type="text"
+                        value={formBeneficiary}
+                        onChange={(e) => setFormBeneficiary(e.target.value)}
+                        placeholder="الاسم على السند..."
+                        className="w-full h-9 px-2.5 bg-background border border-input rounded-xl text-xs font-bold"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Live Printed-Slip Summary Line */}
+                  <div className="px-3 py-2 rounded-xl bg-muted/60 border border-border text-xs font-bold text-foreground flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <span>صيغة السند المطبوع: </span>
+                      <strong className="font-black text-teal-800 dark:text-teal-300">
+                        {formType === "payment" ? "دفعنا نحن" : "قبضنا نحن"}{" "}
+                        {DEPARTMENT_PRESETS[formDepartment].entityTitle} مبلغ{" "}
+                        {computedPaidAmount.toLocaleString()} بالعملة {formCurrency}{" "}
+                        {formType === "payment" ? "من خزينة" : "إلى خزينة"}{" "}
+                        {getTreasuryName(formTreasuryId)} بمعامل {formExchangeRate || 1}{" "}
+                        {formType === "payment" ? "لـ" : "من"}{" "}
+                        {selectedSupplierObj?.name_ar ||
+                          selectedCustomerObj?.name_ar ||
+                          formBeneficiary.trim() ||
+                          formCategory}{" "}
+                        رقم حساب #
+                        {selectedSupplierObj?.account_code ||
+                          selectedCustomerObj?.account_code ||
+                          formAccountCode}
+                      </strong>
+                    </div>
+                    {computedRemainingCredit > 0 && (
+                      <span className="px-2.5 py-0.5 rounded-lg bg-amber-500/20 text-amber-900 dark:text-amber-300 font-black text-[11px]">
+                        + متبقي آجل: {computedRemainingCredit.toLocaleString()} {formCurrency} على حساب{" "}
+                        {selectedSupplierObj
+                          ? `المورد (${selectedSupplierObj.name_ar} #${selectedSupplierObj.account_code})`
+                          : selectedCustomerObj
+                            ? `العميل (${selectedCustomerObj.name_ar} #${selectedCustomerObj.account_code})`
+                            : "اختر المورد أو العميل"}
+                      </span>
                     )}
                   </div>
-                )}
+                </div>
 
                 {/* =========================================================== */}
                 {/* THE 3 BOTTOM ACTIONS: إلغاء | حفظ كمسودة | حفظ وترحيل       */}
                 {/* =========================================================== */}
-                <div className="pt-3 border-t border-border flex flex-wrap items-center justify-between gap-2.5">
+                <div className="pt-2 flex flex-wrap items-center justify-between gap-2.5">
                   <button
                     type="button"
                     onClick={handleRequestCancel}
-                    className="px-5 py-2.5 rounded-xl border border-rose-500/30 bg-rose-500/5 hover:bg-rose-500/15 text-rose-700 dark:text-rose-300 font-black text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                    className="btn-uniform-close px-5 py-2.5 rounded-xl font-black text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
                   >
                     <XCircle className="w-4 h-4" />
                     <span>إلغاء</span>
@@ -2673,7 +3196,7 @@ export function VouchersLedgerSection({
                     <button
                       type="button"
                       onClick={handleRequestSaveDraft}
-                      className="px-5 py-2.5 rounded-xl border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 dark:text-amber-300 font-black text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                      className="btn-uniform-draft px-5 py-2.5 rounded-xl font-black text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
                     >
                       <FileText className="w-4 h-4" />
                       <span>حفظ كمسودة</span>
@@ -2682,11 +3205,7 @@ export function VouchersLedgerSection({
                     <button
                       type="button"
                       onClick={handleRequestPost}
-                      className={`px-6 py-2.5 text-white rounded-xl font-black text-xs sm:text-sm flex items-center gap-1.5 shadow-md transition-all cursor-pointer ${
-                        formType === "receipt"
-                          ? "bg-emerald-600 hover:bg-emerald-700"
-                          : "bg-rose-600 hover:bg-rose-700"
-                      }`}
+                      className="btn-uniform-save px-6 py-2.5 rounded-xl font-black text-xs sm:text-sm flex items-center gap-1.5 shadow-md transition-all cursor-pointer"
                     >
                       <CheckCircle2 className="w-4 h-4" />
                       <span>حفظ وترحيل</span>
@@ -2701,10 +3220,10 @@ export function VouchersLedgerSection({
             {/* =============================================================== */}
             {wizardStep === "print_preview" && printedVoucherAfterPost && (
               <div className="p-5 sm:p-6 space-y-4">
-                <div className="rounded-2xl border-2 border-emerald-500/30 bg-emerald-500/[0.04] p-4 sm:p-5 space-y-4">
+                <div className="rounded-2xl border-2 border-teal-600/30 bg-teal-500/[0.04] p-4 sm:p-5 space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
                     <div className="flex items-center gap-2.5">
-                      <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center">
+                      <div className="w-10 h-10 rounded-xl bg-teal-700 text-white flex items-center justify-center">
                         <CheckCircle2 className="w-5 h-5" />
                       </div>
                       <div>
@@ -2720,17 +3239,26 @@ export function VouchersLedgerSection({
                       </div>
                     </div>
 
-                    <span className="text-lg font-black font-mono px-3.5 py-1.5 rounded-xl bg-card border border-border">
-                      {Number(printedVoucherAfterPost.amount).toLocaleString()}{" "}
-                      {printedVoucherAfterPost.currency}
-                    </span>
+                    <div className="text-left">
+                      <span className="text-lg font-black font-mono px-3.5 py-1.5 rounded-xl bg-card border border-border inline-block">
+                        {Number(printedVoucherAfterPost.amount).toLocaleString()}{" "}
+                        {printedVoucherAfterPost.currency}
+                      </span>
+                      {Number(printedVoucherAfterPost.remaining_credit || 0) > 0 && (
+                        <div className="text-xs font-black text-amber-700 mt-1">
+                          + متبقي آجل:{" "}
+                          {Number(printedVoucherAfterPost.remaining_credit).toLocaleString()}{" "}
+                          {printedVoucherAfterPost.currency}
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                     <div className="bg-card p-3 rounded-xl border border-border">
-                      <span className="text-muted-foreground block">القسم</span>
+                      <span className="text-muted-foreground block">الجهة / القسم</span>
                       <strong className="font-black text-foreground">
-                        {getVoucherDepartmentPreset(printedVoucherAfterPost).label}
+                        {getVoucherDepartmentPreset(printedVoucherAfterPost).entityTitle}
                       </strong>
                     </div>
                     <div className="bg-card p-3 rounded-xl border border-border">
@@ -2760,11 +3288,15 @@ export function VouchersLedgerSection({
                         {printedVoucherAfterPost.description}
                       </strong>
                     </div>
-                    {printedVoucherAfterPost.beneficiary && (
+                    {(printedVoucherAfterPost.supplier_name ||
+                      printedVoucherAfterPost.customer_name ||
+                      printedVoucherAfterPost.beneficiary) && (
                       <div>
-                        <span className="text-muted-foreground">المستفيد / الجهة: </span>
+                        <span className="text-muted-foreground">الطرف المقابل: </span>
                         <strong className="text-foreground">
-                          {printedVoucherAfterPost.beneficiary}
+                          {printedVoucherAfterPost.supplier_name ||
+                            printedVoucherAfterPost.customer_name ||
+                            printedVoucherAfterPost.beneficiary}
                         </strong>
                       </div>
                     )}
@@ -2778,7 +3310,7 @@ export function VouchersLedgerSection({
                       resetWizardToStart();
                       if (mode !== "operations") setIsAddModalOpen(false);
                     }}
-                    className="px-5 py-2.5 rounded-xl bg-muted hover:bg-muted/80 text-foreground font-black text-xs cursor-pointer"
+                    className="btn-uniform-close px-5 py-2.5 rounded-xl font-black text-xs cursor-pointer"
                   >
                     إصدار سند جديد (العودة للبداية)
                   </button>
@@ -2790,7 +3322,7 @@ export function VouchersLedgerSection({
                       resetWizardToStart();
                       if (mode !== "operations") setIsAddModalOpen(false);
                     }}
-                    className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs sm:text-sm flex items-center gap-2 shadow-md cursor-pointer"
+                    className="btn-uniform-print px-6 py-2.5 rounded-xl font-black text-xs sm:text-sm flex items-center gap-2 shadow-md cursor-pointer"
                   >
                     <Printer className="w-4 h-4" />
                     <span>طباعة السند والبدء بسند جديد</span>
@@ -2811,11 +3343,11 @@ export function VouchersLedgerSection({
             <div className="flex items-center justify-between border-b border-border pb-3">
               <div className="flex items-center gap-2">
                 {confirmAction === "cancel" ? (
-                  <AlertCircle className="w-5 h-5 text-rose-600" />
+                  <AlertCircle className="w-5 h-5 text-slate-600" />
                 ) : confirmAction === "draft" ? (
                   <FileText className="w-5 h-5 text-amber-600" />
                 ) : (
-                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                  <CheckCircle2 className="w-5 h-5 text-teal-600" />
                 )}
                 <h3 className="text-sm sm:text-base font-black text-foreground">
                   {confirmAction === "cancel"
@@ -2828,7 +3360,7 @@ export function VouchersLedgerSection({
               <button
                 type="button"
                 onClick={() => setConfirmAction(null)}
-                className="w-7 h-7 rounded-lg bg-muted hover:bg-muted/80 flex items-center justify-center text-xs font-black cursor-pointer"
+                className="btn-uniform-close w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black cursor-pointer"
               >
                 ✕
               </button>
@@ -2841,37 +3373,64 @@ export function VouchersLedgerSection({
             ) : (
               <div className="bg-muted/40 rounded-xl p-3.5 border border-border space-y-2 text-xs">
                 <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground font-bold">النوع والقسم:</span>
+                  <span className="text-muted-foreground font-bold">الجهة والنوع:</span>
                   <span className="font-black text-foreground">
-                    {formType === "receipt" ? "سند قبض" : "سند صرف"} —{" "}
-                    {DEPARTMENT_PRESETS[formDepartment].label}
+                    {DEPARTMENT_PRESETS[formDepartment].entityTitle} —{" "}
+                    {formType === "receipt" ? "سند قبض" : "سند صرف"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground font-bold">البند:</span>
-                  <span className="font-black text-foreground">{formCategory}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground font-bold">المبلغ والعملة:</span>
-                  <span className="font-mono font-black text-sm text-primary">
-                    {Number(computedVoucherAmount || 0).toLocaleString()} {formCurrency}
+                  <span className="text-muted-foreground font-bold">البند والحساب:</span>
+                  <span className="font-black text-foreground">
+                    {formCategory} (#{formAccountCode})
                   </span>
                 </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground font-bold">
+                    {formType === "payment" ? "المبلغ المدفوع الآن:" : "المبلغ المقبوض الآن:"}
+                  </span>
+                  <span className="font-mono font-black text-sm text-teal-700 dark:text-teal-400">
+                    {Number(computedPaidAmount || 0).toLocaleString()} {formCurrency}
+                  </span>
+                </div>
+                {computedRemainingCredit > 0 && (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground font-bold">إجمالي الفاتورة:</span>
+                      <span className="font-mono font-black text-foreground">
+                        {Number(computedInvoiceTotal).toLocaleString()} {formCurrency}
+                      </span>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-900 dark:text-amber-200 font-black text-xs leading-relaxed">
+                      تأكيد المعاملة الآجلة: هل المبلغ الباقي (
+                      {computedRemainingCredit.toLocaleString()} {formCurrency}) سيكون{" "}
+                      {formType === "payment" ? "شراء آجل" : "بيع آجل"} ينضم لحساب{" "}
+                      {selectedSupplierObj
+                        ? `المورد (${selectedSupplierObj.name_ar} - حساب #${selectedSupplierObj.account_code})`
+                        : `العميل (${selectedCustomerObj?.name_ar} - حساب #${selectedCustomerObj?.account_code})`}
+                      ؟
+                    </div>
+                  </>
+                )}
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground font-bold">الخزينة:</span>
                   <span className="font-black text-foreground">
                     {getTreasuryName(formTreasuryId)}
                   </span>
                 </div>
-                {formBeneficiary.trim() && (
+                {(selectedSupplierObj || selectedCustomerObj || formBeneficiary.trim()) && (
                   <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground font-bold">المستفيد / الجهة:</span>
-                    <span className="font-black text-foreground">{formBeneficiary}</span>
+                    <span className="text-muted-foreground font-bold">الطرف المقابل:</span>
+                    <span className="font-black text-foreground">
+                      {selectedSupplierObj?.name_ar ||
+                        selectedCustomerObj?.name_ar ||
+                        formBeneficiary}
+                    </span>
                   </div>
                 )}
                 {confirmAction === "post" && isExceedingTreasuryBalance && (
-                  <div className="p-2 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-700 dark:text-rose-300 font-black text-[11px]">
-                    تنبيه: مبلغ الصرف أكبر من الرصيد الحالي في الخزينة المختارة.
+                  <div className="p-2 rounded-lg bg-red-500/10 border border-red-500/30 text-red-700 dark:text-red-300 font-black text-[11px]">
+                    تنبيه: مبلغ الصرف النقدي أكبر من الرصيد الحالي في الخزينة المختارة.
                   </div>
                 )}
               </div>
@@ -2881,7 +3440,7 @@ export function VouchersLedgerSection({
               <button
                 type="button"
                 onClick={() => setConfirmAction(null)}
-                className="px-4 py-2 rounded-xl bg-muted hover:bg-muted/80 text-foreground text-xs font-bold cursor-pointer"
+                className="btn-uniform-close px-4 py-2 rounded-xl text-xs font-bold cursor-pointer"
               >
                 تراجع
               </button>
@@ -2890,7 +3449,7 @@ export function VouchersLedgerSection({
                 <button
                   type="button"
                   onClick={handleExecuteCancel}
-                  className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black cursor-pointer"
+                  className="btn-uniform-close px-5 py-2 rounded-xl text-xs font-black cursor-pointer"
                 >
                   تأكيد الإلغاء
                 </button>
@@ -2900,7 +3459,7 @@ export function VouchersLedgerSection({
                 <button
                   type="button"
                   onClick={handleExecuteSaveDraft}
-                  className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black cursor-pointer"
+                  className="btn-uniform-draft px-5 py-2 rounded-xl text-xs font-black cursor-pointer"
                 >
                   تأكيد حفظ المسودة
                 </button>
@@ -2910,16 +3469,315 @@ export function VouchersLedgerSection({
                 <button
                   type="button"
                   onClick={() => handleSaveDocument(true)}
-                  className={`px-5 py-2 rounded-xl text-white text-xs font-black cursor-pointer ${
-                    formType === "receipt"
-                      ? "bg-emerald-600 hover:bg-emerald-700"
-                      : "bg-rose-600 hover:bg-rose-700"
-                  }`}
+                  className="btn-uniform-save px-5 py-2 rounded-xl text-xs font-black cursor-pointer"
                 >
                   تأكيد الحفظ والترحيل
                 </button>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===================================================================== */}
+      {/* SUPPLIER / CUSTOMER ACCOUNT STATEMENT MODAL (كشف حساب المورد / العميل) */}
+      {/* ===================================================================== */}
+      {statementTarget && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-card rounded-3xl shadow-2xl border border-border w-full max-w-4xl overflow-hidden flex flex-col max-h-[88vh]">
+            <div className="px-6 py-4 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center">
+                  {statementTarget.kind === "supplier" ? (
+                    <Truck className="w-5 h-5 text-orange-400" />
+                  ) : (
+                    <Users className="w-5 h-5 text-teal-400" />
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-base font-black">
+                    كشف حساب {statementTarget.kind === "supplier" ? "المورد" : "العميل"}:{" "}
+                    {statementTarget.name_ar}
+                  </h3>
+                  <p className="text-xs text-slate-300 font-mono">
+                    رقم الحساب المحاسبي (المستوى 4): #{statementTarget.account_code}
+                    {statementTarget.phone ? ` | الهاتف: ${statementTarget.phone}` : ""}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setStatementTarget(null)}
+                className="btn-uniform-close px-3 py-1.5 rounded-xl text-xs font-black cursor-pointer"
+              >
+                إغلاق ✕
+              </button>
+            </div>
+
+            {(() => {
+              const targetCode = statementTarget.account_code;
+              const isSup = statementTarget.kind === "supplier";
+              const openingBal = Number(statementTarget.opening_balance || 0);
+
+              // Gather all journal lines that hit targetCode OR vouchers linked to this supplier/customer
+              const statementRows: Array<{
+                date: string;
+                ref: string;
+                description: string;
+                debit: number;
+                credit: number;
+                currency: string;
+              }> = [];
+
+              if (openingBal !== 0) {
+                statementRows.push({
+                  date: "رصيد افتتاحي",
+                  ref: "OPEN-BAL",
+                  description: "الرصيد الافتتاحي المسجل للحساب",
+                  debit: !isSup && openingBal > 0 ? openingBal : isSup && openingBal < 0 ? Math.abs(openingBal) : 0,
+                  credit: isSup && openingBal > 0 ? openingBal : !isSup && openingBal < 0 ? Math.abs(openingBal) : 0,
+                  currency: formCurrency || "EGP",
+                });
+              }
+
+              const sortedEntries = [...journalEntries].sort((a, b) =>
+                String(a.date || "").localeCompare(String(b.date || "")),
+              );
+
+              sortedEntries.forEach((je) => {
+                (je.lines || []).forEach((line: any) => {
+                  if (String(line.account_code) === String(targetCode)) {
+                    statementRows.push({
+                      date: je.date || "",
+                      ref: je.reference || je.id,
+                      description: line.description || je.description || "",
+                      debit: Number(line.debit || 0),
+                      credit: Number(line.credit || 0),
+                      currency: line.currency || je.currency || "EGP",
+                    });
+                  }
+                });
+              });
+
+              // Also include any direct vouchers linked by supplier_id/customer_id that didn't hit targetCode directly (e.g., 100% cash purchase where user still wants to see invoice in supplier history)
+              vouchers
+                .filter(
+                  (v) =>
+                    !v.deleted &&
+                    !v.reverted &&
+                    ((isSup &&
+                      (v.supplier_id === statementTarget.id ||
+                        v.supplier_name === statementTarget.name_ar)) ||
+                      (!isSup &&
+                        (v.customer_id === statementTarget.id ||
+                          v.customer_name === statementTarget.name_ar))),
+                )
+                .forEach((v) => {
+                  const alreadyInJe = statementRows.some(
+                    (r) => r.ref === v.journal_reference || r.ref === v.reference_number,
+                  );
+                  if (!alreadyInJe) {
+                    const invTotal = Number(v.invoice_total ?? v.amount ?? 0);
+                    const paidNow = Number(v.amount ?? 0);
+                    statementRows.push({
+                      date: v.created_at.slice(0, 10),
+                      ref: v.reference_number || v.id.substring(0, 8),
+                      description: `${v.category} — ${v.description} (فاتورة نقدية مسددة بالكامل)`,
+                      debit: isSup ? paidNow : invTotal,
+                      credit: isSup ? invTotal : paidNow,
+                      currency: v.currency || "EGP",
+                    });
+                  }
+                });
+
+              let runningBal = 0;
+              let totalDebit = 0;
+              let totalCredit = 0;
+
+              const enrichedRows = statementRows.map((r) => {
+                totalDebit += r.debit;
+                totalCredit += r.credit;
+                // For Supplier (Liability): Credit increases balance owed to supplier, Debit decreases it
+                // For Customer (Asset): Debit increases balance owed by customer, Credit decreases it
+                runningBal += isSup ? r.credit - r.debit : r.debit - r.credit;
+                return {
+                  ...r,
+                  runningBalance: Number(runningBal.toFixed(2)),
+                };
+              });
+
+              const handlePrintStatement = () => {
+                printProfessionalReport({
+                  title: `كشف حساب تفصيلي — ${isSup ? "المورد" : "العميل"}: ${statementTarget.name_ar}`,
+                  subtitle: `رقم الحساب: #${statementTarget.account_code} | تاريخ الكشف: ${new Date().toLocaleString("ar-EG")}`,
+                  summaryCards: [
+                    { label: "إجمالي المدين (Debit)", value: totalDebit.toLocaleString() },
+                    { label: "إجمالي الدائن (Credit)", value: totalCredit.toLocaleString() },
+                    {
+                      label: isSup ? "صافي المستحق للمورد" : "صافي المستحق على العميل",
+                      value: runningBal.toLocaleString(),
+                    },
+                  ],
+                  columns: [
+                    "#",
+                    "التاريخ",
+                    "رقم المرجع / القيد",
+                    "البيان التفصيلي",
+                    "مدين (Debit)",
+                    "دائن (Credit)",
+                    "الرصيد التراكمي",
+                    "العملة",
+                  ],
+                  rows: enrichedRows.map((r, i) => [
+                    String(i + 1),
+                    r.date,
+                    r.ref,
+                    r.description,
+                    r.debit.toLocaleString(),
+                    r.credit.toLocaleString(),
+                    r.runningBalance.toLocaleString(),
+                    r.currency,
+                  ]),
+                });
+              };
+
+              const handleExportStatementExcel = () => {
+                exportRowsToExcelCsv(
+                  `كشف_حساب_${statementTarget.name_ar}_${statementTarget.account_code}.csv`,
+                  [
+                    "التاريخ",
+                    "رقم المرجع / القيد",
+                    "البيان التفصيلي",
+                    "مدين (Debit)",
+                    "دائن (Credit)",
+                    "الرصيد التراكمي",
+                    "العملة",
+                  ],
+                  enrichedRows.map((r) => [
+                    r.date,
+                    r.ref,
+                    r.description,
+                    String(r.debit),
+                    String(r.credit),
+                    String(r.runningBalance),
+                    r.currency,
+                  ]),
+                );
+                toast.success("تم تصدير كشف الحساب إلى ملف إكسيل بنجاح");
+              };
+
+              return (
+                <>
+                  <div className="p-5 space-y-4 overflow-y-auto flex-1">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="bg-muted/40 p-3.5 rounded-2xl border border-border">
+                        <span className="text-xs font-bold text-muted-foreground block">
+                          إجمالي المدين (Debit)
+                        </span>
+                        <strong className="text-lg font-black font-mono text-emerald-600">
+                          {totalDebit.toLocaleString()}
+                        </strong>
+                      </div>
+                      <div className="bg-muted/40 p-3.5 rounded-2xl border border-border">
+                        <span className="text-xs font-bold text-muted-foreground block">
+                          إجمالي الدائن (Credit)
+                        </span>
+                        <strong className="text-lg font-black font-mono text-amber-600">
+                          {totalCredit.toLocaleString()}
+                        </strong>
+                      </div>
+                      <div className="bg-indigo-500/10 p-3.5 rounded-2xl border border-indigo-500/30">
+                        <span className="text-xs font-bold text-indigo-700 dark:text-indigo-300 block">
+                          {isSup ? "صافي الرصيد المستحق للمورد" : "صافي الرصيد المستحق على العميل"}
+                        </span>
+                        <strong className="text-lg font-black font-mono text-indigo-700 dark:text-indigo-300">
+                          {runningBal.toLocaleString()}
+                        </strong>
+                      </div>
+                    </div>
+
+                    <div className="border border-border rounded-2xl overflow-hidden">
+                      <table className="w-full text-right text-xs">
+                        <thead className="bg-slate-900 text-white font-black">
+                          <tr>
+                            <th className="py-2.5 px-3">التاريخ</th>
+                            <th className="py-2.5 px-3">المرجع / القيد</th>
+                            <th className="py-2.5 px-3">البيان التفصيلي</th>
+                            <th className="py-2.5 px-3">مدين (Debit)</th>
+                            <th className="py-2.5 px-3">دائن (Credit)</th>
+                            <th className="py-2.5 px-3">الرصيد التراكمي</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border">
+                          {enrichedRows.length === 0 ? (
+                            <tr>
+                              <td
+                                colSpan={6}
+                                className="py-8 text-center text-muted-foreground font-bold"
+                              >
+                                لا توجد حركات مسجلة على هذا الحساب حتى الآن
+                              </td>
+                            </tr>
+                          ) : (
+                            enrichedRows.map((row, idx) => (
+                              <tr key={idx} className="hover:bg-muted/40">
+                                <td className="py-2 px-3 font-mono font-bold">{row.date}</td>
+                                <td className="py-2 px-3 font-mono font-black text-indigo-600">
+                                  {row.ref}
+                                </td>
+                                <td className="py-2 px-3 font-bold text-foreground">
+                                  {row.description}
+                                </td>
+                                <td className="py-2 px-3 font-mono font-black text-emerald-600">
+                                  {row.debit > 0 ? `${row.debit.toLocaleString()} ${row.currency}` : "—"}
+                                </td>
+                                <td className="py-2 px-3 font-mono font-black text-amber-600">
+                                  {row.credit > 0
+                                    ? `${row.credit.toLocaleString()} ${row.currency}`
+                                    : "—"}
+                                </td>
+                                <td className="py-2 px-3 font-mono font-black text-foreground">
+                                  {row.runningBalance.toLocaleString()} {row.currency}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div className="px-6 py-3.5 bg-muted/40 border-t border-border flex flex-wrap items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setStatementTarget(null)}
+                      className="btn-uniform-close px-5 py-2 rounded-xl text-xs font-black cursor-pointer"
+                    >
+                      إغلاق
+                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleExportStatementExcel}
+                        className="btn-uniform-excel px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <FileSpreadsheet className="w-4 h-4" />
+                        <span>طباعة إكسيل (Excel)</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handlePrintStatement}
+                        className="btn-uniform-print px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Printer className="w-4 h-4" />
+                        <span>طباعة كشف الحساب</span>
+                      </button>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -2945,7 +3803,7 @@ export function VouchersLedgerSection({
               <button
                 type="button"
                 onClick={() => setSelectedVoucherForJournal(null)}
-                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white font-bold cursor-pointer"
+                className="btn-uniform-close w-8 h-8 rounded-full flex items-center justify-center font-bold cursor-pointer"
               >
                 ✕
               </button>
@@ -3025,7 +3883,7 @@ export function VouchersLedgerSection({
                 <button
                   type="button"
                   onClick={() => handlePrintSingleVoucher(selectedVoucherForJournal)}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 cursor-pointer"
+                  className="btn-uniform-print px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 cursor-pointer"
                 >
                   <Printer className="w-4 h-4" />
                   طباعة السند
@@ -3033,7 +3891,7 @@ export function VouchersLedgerSection({
                 <button
                   type="button"
                   onClick={() => setSelectedVoucherForJournal(null)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold cursor-pointer"
+                  className="btn-uniform-close px-4 py-2 rounded-xl text-xs font-bold cursor-pointer"
                 >
                   إغلاق
                 </button>
@@ -3061,7 +3919,7 @@ export function VouchersLedgerSection({
               <button
                 type="button"
                 onClick={() => setSelectedVoucherForAudit(null)}
-                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white font-bold cursor-pointer"
+                className="btn-uniform-close w-8 h-8 rounded-full flex items-center justify-center font-bold cursor-pointer"
               >
                 ✕
               </button>
@@ -3126,7 +3984,7 @@ export function VouchersLedgerSection({
                 <button
                   type="button"
                   onClick={() => setSelectedVoucherForAudit(null)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold cursor-pointer"
+                  className="btn-uniform-close px-4 py-2 rounded-xl text-xs font-bold cursor-pointer"
                 >
                   إغلاق
                 </button>
@@ -3140,7 +3998,7 @@ export function VouchersLedgerSection({
       {voucherToRevert && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden p-6 space-y-4">
-            <div className="flex items-center gap-3 text-amber-700">
+            <div className="flex items-center gap-3 text-red-700">
               <RotateCcw className="w-6 h-6" />
               <h3 className="text-base font-black">
                 عكس وإلغاء الأثر المالي للسند #
@@ -3162,14 +4020,14 @@ export function VouchersLedgerSection({
               <button
                 type="button"
                 onClick={() => setVoucherToRevert(null)}
-                className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold cursor-pointer"
+                className="btn-uniform-close px-4 py-2 rounded-xl text-xs font-bold cursor-pointer"
               >
                 تراجع
               </button>
               <button
                 type="button"
                 onClick={handleConfirmRevert}
-                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black cursor-pointer"
+                className="btn-uniform-delete px-4 py-2 rounded-xl text-xs font-black cursor-pointer"
               >
                 تأكيد العكس المحاسبي
               </button>
@@ -3182,7 +4040,7 @@ export function VouchersLedgerSection({
       {voucherToDelete && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden p-6 space-y-4">
-            <div className="flex items-center gap-3 text-rose-700">
+            <div className="flex items-center gap-3 text-red-700">
               <Trash2 className="w-6 h-6" />
               <h3 className="text-base font-black">
                 حذف السند المالي #
@@ -3204,14 +4062,14 @@ export function VouchersLedgerSection({
               <button
                 type="button"
                 onClick={() => setVoucherToDelete(null)}
-                className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold cursor-pointer"
+                className="btn-uniform-close px-4 py-2 rounded-xl text-xs font-bold cursor-pointer"
               >
                 إلغاء
               </button>
               <button
                 type="button"
                 onClick={handleConfirmDelete}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black cursor-pointer"
+                className="btn-uniform-delete px-4 py-2 rounded-xl text-xs font-black cursor-pointer"
               >
                 تأكيد الحذف وعكس القيد
               </button>

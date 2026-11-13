@@ -1641,6 +1641,7 @@ export function UsersPage() {
           role: "cashier",
         });
         setIsConfirmUpsertOpen(false);
+        setUserSubView("list");
         toast({
           title: syncResult.synced
             ? "تم حفظ التعديلات محلياً ومزامنتها مع قاعدة البيانات ✓"
@@ -1713,6 +1714,7 @@ export function UsersPage() {
         role: "cashier",
       });
       setIsConfirmUpsertOpen(false);
+      setUserSubView("list");
       toast({
         title: syncResult.synced
           ? "تم حفظ المستخدم محلياً ومزامنته مع قاعدة البيانات ✓"
@@ -1779,6 +1781,28 @@ export function UsersPage() {
     }
   };
 
+  const [userSubView, setUserSubView] = useState<"list" | "create" | "edit" | "permissions">("list");
+  const [permStudioMode, setPermStudioMode] = useState<"live" | "cards">("live");
+  const [permStudioUrl, setPermStudioUrl] = useState<string>("/admin?__perm_studio=1");
+  const [categoryFilter, setCategoryFilter] = useState<string>("ALL");
+  const [permSearch, setPermSearch] = useState<string>("");
+
+  const startCreateNewUser = () => {
+    setEditing(null);
+    setForm({
+      employee_code: erpStore.getNextEmployeeCode(),
+      full_name: "",
+      username: "",
+      email: "",
+      phone: "",
+      password: "",
+      confirmPassword: "",
+      role: "cashier",
+    });
+    setUserSubView("create");
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   const startEdit = (p: SystemUser) => {
     setEditing(p);
     setForm({
@@ -1791,10 +1815,9 @@ export function UsersPage() {
       confirmPassword: "",
       role: p.role,
     });
+    setUserSubView("edit");
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   };
-
-  const [categoryFilter, setCategoryFilter] = useState<string>("ALL");
-  const [permSearch, setPermSearch] = useState<string>("");
 
   const openPermissionsForUser = (user: SystemUser) => {
     setPermissionsUser(user);
@@ -1810,8 +1833,80 @@ export function UsersPage() {
         explicitPermissions[p.key] = !!hydrated[p.key];
       });
     });
+    // Preserve any granular UI element checkboxes (`ui_item:...`)
+    if (rawCurrent && typeof rawCurrent === "object") {
+      Object.entries(rawCurrent).forEach(([k, v]) => {
+        if (k.startsWith("ui_item:") && typeof v === "boolean") {
+          explicitPermissions[k] = v;
+        }
+      });
+    }
     setEditedPermissions(explicitPermissions as UserPermission);
+    setPermStudioUrl("/admin?__perm_studio=1");
+    setUserSubView("permissions");
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   };
+
+  // Synchronize editedPermissions with the Live App Permissions Studio iframe
+  useEffect(() => {
+    if (userSubView !== "permissions" || !editedPermissions) return;
+    const iframe = document.getElementById("live-perm-studio-iframe") as HTMLIFrameElement | null;
+    if (iframe?.contentWindow) {
+      iframe.contentWindow.postMessage(
+        {
+          type: "PERM_STUDIO_SYNC",
+          permissions: editedPermissions,
+        },
+        window.location.origin,
+      );
+    }
+  }, [userSubView, editedPermissions, permStudioUrl]);
+
+  useEffect(() => {
+    if (userSubView !== "permissions") return;
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin || !event.data) return;
+      if (event.data.type === "PERM_STUDIO_TOGGLE" && event.data.permKey) {
+        const key = String(event.data.permKey);
+        setEditedPermissions((prev) => {
+          if (!prev) return prev;
+          const isCurrentlyChecked =
+            key.startsWith("ui_item:") ? (prev as any)[key] !== false : Boolean((prev as any)[key]);
+          const nextValue = !isCurrentlyChecked;
+          const updated: any = { ...prev, [key]: nextValue };
+          if (key !== "super_admin_full_access") {
+            updated.super_admin_full_access = false;
+          }
+          const parentCat = PERMISSION_CATEGORIES.find((cat) =>
+            cat.permissions.some((p) => p.key === key),
+          );
+          if (parentCat) {
+            if (key === parentCat.mainPageKey) {
+              if (!nextValue) {
+                parentCat.permissions.forEach((p) => {
+                  updated[p.key] = false;
+                });
+              } else {
+                const anySub = parentCat.permissions.some(
+                  (p) => p.key !== parentCat.mainPageKey && !!updated[p.key],
+                );
+                if (!anySub) {
+                  parentCat.permissions.forEach((p) => {
+                    if (!p.isSuperAdminOnly) updated[p.key] = true;
+                  });
+                }
+              }
+            } else if (nextValue) {
+              updated[parentCat.mainPageKey] = true;
+            }
+          }
+          return updated;
+        });
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [userSubView]);
 
   const handleSavePermissions = async () => {
     if (!permissionsUser || !editedPermissions) return;
@@ -1826,12 +1921,17 @@ export function UsersPage() {
         currentActorPermissions(erpStore.getState(), actorProfile),
       );
 
-      // Ensure all keys across all 9 main section boxes are explicitly boolean (true or false)
+      // Ensure all keys across all main section boxes + granular UI items are explicitly boolean
       const normalizedToSave: Record<string, boolean> = {};
       PERMISSION_CATEGORIES.forEach((cat) => {
         cat.permissions.forEach((p) => {
           normalizedToSave[p.key] = !!editedPermissions[p.key];
         });
+      });
+      Object.entries(editedPermissions).forEach(([k, v]) => {
+        if (k.startsWith("ui_item:") && typeof v === "boolean") {
+          normalizedToSave[k] = v;
+        }
       });
 
       // 1. Save permissions locally first
@@ -1868,12 +1968,13 @@ export function UsersPage() {
       setIsConfirmSavePermsOpen(false);
       setPermissionsUser(null);
       setEditedPermissions(null);
+      setUserSubView("list");
       toast({
         title: syncResult.synced
           ? "تم حفظ الصلاحيات محلياً ومزامنتها مع قاعدة البيانات ✓"
           : "تم حفظ الصلاحيات محلياً وتفعيلها بنجاح ✓",
         description:
-          "تم تطبيق جدول الصلاحيات الجديد فوراً وإخفاء كافة الصفحات والأقسام غير المختارة لهذا المستخدم.",
+          "تم تطبيق الصلاحيات الجديدة فوراً وإخفاء كافة العناصر والصفحات غير المحددة عن هذا المستخدم.",
       });
     } catch (error: any) {
       toast({
@@ -1898,12 +1999,10 @@ export function UsersPage() {
     if (parentCat) {
       if (key === parentCat.mainPageKey) {
         if (!nextValue) {
-          // Unchecking the Main Section entry hides the entire section and unchecks all its sub-pages/actions
           parentCat.permissions.forEach((p) => {
             updated[p.key] = false;
           });
         } else {
-          // Checking the Main Section entry enables all sub-section pages in that box if none were enabled
           const anySubEnabled = parentCat.permissions.some(
             (p) => p.key !== parentCat.mainPageKey && !!updated[p.key],
           );
@@ -1917,10 +2016,8 @@ export function UsersPage() {
         }
       } else {
         if (nextValue) {
-          // Checking any sub-section page or action inside a Main Section box automatically enables the Main Section entry
           updated[parentCat.mainPageKey] = true;
         } else {
-          // If all sub-section pages in this Main Section box are now unchecked, also uncheck the Main Section entry
           const pageItems = parentCat.permissions.filter((p) => p.kind === "page");
           if (pageItems.length > 0 && pageItems.every((p) => !updated[p.key])) {
             updated[parentCat.mainPageKey] = false;
@@ -1962,305 +2059,236 @@ export function UsersPage() {
     const presetPerms = defaultPermissionsForRole(preset);
     setEditedPermissions({ ...presetPerms });
   };
+
+  const navigatePermStudioIframe = (targetPath: string) => {
+    const nextUrl = targetPath.includes("?")
+      ? `${targetPath}&__perm_studio=1`
+      : `${targetPath}?__perm_studio=1`;
+    setPermStudioUrl(nextUrl);
+    const iframe = document.getElementById("live-perm-studio-iframe") as HTMLIFrameElement | null;
+    if (iframe?.contentWindow) {
+      iframe.contentWindow.postMessage(
+        {
+          type: "PERM_STUDIO_NAVIGATE",
+          url: nextUrl,
+        },
+        window.location.origin,
+      );
+    }
+  };
+
   const [viewMode, setViewMode] = useViewMode("users-directory", "list");
 
   return (
-    <div className="space-y-8 p-1 sm:p-2">
-      {/* Integrated HR banner */}
-      <div className="bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 rounded-xl p-3 flex items-center justify-between gap-3 text-xs">
-        <div className="flex items-center gap-2 text-indigo-900 dark:text-indigo-200 font-bold">
-          <UsersIcon size={16} />
-          <span>هذه الصفحة هي المرجع الوحيد والموحد لجميع مستخدمي النظام وصلاحياتهم.</span>
-        </div>
-        <Link
-          to="/admin/hr"
-          search={{ tab: "users" }}
-          className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 rounded-lg transition"
-        >
-          فتح داخل الموارد البشرية ←
-        </Link>
-      </div>
-
-      {/* Page Header */}
-      <div>
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <span className="bg-primary/10 text-primary text-xs px-3 py-1 rounded-full font-black flex items-center gap-1.5">
-            <UsersIcon size={14} />
-            المرجع الموحد للمستخدمين والصلاحيات
-          </span>
-          <div className="flex items-center gap-2">
-            <ViewModeToggle mode={viewMode} onChange={setViewMode} />
+    <div className="space-y-6 p-1 sm:p-2">
+      {/* ===================================================================== */}
+      {/* STANDALONE SUB-VIEW 1 & 2: CREATE NEW USER OR EDIT EXISTING USER      */}
+      {/* ===================================================================== */}
+      {(userSubView === "create" || userSubView === "edit") && (
+        <div className="space-y-5">
+          <div className="bg-card border border-border rounded-2xl p-4 sm:p-5 shadow-xs flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-3">
+              <div className="h-11 w-11 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
+                <ShieldCheck size={22} />
+              </div>
+              <div>
+                <h1 className="text-xl sm:text-2xl font-black text-foreground">
+                  {userSubView === "edit" && editing
+                    ? `تعديل بيانات المستخدم (${editing.full_name || editing.username})`
+                    : "إضافة مستخدم جديد"}
+                </h1>
+              </div>
+            </div>
             <Button
-              variant="outline"
-              size="sm"
-              className="h-8 text-xs font-bold gap-1.5 rounded-xl"
-              onClick={handleManualCloudSync}
-              disabled={isSyncingDirectory}
+              variant="close"
+              className="h-9 px-4 rounded-xl font-bold gap-2"
+              onClick={() => {
+                setEditing(null);
+                setUserSubView("list");
+              }}
             >
-              <RefreshCw size={14} className={isSyncingDirectory ? "animate-spin" : ""} />
-              {isSyncingDirectory
-                ? "جارٍ المزامنة مع قاعدة البيانات..."
-                : `مزامنة مع قاعدة البيانات${pendingSyncCount > 0 ? ` (${pendingSyncCount} بالانتظار)` : ""}`}
+              <Undo2 size={15} />
+              رجوع إلى المستخدمين والصلاحيات
             </Button>
           </div>
-        </div>
-        <h1 className="text-3xl font-black tracking-tight text-foreground mt-2">
-          إدارة المستخدمين وصلاحيات الوصول والرقابة
-        </h1>
-        <div
-          className={`mt-3 rounded-xl border px-3 py-2 text-xs font-semibold ${
-            userDirectoryStatus === "error"
-              ? "border-destructive/30 bg-destructive/5 text-destructive"
-              : userDirectoryStatus === "ready"
-                ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300"
-                : "border-border bg-muted/40 text-muted-foreground"
-          }`}
-          role="status"
-        >
-          {userDirectoryStatus === "loading"
-            ? "جارٍ تحميل المستخدمين والصلاحيات ومزامنتها…"
-            : userDirectoryStatus === "error"
-              ? `تعذر تحميل دليل المستخدمين: ${userDirectoryError}`
-              : isCloudSyncActive
-                ? `المرجع الموحد نشط ومتصل بقاعدة البيانات (Supabase public.profiles & auth.users). إجمالي المستخدمين: ${localUsers.length}.`
-                : `المرجع الموحد نشط (حفظ محلي فوري + مزامنة تلقائية مع قاعدة البيانات). إجمالي المستخدمين المسجلين: ${localUsers.length}.`}
-        </div>
-      </div>
 
-      {/* User Registration & List */}
-      <div className="space-y-4">
-        <h2 className="text-lg font-black text-foreground flex items-center gap-2">
-          <ShieldCheck size={18} className="text-primary" />
-          <span>
-            {editing
-              ? `تعديل بيانات المستخدم (${editing.username})`
-              : "إضافة مستخدم جديد (موحد مع شروط قاعدة البيانات)"}
-          </span>
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-6 gap-4 bg-card border border-border p-5 rounded-2xl shadow-sm">
-          <div className="md:col-span-2 lg:col-span-1">
-            <Label className="text-xs font-bold">الرقم الوظيفي (فريد وتلقائي) *</Label>
-            <div className="flex items-center gap-1 mt-1">
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-4 bg-card border border-border p-5 rounded-2xl shadow-sm">
+            <div className="md:col-span-2 lg:col-span-1">
+              <Label className="text-xs font-bold">الرقم الوظيفي *</Label>
+              <div className="flex items-center gap-1 mt-1">
+                <Input
+                  className="h-9 rounded-xl border-primary/40 bg-primary/5 px-3 text-xs font-mono font-black text-primary"
+                  placeholder="1006"
+                  maxLength={20}
+                  value={form.employee_code}
+                  onChange={(e) => setForm((s) => ({ ...s, employee_code: e.target.value }))}
+                  dir="ltr"
+                />
+              </div>
+            </div>
+            <div className="md:col-span-2 lg:col-span-1">
+              <Label className="text-xs font-bold">ربط بموظف من الموارد البشرية</Label>
+              <select
+                className="w-full h-9 rounded-xl border border-input bg-background px-2.5 text-xs font-bold mt-1"
+                value=""
+                onChange={(e) => {
+                  const empId = e.target.value;
+                  if (!empId) return;
+                  const emp = (erpState.employees || []).find((item) => item.id === empId);
+                  if (emp) {
+                    setForm((s) => ({
+                      ...s,
+                      employee_code: emp.employee_code || s.employee_code,
+                      full_name: emp.name || s.full_name,
+                      phone: emp.phone || s.phone,
+                    }));
+                  }
+                }}
+              >
+                <option value="">-- اختر موظف --</option>
+                {(erpState.employees || []).map((emp) => (
+                  <option key={emp.id} value={emp.id}>
+                    #{emp.employee_code} - {emp.name} ({emp.job_title})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="md:col-span-2 lg:col-span-1">
+              <Label className="text-xs font-bold">الاسم الكامل *</Label>
               <Input
-                className="h-9 rounded-xl border-primary/40 bg-primary/5 px-3 text-xs font-mono font-black text-primary"
-                placeholder="1006"
-                maxLength={20}
-                value={form.employee_code}
-                onChange={(e) => setForm((s) => ({ ...s, employee_code: e.target.value }))}
+                className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1"
+                placeholder="مثال: أحمد محمد"
+                maxLength={120}
+                value={form.full_name}
+                onChange={(e) => setForm((s) => ({ ...s, full_name: e.target.value }))}
+              />
+            </div>
+            <div className="md:col-span-2 lg:col-span-1">
+              <Label className="text-xs font-bold">اسم المستخدم (Username) *</Label>
+              <Input
+                className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1 font-mono"
+                placeholder="مثال: ahmed.cashier"
+                minLength={3}
+                maxLength={32}
+                autoComplete="username"
+                value={form.username}
+                onChange={(e) => {
+                  const nextUsername = e.target.value;
+                  setForm((s) => {
+                    const prevAutoEmail = s.username
+                      ? `${normalizeManagedUsername(s.username)}@restocash.com`
+                      : "";
+                    const shouldAutoFillEmail = !editing && (!s.email || s.email === prevAutoEmail);
+                    return {
+                      ...s,
+                      username: nextUsername,
+                      email:
+                        shouldAutoFillEmail && nextUsername.trim()
+                          ? `${normalizeManagedUsername(nextUsername)}@restocash.com`
+                          : s.email,
+                    };
+                  });
+                }}
                 dir="ltr"
               />
             </div>
-          </div>
-          <div className="md:col-span-2 lg:col-span-1">
-            <Label className="text-xs font-bold">ربط بموظف من الموارد البشرية</Label>
-            <select
-              className="w-full h-9 rounded-xl border border-input bg-background px-2.5 text-xs font-bold mt-1"
-              value=""
-              onChange={(e) => {
-                const empId = e.target.value;
-                if (!empId) return;
-                const emp = (erpState.employees || []).find((item) => item.id === empId);
-                if (emp) {
-                  setForm((s) => ({
-                    ...s,
-                    employee_code: emp.employee_code || s.employee_code,
-                    full_name: emp.name || s.full_name,
-                    phone: emp.phone || s.phone,
-                  }));
-                }
-              }}
-            >
-              <option value="">-- اختر موظف لمزامنة رقمه واسمه --</option>
-              {(erpState.employees || []).map((emp) => (
-                <option key={emp.id} value={emp.id}>
-                  #{emp.employee_code} - {emp.name} ({emp.job_title})
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="md:col-span-2 lg:col-span-1">
-            <Label className="text-xs font-bold">الاسم الكامل *</Label>
-            <Input
-              className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1"
-              placeholder="مثال: أحمد محمد"
-              maxLength={120}
-              value={form.full_name}
-              onChange={(e) => setForm((s) => ({ ...s, full_name: e.target.value }))}
-            />
-          </div>
-          <div className="md:col-span-2 lg:col-span-1">
-            <Label className="text-xs font-bold">اسم المستخدم (Username) *</Label>
-            <Input
-              className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1 font-mono"
-              placeholder="مثال: ahmed.cashier"
-              minLength={3}
-              maxLength={32}
-              autoComplete="username"
-              value={form.username}
-              onChange={(e) => {
-                const nextUsername = e.target.value;
-                setForm((s) => {
-                  const prevAutoEmail = s.username
-                    ? `${normalizeManagedUsername(s.username)}@restocash.com`
-                    : "";
-                  const shouldAutoFillEmail = !editing && (!s.email || s.email === prevAutoEmail);
-                  return {
-                    ...s,
-                    username: nextUsername,
-                    email:
-                      shouldAutoFillEmail && nextUsername.trim()
-                        ? `${normalizeManagedUsername(nextUsername)}@restocash.com`
-                        : s.email,
-                  };
-                });
-              }}
-              dir="ltr"
-            />
-          </div>
-          <div className="md:col-span-2 lg:col-span-1">
-            <Label className="text-xs font-bold">البريد الإلكتروني لقاعدة البيانات *</Label>
-            <Input
-              type="email"
-              className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1 font-mono"
-              placeholder="user@restocash.com"
-              autoComplete="email"
-              required
-              value={form.email}
-              onChange={(e) => setForm((s) => ({ ...s, email: e.target.value }))}
-              dir="ltr"
-            />
-          </div>
-          <div className="md:col-span-2 lg:col-span-1">
-            <Label className="text-xs font-bold">رقم الهاتف</Label>
-            <Input
-              className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1"
-              placeholder="01xxxxxxxxx"
-              maxLength={40}
-              value={form.phone}
-              onChange={(e) => setForm((s) => ({ ...s, phone: e.target.value }))}
-            />
-          </div>
-          <div className="md:col-span-2 lg:col-span-2">
-            <Label className="text-xs font-bold">
-              {editing ? "الرقم السري الجديد (اختياري)" : "الرقم السري الجديد *"}
-            </Label>
-            <Input
-              type="password"
-              className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1"
-              placeholder={editing ? "اتركه فارغاً لعدم التغيير" : "8 خانات (حروف + أرقام)"}
-              value={form.password}
-              minLength={8}
-              maxLength={128}
-              autoComplete="new-password"
-              onChange={(e) => setForm((s) => ({ ...s, password: e.target.value }))}
-            />
-          </div>
-          <div className="md:col-span-2 lg:col-span-2">
-            <Label className="text-xs font-bold">تأكيد الرقم السري *</Label>
-            <Input
-              type="password"
-              className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1"
-              placeholder={editing ? "اتركه فارغًا دون تغيير" : "أعد كتابة الرقم السري"}
-              required={!editing || Boolean(form.password)}
-              minLength={8}
-              maxLength={128}
-              value={form.confirmPassword}
-              onChange={(e) => setForm((s) => ({ ...s, confirmPassword: e.target.value }))}
-              autoComplete="new-password"
-            />
-          </div>
-          <div className="md:col-span-2 lg:col-span-2">
-            <Label className="text-xs font-bold">الدور الوظيفي الأساسي *</Label>
-            <select
-              className="w-full h-9 rounded-md border border-input bg-background px-3 text-xs font-bold mt-1"
-              value={form.role}
-              onChange={(e) => setForm((s) => ({ ...s, role: e.target.value }))}
-            >
-              {Object.entries(roleLabels).map(([k, v]) => (
-                <option key={k} value={k}>
-                  {v}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Live Database Requirements & Unmet Conditions Indicator */}
-          <div className="md:col-span-6 grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-border/60">
-            <div className="rounded-xl border border-border bg-muted/20 p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black text-foreground">
-                  شروط الاسم واسم المستخدم والبريد في قاعدة البيانات:
-                </span>
-                <Badge
-                  variant="outline"
-                  className={`text-[10px] font-bold ${
-                    formInspection.isFullNameValid &&
-                    formInspection.isUsernameValid &&
-                    formInspection.isEmailValid
-                      ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
-                      : "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30"
-                  }`}
-                >
-                  {formInspection.isFullNameValid &&
-                  formInspection.isUsernameValid &&
-                  formInspection.isEmailValid
-                    ? "جميع شروط الاسم مستوفاة ✓"
-                    : "يوجد شرط غير مستوفى"}
-                </Badge>
-              </div>
-              <ul className="space-y-1 text-[11px]">
-                {[
-                  ...formInspection.fullNameChecks,
-                  ...formInspection.usernameChecks,
-                  ...formInspection.emailChecks,
-                ].map((rule) => (
-                  <li
-                    key={rule.id}
-                    className={`flex items-center gap-1.5 font-semibold ${
-                      rule.met ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"
-                    }`}
-                  >
-                    {rule.met ? (
-                      <CheckCircle2 size={13} className="shrink-0" />
-                    ) : (
-                      <AlertCircle size={13} className="shrink-0" />
-                    )}
-                    <span>{rule.label}</span>
-                  </li>
+            <div className="md:col-span-2 lg:col-span-1">
+              <Label className="text-xs font-bold">البريد الإلكتروني *</Label>
+              <Input
+                type="email"
+                className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1 font-mono"
+                placeholder="user@restocash.com"
+                autoComplete="email"
+                required
+                value={form.email}
+                onChange={(e) => setForm((s) => ({ ...s, email: e.target.value }))}
+                dir="ltr"
+              />
+            </div>
+            <div className="md:col-span-2 lg:col-span-1">
+              <Label className="text-xs font-bold">رقم الهاتف</Label>
+              <Input
+                className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1"
+                placeholder="01xxxxxxxxx"
+                maxLength={40}
+                value={form.phone}
+                onChange={(e) => setForm((s) => ({ ...s, phone: e.target.value }))}
+              />
+            </div>
+            <div className="md:col-span-2 lg:col-span-2">
+              <Label className="text-xs font-bold">
+                {editing ? "الرقم السري الجديد (اختياري)" : "الرقم السري الجديد *"}
+              </Label>
+              <Input
+                type="password"
+                className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1"
+                placeholder={editing ? "اتركه فارغاً لعدم التغيير" : "8 خانات (حروف + أرقام)"}
+                value={form.password}
+                minLength={8}
+                maxLength={128}
+                autoComplete="new-password"
+                onChange={(e) => setForm((s) => ({ ...s, password: e.target.value }))}
+              />
+            </div>
+            <div className="md:col-span-2 lg:col-span-2">
+              <Label className="text-xs font-bold">تأكيد الرقم السري *</Label>
+              <Input
+                type="password"
+                className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1"
+                placeholder={editing ? "اتركه فارغًا دون تغيير" : "أعد كتابة الرقم السري"}
+                required={!editing || Boolean(form.password)}
+                minLength={8}
+                maxLength={128}
+                value={form.confirmPassword}
+                onChange={(e) => setForm((s) => ({ ...s, confirmPassword: e.target.value }))}
+                autoComplete="new-password"
+              />
+            </div>
+            <div className="md:col-span-2 lg:col-span-2">
+              <Label className="text-xs font-bold">الدور الوظيفي الأساسي *</Label>
+              <select
+                className="w-full h-9 rounded-md border border-input bg-background px-3 text-xs font-bold mt-1"
+                value={form.role}
+                onChange={(e) => setForm((s) => ({ ...s, role: e.target.value }))}
+              >
+                {Object.entries(roleLabels).map(([k, v]) => (
+                  <option key={k} value={k}>
+                    {v}
+                  </option>
                 ))}
-              </ul>
+              </select>
             </div>
 
-            <div className="rounded-xl border border-border bg-muted/20 p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black text-foreground">
-                  شروط الرقم السري الجديد في قاعدة البيانات:
-                </span>
-                <Badge
-                  variant="outline"
-                  className={`text-[10px] font-bold ${
-                    formInspection.passwordChecks.length === 0
-                      ? "bg-muted text-muted-foreground"
-                      : formInspection.isPasswordValid
+            {/* Live Database Requirements Indicator */}
+            <div className="md:col-span-6 grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-border/60">
+              <div className="rounded-xl border border-border bg-muted/20 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-foreground">
+                    شروط الاسم واسم المستخدم والبريد:
+                  </span>
+                  <Badge
+                    variant="outline"
+                    className={`text-[10px] font-bold ${
+                      formInspection.isFullNameValid &&
+                      formInspection.isUsernameValid &&
+                      formInspection.isEmailValid
                         ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
                         : "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30"
-                  }`}
-                >
-                  {formInspection.passwordChecks.length === 0
-                    ? "بدون تغيير للرقم السري"
-                    : formInspection.isPasswordValid
-                      ? "جميع شروط الرقم السري مستوفاة ✓"
-                      : "يوجد شرط غير مستوفى"}
-                </Badge>
-              </div>
-              {formInspection.passwordChecks.length === 0 ? (
-                <p className="text-[11px] text-muted-foreground font-semibold">
-                  أثناء التعديل، اترك خانة الرقم السري فارغة للاحتفاظ بالرقم السري الحالي، أو أدخل
-                  رقماً سرياً جديداً لمطابقة الشروط.
-                </p>
-              ) : (
+                    }`}
+                  >
+                    {formInspection.isFullNameValid &&
+                    formInspection.isUsernameValid &&
+                    formInspection.isEmailValid
+                      ? "مستوفاة ✓"
+                      : "غير مستوفى"}
+                  </Badge>
+                </div>
                 <ul className="space-y-1 text-[11px]">
-                  {formInspection.passwordChecks.map((rule) => (
+                  {[
+                    ...formInspection.fullNameChecks,
+                    ...formInspection.usernameChecks,
+                    ...formInspection.emailChecks,
+                  ].map((rule) => (
                     <li
                       key={rule.id}
                       className={`flex items-center gap-1.5 font-semibold ${
@@ -2276,157 +2304,517 @@ export function UsersPage() {
                     </li>
                   ))}
                 </ul>
-              )}
-            </div>
-          </div>
+              </div>
 
-          <div className="md:col-span-6 flex justify-between items-center flex-wrap gap-2 mt-1">
-            <div className="text-[11px] font-bold">
-              {!formInspection.isValid ? (
-                <span className="text-destructive flex items-center gap-1.5">
-                  <AlertTriangle size={14} />
-                  يرجى استيفاء الشروط الموضحة باللون الأحمر أعلاه لتفعيل الحفظ والمزامنة مع قاعدة
-                  البيانات.
-                </span>
-              ) : (
-                <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
-                  <CheckCircle2 size={14} />
-                  جميع البيانات والشروط مطابقة لمتطلبات قاعدة البيانات وجاهزة للحفظ.
-                </span>
-              )}
+              <div className="rounded-xl border border-border bg-muted/20 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-foreground">
+                    شروط الرقم السري:
+                  </span>
+                  <Badge
+                    variant="outline"
+                    className={`text-[10px] font-bold ${
+                      formInspection.passwordChecks.length === 0
+                        ? "bg-muted text-muted-foreground"
+                        : formInspection.isPasswordValid
+                          ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
+                          : "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30"
+                    }`}
+                  >
+                    {formInspection.passwordChecks.length === 0
+                      ? "بدون تغيير"
+                      : formInspection.isPasswordValid
+                        ? "مستوفاة ✓"
+                        : "غير مستوفى"}
+                  </Badge>
+                </div>
+                {formInspection.passwordChecks.length > 0 && (
+                  <ul className="space-y-1 text-[11px]">
+                    {formInspection.passwordChecks.map((rule) => (
+                      <li
+                        key={rule.id}
+                        className={`flex items-center gap-1.5 font-semibold ${
+                          rule.met ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"
+                        }`}
+                      >
+                        {rule.met ? (
+                          <CheckCircle2 size={13} className="shrink-0" />
+                        ) : (
+                          <AlertCircle size={13} className="shrink-0" />
+                        )}
+                        <span>{rule.label}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              {editing && (
-                <Button
-                  variant="outline"
-                  className="h-9 px-6 rounded-xl font-bold"
-                  onClick={() => {
-                    setEditing(null);
-                    setForm({
-                      employee_code: erpStore.getNextEmployeeCode(),
-                      full_name: "",
-                      username: "",
-                      email: "",
-                      phone: "",
-                      password: "",
-                      confirmPassword: "",
-                      role: "cashier",
-                    });
-                  }}
-                >
-                  إلغاء التعديل
-                </Button>
-              )}
+
+            <div className="md:col-span-6 flex justify-end items-center flex-wrap gap-2 mt-2">
               <Button
+                variant="close"
+                className="h-9 px-6 rounded-xl font-bold"
+                onClick={() => {
+                  setEditing(null);
+                  setUserSubView("list");
+                }}
+              >
+                إلغاء
+              </Button>
+              <Button
+                variant="save"
                 className="h-9 px-6 rounded-xl font-bold gap-2"
                 onClick={() => setIsConfirmUpsertOpen(true)}
                 disabled={!formInspection.isValid || userDirectoryStatus !== "ready"}
               >
                 <Save size={16} />
-                {editing ? "حفظ التعديلات ومزامنتها" : "حفظ محلياً ومزامنة المستخدم الجديد"}
+                {editing ? "حفظ التعديلات" : "حفظ المستخدم الجديد"}
               </Button>
             </div>
           </div>
         </div>
+      )}
 
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-black text-foreground">
-            دليل المستخدمين المسجلين ({localUsers.length})
-          </h3>
-          <ViewModeToggle mode={viewMode} onChange={setViewMode} />
-        </div>
-
-        {viewMode === "grid" ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {localUsers.map((u) => {
-              const matchedEmp = (erpState.employees || []).find(
-                (emp) =>
-                  (u.employee_code && emp.employee_code === u.employee_code) ||
-                  (u.full_name && emp.name.trim() === u.full_name.trim()),
-              );
-              const displayCode = u.employee_code || matchedEmp?.employee_code || "-";
-              return (
-                <div
-                  key={u.id}
-                  className="bg-card border border-border rounded-2xl p-4 shadow-xs space-y-3 flex flex-col justify-between"
+      {/* ===================================================================== */}
+      {/* STANDALONE SUB-VIEW 3: LIVE INTERACTIVE PERMISSIONS STUDIO            */}
+      {/* ===================================================================== */}
+      {userSubView === "permissions" && permissionsUser && (
+        <div className="space-y-4">
+          {/* Top Studio Header Bar (Zero explanatory descriptions) */}
+          <div className="bg-card border border-border rounded-2xl p-4 shadow-xs space-y-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <ShieldCheck className="text-primary h-6 w-6 shrink-0" />
+                <h1 className="text-lg sm:text-xl font-black text-foreground">
+                  صلاحيات المستخدم: {permissionsUser.full_name} ({permissionsUser.username})
+                </h1>
+                <span className="bg-primary/10 text-primary border border-primary/20 px-3 py-0.5 rounded-full font-bold text-xs">
+                  {roleLabels[permissionsUser.role || "cashier"] || permissionsUser.role}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button
+                  variant="save"
+                  className="h-9 px-5 rounded-xl font-bold gap-2"
+                  onClick={() => setIsConfirmSavePermsOpen(true)}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/25 font-mono font-black text-xs">
-                      #{displayCode}
-                    </span>
-                    <span className="bg-primary/10 text-primary border border-primary/20 px-2.5 py-0.5 rounded-full font-black text-[10px]">
-                      {roleLabels[u.role] ?? u.role}
-                    </span>
-                  </div>
-                  <div>
-                    <div className="font-bold text-sm text-foreground">{u.full_name || "-"}</div>
-                    <div className="font-mono text-xs text-muted-foreground">
-                      {u.username || "-"}
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-end gap-1.5 pt-2 border-t border-border/60">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-8 px-2.5 rounded-lg gap-1.5 text-primary border-primary/30 hover:bg-primary/10 font-bold text-xs"
-                      onClick={() => openPermissionsForUser(u)}
-                      disabled={userDirectoryStatus !== "ready"}
-                    >
-                      <ShieldCheck size={13} />
-                      الصلاحيات
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="outline"
-                      className="h-8 w-8 rounded-lg"
-                      onClick={() => startEdit(u)}
-                      disabled={userDirectoryStatus !== "ready"}
-                    >
-                      <Pencil size={13} />
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="destructive"
-                      className="h-8 w-8 rounded-lg"
-                      onClick={() => {
-                        setUserToDelete(u.id);
-                        setIsConfirmDeleteOpen(true);
-                      }}
-                      disabled={
-                        isActiveUserRecord(u, activeAuthUser) || userDirectoryStatus !== "ready"
-                      }
-                    >
-                      <Trash2 size={13} />
-                    </Button>
-                  </div>
-                </div>
-              );
-            })}
+                  <Save size={16} />
+                  حفظ الصلاحيات
+                </Button>
+                <Button
+                  variant="close"
+                  className="h-9 px-4 rounded-xl font-bold gap-1.5"
+                  onClick={() => {
+                    setPermissionsUser(null);
+                    setEditedPermissions(null);
+                    setUserSubView("list");
+                  }}
+                >
+                  <Undo2 size={15} />
+                  رجوع
+                </Button>
+              </div>
+            </div>
+
+            {/* Role Presets + Bulk Check/Uncheck + Studio View Switcher */}
+            <div className="flex items-center justify-between gap-2 flex-wrap pt-2 border-t border-border/60">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <Button
+                  variant="save"
+                  size="sm"
+                  className="h-8 text-xs font-bold rounded-lg"
+                  onClick={() => selectAllPerms(true)}
+                >
+                  تحديد الكل ☑
+                </Button>
+                <Button
+                  variant="delete"
+                  size="sm"
+                  className="h-8 text-xs font-bold rounded-lg"
+                  onClick={() => selectAllPerms(false)}
+                >
+                  إلغاء تحديد الكل ☐
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs font-bold rounded-lg"
+                  onClick={() => applyRolePreset("super_admin")}
+                >
+                  المدير العام
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs font-bold rounded-lg"
+                  onClick={() => applyRolePreset("manager")}
+                >
+                  المشرف / المحاسب
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs font-bold rounded-lg"
+                  onClick={() => applyRolePreset("cashier")}
+                >
+                  الكاشير
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs font-bold rounded-lg"
+                  onClick={() => applyRolePreset("captain")}
+                >
+                  كابتن الصالة
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs font-bold rounded-lg"
+                  onClick={() => applyRolePreset("kitchen")}
+                >
+                  المطبخ
+                </Button>
+              </div>
+
+              <div className="inline-flex items-center gap-1 rounded-xl bg-muted/60 p-1 border border-border">
+                <button
+                  type="button"
+                  onClick={() => setPermStudioMode("live")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
+                    permStudioMode === "live"
+                      ? "bg-primary text-primary-foreground shadow-xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  البرنامج التفاعلي الحي ☑️
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPermStudioMode("cards")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
+                    permStudioMode === "cards"
+                      ? "bg-primary text-primary-foreground shadow-xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  جميع مربعات الأقسام والصفحات ☑️
+                </button>
+              </div>
+            </div>
           </div>
-        ) : (
-          <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
-            <table className="w-full text-xs">
-              <thead className="bg-muted text-muted-foreground">
-                <tr>
-                  <th className="text-right p-3 font-bold">الرقم الوظيفي</th>
-                  <th className="text-right p-3 font-bold">الاسم الكامل</th>
-                  <th className="text-right p-3 font-bold">اسم المستخدم / البريد الإلكتروني</th>
-                  <th className="text-right p-3 font-bold">حالة الاتصال</th>
-                  <th className="text-right p-3 font-bold">رقم الهاتف</th>
-                  <th className="text-right p-3 font-bold">الدور الوظيفي</th>
-                  <th className="text-right p-3 font-bold">حالة المزامنة</th>
-                  <th className="text-center p-3 font-bold w-40">الإجراءات</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border font-semibold">
-                {localUsers.map((u) => {
-                  const isCloudUuid =
-                    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-                      String(u.id || ""),
+
+          {permStudioMode === "live" ? (
+            <div className="space-y-3">
+              {/* Quick Department Navigator Bar with Direct Checkboxes */}
+              <div className="bg-card border border-border rounded-2xl p-2.5 flex items-center gap-1.5 flex-wrap shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => navigatePermStudioIframe("/admin")}
+                  className="px-3 py-1.5 rounded-xl bg-primary/10 text-primary border border-primary/25 text-xs font-black hover:bg-primary/20 transition cursor-pointer"
+                >
+                  🏠 الشاشة الرئيسية للأقسام
+                </button>
+                {[
+                  { label: "إدارة المطعم", to: "/admin/restaurant", key: "page_restaurant" as const },
+                  { label: "إدارة المول", to: "/admin/mall", key: "page_mall" as const },
+                  { label: "إدارة الحديقة", to: "/admin/park", key: "page_park" as const },
+                  { label: "الإدارة المالية", to: "/admin/ledger", key: "page_finance" as const },
+                  { label: "الموارد البشرية", to: "/admin/hr", key: "page_hr" as const },
+                  { label: "المخزون والمستودعات", to: "/admin/inventory", key: "page_inventory" as const },
+                  {
+                    label: "تدقيق الورديات وسجل العمليات",
+                    to: "/admin?tab=shift_audit",
+                    key: "page_shift_audit" as const,
+                  },
+                  {
+                    label: "خيارات المطور والنسخ الاحتياطي",
+                    to: "/admin/system-update",
+                    key: "page_developer" as const,
+                  },
+                ].map((deptNav) => {
+                  const isDeptChecked = editedPermissions
+                    ? !!editedPermissions[deptNav.key]
+                    : false;
+                  const catObj = PERMISSION_CATEGORIES.find(
+                    (c) => c.mainPageKey === deptNav.key,
+                  );
+                  return (
+                    <div
+                      key={deptNav.key}
+                      className={`inline-flex items-center rounded-xl border overflow-hidden text-xs font-bold transition ${
+                        isDeptChecked
+                          ? "bg-emerald-500/10 border-emerald-500/40 text-foreground"
+                          : "bg-muted/40 border-border text-muted-foreground opacity-65"
+                      }`}
+                    >
+                      <label className="inline-flex items-center px-2 py-1.5 cursor-pointer hover:bg-muted/50 border-l border-border/50">
+                        <input
+                          type="checkbox"
+                          checked={isDeptChecked}
+                          onChange={() => togglePermission(deptNav.key, catObj)}
+                          className="h-4 w-4 rounded border-input text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => navigatePermStudioIframe(deptNav.to)}
+                        className="px-2.5 py-1.5 hover:bg-muted/60 transition cursor-pointer font-black"
+                      >
+                        {deptNav.label}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Live Interactive Application Canvas (Just like Developer Studio) */}
+              <div className="bg-card border-2 border-primary/30 rounded-2xl overflow-hidden shadow-md">
+                <iframe
+                  id="live-perm-studio-iframe"
+                  title="استوديو تحديد الصلاحيات المباشر"
+                  src={permStudioUrl}
+                  onLoad={(e) => {
+                    const win = e.currentTarget.contentWindow;
+                    if (win && editedPermissions) {
+                      win.postMessage(
+                        {
+                          type: "PERM_STUDIO_SYNC",
+                          permissions: editedPermissions,
+                        },
+                        window.location.origin,
+                      );
+                    }
+                  }}
+                  className="w-full h-[76vh] border-0 bg-background"
+                />
+              </div>
+            </div>
+          ) : (
+            /* Clean Checkboxes Grid Mode (All explanatory texts removed!) */
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row items-center gap-3">
+                <div className="relative w-full sm:flex-1">
+                  <Input
+                    placeholder="ابحث باسم القسم أو الصفحة أو الزر..."
+                    value={permSearch}
+                    onChange={(e) => setPermSearch(e.target.value)}
+                    className="h-9 text-xs pr-3 rounded-xl border-border"
+                  />
+                </div>
+                <div className="w-full sm:w-72">
+                  <select
+                    value={categoryFilter}
+                    onChange={(e) => setCategoryFilter(e.target.value)}
+                    className="w-full h-9 rounded-xl border border-input bg-background px-3 text-xs font-bold"
+                  >
+                    <option value="ALL">جميع الأقسام الرئيسية</option>
+                    {PERMISSION_CATEGORIES.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.shortTitle}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                {PERMISSION_CATEGORIES.filter(
+                  (cat) => categoryFilter === "ALL" || categoryFilter === cat.id,
+                ).map((cat) => {
+                  const filteredPerms = cat.permissions.filter((p) => {
+                    if (!permSearch.trim()) return true;
+                    const query = permSearch.toLowerCase();
+                    return (
+                      p.name.toLowerCase().includes(query) ||
+                      String(p.key).toLowerCase().includes(query)
                     );
-                  const isPending = hasPendingUserChange(u.id, u.username);
-                  const syncError = getPendingUserError(u.id, u.username);
-                  const isOnlineNow = isUserOnlineSession(u, activeAuthUser, erpState.currentUser);
+                  });
+
+                  if (filteredPerms.length === 0) return null;
+
+                  const subPageItems = filteredPerms.filter((p) => p.kind === "page");
+                  const actionItems = filteredPerms.filter((p) => p.kind === "action");
+                  const isMainEnabled = editedPermissions
+                    ? !!editedPermissions[cat.mainPageKey]
+                    : false;
+
+                  const enabledCount = cat.permissions.filter(
+                    (p) => editedPermissions && !!editedPermissions[p.key],
+                  ).length;
+                  const isAllCategoryChecked = enabledCount === cat.permissions.length;
+
+                  return (
+                    <div
+                      key={cat.id}
+                      className={`bg-card border-2 rounded-2xl overflow-hidden shadow-xs transition ${
+                        isMainEnabled ? "border-border" : "border-dashed border-muted-foreground/30 opacity-65"
+                      }`}
+                    >
+                      {/* Department Header with Direct Checkbox (Zero descriptive text) */}
+                      <div
+                        className={`bg-gradient-to-l ${cat.headerGradient} p-3.5 border-b border-border/60 flex items-center justify-between flex-wrap gap-3`}
+                      >
+                        <label
+                          onClick={() => togglePermission(cat.mainPageKey, cat)}
+                          className="flex items-center gap-3 cursor-pointer select-none"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isMainEnabled}
+                            onChange={() => {}}
+                            className="h-5 w-5 rounded border-input text-emerald-600 focus:ring-emerald-500 cursor-pointer shrink-0"
+                          />
+                          <span className="font-black text-base text-foreground">
+                            {cat.shortTitle}
+                          </span>
+                        </label>
+
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 px-3 text-xs font-bold rounded-xl"
+                          onClick={() => toggleCategoryPerms(cat, !isAllCategoryChecked)}
+                        >
+                          {isAllCategoryChecked ? "إلغاء تحديد القسم ☐" : "تحديد كامل القسم ☑"}
+                        </Button>
+                      </div>
+
+                      <div className="p-3.5 space-y-3 bg-background/50">
+                        {subPageItems.length > 0 && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                            {subPageItems.map((perm) => {
+                              const isChecked = editedPermissions
+                                ? !!editedPermissions[perm.key]
+                                : false;
+                              return (
+                                <div
+                                  key={perm.key}
+                                  onClick={() => togglePermission(perm.key, cat)}
+                                  className={`flex items-center gap-2.5 p-3 rounded-xl border transition cursor-pointer select-none ${
+                                    isChecked
+                                      ? "bg-primary/5 border-primary/40 shadow-xs ring-1 ring-primary/20"
+                                      : "bg-card border-border/70 hover:bg-muted/20 opacity-65"
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => {}}
+                                    className="h-4 w-4 rounded border-input text-primary focus:ring-primary cursor-pointer shrink-0"
+                                  />
+                                  <span className="font-bold text-xs text-foreground leading-snug flex-1">
+                                    {perm.name}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {actionItems.length > 0 && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 pt-2 border-t border-border/50">
+                            {actionItems.map((perm) => {
+                              const isChecked = editedPermissions
+                                ? !!editedPermissions[perm.key]
+                                : false;
+                              return (
+                                <div
+                                  key={perm.key}
+                                  onClick={() => togglePermission(perm.key, cat)}
+                                  className={`flex items-center gap-2.5 p-2.5 rounded-xl border transition cursor-pointer select-none ${
+                                    isChecked
+                                      ? "bg-emerald-500/5 border-emerald-500/30"
+                                      : "bg-card border-border/60 hover:bg-muted/20 opacity-65"
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => {}}
+                                    className="h-4 w-4 rounded border-input text-emerald-600 focus:ring-emerald-500 cursor-pointer shrink-0"
+                                  />
+                                  <span className="font-bold text-xs text-foreground leading-snug flex-1">
+                                    {perm.name}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ===================================================================== */}
+      {/* DEFAULT SUB-VIEW ("list"): ACTION CARD BOX + USERS DIRECTORY          */}
+      {/* ===================================================================== */}
+      {userSubView === "list" && (
+        <>
+          {/* Page Header */}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-foreground">
+              المستخدمين والصلاحيات
+            </h1>
+            <div className="flex items-center gap-2">
+              <ViewModeToggle mode={viewMode} onChange={setViewMode} />
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs font-bold gap-1.5 rounded-xl"
+                onClick={handleManualCloudSync}
+                disabled={isSyncingDirectory}
+              >
+                <RefreshCw size={14} className={isSyncingDirectory ? "animate-spin" : ""} />
+                {isSyncingDirectory
+                  ? "جارٍ المزامنة..."
+                  : `مزامنة قاعدة البيانات${pendingSyncCount > 0 ? ` (${pendingSyncCount})` : ""}`}
+              </Button>
+            </div>
+          </div>
+
+          {/* Action Card Box (Matching Restaurant Management cards like "فتح وردية جديدة") */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <button
+              type="button"
+              data-perm-key="system_manage_users"
+              onClick={startCreateNewUser}
+              className="group text-right bg-card hover:bg-primary/5 border-2 border-primary/25 hover:border-primary rounded-2xl p-5 shadow-xs hover:shadow-md transition-all cursor-pointer flex items-center justify-between gap-4"
+            >
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-primary/10 group-hover:bg-primary group-hover:text-primary-foreground text-primary flex items-center justify-center transition-colors shrink-0">
+                  <UsersIcon size={24} />
+                </div>
+                <div>
+                  <h3 className="font-black text-base text-foreground group-hover:text-primary transition-colors">
+                    إضافة مستخدم جديد
+                  </h3>
+                </div>
+              </div>
+              <span className="text-xs font-black text-primary underline underline-offset-4">
+                فتح ←
+              </span>
+            </button>
+          </div>
+
+          {/* Registered Users Directory */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-black text-foreground">
+                دليل المستخدمين المسجلين ({localUsers.length})
+              </h3>
+              <ViewModeToggle mode={viewMode} onChange={setViewMode} />
+            </div>
+
+            {viewMode === "grid" ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {localUsers.map((u) => {
                   const matchedEmp = (erpState.employees || []).find(
                     (emp) =>
                       (u.employee_code && emp.employee_code === u.employee_code) ||
@@ -2434,91 +2822,48 @@ export function UsersPage() {
                   );
                   const displayCode = u.employee_code || matchedEmp?.employee_code || "-";
                   return (
-                    <tr key={u.id} className="hover:bg-muted/30 transition-colors">
-                      <td className="p-3">
+                    <div
+                      key={u.id}
+                      className="bg-card border border-border rounded-2xl p-4 shadow-xs space-y-3 flex flex-col justify-between"
+                    >
+                      <div className="flex items-center justify-between gap-2">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/25 font-mono font-black text-xs">
                           #{displayCode}
                         </span>
-                      </td>
-                      <td className="p-3 font-bold text-foreground">{u.full_name || "-"}</td>
-                      <td className="p-3">
-                        <div className="font-mono font-bold">{u.username || "-"}</div>
-                        {u.email && (
-                          <div
-                            className="font-mono text-[10px] text-muted-foreground mt-1"
-                            dir="ltr"
-                          >
-                            {u.email}
-                          </div>
-                        )}
-                      </td>
-                      <td className="p-3">
-                        {isOnlineNow ? (
-                          <span className="inline-flex items-center gap-1.5 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 px-2.5 py-0.5 rounded-full text-[10px] font-black">
-                            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                            أونلاين (متصل الآن)
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1.5 bg-slate-500/10 text-slate-600 dark:text-slate-400 border border-slate-400/30 px-2.5 py-0.5 rounded-full text-[10px] font-bold">
-                            <span className="h-2 w-2 rounded-full bg-slate-400" />
-                            أوفلاين (غير متصل)
-                          </span>
-                        )}
-                      </td>
-                      <td className="p-3 font-mono">{u.phone || "-"}</td>
-                      <td className="p-3">
                         <span className="bg-primary/10 text-primary border border-primary/20 px-2.5 py-0.5 rounded-full font-black text-[10px]">
                           {roleLabels[u.role] ?? u.role}
                         </span>
-                      </td>
-                      <td className="p-3">
-                        {isPending ? (
-                          <div className="space-y-0.5">
-                            <span className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full text-[10px] font-bold">
-                              محفوظ محلياً • قيد المزامنة
-                            </span>
-                            {syncError && (
-                              <div
-                                className="text-[10px] text-destructive max-w-[200px] truncate"
-                                title={syncError}
-                              >
-                                {syncError}
-                              </div>
-                            )}
-                          </div>
-                        ) : isCloudUuid || isCloudSyncActive ? (
-                          <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full text-[10px] font-bold">
-                            متزامن مع قاعدة البيانات ✓
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/30 px-2 py-0.5 rounded-full text-[10px] font-bold">
-                            محفوظ محلياً وجاهز للمزامنة ✓
-                          </span>
-                        )}
-                      </td>
-                      <td className="p-3 flex items-center justify-center gap-1.5 flex-wrap">
+                      </div>
+                      <div>
+                        <div className="font-bold text-sm text-foreground">{u.full_name || "-"}</div>
+                        <div className="font-mono text-xs text-muted-foreground">
+                          {u.username || "-"}
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-end gap-1.5 pt-2 border-t border-border/60">
                         <Button
                           size="sm"
                           variant="outline"
-                          className="h-8 px-2.5 rounded-lg gap-1.5 text-primary border-primary/30 hover:bg-primary/10 font-bold"
+                          className="h-8 px-2.5 rounded-lg gap-1.5 text-primary border-primary/30 hover:bg-primary/10 font-bold text-xs"
                           onClick={() => openPermissionsForUser(u)}
                           disabled={userDirectoryStatus !== "ready"}
                         >
-                          <ShieldCheck size={14} />
+                          <ShieldCheck size={13} />
                           الصلاحيات
                         </Button>
                         <Button
-                          size="icon"
-                          variant="outline"
-                          className="h-8 w-8 rounded-lg"
+                          size="sm"
+                          variant="edit"
+                          className="h-8 px-2.5 rounded-lg gap-1 font-bold text-xs"
                           onClick={() => startEdit(u)}
                           disabled={userDirectoryStatus !== "ready"}
                         >
-                          <Pencil size={14} />
+                          <Pencil size={13} />
+                          تعديل
                         </Button>
                         <Button
                           size="icon"
-                          variant="destructive"
+                          variant="delete"
                           className="h-8 w-8 rounded-lg"
                           onClick={() => {
                             setUserToDelete(u.id);
@@ -2528,114 +2873,228 @@ export function UsersPage() {
                             isActiveUserRecord(u, activeAuthUser) || userDirectoryStatus !== "ready"
                           }
                         >
-                          <Trash2 size={14} />
+                          <Trash2 size={13} />
                         </Button>
-                      </td>
-                    </tr>
+                      </div>
+                    </div>
                   );
                 })}
-              </tbody>
-            </table>
+              </div>
+            ) : (
+              <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted text-muted-foreground">
+                    <tr>
+                      <th className="text-right p-3 font-bold">الرقم الوظيفي</th>
+                      <th className="text-right p-3 font-bold">الاسم الكامل</th>
+                      <th className="text-right p-3 font-bold">اسم المستخدم / البريد الإلكتروني</th>
+                      <th className="text-right p-3 font-bold">حالة الاتصال</th>
+                      <th className="text-right p-3 font-bold">رقم الهاتف</th>
+                      <th className="text-right p-3 font-bold">الدور الوظيفي</th>
+                      <th className="text-right p-3 font-bold">حالة المزامنة</th>
+                      <th className="text-center p-3 font-bold w-48">الإجراءات</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border font-semibold">
+                    {localUsers.map((u) => {
+                      const isCloudUuid =
+                        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+                          String(u.id || ""),
+                        );
+                      const isPending = hasPendingUserChange(u.id, u.username);
+                      const syncError = getPendingUserError(u.id, u.username);
+                      const isOnlineNow = isUserOnlineSession(u, activeAuthUser, erpState.currentUser);
+                      const matchedEmp = (erpState.employees || []).find(
+                        (emp) =>
+                          (u.employee_code && emp.employee_code === u.employee_code) ||
+                          (u.full_name && emp.name.trim() === u.full_name.trim()),
+                      );
+                      const displayCode = u.employee_code || matchedEmp?.employee_code || "-";
+                      return (
+                        <tr key={u.id} className="hover:bg-muted/30 transition-colors">
+                          <td className="p-3">
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/25 font-mono font-black text-xs">
+                              #{displayCode}
+                            </span>
+                          </td>
+                          <td className="p-3 font-bold text-foreground">{u.full_name || "-"}</td>
+                          <td className="p-3">
+                            <div className="font-mono font-bold">{u.username || "-"}</div>
+                            {u.email && (
+                              <div
+                                className="font-mono text-[10px] text-muted-foreground mt-1"
+                                dir="ltr"
+                              >
+                                {u.email}
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-3">
+                            {isOnlineNow ? (
+                              <span className="inline-flex items-center gap-1.5 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 px-2.5 py-0.5 rounded-full text-[10px] font-black">
+                                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                                أونلاين
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1.5 bg-slate-500/10 text-slate-600 dark:text-slate-400 border border-slate-400/30 px-2.5 py-0.5 rounded-full text-[10px] font-bold">
+                                <span className="h-2 w-2 rounded-full bg-slate-400" />
+                                أوفلاين
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-3 font-mono">{u.phone || "-"}</td>
+                          <td className="p-3">
+                            <span className="bg-primary/10 text-primary border border-primary/20 px-2.5 py-0.5 rounded-full font-black text-[10px]">
+                              {roleLabels[u.role] ?? u.role}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            {isPending ? (
+                              <div className="space-y-0.5">
+                                <span className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                                  قيد المزامنة
+                                </span>
+                                {syncError && (
+                                  <div
+                                    className="text-[10px] text-destructive max-w-[200px] truncate"
+                                    title={syncError}
+                                  >
+                                    {syncError}
+                                  </div>
+                                )}
+                              </div>
+                            ) : isCloudUuid || isCloudSyncActive ? (
+                              <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                                متزامن ✓
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/30 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                                محفوظ محلياً ✓
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-3 flex items-center justify-center gap-1.5 flex-wrap">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 px-2.5 rounded-lg gap-1.5 text-primary border-primary/30 hover:bg-primary/10 font-bold"
+                              onClick={() => openPermissionsForUser(u)}
+                              disabled={userDirectoryStatus !== "ready"}
+                            >
+                              <ShieldCheck size={14} />
+                              الصلاحيات
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="edit"
+                              className="h-8 px-2.5 rounded-lg gap-1 font-bold"
+                              onClick={() => startEdit(u)}
+                              disabled={userDirectoryStatus !== "ready"}
+                            >
+                              <Pencil size={14} />
+                              تعديل
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="delete"
+                              className="h-8 w-8 rounded-lg"
+                              onClick={() => {
+                                setUserToDelete(u.id);
+                                setIsConfirmDeleteOpen(true);
+                              }}
+                              disabled={
+                                isActiveUserRecord(u, activeAuthUser) ||
+                                userDirectoryStatus !== "ready"
+                              }
+                            >
+                              <Trash2 size={14} />
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-        )}
-      </div>
 
-      {/* Lock accounting periods & fiscal year status */}
-      <div className="bg-card border border-border p-5 rounded-2xl space-y-4 shadow-sm">
-        <h3 className="font-bold text-base text-foreground flex items-center gap-2">
-          <Lock size={18} className="text-amber-500" />
-          <span>قفل الفترات والسنة المالية</span>
-        </h3>
-        <p className="text-xs text-muted-foreground font-semibold leading-relaxed">
-          حماية الدفاتر المحاسبية من التعديل التاريخي بأثر رجعي للسنوات السابقة، وإدارة إقفال السنة
-          المالية الحالية 2026.
-        </p>
-        <div className="space-y-4 pt-2">
-          {/* Historical Years Restriction Lock */}
-          <div className="border border-border p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-muted/20">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <h4 className="font-bold text-xs text-foreground">
-                  قفل الفترة المحاسبية التاريخية (قيود السنوات السابقة)
-                </h4>
-                <Badge
-                  variant="outline"
-                  className={`text-[10px] font-bold ${
+          {/* Lock accounting periods & fiscal year status */}
+          <div className="bg-card border border-border p-5 rounded-2xl space-y-4 shadow-sm">
+            <h3 className="font-bold text-base text-foreground flex items-center gap-2">
+              <Lock size={18} className="text-amber-500" />
+              <span>قفل الفترات والسنة المالية</span>
+            </h3>
+            <div className="space-y-4 pt-1">
+              <div className="border border-border p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-muted/20">
+                <div className="flex items-center gap-2">
+                  <h4 className="font-bold text-xs text-foreground">
+                    قفل الفترة المحاسبية التاريخية (قيود السنوات السابقة)
+                  </h4>
+                  <Badge
+                    variant="outline"
+                    className={`text-[10px] font-bold ${
+                      erpState.isAccountingPeriodLocked
+                        ? "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30"
+                        : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
+                    }`}
+                  >
+                    {erpState.isAccountingPeriodLocked ? "🔒 مقفلة" : "🔓 مفتوحة"}
+                  </Badge>
+                </div>
+                <button
+                  type="button"
+                  disabled={isRefreshing}
+                  onClick={() => setIsConfirmPeriodLockOpen(true)}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-black transition cursor-pointer shrink-0 shadow-xs flex items-center gap-1.5 ${
                     erpState.isAccountingPeriodLocked
-                      ? "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30"
-                      : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
+                      ? "bg-amber-500/15 text-amber-800 dark:text-amber-200 border border-amber-500/40 hover:bg-amber-500/25"
+                      : "bg-emerald-500/15 text-emerald-800 dark:text-emerald-200 border border-emerald-500/40 hover:bg-emerald-500/25"
                   }`}
                 >
-                  {erpState.isAccountingPeriodLocked ? "🔒 مقفلة" : "🔓 مفتوحة"}
-                </Badge>
+                  {isRefreshing && <RefreshCw size={13} className="animate-spin" />}
+                  {erpState.isAccountingPeriodLocked ? "🔒 مقفلة حالياً" : "🔓 مفتوحة وقابلة للترحيل"}
+                </button>
               </div>
-              <p className="text-[11px] text-muted-foreground leading-relaxed">
-                {erpState.isAccountingPeriodLocked
-                  ? "🔒 مقفلة: يمنع تعديل أو حذف أي قيود تعود لسنوات سابقة (You cannot edit restrictions in a closed year)."
-                  : "🔓 مفتوحة وقابلة للتعديل: يُسمح بتعديل وحذف قيود السنوات السابقة والحالية."}
-              </p>
-            </div>
-            <button
-              type="button"
-              disabled={isRefreshing}
-              onClick={() => setIsConfirmPeriodLockOpen(true)}
-              className={`px-3.5 py-2 rounded-xl text-xs font-black transition cursor-pointer shrink-0 shadow-xs flex items-center gap-1.5 ${
-                erpState.isAccountingPeriodLocked
-                  ? "bg-amber-500/15 text-amber-800 dark:text-amber-200 border border-amber-500/40 hover:bg-amber-500/25"
-                  : "bg-emerald-500/15 text-emerald-800 dark:text-emerald-200 border border-emerald-500/40 hover:bg-emerald-500/25"
-              }`}
-            >
-              {isRefreshing && <RefreshCw size={13} className="animate-spin" />}
-              {erpState.isAccountingPeriodLocked ? "🔒 مقفلة حالياً" : "🔓 مفتوحة وقابلة للترحيل"}
-            </button>
-          </div>
 
-          {/* Fiscal Year 2026 Lock */}
-          <div className="border border-border p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-muted/20">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <h4 className="font-bold text-xs text-foreground">
-                  حالة السنة المالية الحالية (2026)
-                </h4>
-                <Badge
-                  variant="outline"
-                  className={`text-[10px] font-bold ${
+              <div className="border border-border p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-muted/20">
+                <div className="flex items-center gap-2">
+                  <h4 className="font-bold text-xs text-foreground">
+                    حالة السنة المالية الحالية (2026)
+                  </h4>
+                  <Badge
+                    variant="outline"
+                    className={`text-[10px] font-bold ${
+                      erpState.fiscalYearStatus === "closed"
+                        ? "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/30"
+                        : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
+                    }`}
+                  >
+                    {erpState.fiscalYearStatus === "closed" ? "🔴 مغلقة" : "🟢 مفتوحة"}
+                  </Badge>
+                </div>
+                <button
+                  type="button"
+                  disabled={isRefreshing}
+                  onClick={() => setIsConfirmFiscalYearOpen(true)}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-black transition cursor-pointer shrink-0 shadow-xs flex items-center gap-1.5 ${
                     erpState.fiscalYearStatus === "closed"
-                      ? "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/30"
-                      : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
+                      ? "bg-rose-500/15 text-rose-800 dark:text-rose-200 border border-rose-500/40 hover:bg-rose-500/25"
+                      : "bg-emerald-500/15 text-emerald-800 dark:text-emerald-200 border border-emerald-500/40 hover:bg-emerald-500/25"
                   }`}
                 >
-                  {erpState.fiscalYearStatus === "closed" ? "🔴 مغلقة" : "🟢 مفتوحة"}
-                </Badge>
+                  {isRefreshing && <RefreshCw size={13} className="animate-spin" />}
+                  {erpState.fiscalYearStatus === "closed"
+                    ? "🔴 مغلقة ومرحلة"
+                    : "🟢 سنة مالية نشطة ومفتوحة"}
+                </button>
               </div>
-              <p className="text-[11px] text-muted-foreground leading-relaxed">
-                {erpState.fiscalYearStatus === "closed"
-                  ? "🔴 مغلقة ومرحلة: السنة المالية 2026 مغلقة، لا يمكن إضافة أو تعديل القيود."
-                  : "🟢 سنة مالية نشطة ومفتوحة (2026): يمكن تسجيل القيود وإجراء كافة التعديلات بحرية."}
-              </p>
             </div>
-            <button
-              type="button"
-              disabled={isRefreshing}
-              onClick={() => setIsConfirmFiscalYearOpen(true)}
-              className={`px-3.5 py-2 rounded-xl text-xs font-black transition cursor-pointer shrink-0 shadow-xs flex items-center gap-1.5 ${
-                erpState.fiscalYearStatus === "closed"
-                  ? "bg-rose-500/15 text-rose-800 dark:text-rose-200 border border-rose-500/40 hover:bg-rose-500/25"
-                  : "bg-emerald-500/15 text-emerald-800 dark:text-emerald-200 border border-emerald-500/40 hover:bg-emerald-500/25"
-              }`}
-            >
-              {isRefreshing && <RefreshCw size={13} className="animate-spin" />}
-              {erpState.fiscalYearStatus === "closed"
-                ? "🔴 مغلقة ومرحلة"
-                : "🟢 سنة مالية نشطة ومفتوحة"}
-            </button>
           </div>
-        </div>
-      </div>
+        </>
+      )}
 
-      {/* Modals */}
-
-      {/* Confirmation Dialog: Historical Period Lock */}
+      {/* Confirmation Dialogs */}
       <AlertDialog open={isConfirmPeriodLockOpen} onOpenChange={setIsConfirmPeriodLockOpen}>
         <AlertDialogContent className="text-right max-w-lg rounded-2xl">
           <AlertDialogHeader className="text-right space-y-2">
@@ -2649,54 +3108,27 @@ export function UsersPage() {
                 ? "تأكيد فتح قفل الفترة المحاسبية التاريخية"
                 : "تأكيد قفل الفترة المحاسبية التاريخية"}
             </AlertDialogTitle>
-            <AlertDialogDescription className="text-right text-xs leading-relaxed space-y-2">
-              <span className="block font-bold text-foreground text-sm">
-                {erpState.isAccountingPeriodLocked
-                  ? "هل أنت متأكد من رغبتك في فتح قفل قيود وفترات السنوات السابقة والسماح بالتعديل؟"
-                  : "هل أنت متأكد من رغبتك في قفل قيود وفترات السنوات السابقة ومنع التعديل؟"}
-              </span>
-              <div className="p-3 rounded-xl bg-muted/60 border space-y-1 mt-2 text-foreground/90 text-xs">
-                {erpState.isAccountingPeriodLocked ? (
-                  <p className="text-emerald-700 dark:text-emerald-300 font-semibold">
-                    🔓 عند الفتح: سيُسمح لمديري النظام بتعديل وحذف قيود الفترات والسنوات السابقة
-                    بحرية تامة.
-                  </p>
-                ) : (
-                  <p className="text-amber-700 dark:text-amber-300 font-semibold">
-                    🔒 عند القفل: سيتم منع أي تعديل أو حذف لقيود السنوات السابقة لحماية الدفاتر
-                    المحاسبية من التعديل التاريخي بأثر رجعي.
-                  </p>
-                )}
-                <p className="text-[11px] text-muted-foreground">
-                  سيتم تطبيق التغيير فوراً وتحديث الصفحة لتأكيد الحالة الجديدة.
-                </p>
-              </div>
+            <AlertDialogDescription className="text-right text-xs leading-relaxed">
+              {erpState.isAccountingPeriodLocked
+                ? "هل أنت متأكد من فتح قفل قيود السنوات السابقة؟"
+                : "هل أنت متأكد من قفل قيود السنوات السابقة؟"}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="mt-4 gap-2 flex-row justify-start">
             <AlertDialogAction
               onClick={handleConfirmPeriodLock}
               disabled={isRefreshing}
-              className={`rounded-xl font-bold px-5 text-white ${
-                erpState.isAccountingPeriodLocked
-                  ? "bg-emerald-600 hover:bg-emerald-700"
-                  : "bg-amber-600 hover:bg-amber-700"
-              }`}
+              className="rounded-xl font-bold px-5 text-white bg-emerald-600 hover:bg-emerald-700"
             >
-              {isRefreshing
-                ? "جاري التحديث..."
-                : erpState.isAccountingPeriodLocked
-                  ? "نعم، افتح الفترة للتعديل"
-                  : "نعم، اقفل الفترة الآن"}
+              تأكيد
             </AlertDialogAction>
             <AlertDialogCancel disabled={isRefreshing} className="rounded-xl">
-              إلغاء الأمر
+              إلغاء
             </AlertDialogCancel>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Confirmation Dialog: Fiscal Year 2026 Status */}
       <AlertDialog open={isConfirmFiscalYearOpen} onOpenChange={setIsConfirmFiscalYearOpen}>
         <AlertDialogContent className="text-right max-w-lg rounded-2xl">
           <AlertDialogHeader className="text-right space-y-2">
@@ -2704,56 +3136,28 @@ export function UsersPage() {
               <Calendar className="text-primary shrink-0" size={20} />
               {erpState.fiscalYearStatus === "open"
                 ? "تأكيد إغلاق السنة المالية 2026"
-                : "تأكيد فتح وتنشيط السنة المالية 2026"}
+                : "تأكيد فتح السنة المالية 2026"}
             </AlertDialogTitle>
-            <AlertDialogDescription className="text-right text-xs leading-relaxed space-y-2">
-              <span className="block font-bold text-foreground text-sm">
-                {erpState.fiscalYearStatus === "open"
-                  ? "هل أنت متأكد من رغبتك في إغلاق السنة المالية الحالية (2026)؟"
-                  : "هل أنت متأكد من رغبتك في إعادة فتح السنة المالية الحالية (2026)؟"}
-              </span>
-              <div className="p-3 rounded-xl bg-muted/60 border space-y-1 mt-2 text-foreground/90 text-xs">
-                {erpState.fiscalYearStatus === "open" ? (
-                  <p className="text-rose-700 dark:text-rose-300 font-semibold">
-                    🔴 عند الإغلاق: ستصبح السنة المالية 2026 مغلقة، ولن يمكن تسجيل قيود يومية جديدة
-                    أو تعديل القيود الحالية في هذه السنة حتى يتم إعادة فتحها.
-                  </p>
-                ) : (
-                  <p className="text-emerald-700 dark:text-emerald-300 font-semibold">
-                    🟢 عند الفتح: ستصبح السنة المالية 2026 نشطة ومفتوحة، مما يتيح تسجيل القيود
-                    المحاسبية وإجراء كافة التعديلات بحرية.
-                  </p>
-                )}
-                <p className="text-[11px] text-muted-foreground">
-                  سيتم تطبيق التغيير فوراً وتحديث الصفحة لتأكيد الحالة الجديدة.
-                </p>
-              </div>
+            <AlertDialogDescription className="text-right text-xs leading-relaxed">
+              {erpState.fiscalYearStatus === "open"
+                ? "هل أنت متأكد من إغلاق السنة المالية الحالية (2026)؟"
+                : "هل أنت متأكد من إعادة فتح السنة المالية الحالية (2026)؟"}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="mt-4 gap-2 flex-row justify-start">
             <AlertDialogAction
               onClick={handleConfirmFiscalYear}
               disabled={isRefreshing}
-              className={`rounded-xl font-bold px-5 text-white ${
-                erpState.fiscalYearStatus === "open"
-                  ? "bg-rose-600 hover:bg-rose-700"
-                  : "bg-emerald-600 hover:bg-emerald-700"
-              }`}
+              className="rounded-xl font-bold px-5 text-white bg-emerald-600 hover:bg-emerald-700"
             >
-              {isRefreshing
-                ? "جاري التحديث..."
-                : erpState.fiscalYearStatus === "open"
-                  ? "نعم، أغلق السنة المالية 2026"
-                  : "نعم، افتح السنة المالية 2026"}
+              تأكيد
             </AlertDialogAction>
             <AlertDialogCancel disabled={isRefreshing} className="rounded-xl">
-              إلغاء الأمر
+              إلغاء
             </AlertDialogCancel>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {/* Permissions Dialog */}
 
       <AlertDialog open={isConfirmUpsertOpen} onOpenChange={setIsConfirmUpsertOpen}>
         <AlertDialogContent className="text-right">
@@ -2770,8 +3174,8 @@ export function UsersPage() {
           </AlertDialogHeader>
           <AlertDialogFooter className="mt-6 gap-2">
             <AlertDialogCancel>تراجع</AlertDialogCancel>
-            <AlertDialogAction onClick={upsert} className="bg-primary hover:bg-primary/90">
-              تأكيد
+            <AlertDialogAction onClick={upsert} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+              تأكيد الحفظ
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -2785,7 +3189,7 @@ export function UsersPage() {
               تأكيد حذف المستخدم
             </AlertDialogTitle>
             <AlertDialogDescription>
-              هل أنت متأكد من حذف هذا الحساب نهائياً؟ هذا الإجراء لا يمكن التراجع عنه.
+              هل أنت متأكد من حذف هذا الحساب نهائياً؟
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="mt-6 gap-2">
@@ -2808,471 +3212,20 @@ export function UsersPage() {
               تأكيد حفظ الصلاحيات
             </AlertDialogTitle>
             <AlertDialogDescription>
-              هل أنت متأكد من حفظ التعديلات الجديدة على صلاحيات المستخدم؟ سيتم تطبيق هذه الصلاحيات
-              فوراً وقد تؤثر على وصول المستخدم.
+              هل أنت متأكد من حفظ التعديلات الجديدة على صلاحيات المستخدم؟
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="mt-6 gap-2">
             <AlertDialogCancel>تراجع</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleSavePermissions}
-              className="bg-emerald-600 hover:bg-emerald-700"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
             >
               تأكيد الحفظ
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {/* Detailed Permissions Dialog */}
-      <Dialog open={!!permissionsUser} onOpenChange={(open) => !open && setPermissionsUser(null)}>
-        <DialogContent className="max-w-6xl max-h-[92vh] overflow-y-auto text-right p-4 sm:p-6">
-          <DialogHeader className="text-right pb-3 border-b border-border">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <DialogTitle className="flex items-center gap-2 text-foreground text-lg sm:text-xl font-black">
-                <ShieldCheck className="text-primary h-6 w-6" />
-                صلاحيات الأقسام والصفحات للمستخدم: {permissionsUser?.full_name} (
-                {permissionsUser?.username})
-              </DialogTitle>
-              <span className="bg-primary/10 text-primary border border-primary/20 px-3 py-1 rounded-full font-bold text-xs">
-                الدور الحالي:{" "}
-                {roleLabels[permissionsUser?.role || "cashier"] || permissionsUser?.role}
-              </span>
-            </div>
-            <DialogDescription className="text-xs text-muted-foreground mt-1">
-              مربعات الصلاحيات مطابقة تماماً لمربعات الأقسام الرئيسية والفرعية في التطبيق؛ عند عدم
-              اختيار أي قسم رئيسي أو صفحة فرعية يتم إخفاؤها تماماً عن هذا المستخدم.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-3">
-            {/* Quick Role Presets */}
-            <div className="bg-muted/30 p-3 rounded-2xl border border-border space-y-2">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <span className="text-xs font-bold text-foreground">
-                  قوالب وتعيين سريع للصلاحيات حسب الدور:
-                </span>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs font-bold bg-primary text-primary-foreground hover:bg-primary/90"
-                    onClick={() => selectAllPerms(true)}
-                  >
-                    تفعيل كل الأقسام والصفحات
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs font-bold text-destructive hover:text-destructive hover:bg-destructive/10"
-                    onClick={() => selectAllPerms(false)}
-                  >
-                    إخفاء وتعطيل الكل
-                  </Button>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="h-7 text-xs font-semibold rounded-lg bg-amber-500/15 text-amber-900 dark:text-amber-300 border border-amber-500/30 hover:bg-amber-500/25"
-                  onClick={() => applyRolePreset("super_admin")}
-                >
-                  ⚡ نمط: المدير العام (Super Admin)
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="h-7 text-xs font-semibold rounded-lg bg-indigo-500/15 text-indigo-900 dark:text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/25"
-                  onClick={() => applyRolePreset("manager")}
-                >
-                  📊 نمط: المشرف / المحاسب المالي
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="h-7 text-xs font-semibold rounded-lg bg-emerald-500/15 text-emerald-900 dark:text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25"
-                  onClick={() => applyRolePreset("cashier")}
-                >
-                  💳 نمط: الكاشير ونقطة البيع
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="h-7 text-xs font-semibold rounded-lg bg-blue-500/15 text-blue-900 dark:text-blue-300 border border-blue-500/30 hover:bg-blue-500/25"
-                  onClick={() => applyRolePreset("captain")}
-                >
-                  🍽️ نمط: كابتن الصالة
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="h-7 text-xs font-semibold rounded-lg bg-orange-500/15 text-orange-900 dark:text-orange-300 border border-orange-500/30 hover:bg-orange-500/25"
-                  onClick={() => applyRolePreset("kitchen")}
-                >
-                  👨‍🍳 نمط: شيف المطبخ والفرن
-                </Button>
-              </div>
-            </div>
-
-            {/* Quick Interactive Overview of the 9 Main Department Boxes */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <span className="text-xs font-black text-foreground">
-                  مربعات الأقسام الرئيسية الحالية في التطبيق (اضغط على المربع للانتقال إليه أو
-                  لتفعيل/إخفاء القسم):
-                </span>
-                {categoryFilter !== "ALL" && (
-                  <button
-                    type="button"
-                    onClick={() => setCategoryFilter("ALL")}
-                    className="text-xs font-bold text-primary hover:underline cursor-pointer"
-                  >
-                    عرض جميع مربعات الأقسام (9 أقسام) ←
-                  </button>
-                )}
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                {PERMISSION_CATEGORIES.map((cat) => {
-                  const isMainChecked = editedPermissions
-                    ? !!editedPermissions[cat.mainPageKey]
-                    : false;
-                  const pagePerms = cat.permissions.filter((p) => p.kind === "page");
-                  const enabledPagesCount = pagePerms.filter(
-                    (p) => editedPermissions && !!editedPermissions[p.key],
-                  ).length;
-                  const isSelectedFilter = categoryFilter === cat.id;
-
-                  return (
-                    <div
-                      key={cat.id}
-                      onClick={() =>
-                        setCategoryFilter((prev) => (prev === cat.id ? "ALL" : cat.id))
-                      }
-                      className={`p-3 rounded-2xl border transition cursor-pointer select-none flex flex-col justify-between gap-2 bg-gradient-to-br ${
-                        cat.headerGradient
-                      } ${
-                        isSelectedFilter ? "ring-2 ring-primary shadow-md" : "hover:shadow-sm"
-                      } ${!isMainChecked ? "opacity-65 bg-muted/30" : ""}`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="space-y-0.5 min-w-0">
-                          <h5 className="font-black text-xs sm:text-sm text-foreground truncate">
-                            {cat.shortTitle}
-                          </h5>
-                          <p className="text-[10px] text-muted-foreground line-clamp-1">
-                            {cat.desc}
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            togglePermission(cat.mainPageKey, cat);
-                          }}
-                          className={`px-2.5 py-1 rounded-lg text-[10px] font-black border shrink-0 transition cursor-pointer ${
-                            isMainChecked
-                              ? "bg-emerald-500/20 text-emerald-800 dark:text-emerald-200 border-emerald-500/40"
-                              : "bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30"
-                          }`}
-                        >
-                          {isMainChecked ? "القسم ظاهر ✓" : "القسم مخفي ✕"}
-                        </button>
-                      </div>
-                      <div className="flex items-center justify-between text-[10px] pt-1 border-t border-border/50">
-                        <span className="font-bold text-muted-foreground">
-                          الصفحات الفرعية الظاهرة: {enabledPagesCount} / {pagePerms.length}
-                        </span>
-                        <span className="font-bold text-primary">
-                          {isSelectedFilter ? "معروض بالأسفل ↓" : "تخصيص الصفحات ←"}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Filter and Search */}
-            <div className="flex flex-col sm:flex-row items-center gap-3">
-              <div className="relative w-full sm:flex-1">
-                <Input
-                  placeholder="ابحث في صفحات الأقسام أو الصلاحيات (مثلاً: الدخول إلى صفحة الموارد البشرية، الكاشير، الرواتب)..."
-                  value={permSearch}
-                  onChange={(e) => setPermSearch(e.target.value)}
-                  className="h-9 text-xs pr-3 rounded-xl border-border"
-                />
-              </div>
-              <div className="w-full sm:w-72">
-                <select
-                  value={categoryFilter}
-                  onChange={(e) => setCategoryFilter(e.target.value)}
-                  className="w-full h-9 rounded-xl border border-input bg-background px-3 text-xs font-semibold"
-                >
-                  <option value="ALL">عرض جميع مربعات الأقسام الرئيسية (9 أقسام)</option>
-                  {PERMISSION_CATEGORIES.map((cat) => (
-                    <option key={cat.id} value={cat.id}>
-                      {cat.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Detailed Main Section Boxes */}
-            <div className="space-y-5">
-              {PERMISSION_CATEGORIES.filter(
-                (cat) => categoryFilter === "ALL" || categoryFilter === cat.id,
-              ).map((cat) => {
-                const filteredPerms = cat.permissions.filter((p) => {
-                  if (!permSearch.trim()) return true;
-                  const query = permSearch.toLowerCase();
-                  return (
-                    p.name.toLowerCase().includes(query) ||
-                    p.desc.toLowerCase().includes(query) ||
-                    String(p.key).toLowerCase().includes(query)
-                  );
-                });
-
-                if (filteredPerms.length === 0) return null;
-
-                const mainPermItem = cat.permissions.find((p) => p.key === cat.mainPageKey);
-                const subPageItems = filteredPerms.filter((p) => p.kind === "page");
-                const actionItems = filteredPerms.filter((p) => p.kind === "action");
-                const isMainEnabled = editedPermissions
-                  ? !!editedPermissions[cat.mainPageKey]
-                  : false;
-
-                const enabledCount = cat.permissions.filter(
-                  (p) => editedPermissions && !!editedPermissions[p.key],
-                ).length;
-                const isAllCategoryChecked = enabledCount === cat.permissions.length;
-
-                return (
-                  <div
-                    key={cat.id}
-                    className={`bg-card border-2 rounded-2xl overflow-hidden shadow-xs transition ${
-                      isMainEnabled ? "border-border" : "border-dashed border-muted-foreground/30"
-                    }`}
-                  >
-                    {/* Main Department Box Header */}
-                    <div
-                      className={`bg-gradient-to-l ${cat.headerGradient} p-4 border-b border-border/60 flex flex-col gap-3`}
-                    >
-                      <div className="flex items-center justify-between flex-wrap gap-2">
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <h4 className="font-black text-sm sm:text-base text-foreground">
-                              {cat.name}
-                            </h4>
-                            <span
-                              className={`text-[11px] px-2.5 py-0.5 rounded-full font-bold border ${
-                                isMainEnabled
-                                  ? cat.accentBadge
-                                  : "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/20"
-                              }`}
-                            >
-                              {isMainEnabled
-                                ? `القسم ظاهر للمستخدم (${enabledCount}/${cat.permissions.length})`
-                                : "القسم مخفي تماماً عن المستخدم"}
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-muted-foreground">{cat.desc}</p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-8 px-3 text-xs font-bold rounded-xl"
-                            onClick={() => toggleCategoryPerms(cat, !isAllCategoryChecked)}
-                          >
-                            {isAllCategoryChecked
-                              ? "إخفاء وإلغاء كامل القسم"
-                              : "تفعيل كامل صفحات وصلاحيات القسم"}
-                          </Button>
-                        </div>
-                      </div>
-
-                      {/* Main Page Entry Toggle Banner */}
-                      {mainPermItem && (
-                        <div
-                          onClick={() => togglePermission(mainPermItem.key, cat)}
-                          className={`flex items-center justify-between gap-3 p-3 rounded-xl border-2 transition cursor-pointer select-none ${
-                            isMainEnabled
-                              ? "bg-emerald-500/10 border-emerald-500/40 shadow-xs"
-                              : "bg-background/80 border-border hover:bg-muted/30"
-                          }`}
-                        >
-                          <div className="flex items-center gap-3 min-w-0">
-                            <input
-                              type="checkbox"
-                              checked={isMainEnabled}
-                              onChange={() => {}}
-                              className="h-5 w-5 rounded border-input text-emerald-600 focus:ring-emerald-500 cursor-pointer shrink-0"
-                            />
-                            <div className="space-y-0.5 min-w-0">
-                              <div className="font-black text-xs sm:text-sm text-foreground">
-                                {mainPermItem.name}
-                              </div>
-                              <p className="text-[11px] text-muted-foreground">
-                                {mainPermItem.desc}
-                              </p>
-                            </div>
-                          </div>
-                          <span
-                            className={`text-[11px] px-2.5 py-1 rounded-lg font-black shrink-0 ${
-                              isMainEnabled
-                                ? "bg-emerald-600 text-white"
-                                : "bg-rose-500/15 text-rose-700 dark:text-rose-300"
-                            }`}
-                          >
-                            {isMainEnabled ? "مسموح بالدخول ✓" : "مخفي عن المستخدم"}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="p-3.5 space-y-4 bg-background/50">
-                      {/* Sub-section Pages Grid */}
-                      {subPageItems.length > 0 && (
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between">
-                            <h5 className="text-xs font-black text-foreground flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-primary inline-block" />
-                              صفحات الأقسام الفرعية داخل {cat.shortTitle} (تختفي الصفحة عند عدم
-                              اختيارها):
-                            </h5>
-                          </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                            {subPageItems.map((perm) => {
-                              const isChecked = editedPermissions
-                                ? !!editedPermissions[perm.key]
-                                : false;
-                              return (
-                                <div
-                                  key={perm.key}
-                                  onClick={() => togglePermission(perm.key, cat)}
-                                  className={`flex items-start gap-2.5 p-2.5 rounded-xl border transition cursor-pointer select-none ${
-                                    isChecked
-                                      ? "bg-primary/5 border-primary/40 shadow-xs ring-1 ring-primary/20"
-                                      : "bg-card border-border/70 hover:bg-muted/20 opacity-75"
-                                  } ${perm.isSuperAdminOnly ? "border-amber-500/40 bg-amber-500/5" : ""}`}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={isChecked}
-                                    onChange={() => {}}
-                                    className="mt-1 h-4 w-4 rounded border-input text-primary focus:ring-primary cursor-pointer shrink-0"
-                                  />
-                                  <div className="space-y-0.5 flex-1 min-w-0">
-                                    <div className="flex items-center justify-between gap-1">
-                                      <span className="font-bold text-xs text-foreground leading-snug">
-                                        {perm.name}
-                                      </span>
-                                      <span
-                                        className={`text-[9px] px-1.5 py-0.5 rounded font-bold shrink-0 ${
-                                          isChecked
-                                            ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300"
-                                            : "bg-rose-500/10 text-rose-700 dark:text-rose-300"
-                                        }`}
-                                      >
-                                        {isChecked ? "ظاهر ✓" : "مخفي"}
-                                      </span>
-                                    </div>
-                                    <p className="text-[10px] text-muted-foreground leading-tight line-clamp-2">
-                                      {perm.desc}
-                                    </p>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Operational Actions Grid */}
-                      {actionItems.length > 0 && (
-                        <div className="space-y-2 pt-2 border-t border-border/50">
-                          <h5 className="text-xs font-bold text-muted-foreground flex items-center gap-1.5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground inline-block" />
-                            صلاحيات العمليات والإجراءات داخل {cat.shortTitle}:
-                          </h5>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                            {actionItems.map((perm) => {
-                              const isChecked = editedPermissions
-                                ? !!editedPermissions[perm.key]
-                                : false;
-                              return (
-                                <div
-                                  key={perm.key}
-                                  onClick={() => togglePermission(perm.key, cat)}
-                                  className={`flex items-start gap-2.5 p-2 rounded-xl border transition cursor-pointer select-none ${
-                                    isChecked
-                                      ? "bg-emerald-500/5 border-emerald-500/30"
-                                      : "bg-card border-border/60 hover:bg-muted/20 opacity-75"
-                                  } ${perm.isSuperAdminOnly ? "border-amber-500/40 bg-amber-500/5" : ""}`}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={isChecked}
-                                    onChange={() => {}}
-                                    className="mt-1 h-4 w-4 rounded border-input text-emerald-600 focus:ring-emerald-500 cursor-pointer shrink-0"
-                                  />
-                                  <div className="space-y-0.5 flex-1 min-w-0">
-                                    <div className="flex items-center justify-between gap-1">
-                                      <span className="font-bold text-[11px] text-foreground leading-snug">
-                                        {perm.name}
-                                      </span>
-                                      <span
-                                        className={`text-[9px] px-1.5 py-0.2 rounded font-bold shrink-0 ${
-                                          isChecked
-                                            ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300"
-                                            : "bg-muted text-muted-foreground"
-                                        }`}
-                                      >
-                                        {isChecked ? "مفعل ✓" : "معطل"}
-                                      </span>
-                                    </div>
-                                    <p className="text-[10px] text-muted-foreground leading-tight line-clamp-2">
-                                      {perm.desc}
-                                    </p>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between gap-3 pt-4 border-t border-border mt-2">
-            <span className="text-xs text-muted-foreground">
-              يتم تطبيق الصلاحيات بشكل فوري ودائم على حساب المستخدم.
-            </span>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                className="h-9 px-5 rounded-xl font-bold"
-                onClick={() => setPermissionsUser(null)}
-              >
-                إلغاء
-              </Button>
-              <Button
-                className="h-9 px-6 rounded-xl font-bold gap-2 bg-primary text-primary-foreground"
-                onClick={() => setIsConfirmSavePermsOpen(true)}
-              >
-                <Save size={16} />
-                حفظ الصلاحيات
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

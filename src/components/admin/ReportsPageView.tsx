@@ -64,8 +64,16 @@ export function ReportsPage() {
   const { formatPrice, lang, formatTreasuryCurrency } = useSettings();
   const location = useLocation();
   const navigate = useNavigate();
-  const searchParams = new URLSearchParams(location.search);
-  const tabParam = searchParams.get("tab");
+  const tabParam =
+    typeof location.search === "object" && location.search !== null && "tab" in location.search
+      ? String((location.search as any).tab || "")
+      : new URLSearchParams(
+          typeof (location as any).searchStr === "string"
+            ? (location as any).searchStr
+            : typeof window !== "undefined"
+              ? window.location.search
+              : "",
+        ).get("tab");
   const [activeTab, setActiveTab] = useState(tabParam || "sales");
 
   useEffect(() => {

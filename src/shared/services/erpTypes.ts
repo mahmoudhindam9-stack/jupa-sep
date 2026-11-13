@@ -37,6 +37,7 @@ export interface Supplier {
   name_ar: string;
   phone?: string;
   balance: number;
+  opening_balance?: number;
   account_code?: string;
   currency?: string;
   deleted?: boolean;
@@ -203,6 +204,12 @@ export interface Voucher {
   supplier_id?: string;
   supplier_name?: string;
   supplier_account_code?: string;
+  customer_id?: string;
+  customer_name?: string;
+  customer_account_code?: string;
+  invoice_total?: number;
+  paid_amount?: number;
+  remaining_credit?: number;
   purchase_items?: VoucherPurchaseItem[];
   audit_history?: VoucherAuditEntry[];
   reverted?: boolean;
@@ -250,6 +257,7 @@ export function isLevel4Account(account?: { level?: number; code: string } | nul
 
 export interface JournalLine {
   account_code: string;
+  account_name?: string;
   debit: number;
   credit: number;
   currency?: string;
@@ -261,15 +269,18 @@ export interface JournalLine {
 
 export interface JournalEntry {
   id: string;
-  branch_id: string;
+  branch_id?: string;
   date: string;
   description: string;
   lines: JournalLine[];
-  created_at: string;
+  total_debit?: number;
+  total_credit?: number;
+  status?: string;
+  created_at?: string;
   reference?: string;
-  currency: string;
+  currency?: string;
   created_by: string;
-  is_approved: boolean;
+  is_approved?: boolean;
   sequence?: number;
   attachments?: string[];
 }
@@ -673,6 +684,7 @@ export interface ParkShift {
   shift_number: string;
   auto_shift_number?: string;
   start_at: string;
+  opened_at?: string;
   end_at?: string;
   status: "open" | "closed";
   cashier_name: string;
@@ -739,8 +751,12 @@ export interface RestaurantRefundRecord {
   shift_id: string;
   shift_number: string;
   refund_amount: number;
+  amount?: number;
   refund_reason: string;
+  reason?: string;
   created_at: string;
+  refunded_at?: string;
+  refunded_by?: string;
   journal_ref?: string;
   cashier_name: string;
   payment_method: "cash" | "card" | "wallet";

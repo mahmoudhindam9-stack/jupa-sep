@@ -29,7 +29,7 @@ import {
   signOutCurrentUser,
 } from "@/shared/services/userAuthorization";
 import {
-  NAVIGATION_DEPARTMENTS,
+  getResolvedNavigationDepartments,
   getActiveDepartment,
   type NavDepartment,
 } from "./navigationRegistry";
@@ -87,12 +87,12 @@ export function AppMainNavbar({
     userRoleLabel || user?.role || identity.role || "";
 
   const visibleDepartments = useMemo(() => {
-    return NAVIGATION_DEPARTMENTS.filter((dept) =>
+    return getResolvedNavigationDepartments().filter((dept) =>
       hasDepartmentPermission
         ? hasDepartmentPermission(dept)
         : isDepartmentPermitted(activePerms, dept),
     );
-  }, [hasDepartmentPermission, activePerms]);
+  }, [hasDepartmentPermission, activePerms, pathname]);
 
   const activeDepartment = useMemo(
     () => getActiveDepartment(pathname, searchStr),

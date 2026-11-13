@@ -1,6 +1,6 @@
 import { useSettings, Currency } from "@/hooks/use-settings";
 import { Coins, Check } from "lucide-react";
-import { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect } from "react";
 
 interface CurrencySwitcherProps {
   pageKey?: string;

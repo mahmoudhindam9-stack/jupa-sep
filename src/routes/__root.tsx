@@ -14,6 +14,7 @@ import { translator } from "../shared/services/translationService";
 import { createAppSync } from "../shared/services/appSync";
 import { studioService } from "@/features/developer-studio/services/studioService";
 import { sanitizeStudioDomEditsMap } from "@/features/developer-studio/models/studio.types";
+import { setupVisualPermissionsRuntime } from "../shared/services/visualPermissionsEngine";
 import appCss from "../styles.css?url";
 
 function NotFoundComponent() {
@@ -43,22 +44,25 @@ function NotFoundComponent() {
   );
 }
 
-function isDynamicImportError(error: unknown): boolean {
+function isRecoverableRouteError(error: unknown): boolean {
   const msg = String((error as any)?.message || error || "").toLowerCase();
   return (
     msg.includes("error loading dynamically imported module") ||
     msg.includes("failed to fetch dynamically imported module") ||
     msg.includes("importing a module script failed") ||
     msg.includes("loading chunk") ||
-    msg.includes("dynamically imported module")
+    msg.includes("dynamically imported module") ||
+    msg.includes("removechild") ||
+    msg.includes("insertbefore") ||
+    msg.includes("not a child of this node")
   );
 }
 
 function ErrorComponent({ error, reset }: { error: any; reset: () => void }) {
-  const isChunkError = isDynamicImportError(error);
+  const isRecoverable = isRecoverableRouteError(error);
 
   useEffect(() => {
-    if (!isChunkError) {
+    if (!isRecoverable) {
       if (typeof console !== "undefined" && console.error) {
         console.error("Restocash route error:", error);
       }
@@ -95,49 +99,48 @@ function ErrorComponent({ error, reset }: { error: any; reset: () => void }) {
       } catch {
         reset();
       }
-    }, 350);
+    }, 150);
 
     return () => window.clearTimeout(timer);
-  }, [error, isChunkError, reset]);
+  }, [error, isRecoverable, reset]);
 
-  if (isChunkError) {
+  if (isRecoverable) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-4" dir="rtl">
         <main className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
-          <p className="text-sm font-bold text-foreground">جاري تحميل الصفحة…</p>
-          <p className="mt-2 text-xs text-muted-foreground">يرجى الانتظار لحظات.</p>
+          <p className="text-sm font-bold text-foreground">جاري تحديث الصفحة…</p>
         </main>
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+    <div className="flex min-h-screen items-center justify-center bg-background px-4" dir="rtl">
       <main className="w-full max-w-lg text-center" aria-labelledby="error-title">
         <p className="text-sm font-bold text-primary">Restocash ERP</p>
         <h1 id="error-title" className="mt-3 text-2xl font-black tracking-tight text-foreground">
           تعذر تحميل الصفحة
         </h1>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground" role="alert" aria-live="polite">
-          حدث خطأ غير متوقع. حاول إعادة تحميل الصفحة، وإذا استمرت المشكلة يمكنك العودة إلى الرئيسية.
-        </p>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
             type="button"
             onClick={() => {
-              // A full reload is safe even when router context is unavailable.
-              window.location.reload();
+              try {
+                window.sessionStorage.removeItem("restocash:error-boundary-chunk-retry");
+              } catch {}
               reset();
+              window.location.reload();
             }}
-            className="inline-flex min-h-10 items-center justify-center rounded-lg bg-primary px-5 py-2.5 text-sm font-bold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className="btn-uniform-edit inline-flex min-h-10 items-center justify-center rounded-xl px-5 py-2.5 text-sm font-black shadow-xs transition-colors cursor-pointer"
           >
             إعادة المحاولة
           </button>
           <Link
-            to="/"
-            className="inline-flex min-h-10 items-center justify-center rounded-lg border border-input bg-background px-5 py-2.5 text-sm font-bold text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            to="/admin"
+            onClick={() => reset()}
+            className="btn-uniform-close inline-flex min-h-10 items-center justify-center rounded-xl px-5 py-2.5 text-sm font-black transition-colors cursor-pointer no-underline"
           >
-            الرئيسية
+            الأقسام الرئيسية
           </Link>
         </div>
       </main>
@@ -291,7 +294,11 @@ function RootComponent() {
     };
 
     const resetPublishedStudioEdits = () => {
-      for (const clone of publishedStudioClones) clone.remove();
+      for (const clone of publishedStudioClones) {
+        try {
+          clone.remove();
+        } catch {}
+      }
       publishedStudioClones.clear();
 
       for (const snapshot of Array.from(studioSnapshots.values()).reverse()) {
@@ -304,16 +311,10 @@ function RootComponent() {
         } else if (snapshot.leafTextContent !== null && element.children.length === 0) {
           const textNode = Array.from(element.childNodes).find((n) => n.nodeType === Node.TEXT_NODE);
           if (textNode) textNode.nodeValue = snapshot.leafTextContent;
-          else element.textContent = snapshot.leafTextContent;
         }
         delete element.dataset.studioTextApplied;
         if (snapshot.styleAttribute === null) element.removeAttribute("style");
         else element.setAttribute("style", snapshot.styleAttribute);
-        if (snapshot.wasReordered && snapshot.parent && element.parentNode === snapshot.parent) {
-          const next = snapshot.nextSibling;
-          if (next && next.parentNode === snapshot.parent) snapshot.parent.insertBefore(element, next);
-          else snapshot.parent.appendChild(element);
-        }
       }
       studioSnapshots.clear();
     };
@@ -327,6 +328,20 @@ function RootComponent() {
       }
 
       const safeEdits = sanitizeStudioDomEditsMap(edits);
+      const linkedRenames: Record<string, string> = {};
+
+      // First pass: collect all originalText -> text mappings across all routes
+      for (const [selector, edit] of Object.entries(safeEdits) as Array<[string, any]>) {
+        if (selector.startsWith("__studio_") || !edit || typeof edit !== "object") continue;
+        if (typeof edit.text === "string" && edit.text.trim().length > 0) {
+          const newText = edit.text.trim();
+          const origFromEdit = typeof edit.originalText === "string" ? edit.originalText.trim() : "";
+          if (origFromEdit && origFromEdit.length >= 2 && origFromEdit !== newText) {
+            linkedRenames[origFromEdit] = newText;
+          }
+        }
+      }
+
       for (const [selector, edit] of Object.entries(safeEdits) as Array<[string, any]>) {
         if (selector.startsWith("__studio_")) continue;
         if (!edit || typeof edit !== "object") continue;
@@ -349,13 +364,22 @@ function RootComponent() {
         const html = element as HTMLElement;
         rememberStudioOriginal(selector, html);
         const snap = studioSnapshots.get(selector);
-        if (edit.text !== undefined && html.dataset.studioTextApplied !== String(edit.text)) {
-          const node =
-            Array.from(html.childNodes).find((child) => child.nodeType === Node.TEXT_NODE && child.nodeValue?.trim()) ||
-            Array.from(html.childNodes).find((child) => child.nodeType === Node.TEXT_NODE);
-          if (node) node.nodeValue = String(edit.text);
-          else if (!html.children.length) html.appendChild(document.createTextNode(String(edit.text)));
-          html.dataset.studioTextApplied = String(edit.text);
+        if (edit.text !== undefined) {
+          const snapOrigText =
+            (snap?.directTextNodes?.map((d) => d.text || "").join("") || snap?.leafTextContent || "").trim();
+          const effectiveOrig = (edit.originalText || snapOrigText || "").trim();
+          if (effectiveOrig && effectiveOrig.length >= 2 && effectiveOrig !== String(edit.text).trim()) {
+            linkedRenames[effectiveOrig] = String(edit.text).trim();
+          }
+          if (html.dataset.studioTextApplied !== String(edit.text)) {
+            const node =
+              Array.from(html.childNodes).find((child) => child.nodeType === Node.TEXT_NODE && child.nodeValue?.trim()) ||
+              Array.from(html.childNodes).find((child) => child.nodeType === Node.TEXT_NODE);
+            if (node) {
+              node.nodeValue = String(edit.text);
+              html.dataset.studioTextApplied = String(edit.text);
+            }
+          }
         }
         if (edit.ariaLabel) html.setAttribute("aria-label", String(edit.ariaLabel));
         if (edit.role) html.setAttribute("role", String(edit.role));
@@ -404,67 +428,74 @@ function RootComponent() {
           }
         }
         if (edit.deleted) html.style.setProperty("display", "none", "important");
-        if (typeof edit.order === "number" && html.parentElement) {
-          if (snap) snap.wasReordered = true;
-          const siblings = Array.from(html.parentElement.children).filter((item) =>
-            item !== html && !(item as HTMLElement).dataset.studioCloneOf);
-          const currentIndex = Array.from(html.parentElement.children).indexOf(html);
-          const targetIndex = Math.max(0, Math.min(edit.order, siblings.length));
-          if (targetIndex < currentIndex && siblings[targetIndex]) html.parentElement.insertBefore(html, siblings[targetIndex]);
-          else if (targetIndex > currentIndex && siblings[targetIndex]) html.parentElement.insertBefore(html, siblings[targetIndex].nextSibling);
-          else if (targetIndex > currentIndex && !siblings[targetIndex]) html.parentElement.appendChild(html);
+        if (typeof edit.order === "number") {
+          html.style.setProperty("order", String(edit.order), "important");
         }
-        const parent = html.parentElement;
-        if (parent) {
-          const wanted = Math.min(5, Math.max(0, Number(edit.duplicateCount) || 0));
-          const present = Array.from(parent.children).filter((item) => (item as HTMLElement).dataset.studioCloneOf === selector).length;
-          for (let n = present; n < wanted; n++) {
-            const clone = html.cloneNode(true) as HTMLElement;
-            clone.removeAttribute("id");
-            clone.removeAttribute("data-studio-selected");
-            clone.dataset.studioCloneOf = selector;
-            publishedStudioClones.add(clone);
-            parent.insertBefore(clone, html.nextSibling);
-          }
-          if (Array.isArray(edit.pastedNodes) && edit.pastedNodes.length > 0) {
-            for (const pasted of edit.pastedNodes) {
-              if (!pasted?.id) continue;
-              const existingPasted = document.querySelector(`[data-studio-pasted-id="${pasted.id}"]`);
-              if (existingPasted) continue;
-              const created = document.createElement(pasted.tag || "div");
-              created.dataset.studioPastedId = pasted.id;
-              created.dataset.studioCloneOf = selector;
-              if (pasted.text) created.textContent = pasted.text;
-              if (pasted.attributes && typeof pasted.attributes === "object") {
-                for (const [ak, av] of Object.entries(pasted.attributes)) {
-                  if (typeof av === "string" && av && !ak.toLowerCase().startsWith("on") && ak !== "id") {
-                    try { created.setAttribute(ak, av); } catch {}
+      }
+
+      // Persist linked text renames for navigationRegistry & propagate across matching headings/links/buttons in DOM
+      try {
+        const prevRaw = localStorage.getItem("restocash_studio_linked_renames_v1");
+        const prevMap = prevRaw ? JSON.parse(prevRaw) : {};
+        const mergedRenames = { ...prevMap, ...linkedRenames };
+        localStorage.setItem("restocash_studio_linked_renames_v1", JSON.stringify(mergedRenames));
+        const renameEntries = Object.entries(mergedRenames).filter(
+          ([oldTxt, newTxt]) =>
+            typeof oldTxt === "string" &&
+            typeof newTxt === "string" &&
+            oldTxt.trim().length >= 2 &&
+            newTxt.trim().length > 0 &&
+            oldTxt.trim() !== newTxt.trim(),
+        ) as Array<[string, string]>;
+
+        if (renameEntries.length > 0) {
+          const candidates = document.querySelectorAll(
+            "h1, h2, h3, h4, h5, h6, a, button, span, [role='menuitem']",
+          );
+          candidates.forEach((node) => {
+            if (isStudioPreserved(node)) return;
+            const el = node as HTMLElement;
+            for (const child of Array.from(el.childNodes)) {
+              if (child.nodeType === Node.TEXT_NODE && child.nodeValue) {
+                const trimmed = child.nodeValue.trim();
+                for (const [oldTxt, newTxt] of renameEntries) {
+                  if (trimmed === oldTxt) {
+                    child.nodeValue = child.nodeValue.replace(oldTxt, newTxt);
                   }
                 }
-              }
-              if (pasted.styles && typeof pasted.styles === "object") {
-                for (const [sk, sv] of Object.entries(pasted.styles)) {
-                  if (typeof sv === "string" && sv) {
-                    const cssProp = sk.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
-                    created.style.setProperty(cssProp, sv, "important");
-                  }
-                }
-              }
-              publishedStudioClones.add(created);
-              if (pasted.placement === "inside") {
-                html.appendChild(created);
-              } else if (pasted.placement === "before") {
-                parent.insertBefore(created, html);
-              } else {
-                parent.insertBefore(created, html.nextSibling);
               }
             }
-          }
+          });
         }
+      } catch {
+        // ignore storage errors
+      }
+    };
+
+    const normalizeBrokenShiftAuditRenameOnce = () => {
+      try {
+        const flagKey = "restocash_shift_audit_unified_v2";
+        if (localStorage.getItem(flagKey) === "1") return;
+        const keysToClean = [
+          "restocash_studio_published_v1",
+          "restocash_studio_draft_v1",
+          "custom_text_map",
+          "restocash_studio_linked_renames_v1",
+        ];
+        for (const key of keysToClean) {
+          const raw = localStorage.getItem(key);
+          if (!raw || !raw.includes("الرقابة وسجل العمليات")) continue;
+          const replaced = raw.replace(/الرقابة وسجل العمليات/g, "تدقيق الورديات وسجل العمليات");
+          localStorage.setItem(key, replaced);
+        }
+        localStorage.setItem(flagKey, "1");
+      } catch {
+        // ignore storage errors
       }
     };
 
     const refreshLegacyStudioEdits = () => {
+      normalizeBrokenShiftAuditRenameOnce();
       try {
         const stored = JSON.parse(localStorage.getItem("custom_text_map") || "{}");
         activeLegacyStudioEdits = sanitizeStudioDomEditsMap(stored);
@@ -570,12 +601,14 @@ function RootComponent() {
     window.addEventListener("popstate", routeChangeHandler);
 
     const stopAppSync = createAppSync(queryClient);
+    const stopVisualPerms = setupVisualPermissionsRuntime();
     return () => {
       studioObserver?.disconnect();
       window.removeEventListener("studio_published_updated", publishedHandler);
       window.removeEventListener("studio_legacy_edits_updated", legacyEditsUpdatedHandler);
       window.removeEventListener("storage", storageHandler);
       window.removeEventListener("popstate", routeChangeHandler);
+      stopVisualPerms?.();
       stopAppSync?.();
     };
   }, [queryClient]);

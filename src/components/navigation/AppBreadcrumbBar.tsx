@@ -23,10 +23,11 @@ import {
   isDepartmentPermitted,
 } from "@/shared/services/userAuthorization";
 import {
-  NAVIGATION_DEPARTMENTS,
+  getResolvedNavigationDepartments,
   getActiveDepartment,
   getActiveSubsection,
   getActiveSubpageInfo,
+  resolveStudioLinkedLabel,
   type NavDepartment,
   type NavSubsection,
 } from "./navigationRegistry";
@@ -77,12 +78,12 @@ export function AppBreadcrumbBar({
   const activePerms = useMemo(() => getActiveUserPermissionsSync(), [pathname]);
 
   const visibleDepartments = useMemo(() => {
-    return NAVIGATION_DEPARTMENTS.filter((dept) =>
+    return getResolvedNavigationDepartments().filter((dept) =>
       hasDepartmentPermission
         ? hasDepartmentPermission(dept)
         : isDepartmentPermitted(activePerms, dept),
     );
-  }, [hasDepartmentPermission, activePerms]);
+  }, [hasDepartmentPermission, activePerms, pathname]);
 
   const activeDepartment = useMemo(
     () => getActiveDepartment(pathname, searchStr),

@@ -508,9 +508,6 @@ export const WarehouseManagement: React.FC = () => {
               <ArrowUpRight size={18} className="text-primary" />
               <span>سجل التحويلات المخزنية المتبادلة</span>
             </CardTitle>
-            <CardDescription className="text-xs mt-0.5">
-              تتبع جميع عمليات نقل البضائع والمكونات بين المخازن مع سجل المراجعة
-            </CardDescription>
           </div>
           <Button
             onClick={() => transfersQuery.refetch()}
@@ -613,9 +610,6 @@ export const WarehouseManagement: React.FC = () => {
               <Building2 className="text-primary" size={20} />
               إضافة مخزن جديد للنظام
             </DialogTitle>
-            <DialogDescription className="text-xs">
-              سيتم إنشاء المخزن وتجهيزه تلقائياً بالمكونات المطلوبة لأصناف المنيو.
-            </DialogDescription>
           </DialogHeader>
 
           <form
@@ -698,7 +692,7 @@ export const WarehouseManagement: React.FC = () => {
             <DialogFooter className="gap-2 sm:gap-0 pt-2">
               <Button
                 type="button"
-                variant="outline"
+                variant="close"
                 onClick={() => setIsAddOpen(false)}
                 className="font-bold"
               >
@@ -706,8 +700,9 @@ export const WarehouseManagement: React.FC = () => {
               </Button>
               <Button
                 type="submit"
+                variant="save"
                 disabled={createWarehouseMutation.isPending}
-                className="font-bold bg-primary text-primary-foreground"
+                className="font-bold"
               >
                 {createWarehouseMutation.isPending ? "جاري الإنشاء..." : "حفظ وإنشاء المخزن"}
               </Button>
@@ -778,7 +773,7 @@ export const WarehouseManagement: React.FC = () => {
             <DialogFooter className="gap-2 sm:gap-0 pt-2">
               <Button
                 type="button"
-                variant="outline"
+                variant="close"
                 onClick={() => setIsEditOpen(false)}
                 className="font-bold"
               >
@@ -786,8 +781,9 @@ export const WarehouseManagement: React.FC = () => {
               </Button>
               <Button
                 type="submit"
+                variant="save"
                 disabled={updateWarehouseMutation.isPending}
-                className="font-bold bg-primary text-primary-foreground"
+                className="font-bold"
               >
                 {updateWarehouseMutation.isPending ? "جاري الحفظ..." : "حفظ التغييرات"}
               </Button>
@@ -804,10 +800,6 @@ export const WarehouseManagement: React.FC = () => {
               <ArrowLeftRight className="text-primary" size={20} />
               تحويل كميات مخزنية ذرية
             </DialogTitle>
-            <DialogDescription className="text-xs">
-              سيتم خصم الكمية من مخزن المصدر وإضافتها لمخزن الهدف في معاملة قاعدة بيانات واحدة
-              ذرياً.
-            </DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleTransferSubmit} className="space-y-4 py-2">

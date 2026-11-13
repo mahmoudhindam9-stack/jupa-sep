@@ -1841,89 +1841,302 @@ export function ParkCustomersModal({ isOpen, onClose }: { isOpen: boolean; onClo
   const [nameAr, setNameAr] = useState("");
   const [phone, setPhone] = useState("");
   const [company, setCompany] = useState("");
+  const [selectedStatementCustomer, setSelectedStatementCustomer] = useState<any | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setCustomers(erpStore.getParkCustomers());
+    }
+  }, [isOpen]);
 
   const handleAdd = () => {
     if (!nameAr.trim()) {
       toast.error("يرجى إدخال اسم العميل!");
       return;
     }
-    erpStore.addParkCustomer({ name_ar: nameAr, phone, company });
+    const res = erpStore.addCustomer(nameAr.trim(), phone.trim(), company.trim());
     setCustomers(erpStore.getParkCustomers());
     setNameAr("");
     setPhone("");
     setCompany("");
-    toast.success("تم إضافة العميل بنجاح!");
+    toast.success(`تم إضافة العميل وإنشاء حسابه المحاسبي #${res.account_code}`);
+  };
+
+  const statementRows = useMemo(() => {
+    if (!selectedStatementCustomer) return [];
+    const state = erpStore.getState();
+    const targetCode = selectedStatementCustomer.account_code || "13020101";
+    const rows: Array<{
+      date: string;
+      ref: string;
+      description: string;
+      debit: number;
+      credit: number;
+      currency: string;
+    }> = [];
+
+    (state.journalEntries || []).forEach((je: any) => {
+      (je.lines || []).forEach((line: any) => {
+        if (String(line.account_code) === String(targetCode)) {
+          rows.push({
+            date: je.date || "",
+            ref: je.reference || je.id,
+            description: line.description || je.description || "",
+            debit: Number(line.debit || 0),
+            credit: Number(line.credit || 0),
+            currency: line.currency || je.currency || "USD",
+          });
+        }
+      });
+    });
+
+    (state.vouchers || [])
+      .filter(
+        (v: any) =>
+          !v.deleted &&
+          !v.reverted &&
+          (v.customer_id === selectedStatementCustomer.id ||
+            v.customer_name === selectedStatementCustomer.name_ar),
+      )
+      .forEach((v: any) => {
+        const exists = rows.some(
+          (r) => r.ref === v.journal_reference || r.ref === v.reference_number,
+        );
+        if (!exists) {
+          rows.push({
+            date: String(v.created_at || "").slice(0, 10),
+            ref: v.reference_number || v.id.substring(0, 8),
+            description: `${v.category} — ${v.description}`,
+            debit: Number(v.invoice_total ?? v.amount ?? 0),
+            credit: Number(v.amount ?? 0),
+            currency: v.currency || "USD",
+          });
+        }
+      });
+
+    let running = 0;
+    return rows.map((r) => {
+      running += r.debit - r.credit;
+      return { ...r, balance: Number(running.toFixed(2)) };
+    });
+  }, [selectedStatementCustomer, customers]);
+
+  const handlePrintCustomerStatement = () => {
+    if (!selectedStatementCustomer) return;
+    printAccountingDocument({
+      title: `كشف حساب العميل: ${selectedStatementCustomer.name_ar}`,
+      subtitle: `رقم الحساب المحاسبي: #${selectedStatementCustomer.account_code || "13020101"} | الهاتف: ${selectedStatementCustomer.phone || "—"}`,
+      columns: [
+        { key: "date", label: "التاريخ", align: "right" },
+        { key: "ref", label: "المرجع / القيد", align: "right" },
+        { key: "description", label: "البيان", align: "right" },
+        { key: "debit", label: "مدين", align: "center" },
+        { key: "credit", label: "دائن", align: "center" },
+        { key: "balance", label: "الرصيد التراكمي", align: "center" },
+      ],
+      rows: statementRows.map((r) => ({
+        date: r.date,
+        ref: r.ref,
+        description: r.description,
+        debit: `${r.debit.toLocaleString()} ${r.currency}`,
+        credit: `${r.credit.toLocaleString()} ${r.currency}`,
+        balance: `${r.balance.toLocaleString()} ${r.currency}`,
+      })),
+    });
+  };
+
+  const handleExportCustomerExcel = () => {
+    if (!selectedStatementCustomer) return;
+    const headers = ["التاريخ", "المرجع", "البيان", "مدين", "دائن", "الرصيد", "العملة"];
+    const csv =
+      "\uFEFF" +
+      [
+        headers.join(","),
+        ...statementRows.map((r) =>
+          [
+            r.date,
+            r.ref,
+            `"${String(r.description || "").replace(/"/g, '""')}"`,
+            r.debit,
+            r.credit,
+            r.balance,
+            r.currency,
+          ].join(","),
+        ),
+      ].join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `كشف_حساب_${selectedStatementCustomer.name_ar}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[600px] rounded-3xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[700px] rounded-3xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-base font-black flex items-center gap-2 text-teal-600">
             <Users size={18} />
-            إدارة عملاء التذاكر الآجلة
+            إدارة عملاء التذاكر الآجلة وكشوف الحسابات
           </DialogTitle>
-          <DialogDescription className="text-xs">
-            إضافة وتعديل بيانات العملاء والجهات المستفيدة من مبيعات التذاكر الآجلة.
-          </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-2 text-xs">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 bg-muted/40 p-3 rounded-2xl border border-border">
-            <Input
-              placeholder="اسم العميل (عربي) *"
-              value={nameAr}
-              onChange={(e) => setNameAr(e.target.value)}
-              className="h-8 text-xs font-bold rounded-xl"
-            />
-            <Input
-              placeholder="رقم الهاتف"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              className="h-8 text-xs font-mono rounded-xl"
-            />
-            <Input
-              placeholder="اسم الشركة / الجهة"
-              value={company}
-              onChange={(e) => setCompany(e.target.value)}
-              className="h-8 text-xs font-bold rounded-xl"
-            />
-            <Button
-              onClick={handleAdd}
-              className="sm:col-span-3 h-8 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl gap-1 mt-1"
-            >
-              <Plus size={14} /> إضافة عميل جديد
-            </Button>
-          </div>
+        {selectedStatementCustomer ? (
+          <div className="space-y-4 py-2 text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2 bg-muted/40 p-3 rounded-2xl border border-border">
+              <div>
+                <div className="font-black text-sm text-foreground">
+                  كشف حساب العميل: {selectedStatementCustomer.name_ar}
+                </div>
+                <div className="text-[11px] font-mono text-indigo-600 font-bold">
+                  حساب المستوى الرابع: #{selectedStatementCustomer.account_code || "13020101"}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="print"
+                  size="sm"
+                  onClick={handlePrintCustomerStatement}
+                  className="rounded-xl text-xs font-black gap-1.5"
+                >
+                  <Printer size={14} /> طباعة
+                </Button>
+                <Button
+                  variant="excel"
+                  size="sm"
+                  onClick={handleExportCustomerExcel}
+                  className="rounded-xl text-xs font-black gap-1.5"
+                >
+                  طباعة إكسيل
+                </Button>
+                <Button
+                  variant="close"
+                  size="sm"
+                  onClick={() => setSelectedStatementCustomer(null)}
+                  className="rounded-xl text-xs font-black"
+                >
+                  رجوع للقائمة
+                </Button>
+              </div>
+            </div>
 
-          <div className="overflow-x-auto border border-border rounded-2xl">
-            <table className="w-full text-right border-collapse text-xs">
-              <thead>
-                <tr className="bg-muted/50 border-b border-border font-black">
-                  <th className="p-2.5">اسم العميل</th>
-                  <th className="p-2.5">الهاتف</th>
-                  <th className="p-2.5">الشركة</th>
-                  <th className="p-2.5 text-left">الرصيد الآجل الحالي</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {customers.map((c) => (
-                  <tr key={c.id}>
-                    <td className="p-2.5 font-bold">{c.name_ar}</td>
-                    <td className="p-2.5 font-mono">{c.phone || "-"}</td>
-                    <td className="p-2.5">{c.company || "-"}</td>
-                    <td className="p-2.5 text-left font-mono font-bold text-rose-600">
-                      ${c.balance_usd || 0}
-                    </td>
+            <div className="overflow-x-auto border border-border rounded-2xl">
+              <table className="w-full text-right border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-900 text-white font-black">
+                    <th className="p-2.5">التاريخ</th>
+                    <th className="p-2.5">المرجع</th>
+                    <th className="p-2.5">البيان</th>
+                    <th className="p-2.5">مدين</th>
+                    <th className="p-2.5">دائن</th>
+                    <th className="p-2.5">الرصيد</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {statementRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="p-6 text-center text-muted-foreground font-bold">
+                        لا توجد حركات مسجلة على حساب هذا العميل حتى الآن
+                      </td>
+                    </tr>
+                  ) : (
+                    statementRows.map((r, i) => (
+                      <tr key={i}>
+                        <td className="p-2.5 font-mono">{r.date}</td>
+                        <td className="p-2.5 font-mono font-bold text-indigo-600">{r.ref}</td>
+                        <td className="p-2.5 font-bold">{r.description}</td>
+                        <td className="p-2.5 font-mono text-emerald-600 font-bold">
+                          {r.debit.toLocaleString()} {r.currency}
+                        </td>
+                        <td className="p-2.5 font-mono text-amber-600 font-bold">
+                          {r.credit.toLocaleString()} {r.currency}
+                        </td>
+                        <td className="p-2.5 font-mono font-black">
+                          {r.balance.toLocaleString()} {r.currency}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="space-y-4 py-2 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 bg-muted/40 p-3 rounded-2xl border border-border">
+              <Input
+                placeholder="اسم العميل (عربي) *"
+                value={nameAr}
+                onChange={(e) => setNameAr(e.target.value)}
+                className="h-8 text-xs font-bold rounded-xl"
+              />
+              <Input
+                placeholder="رقم الهاتف"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                className="h-8 text-xs font-mono rounded-xl"
+              />
+              <Input
+                placeholder="اسم الشركة / الجهة"
+                value={company}
+                onChange={(e) => setCompany(e.target.value)}
+                className="h-8 text-xs font-bold rounded-xl"
+              />
+              <Button
+                variant="save"
+                onClick={handleAdd}
+                className="sm:col-span-3 h-8 font-bold rounded-xl gap-1 mt-1"
+              >
+                <Plus size={14} /> إضافة عميل جديد (مع حساب محاسبي تلقائي)
+              </Button>
+            </div>
+
+            <div className="overflow-x-auto border border-border rounded-2xl">
+              <table className="w-full text-right border-collapse text-xs">
+                <thead>
+                  <tr className="bg-muted/50 border-b border-border font-black">
+                    <th className="p-2.5">اسم العميل (اضغط لفتح كشف الحساب)</th>
+                    <th className="p-2.5">رقم الحساب</th>
+                    <th className="p-2.5">الهاتف</th>
+                    <th className="p-2.5">الشركة</th>
+                    <th className="p-2.5 text-left">الرصيد الآجل الحالي</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {customers.map((c) => (
+                    <tr key={c.id} className="hover:bg-muted/30">
+                      <td className="p-2.5 font-bold">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedStatementCustomer(c)}
+                          className="app-link underline font-black text-indigo-600 dark:text-indigo-400 cursor-pointer"
+                          title="اضغط لفتح كشف حساب العميل"
+                        >
+                          {c.name_ar}
+                        </button>
+                      </td>
+                      <td className="p-2.5 font-mono font-bold text-teal-700 dark:text-teal-400">
+                        #{c.account_code || "13020101"}
+                      </td>
+                      <td className="p-2.5 font-mono">{c.phone || "-"}</td>
+                      <td className="p-2.5">{c.company || "-"}</td>
+                      <td className="p-2.5 text-left font-mono font-bold text-rose-600">
+                        ${c.balance_usd || 0}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         <DialogFooter>
-          <Button onClick={onClose} className="bg-teal-600 text-white rounded-xl font-bold">
+          <Button variant="close" onClick={onClose} className="rounded-xl font-bold">
             إغلاق
           </Button>
         </DialogFooter>

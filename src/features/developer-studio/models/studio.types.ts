@@ -292,6 +292,7 @@ export interface StudioPastedNode {
 
 export interface StudioDomEdit {
   text?: string;
+  originalText?: string;
   styles?: Record<string, string>;
   responsiveStyles?: {
     desktop?: Record<string, string>;

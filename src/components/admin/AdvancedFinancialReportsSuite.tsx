@@ -1532,23 +1532,20 @@ export function AdvancedFinancialReportsSuite({
                   <FileText className="h-5 w-5 text-primary" />
                   تقرير تفصيل الحالة الحسابية لكل حساب (Detailed Account Status)
                 </CardTitle>
-                <CardDescription className="text-xs">
-                  يعرض الرصيد الافتتاحي، إجمالي المدين والدائن، صافي الحركة، الرصيد الختامي، طبيعة
-                  الحساب، وعدد الحركات مع إمكانية طباعة بطاقة كل حساب منفرداً أو التقرير بالكامل
-                </CardDescription>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <Button
                   size="sm"
+                  variant="print"
                   onClick={handlePrintAllAccountStatus}
-                  className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs rounded-xl gap-1.5"
+                  className="font-bold text-xs rounded-xl gap-1.5"
                 >
                   <Printer size={14} />
                   طباعة تقرير الحالة الحسابية الشامل
                 </Button>
                 <Button
                   size="sm"
-                  variant="outline"
+                  variant="excel"
                   onClick={() =>
                     exportRowsToExcel(
                       filteredDiagnostics.map((d) => ({
@@ -1614,9 +1611,15 @@ export function AdvancedFinancialReportsSuite({
                         <tr key={d.code} className="hover:bg-muted/30 transition">
                           <td className="p-3 font-mono font-bold text-primary">{d.code}</td>
                           <td className="p-3 font-bold text-foreground">
-                            <div>{d.name}</div>
+                            <button
+                              type="button"
+                              onClick={() => setInspectedAccountCode(d.code)}
+                              className="app-link text-right font-bold cursor-pointer"
+                            >
+                              {d.name}
+                            </button>
                             {d.lastTxDate && (
-                              <span className="text-[10px] text-muted-foreground font-normal">
+                              <span className="block text-[10px] text-muted-foreground font-normal">
                                 آخر حركة: {d.lastTxDate} ({d.shareOfTypePct.toFixed(1)}% من مجموعته)
                               </span>
                             )}
@@ -1680,7 +1683,7 @@ export function AdvancedFinancialReportsSuite({
                             <div className="flex items-center justify-center gap-1">
                               <Button
                                 size="sm"
-                                variant="outline"
+                                variant="edit"
                                 onClick={() => setInspectedAccountCode(d.code)}
                                 className="h-7 px-2 text-[11px] font-bold rounded-lg gap-1"
                                 title="عرض تفصيل الحالة الحسابية والحركات"
@@ -1690,9 +1693,9 @@ export function AdvancedFinancialReportsSuite({
                               </Button>
                               <Button
                                 size="sm"
-                                variant="ghost"
+                                variant="print"
                                 onClick={() => handlePrintSingleAccountStatus(d)}
-                                className="h-7 px-2 text-[11px] font-bold rounded-lg text-primary hover:bg-primary/10"
+                                className="h-7 px-2 text-[11px] font-bold rounded-lg"
                                 title="طباعة بطاقة الحالة الحسابية وكشف الحساب"
                               >
                                 <Printer size={13} />
@@ -1724,9 +1727,6 @@ export function AdvancedFinancialReportsSuite({
                   {selectedComparisonCodes.length} مختار
                 </Badge>
               </CardTitle>
-              <CardDescription className="text-xs">
-                حدد حسابين أو أكثر لإجراء مقارنة مالية تفصيلية أو طباعة تقرير مخصص لها
-              </CardDescription>
             </CardHeader>
             <CardContent className="p-3 space-y-3">
               {/* Quick Preset Selection Buttons */}
@@ -2215,23 +2215,20 @@ export function AdvancedFinancialReportsSuite({
                 <Scale className="h-5 w-5 text-primary" />
                 ميزان المراجعة العام الشامل — بالمجاميع والأرصدة (General Trial Balance)
               </CardTitle>
-              <CardDescription className="text-xs">
-                كشف شامل للأرصدة الافتتاحية، حركات الفترة، المجاميع التراكمية، والأرصدة الختامية
-                المدينة والدائنة لجميع الحسابات
-              </CardDescription>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 size="sm"
+                variant="print"
                 onClick={handlePrintGeneralTrialBalance}
-                className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs rounded-xl gap-1.5"
+                className="font-bold text-xs rounded-xl gap-1.5"
               >
                 <Printer size={14} />
                 طباعة ميزان المراجعة العام
               </Button>
               <Button
                 size="sm"
-                variant="outline"
+                variant="excel"
                 onClick={() =>
                   exportRowsToExcel(
                     filteredDiagnostics.map((d) => ({
@@ -2395,10 +2392,6 @@ export function AdvancedFinancialReportsSuite({
                 <Layers className="h-5 w-5 text-primary" />
                 ميزان المراجعة المختصر بالأرصدة الصافية (Summary Trial Balance)
               </CardTitle>
-              <CardDescription className="text-xs">
-                عرض مختصر ومجمّع للأرصدة النهائية الصافية حسب المجموعات المحاسبية أو الأبواب
-                الرئيسية أو الحسابات النشطة فقط
-              </CardDescription>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <div className="flex items-center rounded-xl border p-1 bg-muted/40">
@@ -2424,15 +2417,16 @@ export function AdvancedFinancialReportsSuite({
 
               <Button
                 size="sm"
+                variant="print"
                 onClick={handlePrintSummaryTrialBalance}
-                className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs rounded-xl gap-1.5"
+                className="font-bold text-xs rounded-xl gap-1.5"
               >
                 <Printer size={14} />
                 طباعة الميزان المختصر
               </Button>
               <Button
                 size="sm"
-                variant="outline"
+                variant="excel"
                 onClick={() =>
                   exportRowsToExcel(
                     summaryTrialRows.rows.map((r) => ({
@@ -2521,22 +2515,20 @@ export function AdvancedFinancialReportsSuite({
               <h3 className="text-base font-black text-foreground">
                 القوائم المالية الختامية الموحدة (قائمة الدخل • المركز المالي • التدفقات النقدية)
               </h3>
-              <p className="text-xs text-muted-foreground">
-                توليد آلي مباشر من أرصدة دفتر الأستاذ والقيود اليومية المعتمدة
-              </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button
                 size="sm"
+                variant="print"
                 onClick={() => handlePrintFinancialStatements("all")}
-                className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs rounded-xl gap-1.5"
+                className="font-bold text-xs rounded-xl gap-1.5"
               >
                 <Printer size={14} />
                 طباعة كافة القوائم المالية معاً
               </Button>
               <Button
                 size="sm"
-                variant="outline"
+                variant="print"
                 onClick={() => handlePrintFinancialStatements("income")}
                 className="font-bold text-xs rounded-xl gap-1.5"
               >
@@ -2545,7 +2537,7 @@ export function AdvancedFinancialReportsSuite({
               </Button>
               <Button
                 size="sm"
-                variant="outline"
+                variant="print"
                 onClick={() => handlePrintFinancialStatements("balance_sheet")}
                 className="font-bold text-xs rounded-xl gap-1.5"
               >
@@ -2554,7 +2546,7 @@ export function AdvancedFinancialReportsSuite({
               </Button>
               <Button
                 size="sm"
-                variant="outline"
+                variant="print"
                 onClick={() => handlePrintFinancialStatements("cash_flow")}
                 className="font-bold text-xs rounded-xl gap-1.5"
               >
@@ -2573,13 +2565,10 @@ export function AdvancedFinancialReportsSuite({
                     <TrendingUp className="h-5 w-5 text-emerald-600" />
                     قائمة الدخل الشاملة (Income Statement)
                   </CardTitle>
-                  <CardDescription className="text-xs">
-                    الإيرادات والمصروفات وصافي الربح أو الخسارة
-                  </CardDescription>
                 </div>
                 <Button
                   size="sm"
-                  variant="ghost"
+                  variant="print"
                   onClick={() => handlePrintFinancialStatements("income")}
                   className="h-8 gap-1 text-xs font-bold"
                 >
@@ -2661,13 +2650,10 @@ export function AdvancedFinancialReportsSuite({
                     <Landmark className="h-5 w-5 text-blue-600" />
                     قائمة المركز المالي / الميزانية العمومية
                   </CardTitle>
-                  <CardDescription className="text-xs">
-                    الأصول والممتلكات مقابل الالتزامات وحقوق الملكية
-                  </CardDescription>
                 </div>
                 <Button
                   size="sm"
-                  variant="ghost"
+                  variant="print"
                   onClick={() => handlePrintFinancialStatements("balance_sheet")}
                   className="h-8 gap-1 text-xs font-bold"
                 >
@@ -2754,13 +2740,10 @@ export function AdvancedFinancialReportsSuite({
                   <Wallet className="h-5 w-5 text-amber-600" />
                   قائمة التدفقات النقدية وحركة الخزائن والبنوك (Cash Flow & Treasury)
                 </CardTitle>
-                <CardDescription className="text-xs">
-                  حركة السيولة النقدية الداخلة والخارجة وأرصدة الخزائن والبنوك المعتمدة
-                </CardDescription>
               </div>
               <Button
                 size="sm"
-                variant="outline"
+                variant="print"
                 onClick={() => handlePrintFinancialStatements("cash_flow")}
                 className="h-8 gap-1.5 text-xs font-bold rounded-xl"
               >
@@ -2828,13 +2811,10 @@ export function AdvancedFinancialReportsSuite({
                 <CardTitle className="text-base font-black">
                   تقرير حركة العملات والمعادل بالدولار (Multi-Currency Financial Summary)
                 </CardTitle>
-                <CardDescription className="text-xs">
-                  ملخص القيود والحركات المسجلة بكل عملة (USD / SSP / EGP) وقيمتها المعادلة بالدولار
-                </CardDescription>
               </div>
               <Button
                 size="sm"
-                variant="outline"
+                variant="print"
                 onClick={() =>
                   printAccountingDocument({
                     title: "تقرير حركة العملات والمعادل بالدولار الأمريكي",
@@ -2903,13 +2883,10 @@ export function AdvancedFinancialReportsSuite({
                 <CardTitle className="text-base font-black">
                   تقرير مواقف حسابات الموردين والذمم والالتزامات
                 </CardTitle>
-                <CardDescription className="text-xs">
-                  كشف بحسابات الموردين (2401...) والذمم الدائنة والمدينة وأرصدتها الحالية
-                </CardDescription>
               </div>
               <Button
                 size="sm"
-                variant="outline"
+                variant="print"
                 onClick={() => {
                   const list = accountDiagnostics.filter(
                     (d) =>
@@ -2969,7 +2946,15 @@ export function AdvancedFinancialReportsSuite({
                       .map((d) => (
                         <tr key={d.code} className="hover:bg-muted/20">
                           <td className="p-3 font-mono font-bold text-primary">{d.code}</td>
-                          <td className="p-3 font-bold">{d.name}</td>
+                          <td className="p-3 font-bold">
+                            <button
+                              type="button"
+                              onClick={() => setInspectedAccountCode(d.code)}
+                              className="app-link font-bold text-right cursor-pointer"
+                            >
+                              {d.name}
+                            </button>
+                          </td>
                           <td className="p-3 font-mono text-emerald-600">
                             ${fmtNum(d.periodDebit)}
                           </td>
@@ -3015,9 +3000,6 @@ export function AdvancedFinancialReportsSuite({
                 {inspectedDiagnostic?.level}
               </Badge>
             </DialogTitle>
-            <DialogDescription className="text-xs">
-              تشخيص كامل لحالة الحساب وأرصدته الافتتاحية والختامية وسجل الحركات التفصيلي
-            </DialogDescription>
           </DialogHeader>
 
           {inspectedDiagnostic && (
@@ -3131,15 +3113,38 @@ export function AdvancedFinancialReportsSuite({
               <>
                 <Button
                   size="sm"
+                  variant="print"
                   onClick={() => handlePrintSingleAccountStatus(inspectedDiagnostic)}
-                  className="bg-primary text-primary-foreground font-bold text-xs rounded-xl gap-1.5"
+                  className="font-bold text-xs rounded-xl gap-1.5"
                 >
                   <Printer size={14} />
                   طباعة بطاقة الحالة الحسابية وكشف الحركات
                 </Button>
                 <Button
                   size="sm"
-                  variant="outline"
+                  variant="excel"
+                  onClick={() =>
+                    exportRowsToExcel(
+                      inspectedDiagnostic.movements.map((m) => ({
+                        "التاريخ": m.date,
+                        "المرجع": m.reference,
+                        "البيان المحاسبي": m.description,
+                        "مدين (USD)": m.debit,
+                        "دائن (USD)": m.credit,
+                        "الرصيد التراكمي": m.runningBalance,
+                      })),
+                      `كشف_${inspectedDiagnostic.code}`,
+                      `Account_Statement_${inspectedDiagnostic.code}`,
+                    )
+                  }
+                  className="font-bold text-xs rounded-xl gap-1.5"
+                >
+                  <FileSpreadsheet size={14} />
+                  طباعة إكسيل (Excel)
+                </Button>
+                <Button
+                  size="sm"
+                  variant="edit"
                   onClick={() => {
                     if (!selectedComparisonCodes.includes(inspectedDiagnostic.code)) {
                       setSelectedComparisonCodes((prev) => [...prev, inspectedDiagnostic.code]);
@@ -3156,7 +3161,7 @@ export function AdvancedFinancialReportsSuite({
             )}
             <Button
               size="sm"
-              variant="outline"
+              variant="close"
               onClick={() => setInspectedAccountCode(null)}
               className="font-bold text-xs rounded-xl"
             >

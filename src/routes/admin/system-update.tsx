@@ -3,7 +3,7 @@ import {
   extractTabParam,
   useSyncedSubTab,
 } from "@/components/navigation/navigationRegistry";
-import { useRef, useState, useEffect, useCallback } from "react";
+import React, { useRef, useState, useEffect, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { erpStore } from "@/shared/services/erpStore";
 import { tableOrdersStore } from "@/shared/services/tableOrdersStore";

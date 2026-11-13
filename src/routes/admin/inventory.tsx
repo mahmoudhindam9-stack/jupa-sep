@@ -3,7 +3,7 @@ import { createFileRoute, Link, useLocation, useNavigate } from "@tanstack/react
 import { extractTabParam, useSyncedSubTab } from "@/components/navigation/navigationRegistry";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as XLSX from "xlsx";
-import { useState, useMemo, useEffect, useCallback } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";

@@ -155,11 +155,11 @@ export function resolveBreadcrumbs(pathname: string, searchStr: string): {
         subPage: { label: "المركز المالي الشامل", icon: TrendingUp },
       };
     }
-    if (tab === "shift_audit") {
+    if (tab === "shift_audit" || tab === "shifts") {
       return {
         isRoot: false,
         parentDept: {
-          label: "تدقيق الورديات",
+          label: "تدقيق الورديات وسجل العمليات",
           to: "/admin",
           search: { tab: "shift_audit" },
           icon: ShieldCheck,
@@ -171,9 +171,9 @@ export function resolveBreadcrumbs(pathname: string, searchStr: string): {
       return {
         isRoot: false,
         parentDept: {
-          label: "سجل العمليات",
+          label: "تدقيق الورديات وسجل العمليات",
           to: "/admin",
-          search: { tab: "audit_logs" },
+          search: { tab: "shift_audit" },
           icon: History,
         },
         subPage: { label: "سجل العمليات والرقابة الشاملة", icon: History },

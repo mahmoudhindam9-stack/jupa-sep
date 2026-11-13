@@ -10,7 +10,7 @@ import {
   useSyncedSubTab,
 } from "@/components/navigation/navigationRegistry";
 import { useQuery } from "@tanstack/react-query";
-import { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
 import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";

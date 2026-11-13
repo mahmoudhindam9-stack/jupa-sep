@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { createFileRoute, useLocation, useNavigate, Link } from "@tanstack/react-router";
 import { extractTabParam, useSyncedSubTab } from "@/components/navigation/navigationRegistry";
-import { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useSettings } from "@/hooks/use-settings";
 import {

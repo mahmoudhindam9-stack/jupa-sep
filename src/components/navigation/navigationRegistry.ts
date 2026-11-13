@@ -92,8 +92,17 @@ export function useSyncedSubTab(
       }
     }
     if (existingTab !== currentTab) {
-      url.searchParams.set("tab", currentTab);
-      window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}`);
+      const timerId = window.setTimeout(() => {
+        if (!window.location.pathname.startsWith(basePath)) return;
+        const latestUrl = new URL(window.location.href);
+        latestUrl.searchParams.set("tab", currentTab);
+        window.history.replaceState(
+          window.history.state,
+          "",
+          `${latestUrl.pathname}${latestUrl.search}`,
+        );
+      }, 0);
+      return () => window.clearTimeout(timerId);
     }
   }, [basePath, currentTab, defaultTab]);
 }
@@ -789,7 +798,39 @@ const SUBPAGE_REGISTRY: Record<
     tables_report: { labelAr: "تقرير إحصائيات جداول النظام والسجلات", labelEn: "System Tables Report", parentTab: "reports" },
     release_status: { labelAr: "تقرير حالة الإصدارات والربط السحابي", labelEn: "Release & Cloud Status", parentTab: "reports" },
   },
+  "/admin": {
+    shift_audit: { labelAr: "تدقيق الورديات وسجل العمليات", labelEn: "Shift Audit & Operations Log", parentTab: "operations" },
+    audit_logs: { labelAr: "سجل العمليات والرقابة الشاملة", labelEn: "System Audit & Operations Log", parentTab: "reports" },
+    shifts: { labelAr: "تدقيق الورديات وسجل العمليات", labelEn: "Shift Audit & Operations Log", parentTab: "operations" },
+  },
 };
+
+export function resolveStudioLinkedLabel(defaultLabel: string): string {
+  if (!defaultLabel || typeof window === "undefined") return defaultLabel;
+  try {
+    const raw = window.localStorage.getItem("restocash_studio_linked_renames_v1");
+    if (!raw) return defaultLabel;
+    const map = JSON.parse(raw) as Record<string, string>;
+    const trimmed = defaultLabel.trim();
+    if (map && typeof map[trimmed] === "string" && map[trimmed].trim().length > 0) {
+      return map[trimmed].trim();
+    }
+  } catch {
+    // ignore storage errors
+  }
+  return defaultLabel;
+}
+
+export function getResolvedNavigationDepartments(): NavDepartment[] {
+  return NAVIGATION_DEPARTMENTS.map((dept) => ({
+    ...dept,
+    labelAr: resolveStudioLinkedLabel(dept.labelAr),
+    children: dept.children.map((sub) => ({
+      ...sub,
+      labelAr: resolveStudioLinkedLabel(sub.labelAr),
+    })),
+  }));
+}
 
 export function getActiveSubpageInfo(
   pathname: string,
@@ -822,9 +863,14 @@ export function getActiveSubpageInfo(
   }
 
   for (const [basePath, map] of Object.entries(SUBPAGE_REGISTRY)) {
-    if (pathname.startsWith(basePath) && map[tab]) {
+    const matchesBase =
+      basePath === "/admin"
+        ? pathname === "/admin" || pathname === "/admin/"
+        : pathname.startsWith(basePath);
+    if (matchesBase && map[tab]) {
       return {
         ...map[tab],
+        labelAr: resolveStudioLinkedLabel(map[tab].labelAr),
         parentPath: basePath,
       };
     }
@@ -836,9 +882,18 @@ export function getActiveDepartment(
   pathname: string,
   searchStr: string,
 ): NavDepartment | undefined {
-  return NAVIGATION_DEPARTMENTS.find((dept) =>
+  const found = NAVIGATION_DEPARTMENTS.find((dept) =>
     dept.matchDepartment(pathname, searchStr),
   );
+  if (!found) return undefined;
+  return {
+    ...found,
+    labelAr: resolveStudioLinkedLabel(found.labelAr),
+    children: found.children.map((sub) => ({
+      ...sub,
+      labelAr: resolveStudioLinkedLabel(sub.labelAr),
+    })),
+  };
 }
 
 export function getActiveSubsection(

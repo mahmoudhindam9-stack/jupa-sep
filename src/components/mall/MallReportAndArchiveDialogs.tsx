@@ -17,7 +17,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Archive, FileText, Printer, Upload } from "lucide-react";
+import { Archive, FileSpreadsheet, FileText, Printer, Upload } from "lucide-react";
+import * as XLSX from "xlsx";
 
 const MONTHS_AR = [
   "يناير",
@@ -56,6 +57,57 @@ export function MallReportAndArchiveDialogs({
   reportData,
   handlePrintStatusReport,
 }: any) {
+  const handleExportReportExcel = () => {
+    if (!reportData?.rows?.length) return;
+    if (reportShopId !== "all" && reportData.rows[0]) {
+      const shopRow = reportData.rows[0];
+      const paymentRows = (shopRow.allShopPayments || []).map((p: any) => ({
+        "السنة": p.year,
+        "الشهر": MONTHS_AR[p.month - 1] || p.month,
+        "قيمة المستحق ($)": p.amount_due || shopRow.monthlyRent,
+        "المبلغ المسدد ($)": p.amount_paid || 0,
+        "الحالة": p.status === "paid" ? "مسدد" : p.status === "partial" ? "جزئي" : "غير مسدد",
+        "رقم الإيصال": p.receipt_number || "-",
+        "تاريخ الدفع": p.payment_date || "-",
+        "طريقة الدفع": p.payment_method === "cash" ? "نقدي" : "تحويل",
+        "ملاحظات": p.notes || "",
+      }));
+      const ws = XLSX.utils.json_to_sheet(
+        paymentRows.length > 0
+          ? paymentRows
+          : [
+              {
+                "رقم المحل": shopRow.shopNumber,
+                "اسم النشاط": shopRow.shopName,
+                "المستأجر": shopRow.tenant,
+                "الإيجار الشهري ($)": shopRow.monthlyRent,
+                "المدفوع للشهر ($)": shopRow.amountPaid,
+                "المتبقي ($)": shopRow.outstanding,
+              },
+            ],
+      );
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "كشف حساب المستأجر");
+      XLSX.writeFile(wb, `كشف_حساب_${shopRow.tenant || shopRow.shopNumber}.xlsx`);
+      return;
+    }
+
+    const rows = reportData.rows.map((r: any) => ({
+      "رقم المحل": r.shopNumber,
+      "اسم النشاط": r.shopName,
+      "المستأجر": r.tenant,
+      "الحالة": r.statusText,
+      "الإيجار الشهري ($)": r.monthlyRent,
+      "المدفوع للشهر ($)": r.amountPaid,
+      "المتبقي ($)": r.outstanding,
+      "تفاصيل الدفعة": r.paymentDetails,
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "تقرير المول");
+    XLSX.writeFile(wb, `تقرير_حالة_المول_${reportDate}.xlsx`);
+  };
+
   return (
     <>
       {/* TERMINATION MODAL */}
@@ -66,10 +118,6 @@ export function MallReportAndArchiveDialogs({
               <FileText size={20} />
               طباعة وفسخ عقد إيجار وتسليم المحل
             </DialogTitle>
-            <DialogDescription className="text-xs">
-              اختر المحل المرغوب فسخ تعاقده وارفع وثيقة الفسخ الموقعة لإتمام الأرشفة. لا يتم توليد
-              أي قيود مالية تلقائية؛ تُسجّل أي تسوية مالية بشكل مستقل عبر قسم الإدارة المالية.
-            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
@@ -203,24 +251,25 @@ export function MallReportAndArchiveDialogs({
 
           <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-border flex-wrap">
             <Button
-              variant="outline"
+              variant="close"
               className="rounded-xl font-bold cursor-pointer"
               onClick={() => setIsTerminationModalOpen(false)}
             >
               إلغاء
             </Button>
             <Button
-              variant="outline"
+              variant="print"
               disabled={!selectedShopForTermination}
               onClick={printTerminationContent}
-              className="rounded-xl font-bold text-blue-600 border-blue-200 hover:bg-blue-50 gap-1.5 cursor-pointer"
+              className="rounded-xl font-bold gap-1.5 cursor-pointer"
             >
               <Printer size={15} />
               طباعة محضر الفسخ الرسمي
             </Button>
             <Button
+              variant="delete"
               disabled={!terminationForm.shop_id || !terminationForm.termination_image}
-              className="rounded-xl font-bold bg-rose-600 hover:bg-rose-700 text-white gap-2 cursor-pointer disabled:opacity-50"
+              className="rounded-xl font-bold gap-2 cursor-pointer"
               onClick={handleSaveTermination}
             >
               حفظ الفسخ، الأرشفة، وتحويل المحل لفارغ
@@ -237,10 +286,6 @@ export function MallReportAndArchiveDialogs({
               <Archive size={20} />
               أرشيف العقود وفسخ التعاقدات للمحلات
             </DialogTitle>
-            <DialogDescription className="text-xs">
-              سجل كامل للعقود المنتهية والمفسوخة، بيانات التأمين المسترد، ومحاضر التسليم الموقعة
-              ومستنداتها.
-            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3 py-2">
@@ -315,6 +360,7 @@ export function MallReportAndArchiveDialogs({
 
           <DialogFooter className="pt-2 border-t border-border">
             <Button
+              variant="close"
               className="rounded-xl font-bold cursor-pointer"
               onClick={() => setIsArchiveModalOpen(false)}
             >
@@ -330,12 +376,8 @@ export function MallReportAndArchiveDialogs({
           <DialogHeader className="text-right pb-2 border-b border-border/60">
             <DialogTitle className="flex items-center gap-2 text-emerald-600 text-lg font-black">
               <Printer size={20} />
-              معاينة وطباعة تقرير حالة المول وعقود الإيجار
+              كشف حساب المستأجر وحالة عقود الإيجار
             </DialogTitle>
-            <DialogDescription className="text-xs">
-              قم بمراجعة تقرير سداد إيجارات المحلات وحالة العقود وتفاصيل المبالغ المتبقية قبل
-              طباعتها أو تصديرها.
-            </DialogDescription>
           </DialogHeader>
 
           {/* FILTERS SECTION */}
@@ -373,13 +415,22 @@ export function MallReportAndArchiveDialogs({
               />
             </div>
 
-            <div className="flex items-end justify-end">
+            <div className="flex items-end justify-end gap-2">
               <Button
+                variant="print"
                 onClick={handlePrintStatusReport}
-                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black gap-2 rounded-xl h-10 shadow-sm cursor-pointer"
+                className="flex-1 font-black gap-1.5 rounded-xl h-10 shadow-sm cursor-pointer"
               >
-                <Printer size={16} />
-                طباعة هذا التقرير الآن
+                <Printer size={15} />
+                طباعة
+              </Button>
+              <Button
+                variant="excel"
+                onClick={handleExportReportExcel}
+                className="flex-1 font-black gap-1.5 rounded-xl h-10 shadow-sm cursor-pointer"
+              >
+                <FileSpreadsheet size={15} />
+                إكسيل
               </Button>
             </div>
           </div>
@@ -672,13 +723,22 @@ export function MallReportAndArchiveDialogs({
           <DialogFooter className="pt-2 border-t border-border flex justify-end gap-2">
             <Button
               className="rounded-xl font-bold cursor-pointer"
-              variant="outline"
+              variant="close"
               onClick={() => setIsStatusReportModalOpen(false)}
             >
               إغلاق المعاينة
             </Button>
             <Button
-              className="rounded-xl font-bold cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white"
+              className="rounded-xl font-bold cursor-pointer gap-1.5"
+              variant="excel"
+              onClick={handleExportReportExcel}
+            >
+              <FileSpreadsheet size={16} />
+              طباعة وتصدير إكسيل
+            </Button>
+            <Button
+              className="rounded-xl font-bold cursor-pointer gap-1.5"
+              variant="print"
               onClick={handlePrintStatusReport}
             >
               <Printer size={16} />

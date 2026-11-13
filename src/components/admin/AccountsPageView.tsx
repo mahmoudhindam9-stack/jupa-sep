@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
 import { erpStore, type Account } from "@/shared/services/erpStore";
 import { printAccountingDocument } from "@/shared/utils/printAccountingDocument";

@@ -1622,16 +1622,17 @@ function MallManagementPage() {
                 </SelectContent>
               </Select>
               <Button
+                variant="save"
                 onClick={handleOpenAddShop}
-                className="bg-primary text-primary-foreground font-bold gap-1.5 rounded-xl text-xs h-10 cursor-pointer"
+                className="font-bold gap-1.5 rounded-xl text-xs h-10 cursor-pointer"
               >
                 <Plus size={15} />
                 إضافة محل جديد
               </Button>
               <Button
                 onClick={() => erpStore.resetMallData()}
-                variant="outline"
-                className="font-bold gap-2 rounded-xl text-xs h-10 cursor-pointer border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                variant="edit"
+                className="font-bold gap-2 rounded-xl text-xs h-10 cursor-pointer"
               >
                 <Building2 size={15} />
                 تحديث المحلات (51 محل)
@@ -1677,9 +1678,17 @@ function MallManagementPage() {
                       <span className="flex items-center gap-1">
                         <User size={14} /> المستأجر:
                       </span>
-                      <span className="font-black text-foreground">
-                        {shop.tenant_name || "غير محدد"}
-                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReportShopId(shop.id);
+                          setIsStatusReportModalOpen(true);
+                        }}
+                        className="app-link underline font-black text-indigo-600 dark:text-indigo-400 cursor-pointer"
+                        title="اضغط لعرض كشف حساب المستأجر والدفعات"
+                      >
+                        {shop.tenant_name || "غير محدد"} (#{shop.account_number})
+                      </button>
                     </div>
                     <div className="flex items-center justify-between text-muted-foreground">
                       <span className="flex items-center gap-1">
@@ -1705,7 +1714,7 @@ function MallManagementPage() {
 
                   <div className="p-3 bg-muted/20 border-t border-border/60 flex items-center justify-between gap-2 flex-wrap">
                     <Button
-                      variant="outline"
+                      variant="edit"
                       size="sm"
                       className="flex-1 h-8 text-xs font-bold gap-1 rounded-xl cursor-pointer"
                       onClick={() => handleOpenEditShop(shop)}
@@ -1715,17 +1724,17 @@ function MallManagementPage() {
                     </Button>
                     <Button
                       size="sm"
-                      variant="outline"
-                      className="h-8 text-xs font-bold gap-1 rounded-xl bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100 cursor-pointer"
+                      variant="print"
+                      className="h-8 text-xs font-bold gap-1 rounded-xl cursor-pointer"
                       onClick={() => setViewingContractShop(shop)}
                     >
                       <Paperclip size={14} />
                       العقد والمرفقات
                     </Button>
                     <Button
-                      variant="outline"
+                      variant="delete"
                       size="icon"
-                      className="h-8 w-8 text-destructive hover:bg-destructive/10 rounded-xl cursor-pointer"
+                      className="h-8 w-8 rounded-xl cursor-pointer"
                       onClick={() => setShopToDelete(shop)}
                     >
                       <Trash2 size={14} />
@@ -1742,7 +1751,7 @@ function MallManagementPage() {
                     <tr>
                       <th className="p-3">رقم المحل</th>
                       <th className="p-3">النشاط التجاري</th>
-                      <th className="p-3">المستأجر</th>
+                      <th className="p-3">المستأجر (اضغط لكشف الحساب)</th>
                       <th className="p-3">الهاتف</th>
                       <th className="p-3">المساحة</th>
                       <th className="p-3">القيمة التعاقدية</th>
@@ -1756,7 +1765,17 @@ function MallManagementPage() {
                         <td className="p-3 font-black text-foreground">#{shop.shop_number}</td>
                         <td className="p-3 font-bold text-foreground">{shop.name_ar}</td>
                         <td className="p-3 font-bold text-foreground">
-                          {shop.tenant_name || "غير محدد"}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setReportShopId(shop.id);
+                              setIsStatusReportModalOpen(true);
+                            }}
+                            className="app-link underline font-black text-indigo-600 dark:text-indigo-400 cursor-pointer"
+                            title="اضغط لعرض كشف حساب المستأجر والدفعات"
+                          >
+                            {shop.tenant_name || "غير محدد"} (#{shop.account_number})
+                          </button>
                         </td>
                         <td className="p-3 font-mono" dir="ltr">
                           {shop.phone || "-"}
@@ -1785,7 +1804,7 @@ function MallManagementPage() {
                         <td className="p-3 text-center">
                           <div className="flex items-center justify-center gap-1.5">
                             <Button
-                              variant="outline"
+                              variant="edit"
                               size="sm"
                               className="h-7 px-2.5 text-xs font-bold rounded-lg cursor-pointer"
                               onClick={() => handleOpenEditShop(shop)}
@@ -1793,17 +1812,17 @@ function MallManagementPage() {
                               تعديل
                             </Button>
                             <Button
-                              variant="outline"
+                              variant="print"
                               size="sm"
-                              className="h-7 px-2.5 text-xs font-bold rounded-lg text-blue-600 cursor-pointer"
+                              className="h-7 px-2.5 text-xs font-bold rounded-lg cursor-pointer"
                               onClick={() => setViewingContractShop(shop)}
                             >
                               المرفقات
                             </Button>
                             <Button
-                              variant="ghost"
+                              variant="delete"
                               size="icon"
-                              className="h-7 w-7 text-destructive rounded-lg cursor-pointer"
+                              className="h-7 w-7 rounded-lg cursor-pointer"
                               onClick={() => setShopToDelete(shop)}
                             >
                               <Trash2 size={13} />
@@ -1839,7 +1858,7 @@ function MallManagementPage() {
                 <div className="rounded-xl bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 p-3">
                   <Building2 size={22} />
                 </div>
-                <h3 className="font-black text-base text-foreground group-hover:text-indigo-600 transition-colors">
+                <h3 className="font-black text-base text-foreground group-hover:text-indigo-600 transition-colors underline">
                   عقود الإيجار السارية والوحدات المشغولة
                 </h3>
               </div>
@@ -1856,7 +1875,7 @@ function MallManagementPage() {
                 <div className="rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 p-3">
                   <FileText size={22} />
                 </div>
-                <h3 className="font-black text-base text-foreground group-hover:text-emerald-600 transition-colors">
+                <h3 className="font-black text-base text-foreground group-hover:text-emerald-600 transition-colors underline">
                   عمل عقد إيجار جديد أو تجديد عقد
                 </h3>
               </div>
@@ -1873,7 +1892,7 @@ function MallManagementPage() {
                 <div className="rounded-xl bg-rose-500/15 text-rose-600 dark:text-rose-400 p-3">
                   <XCircle size={22} />
                 </div>
-                <h3 className="font-black text-base text-foreground group-hover:text-rose-600 transition-colors">
+                <h3 className="font-black text-base text-foreground group-hover:text-rose-600 transition-colors underline">
                   فسخ تعاقد وإخلاء وحدة
                 </h3>
               </div>
@@ -1890,7 +1909,7 @@ function MallManagementPage() {
                 <div className="rounded-xl bg-blue-500/15 text-blue-600 dark:text-blue-400 p-3">
                   <Archive size={22} />
                 </div>
-                <h3 className="font-black text-base text-foreground group-hover:text-blue-600 transition-colors">
+                <h3 className="font-black text-base text-foreground group-hover:text-blue-600 transition-colors underline">
                   أرشيف العقود المفسوخة ({terminatedArchive.length})
                 </h3>
               </div>
@@ -1926,7 +1945,7 @@ function MallManagementPage() {
                   <tr>
                     <th className="p-3">رقم المحل</th>
                     <th className="p-3">النشاط التجاري</th>
-                    <th className="p-3">المستأجر</th>
+                    <th className="p-3">المستأجر (اضغط لكشف الحساب)</th>
                     <th className="p-3">بداية العقد</th>
                     <th className="p-3">نهاية العقد</th>
                     <th className="p-3">القيمة التعاقدية</th>
@@ -1948,7 +1967,17 @@ function MallManagementPage() {
                           <td className="p-3 font-black text-foreground">#{shop.shop_number}</td>
                           <td className="p-3 font-bold text-foreground">{shop.name_ar}</td>
                           <td className="p-3 font-bold text-foreground">
-                            {shop.tenant_name || "غير محدد"}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setReportShopId(shop.id);
+                                setIsStatusReportModalOpen(true);
+                              }}
+                              className="app-link underline font-black text-indigo-600 dark:text-indigo-400 cursor-pointer"
+                              title="اضغط لعرض كشف حساب المستأجر والدفعات"
+                            >
+                              {shop.tenant_name || "غير محدد"} (#{shop.account_number})
+                            </button>
                           </td>
                           <td className="p-3 font-mono text-muted-foreground">
                             {shop.contract?.start_date || "-"}
@@ -1963,7 +1992,7 @@ function MallManagementPage() {
                             <div className="flex items-center justify-center gap-1.5 flex-wrap">
                               <Button
                                 size="sm"
-                                variant="outline"
+                                variant="edit"
                                 className="h-7 px-2.5 text-xs font-bold rounded-lg cursor-pointer"
                                 onClick={() => {
                                   handleSelectShopForContract(shop.id);
@@ -1975,8 +2004,8 @@ function MallManagementPage() {
                               </Button>
                               <Button
                                 size="sm"
-                                variant="outline"
-                                className="h-7 px-2.5 text-xs font-bold rounded-lg text-blue-600 cursor-pointer"
+                                variant="print"
+                                className="h-7 px-2.5 text-xs font-bold rounded-lg cursor-pointer"
                                 onClick={() => setViewingContractShop(shop)}
                               >
                                 <Eye size={12} className="ml-1" />
@@ -1986,8 +2015,8 @@ function MallManagementPage() {
                                 <DropdownMenuTrigger asChild>
                                   <Button
                                     size="sm"
-                                    variant="outline"
-                                    className="h-7 px-2 text-xs font-bold rounded-lg text-green-600 border-green-200 hover:bg-green-50 cursor-pointer"
+                                    variant="excel"
+                                    className="h-7 px-2 text-xs font-bold rounded-lg cursor-pointer"
                                   >
                                     <MessageCircle size={12} className="ml-1" />
                                     واتساب
@@ -2016,8 +2045,8 @@ function MallManagementPage() {
                               </DropdownMenu>
                               <Button
                                 size="sm"
-                                variant="outline"
-                                className="h-7 px-2.5 text-xs font-bold rounded-lg text-rose-600 border-rose-200 hover:bg-rose-50 cursor-pointer"
+                                variant="delete"
+                                className="h-7 px-2.5 text-xs font-bold rounded-lg cursor-pointer"
                                 onClick={() => {
                                   setTerminationForm({
                                     shop_id: shop.id,
@@ -2060,7 +2089,7 @@ function MallManagementPage() {
               <div className="rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 p-3">
                 <FileSpreadsheet size={22} />
               </div>
-              <h3 className="font-black text-base text-foreground group-hover:text-emerald-600 transition-colors">
+              <h3 className="font-black text-base text-foreground group-hover:text-emerald-600 transition-colors underline">
                 تقرير حالة المول ونسب الإشغال والعقود
               </h3>
             </div>
@@ -2079,14 +2108,15 @@ function MallManagementPage() {
             </h2>
             <div className="flex items-center gap-2">
               <Button
+                variant="print"
                 onClick={() => setIsStatusReportModalOpen(true)}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-1.5 rounded-xl text-xs h-9 cursor-pointer"
+                className="font-bold gap-1.5 rounded-xl text-xs h-9 cursor-pointer"
               >
                 <Printer size={15} />
                 طباعة تقرير حالة المول
               </Button>
               <Button
-                variant="outline"
+                variant="excel"
                 onClick={() =>
                   exportToExcel(
                     shops.map((s) => ({
@@ -2146,7 +2176,7 @@ function MallManagementPage() {
                   <tr>
                     <th className="p-3">رقم المحل</th>
                     <th className="p-3">النشاط التجاري</th>
-                    <th className="p-3">المستأجر</th>
+                    <th className="p-3">المستأجر (اضغط لكشف الحساب)</th>
                     <th className="p-3">الحالة</th>
                     <th className="p-3">فترة العقد</th>
                     <th className="p-3">القيمة التعاقدية</th>
@@ -2157,7 +2187,19 @@ function MallManagementPage() {
                     <tr key={shop.id} className="hover:bg-muted/30 transition">
                       <td className="p-3 font-black text-foreground">#{shop.shop_number}</td>
                       <td className="p-3 font-bold text-foreground">{shop.name_ar}</td>
-                      <td className="p-3 text-foreground">{shop.tenant_name || "-"}</td>
+                      <td className="p-3 text-foreground">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setReportShopId(shop.id);
+                            setIsStatusReportModalOpen(true);
+                          }}
+                          className="app-link underline font-black text-indigo-600 dark:text-indigo-400 cursor-pointer"
+                          title="اضغط لعرض كشف حساب المستأجر والدفعات"
+                        >
+                          {shop.tenant_name || "-"} (#{shop.account_number})
+                        </button>
+                      </td>
                       <td className="p-3">
                         <span
                           className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
@@ -2199,9 +2241,6 @@ function MallManagementPage() {
             <DialogTitle className="text-lg font-black text-foreground">
               {editingShop ? "تعديل بيانات المحل التجاري" : "إضافة محل تجاري جديد"}
             </DialogTitle>
-            <DialogDescription className="text-xs">
-              أدخل تفاصيل المحل ورقم الحساب والقيمة الإيجارية الشهرية بالدولار الأمريكي.
-            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
@@ -2364,7 +2403,7 @@ function MallManagementPage() {
           <DialogFooter className="gap-2 sm:gap-0 flex sm:justify-end">
             <div className="flex items-center gap-2">
               <Button
-                variant="outline"
+                variant="close"
                 className="rounded-xl font-bold"
                 onClick={() => setIsShopModalOpen(false)}
               >
@@ -2372,10 +2411,20 @@ function MallManagementPage() {
               </Button>
               {editingShop && (
                 <Button
-                  variant="secondary"
+                  variant="print"
                   className="rounded-xl font-bold gap-2"
                   onClick={() => {
-                    setTimeout(() => window.print(), 300);
+                    printContractContent(
+                      {
+                        ...contractForm,
+                        shop_id: editingShop.id,
+                        custom_shop_name: shopForm.name_ar || editingShop.name_ar,
+                        tenant_name: shopForm.tenant_name || editingShop.tenant_name,
+                        phone: shopForm.phone || editingShop.phone,
+                        monthly_rent: Number(shopForm.monthly_rent) || editingShop.monthly_rent,
+                      },
+                      editingShop.shop_number,
+                    );
                   }}
                 >
                   <Printer className="w-4 h-4" />
@@ -2383,7 +2432,8 @@ function MallManagementPage() {
                 </Button>
               )}
               <Button
-                className="rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white gap-2 cursor-pointer"
+                variant="save"
+                className="rounded-xl font-bold gap-2 cursor-pointer"
                 onClick={handleSaveShop}
               >
                 حفظ المحل
@@ -2393,33 +2443,25 @@ function MallManagementPage() {
         </DialogContent>
       </Dialog>
 
-
-
       {/* DELETE SHOP CONFIRMATION DIALOG */}
       <Dialog open={!!shopToDelete} onOpenChange={(open) => !open && setShopToDelete(null)}>
         <DialogContent className="max-w-md text-right">
           <DialogHeader className="text-right">
             <DialogTitle className="flex items-center gap-2 text-destructive text-lg font-black">
               <AlertCircle size={22} />
-              تأكيد حذف المحل التجاري
+              تأكيد حذف المحل التجاري ({shopToDelete?.name_ar} #{shopToDelete?.shop_number})
             </DialogTitle>
-            <DialogDescription className="text-xs pt-2 leading-relaxed">
-              هل أنت متأكد من رغبتك في حذف المحل{" "}
-              <span className="font-black text-foreground">"{shopToDelete?.name_ar}"</span> (رقم #
-              {shopToDelete?.shop_number})؟ سيتم أيضاً حذف كافة سجلات مدفوعاته ولا يمكن التراجع عن
-              هذا الإجراء.
-            </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-0 mt-4">
             <Button
-              variant="outline"
+              variant="close"
               className="rounded-xl font-bold"
               onClick={() => setShopToDelete(null)}
             >
               إلغاء
             </Button>
             <Button
-              variant="destructive"
+              variant="delete"
               className="rounded-xl font-bold gap-2 cursor-pointer"
               onClick={() => {
                 if (shopToDelete) {
@@ -2435,8 +2477,6 @@ function MallManagementPage() {
         </DialogContent>
       </Dialog>
 
-
-
       {/* CONTRACT CREATION & PRINTING MODAL */}
       <Dialog open={isContractModalOpen} onOpenChange={setIsContractModalOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto text-right">
@@ -2445,10 +2485,6 @@ function MallManagementPage() {
               <FileText size={24} />
               إنشاء وطباعة وإدارة عقود إيجار المحلات والوحدات
             </DialogTitle>
-            <DialogDescription className="text-xs pt-1 leading-relaxed">
-              اختر الوحدة، أدخل بيانات المستأجر، حدد الشروط والأحكام، قم بمعاينة وطباعة العقد، وارفع
-              صورة العقد الموقّع وصورة تحقيق الشخصية لتفعيل الحفظ.
-            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-6 py-4">
@@ -2938,13 +2974,14 @@ function MallManagementPage() {
                 </h3>
                 <Button
                   size="sm"
+                  variant="print"
                   onClick={() =>
                     printContractContent(
                       contractForm,
                       shops.find((s) => s.id === contractForm.shop_id)?.shop_number || "---",
                     )
                   }
-                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold gap-2 rounded-xl cursor-pointer"
+                  className="font-bold gap-2 rounded-xl cursor-pointer"
                 >
                   <Printer size={16} />
                   {contractForm.language === "en"
@@ -3125,13 +3162,14 @@ function MallManagementPage() {
 
           <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-border">
             <Button
-              variant="outline"
+              variant="close"
               className="rounded-xl font-bold"
               onClick={() => setIsContractModalOpen(false)}
             >
               إلغاء
             </Button>
             <Button
+              variant="save"
               disabled={
                 !contractForm.shop_id ||
                 !contractForm.tenant_name ||
@@ -3139,7 +3177,7 @@ function MallManagementPage() {
                 !contractForm.id_image
               }
               onClick={handleSaveContract}
-              className="rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer disabled:opacity-50"
+              className="rounded-xl font-bold cursor-pointer"
             >
               حفظ العقد وربطه بالمحل والاحتفاظ بالمرفقات
             </Button>
@@ -3159,10 +3197,6 @@ function MallManagementPage() {
               عقد الإيجار والمرفقات للمحل #{viewingContractShop?.shop_number} (
               {viewingContractShop?.name_ar})
             </DialogTitle>
-            <DialogDescription className="text-xs pt-1">
-              عرض تفاصيل العقد المسجل، طباعته، والاطلاع على المستندات المرفقة (صورة العقد وصورة
-              الهوية).
-            </DialogDescription>
           </DialogHeader>
 
           {viewingContractShop?.contract && (
@@ -3248,7 +3282,7 @@ function MallManagementPage() {
 
           <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-border">
             <Button
-              variant="outline"
+              variant="print"
               onClick={() => {
                 if (viewingContractShop && viewingContractShop.contract) {
                   if (!viewingContractShop.contract.contract_image) {
@@ -3274,7 +3308,7 @@ function MallManagementPage() {
             </Button>
             {viewingContractShop?.contract?.id_image && (
               <Button
-                variant="outline"
+                variant="print"
                 onClick={() => {
                   if (viewingContractShop && viewingContractShop.contract) {
                     if (!viewingContractShop.contract.contract_image) {
@@ -3300,13 +3334,14 @@ function MallManagementPage() {
                     );
                   }
                 }}
-                className="rounded-xl font-bold gap-2 cursor-pointer text-indigo-600 border-indigo-200 hover:bg-indigo-50"
+                className="rounded-xl font-bold gap-2 cursor-pointer"
               >
                 <Printer size={16} />
                 طباعة العقد والهوية
               </Button>
             )}
             <Button
+              variant="close"
               className="rounded-xl font-bold cursor-pointer"
               onClick={() => setViewingContractShop(null)}
             >

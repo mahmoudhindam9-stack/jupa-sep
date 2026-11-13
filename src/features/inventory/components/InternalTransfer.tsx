@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import { inventoryService } from "@/features/inventory/services/inventoryService";
 import { printAccountingDocument } from "@/shared/utils/printAccountingDocument";
 import { Button } from "@/components/ui/button";
@@ -224,9 +224,6 @@ export function InternalTransfer() {
             <ArrowRightLeft className="text-primary" size={24} />
             تحويل مخزني داخلي (إمداد التشغيل)
           </CardTitle>
-          <CardDescription>
-            نقل المواد الخام من المخازن الرئيسية إلى مخازن التشغيل والفرن
-          </CardDescription>
         </CardHeader>
         <CardContent>
           <form className="space-y-5">
@@ -376,6 +373,7 @@ export function InternalTransfer() {
 
             <Button
               type="button"
+              variant="save"
               className="w-full h-12 rounded-xl font-black text-base gap-2 mt-4"
               disabled={loading || transferItems.length === 0}
               onClick={() => setIsConfirmOpen(true)}
@@ -426,18 +424,15 @@ export function InternalTransfer() {
                   </div>
                   <div className="flex gap-2">
                     <Button
-                      variant="outline"
+                      variant="edit"
                       size="icon"
                       onClick={() => openViewDialog(t)}
                       className="h-9 w-9 rounded-lg"
                     >
                       <Eye size={16} />
                     </Button>
-                    <Button variant="outline" size="icon" className="h-9 w-9 rounded-lg">
-                      <Edit size={16} />
-                    </Button>
                     <Button
-                      variant="outline"
+                      variant="print"
                       size="icon"
                       onClick={() => handlePrintTransfer(t)}
                       className="h-9 w-9 rounded-lg"
@@ -595,11 +590,11 @@ export function InternalTransfer() {
             </div>
           )}
 
-          <DialogFooter className="print:hidden">
-            <Button variant="outline" onClick={() => setIsViewOpen(false)}>
+          <DialogFooter className="print:hidden gap-2">
+            <Button variant="close" onClick={() => setIsViewOpen(false)}>
               إغلاق
             </Button>
-            <Button onClick={handlePrintTransfer} className="gap-2">
+            <Button variant="print" onClick={handlePrintTransfer} className="gap-2">
               <Printer size={16} />
               طباعة المستند
             </Button>

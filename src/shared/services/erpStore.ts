@@ -5174,6 +5174,12 @@ export class ERPStore {
       supplier_id?: string;
       supplier_name?: string;
       supplier_account_code?: string;
+      customer_id?: string;
+      customer_name?: string;
+      customer_account_code?: string;
+      invoice_total?: number;
+      paid_amount?: number;
+      remaining_credit?: number;
       purchase_items?: Array<{
         inventory_id: string;
         name_ar: string;
@@ -5213,12 +5219,40 @@ export class ERPStore {
       (sum, it) => sum + Number(it.total || 0),
       0,
     );
-    const resolvedAmount =
-      normalizedPurchaseItems.length > 0 && purchaseItemsTotal > 0
-        ? Number(purchaseItemsTotal.toFixed(2))
-        : Number(amount) || 0;
 
-    if (resolvedAmount <= 0) {
+    const hasExplicitCreditOption =
+      options?.invoice_total !== undefined ||
+      options?.paid_amount !== undefined ||
+      options?.remaining_credit !== undefined;
+
+    const invoiceTotal = Number(
+      (
+        options?.invoice_total !== undefined && Number(options.invoice_total) > 0
+          ? Number(options.invoice_total)
+          : normalizedPurchaseItems.length > 0 && purchaseItemsTotal > 0
+            ? purchaseItemsTotal
+            : Number(amount) || 0
+      ).toFixed(2),
+    );
+
+    const paidAmount = Number(
+      (
+        options?.paid_amount !== undefined
+          ? Math.max(0, Number(options.paid_amount) || 0)
+          : hasExplicitCreditOption && options?.remaining_credit !== undefined
+            ? Math.max(0, invoiceTotal - (Number(options.remaining_credit) || 0))
+            : normalizedPurchaseItems.length > 0 && purchaseItemsTotal > 0
+              ? Number(amount) >= 0 && Number(amount) <= purchaseItemsTotal && hasExplicitCreditOption
+                ? Number(amount)
+                : purchaseItemsTotal
+              : Number(amount) || 0
+      ).toFixed(2),
+    );
+
+    const remainingCredit = Math.max(0, Number((invoiceTotal - paidAmount).toFixed(2)));
+    const resolvedAmount = invoiceTotal > 0 ? invoiceTotal : paidAmount;
+
+    if (resolvedAmount <= 0 && paidAmount <= 0) {
       throw new Error("قيمة السند المالي يجب أن تكون أكبر من الصفر.");
     }
 
@@ -5241,6 +5275,13 @@ export class ERPStore {
     const resolvedSupplierAccCode =
       options?.supplier_account_code || supplierObj?.account_code || undefined;
 
+    const customerObj = options?.customer_id
+      ? (this.state.parkCustomers || []).find((c) => c.id === options.customer_id)
+      : undefined;
+    const resolvedCustomerName = options?.customer_name || customerObj?.name_ar || undefined;
+    const resolvedCustomerAccCode =
+      options?.customer_account_code || customerObj?.account_code || undefined;
+
     const seqNum = (this.state.vouchers?.length || 0) + 1;
     const yearStr = new Date().getFullYear();
     const referenceNumber =
@@ -5257,14 +5298,18 @@ export class ERPStore {
       type,
       department: inferredDepartment,
       category,
-      amount: resolvedAmount,
+      amount: paidAmount > 0 && remainingCredit === 0 ? paidAmount : resolvedAmount,
+      invoice_total: invoiceTotal,
+      paid_amount: paidAmount,
+      remaining_credit: remainingCredit,
       currency: chosenCurrency,
       exchange_rate: rate,
       base_amount: baseAmount,
       payment_method: treasury?.type || "cash",
       treasury_id: treasuryId,
       description,
-      beneficiary: options?.beneficiary || resolvedSupplierName,
+      beneficiary:
+        options?.beneficiary || resolvedSupplierName || resolvedCustomerName,
       notes: options?.notes,
       status: "approved",
       created_at: nowIso,
@@ -5274,6 +5319,9 @@ export class ERPStore {
       ...(options?.supplier_id ? { supplier_id: options.supplier_id } : {}),
       ...(resolvedSupplierName ? { supplier_name: resolvedSupplierName } : {}),
       ...(resolvedSupplierAccCode ? { supplier_account_code: resolvedSupplierAccCode } : {}),
+      ...(options?.customer_id ? { customer_id: options.customer_id } : {}),
+      ...(resolvedCustomerName ? { customer_name: resolvedCustomerName } : {}),
+      ...(resolvedCustomerAccCode ? { customer_account_code: resolvedCustomerAccCode } : {}),
       ...(normalizedPurchaseItems.length > 0 ? { purchase_items: normalizedPurchaseItems } : {}),
       audit_history: [
         {
@@ -5281,7 +5329,10 @@ export class ERPStore {
           action: "created",
           timestamp: nowIso,
           user: currentUser,
-          summary: `إنشاء واعتماد ${type === "receipt" ? "سند قبض" : "سند صرف"} رقم ${referenceNumber} بقيمة ${resolvedAmount} ${chosenCurrency} (${category})`,
+          summary:
+            remainingCredit > 0
+              ? `إنشاء واعتماد ${type === "receipt" ? "سند قبض / بيع آجل" : "سند صرف / شراء آجل"} رقم ${referenceNumber} (إجمالي الفاتورة: ${invoiceTotal} ${chosenCurrency} | المدفوع: ${paidAmount} ${chosenCurrency} | الآجل المتبقي: ${remainingCredit} ${chosenCurrency})`
+              : `إنشاء واعتماد ${type === "receipt" ? "سند قبض" : "سند صرف"} رقم ${referenceNumber} بقيمة ${resolvedAmount} ${chosenCurrency} (${category})`,
         },
       ],
     };
@@ -5290,18 +5341,20 @@ export class ERPStore {
 
     if (treasury) {
       const txType = type === "receipt" ? "deposit" : "withdrawal";
-      // Pass skipJournal = true so addTreasuryTransaction does NOT create a second duplicate journal entry
-      this.addTreasuryTransaction(
-        treasuryId,
-        txType,
-        resolvedAmount,
-        chosenCurrency,
-        `${type === "receipt" ? "سند قبض" : "سند صرف"} #${referenceNumber} (${category}) - ${description}`,
-        voucher.id,
-        treasury.type || "cash",
-        undefined,
-        true,
-      );
+      // Only move actual cash/bank amount (paidAmount) in treasury
+      if (paidAmount > 0) {
+        this.addTreasuryTransaction(
+          treasuryId,
+          txType,
+          paidAmount,
+          chosenCurrency,
+          `${type === "receipt" ? "سند قبض" : "سند صرف"} #${referenceNumber} (${category})${remainingCredit > 0 ? ` [دفعة نقدية من إجمالي ${invoiceTotal}]` : ""} - ${description}`,
+          voucher.id,
+          treasury.type || "cash",
+          undefined,
+          true,
+        );
+      }
 
       const finalAccountCode = this.resolveVoucherDefaultAccountCode(
         type,
@@ -5318,40 +5371,128 @@ export class ERPStore {
             ? "13010100"
             : "13010130");
 
+      const counterpartyAccCode =
+        resolvedSupplierAccCode ||
+        resolvedCustomerAccCode ||
+        (type === "payment" ? "24010391" : "13020101");
+
       try {
-        if (type === "payment") {
-          generatedJournalEntry = this.postExpenseJournal(
-            voucher.id,
-            resolvedAmount,
-            finalAccountCode,
-            costCenter,
-            this.state.currentBranchId,
+        if (remainingCredit > 0) {
+          // Compound Journal Entry for Partial Payment / Credit Purchase or Credit Sale
+          const compoundLines: any[] = [];
+          if (type === "payment") {
+            compoundLines.push({
+              account_code: finalAccountCode,
+              debit: invoiceTotal,
+              credit: 0,
+              cost_center: costCenter,
+              currency: chosenCurrency,
+              rate,
+              description: `إجمالي فاتورة ${category} #${referenceNumber}`,
+            });
+            if (paidAmount > 0) {
+              compoundLines.push({
+                account_code: treasuryAccCode,
+                debit: 0,
+                credit: paidAmount,
+                currency: chosenCurrency,
+                rate,
+                description: `المدفوع نقداً من خزينة ${treasury.name_ar}`,
+              });
+            }
+            compoundLines.push({
+              account_code: counterpartyAccCode,
+              debit: 0,
+              credit: remainingCredit,
+              cost_center: costCenter,
+              currency: chosenCurrency,
+              rate,
+              description: `المتبقي آجل لحساب ${resolvedSupplierName || resolvedCustomerName || "المورد/العميل"}`,
+            });
+          } else {
+            if (paidAmount > 0) {
+              compoundLines.push({
+                account_code: treasuryAccCode,
+                debit: paidAmount,
+                credit: 0,
+                currency: chosenCurrency,
+                rate,
+                description: `المقبوض نقداً في خزينة ${treasury.name_ar}`,
+              });
+            }
+            compoundLines.push({
+              account_code: counterpartyAccCode,
+              debit: remainingCredit,
+              credit: 0,
+              cost_center: costCenter,
+              currency: chosenCurrency,
+              rate,
+              description: `المتبقي آجل على حساب ${resolvedCustomerName || resolvedSupplierName || "العميل"}`,
+            });
+            compoundLines.push({
+              account_code: finalAccountCode,
+              debit: 0,
+              credit: invoiceTotal,
+              cost_center: costCenter,
+              currency: chosenCurrency,
+              rate,
+              description: `إجمالي إيراد / مبيعات ${category} #${referenceNumber}`,
+            });
+          }
+
+          generatedJournalEntry = this.addJournalEntry(
+            `${type === "payment" ? "سند صرف وشراء آجل" : "سند قبض وبيع آجل"} #${referenceNumber} - ${description}`,
+            compoundLines,
+            `${type === "payment" ? "EXP" : "REV"}-${voucher.id.substring(4, 9).toUpperCase()}`,
             chosenCurrency,
-            rate,
-            treasuryAccCode,
           );
+
+          if (supplierObj) {
+            supplierObj.balance =
+              Number(supplierObj.balance || 0) +
+              (type === "payment" ? remainingCredit : -remainingCredit);
+          }
         } else {
-          generatedJournalEntry = this.postRevenueJournal(
-            voucher.id,
-            resolvedAmount,
-            finalAccountCode,
-            costCenter,
-            this.state.currentBranchId,
-            chosenCurrency,
-            rate,
-            treasuryAccCode,
-          );
+          if (type === "payment") {
+            generatedJournalEntry = this.postExpenseJournal(
+              voucher.id,
+              resolvedAmount,
+              finalAccountCode,
+              costCenter,
+              this.state.currentBranchId,
+              chosenCurrency,
+              rate,
+              treasuryAccCode,
+            );
+          } else {
+            generatedJournalEntry = this.postRevenueJournal(
+              voucher.id,
+              resolvedAmount,
+              finalAccountCode,
+              costCenter,
+              this.state.currentBranchId,
+              chosenCurrency,
+              rate,
+              treasuryAccCode,
+            );
+          }
         }
 
         if (generatedJournalEntry) {
-          if (resolvedSupplierName || normalizedPurchaseItems.length > 0) {
+          if (
+            resolvedSupplierName ||
+            resolvedCustomerName ||
+            normalizedPurchaseItems.length > 0
+          ) {
             const itemsSummary =
               normalizedPurchaseItems.length > 0
                 ? ` [أصناف: ${normalizedPurchaseItems.map((i) => `${i.name_ar} (${i.quantity} ${i.unit})`).join("، ")}]`
                 : "";
             const supSummary = resolvedSupplierName
               ? ` - المورد: ${resolvedSupplierName}${resolvedSupplierAccCode ? ` (#${resolvedSupplierAccCode})` : ""}`
-              : "";
+              : resolvedCustomerName
+                ? ` - العميل: ${resolvedCustomerName}${resolvedCustomerAccCode ? ` (#${resolvedCustomerAccCode})` : ""}`
+                : "";
             generatedJournalEntry.description = `${generatedJournalEntry.description}${supSummary}${itemsSummary} - ${description}`;
           }
           voucher.journal_entry_id = generatedJournalEntry.id;
@@ -5372,17 +5513,22 @@ export class ERPStore {
     }
 
     this.state.vouchers.unshift(voucher);
+    this.recalculateAccountBalances();
     this.saveState();
 
     this.logAction(
       "ADMIN",
       "إنشاء سند مالي",
-      `تم تسجيل وترحيل ${type === "receipt" ? "سند قبض" : "سند صرف"} رقم ${referenceNumber} فئة (${category}) بمبلغ ${resolvedAmount} ${chosenCurrency} (مركز: ${costCenter}) - قيد رقم #${voucher.journal_reference || voucher.id}`,
+      `تم تسجيل وترحيل ${type === "receipt" ? "سند قبض" : "سند صرف"} رقم ${referenceNumber} فئة (${category}) بمبلغ ${resolvedAmount} ${chosenCurrency}${remainingCredit > 0 ? ` (مدفوع: ${paidAmount} | آجل: ${remainingCredit})` : ""} (مركز: ${costCenter}) - قيد رقم #${voucher.journal_reference || voucher.id}`,
       "CREATE",
     );
 
     this.notify();
     return { ...voucher, journal_entry: generatedJournalEntry };
+  }
+
+  getSuppliers(): Supplier[] {
+    return (this.state.suppliers || []).filter((s) => !s.deleted);
   }
 
   updateVoucher(
@@ -5392,6 +5538,9 @@ export class ERPStore {
       department?: "mall" | "park" | "restaurant" | "admin";
       category?: string;
       amount?: number;
+      invoice_total?: number;
+      paid_amount?: number;
+      remaining_credit?: number;
       currency?: string;
       exchange_rate?: number;
       treasury_id?: string;
@@ -5404,6 +5553,9 @@ export class ERPStore {
       supplier_id?: string;
       supplier_name?: string;
       supplier_account_code?: string;
+      customer_id?: string;
+      customer_name?: string;
+      customer_account_code?: string;
       purchase_items?: Array<{
         inventory_id: string;
         name_ar: string;
@@ -7714,8 +7866,98 @@ export class ERPStore {
     this.logAction("ADMIN", "حذف نوع تذكرة", `تم حذف التذكرة ${item?.name_ar || id}`, "DELETE");
   }
 
+  private ensureCustomerParentHierarchy() {
+    if (!this.state.accounts) this.state.accounts = [];
+    const hasLevel1 = this.state.accounts.some((a) => a.code === "1");
+    if (!hasLevel1) {
+      this.state.accounts.push({
+        id: "acc-1",
+        code: "1",
+        name_ar: "الأصول",
+        type: "asset",
+        category: "current_assets",
+        balance: 0,
+        status: "active",
+      });
+    }
+    const hasLevel2 = this.state.accounts.some((a) => a.code === "13");
+    if (!hasLevel2) {
+      this.state.accounts.push({
+        id: "acc-13",
+        code: "13",
+        name_ar: "الأصول المتداولة",
+        type: "asset",
+        category: "current_assets",
+        parent_code: "1",
+        balance: 0,
+        status: "active",
+      });
+    }
+    const hasLevel3 = this.state.accounts.some((a) => a.code === "13020");
+    if (!hasLevel3) {
+      this.state.accounts.push({
+        id: "acc-13020",
+        code: "13020",
+        name_ar: "العملاء والمدينون التجاريون",
+        type: "asset",
+        category: "current_assets",
+        parent_code: "13",
+        balance: 0,
+        status: "active",
+      });
+    }
+  }
+
+  getNextCustomerAccountCode(): string {
+    this.ensureCustomerParentHierarchy();
+    const existingCustomerCodes = (this.state.accounts || [])
+      .filter(
+        (a) =>
+          (a.parent_code === "13020" || a.code.startsWith("13020")) &&
+          a.code.length >= 6 &&
+          /^\d+$/.test(a.code),
+      )
+      .map((a) => parseInt(a.code, 10))
+      .filter((n) => !isNaN(n) && n >= 13020101 && n < 13029999);
+
+    if (existingCustomerCodes.length === 0) {
+      return "13020101";
+    }
+    return String(Math.max(...existingCustomerCodes) + 1);
+  }
+
   getParkCustomers(): ParkCustomer[] {
-    return this.state.parkCustomers || DEFAULT_PARK_CUSTOMERS;
+    const list = this.state.parkCustomers || DEFAULT_PARK_CUSTOMERS;
+    let mutated = false;
+    this.ensureCustomerParentHierarchy();
+    const updated = list.map((c, idx) => {
+      const code = c.account_code || String(13020101 + idx);
+      const existsInChart = (this.state.accounts || []).some((a) => a.code === code);
+      if (!existsInChart) {
+        this.state.accounts.push({
+          id: "acc-cust-" + code,
+          code,
+          name_ar: `عميل - ${c.name_ar}`,
+          type: "asset",
+          category: "current_assets",
+          parent_code: "13020",
+          balance: 0,
+          initial_balance: 0,
+          status: "active",
+          system_binding: "general",
+        });
+        mutated = true;
+      }
+      if (!c.account_code) {
+        mutated = true;
+        return { ...c, account_code: code };
+      }
+      return c;
+    });
+    if (mutated) {
+      this.state.parkCustomers = updated;
+    }
+    return updated;
   }
 
   getParkTicketTransactions(): ParkTicketTransaction[] {
@@ -7727,23 +7969,76 @@ export class ERPStore {
   }
 
   addParkCustomer(customer: Partial<ParkCustomer>) {
+    this.ensureCustomerParentHierarchy();
+    const cleanName = (customer.name_ar || "عميل جديد").trim();
+    const code =
+      customer.account_code && /^\d+$/.test(customer.account_code.trim())
+        ? customer.account_code.trim()
+        : this.getNextCustomerAccountCode();
+
+    const existingAcc = (this.state.accounts || []).find((a) => a.code === code);
+    if (!existingAcc) {
+      this.state.accounts.push({
+        id: "acc-cust-" + Date.now(),
+        code,
+        name_ar: `عميل - ${cleanName}`,
+        type: "asset",
+        category: "current_assets",
+        parent_code: "13020",
+        balance: 0,
+        initial_balance: 0,
+        status: "active",
+        system_binding: "general",
+      });
+    }
+
     const newCust: ParkCustomer = {
       id: "cust-park-" + Date.now(),
-      name_ar: customer.name_ar || "عميل جديد",
+      name_ar: cleanName,
       phone: customer.phone || "",
       company: customer.company || "",
       notes: customer.notes || "",
+      account_code: code,
     };
-    this.state.parkCustomers = [...(this.state.parkCustomers || DEFAULT_PARK_CUSTOMERS), newCust];
+    this.state.parkCustomers = [...this.getParkCustomers(), newCust];
     this.saveState();
-    this.logAction("ADMIN", "إضافة عميل تذاكر", `تم إضافة العميل ${newCust.name_ar}`, "CREATE");
+    this.logAction(
+      "ADMIN",
+      "إضافة عميل جديد",
+      `تم إضافة العميل ${newCust.name_ar} وربطه بالحساب المحاسبي الفرعي (المستوى 4) رقم #${code}`,
+      "CREATE",
+    );
     return newCust;
   }
 
+  addCustomer(
+    name_ar: string,
+    phone: string = "",
+    company: string = "",
+    customAccountCode?: string,
+  ) {
+    const customer = this.addParkCustomer({
+      name_ar,
+      phone,
+      company,
+      account_code: customAccountCode,
+    });
+    return {
+      customer,
+      account_code: customer.account_code || "13020101",
+    };
+  }
+
   updateParkCustomer(id: string, updates: Partial<ParkCustomer>) {
-    this.state.parkCustomers = (this.state.parkCustomers || DEFAULT_PARK_CUSTOMERS).map((c) =>
-      c.id === id ? { ...c, ...updates } : c,
-    );
+    this.state.parkCustomers = (this.state.parkCustomers || DEFAULT_PARK_CUSTOMERS).map((c) => {
+      if (c.id !== id) return c;
+      const next = { ...c, ...updates };
+      if (updates.name_ar && next.account_code) {
+        const acc = (this.state.accounts || []).find((a) => a.code === next.account_code);
+        if (acc) acc.name_ar = `عميل - ${updates.name_ar.trim()}`;
+      }
+      return next;
+    });
     this.saveState();
   }
 
