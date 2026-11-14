@@ -168,12 +168,14 @@ export const authService = {
       throw new Error("لم يؤكد Supabase حفظ ملف المستخدم. لم يتم اعتماد التغيير.");
     }
     if (profile.email) {
-      await supabase
-        .from("profiles")
-        .update({ email: normalizeEmail(profile.email) } as any)
-        .eq("id", profile.id)
-        .then(() => undefined)
-        .catch(() => undefined);
+      try {
+        await supabase
+          .from("profiles")
+          .update({ email: normalizeEmail(profile.email) } as any)
+          .eq("id", profile.id);
+      } catch {
+        // Ignore non-fatal email column sync error if schema doesn't expose email update
+      }
     }
     return {
       ...(data as Profile),

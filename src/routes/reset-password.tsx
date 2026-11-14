@@ -144,8 +144,8 @@ function ResetPasswordPage() {
         personalEmail,
         requirePersonalEmail: true,
         existingUsers,
-        currentUserId: firstLoginUser?.id || null,
-        currentUsername: firstLoginUser?.username || null,
+        currentUserId: firstLoginUser?.id || undefined,
+        currentUsername: firstLoginUser?.username || undefined,
       }),
     [password, confirmPassword, personalEmail, existingUsers, firstLoginUser],
   );
@@ -346,8 +346,8 @@ function ResetPasswordPage() {
         personalEmail: normalizedEmail,
         requirePersonalEmail: true,
         existingUsers: erpStore.getUsers(),
-        currentUserId: firstLoginUser?.id || null,
-        currentUsername: firstLoginUser?.username || null,
+        currentUserId: firstLoginUser?.id || undefined,
+        currentUsername: firstLoginUser?.username || undefined,
       },
     );
 
