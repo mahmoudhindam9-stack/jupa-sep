@@ -222,6 +222,7 @@ GRANT EXECUTE ON FUNCTION public.update_managed_user_password(UUID, TEXT)
   TO authenticated;
 
 -- 3. Self-service RPC for any authenticated user completing their password & personal email reset
+DROP FUNCTION IF EXISTS public.complete_own_password_reset(TEXT);
 CREATE OR REPLACE FUNCTION public.complete_own_password_reset(
   p_new_password text,
   p_new_email text DEFAULT NULL
