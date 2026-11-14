@@ -47,6 +47,7 @@ import { CURRENT_VERSION } from "@/shared/config/version";
 import { GitHubUpdateBanner } from "@/components/admin/GitHubUpdateBanner";
 import { AppMainNavbar } from "@/components/navigation/AppMainNavbar";
 import { AppBreadcrumbBar } from "@/components/navigation/AppBreadcrumbBar";
+import { extractTabParam } from "@/components/navigation/navigationRegistry";
 import { isAiStudioPreview, isHostedDeployment } from "@/shared/services/previewAccess";
 import {
   PERMISSIONS_UPDATED_EVENT,

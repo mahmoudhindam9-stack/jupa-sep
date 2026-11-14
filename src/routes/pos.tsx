@@ -12,7 +12,7 @@ import {
   getReceiptDesignSettings,
   saveReceiptDesignSettings,
 } from "@/shared/services/receiptSettings";
-import { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

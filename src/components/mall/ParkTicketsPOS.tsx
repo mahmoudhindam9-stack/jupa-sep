@@ -1,6 +1,7 @@
 // @ts-nocheck
 import React, { useState, useMemo, useEffect } from "react";
 import { toast } from "sonner";
+import { printAccountingDocument } from "@/shared/utils/printAccountingDocument";
 import {
   Ticket,
   ShoppingCart,
