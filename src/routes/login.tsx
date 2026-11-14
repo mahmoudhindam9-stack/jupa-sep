@@ -12,6 +12,9 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { erpStore, SystemUser, ROOT_DEFAULT_ADMIN, type UserPermission } from "@/shared/services/erpStore";
 import { authService } from "@/features/auth/services/authService";
 import {
+  DEFAULT_NEW_USER_PASSWORD,
+  isDefaultTemporaryPassword,
+  isUrlPasswordRecoveryCallback,
   normalizeManagedDigits,
   validateManagedUserForm,
   userValidationErrorMessage,
@@ -47,6 +50,38 @@ function localLoginUsers(): SystemUser[] {
 
 function safeInternalRedirect(value: string | null): string {
   return value && value.startsWith("/") && !value.startsWith("//") ? value : "/admin";
+}
+
+export const FORCE_PASSWORD_RESET_SESSION_KEY = "restocash_force_password_reset_user";
+
+function hasCompletedPersonalPasswordChange(username: string): boolean {
+  if (typeof window === "undefined" || !username) return false;
+  return localStorage.getItem(`restocash_pwd_changed_${username.trim().toLowerCase()}`) === "1";
+}
+
+function doesUserRequireFirstLoginReset(params: {
+  username: string;
+  passwordUsed?: string;
+  localUser?: SystemUser | null;
+  supabaseUser?: any;
+}): boolean {
+  const uname = String(params.username || "").trim().toLowerCase();
+  if (params.passwordUsed && isDefaultTemporaryPassword(params.passwordUsed)) {
+    return true;
+  }
+  if (hasCompletedPersonalPasswordChange(uname)) {
+    return false;
+  }
+  if (
+    params.localUser?.must_change_password === true ||
+    isDefaultTemporaryPassword(params.localUser?.password)
+  ) {
+    return true;
+  }
+  if (params.supabaseUser?.user_metadata?.must_change_password === true) {
+    return true;
+  }
+  return false;
 }
 
 async function signInHostedUser(username: string, password: string) {
@@ -211,12 +246,20 @@ function LoginPage() {
   }, []);
 
   useEffect(() => {
+    if (typeof window !== "undefined" && isUrlPasswordRecoveryCallback()) {
+      window.location.replace(
+        `/reset-password${window.location.search || ""}${window.location.hash || ""}`,
+      );
+      return;
+    }
+
     const params = new URLSearchParams(window.location.search);
     if (params.get("logout") === "1") {
       localStorage.removeItem("restocash_auth_user");
       localStorage.removeItem("restocash_user_role");
       sessionStorage.removeItem("restocash_auth_user");
       sessionStorage.removeItem("restocash_user_role");
+      sessionStorage.removeItem(FORCE_PASSWORD_RESET_SESSION_KEY);
       erpStore.setCurrentUser("");
       void supabase.auth.signOut().catch(() => undefined);
       return;
@@ -258,6 +301,27 @@ function LoginPage() {
           ? String(matchedUser.username).trim().toLowerCase()
           : storedUsername;
         erpStore.setCurrentUser(effectiveUsername);
+        if (
+          sessionStorage.getItem(FORCE_PASSWORD_RESET_SESSION_KEY) ||
+          doesUserRequireFirstLoginReset({
+            username: effectiveUsername,
+            localUser: matchedUser,
+          })
+        ) {
+          sessionStorage.setItem(
+            FORCE_PASSWORD_RESET_SESSION_KEY,
+            JSON.stringify({
+              id: matchedUser?.id || effectiveUsername,
+              username: effectiveUsername,
+              email: matchedUser?.email || storedLocalUser,
+              fullName: matchedUser?.full_name || effectiveUsername,
+              role: matchedUser?.role || storedRole || "cashier",
+              redirect: redirectTo,
+            }),
+          );
+          navigate({ to: "/reset-password" as any, search: { mode: "first-login" } as any });
+          return true;
+        }
         navigate({ to: redirectTo as any });
         return true;
       }
@@ -265,6 +329,7 @@ function LoginPage() {
     };
 
     const continueWithHostedSession = async () => {
+      if (isUrlPasswordRecoveryCallback()) return false;
       const {
         data: { session },
       } = await supabase.auth.getSession();
@@ -276,6 +341,9 @@ function LoginPage() {
       }
       const activeUsername = String(profile.username).trim().toLowerCase();
       const activeRole = String(profile.role || "cashier").trim().toLowerCase();
+      const existingLocal = localLoginUsers().find(
+        (u) => String(u.username || "").trim().toLowerCase() === activeUsername,
+      );
       const customAdminPerms =
         hasAnyEnabledPermission(profile.permissions) ? profile.permissions : null;
       const resolvedPerms =
@@ -298,6 +366,7 @@ function LoginPage() {
         (resolvedPerms || {}) as Partial<UserPermission>,
       );
       erpStore.upsertUser({
+        ...existingLocal,
         id: profile.id,
         full_name: profile.full_name || activeUsername,
         username: activeUsername,
@@ -308,6 +377,28 @@ function LoginPage() {
         created_at: profile.created_at || new Date().toISOString(),
       } as SystemUser);
       erpStore.setCurrentUser(activeUsername);
+      if (
+        sessionStorage.getItem(FORCE_PASSWORD_RESET_SESSION_KEY) ||
+        doesUserRequireFirstLoginReset({
+          username: activeUsername,
+          localUser: existingLocal,
+          supabaseUser: session.user,
+        })
+      ) {
+        sessionStorage.setItem(
+          FORCE_PASSWORD_RESET_SESSION_KEY,
+          JSON.stringify({
+            id: profile.id,
+            username: activeUsername,
+            email: profile.email || session.user.email || "",
+            fullName: profile.full_name || activeUsername,
+            role: activeRole,
+            redirect: redirectTo,
+          }),
+        );
+        navigate({ to: "/reset-password" as any, search: { mode: "first-login" } as any });
+        return true;
+      }
       navigate({ to: redirectTo as any });
       return true;
     };
@@ -604,14 +695,25 @@ function LoginPage() {
               : hasAnyEnabledPermission(profile.permissions)
                 ? profile.permissions
                 : getDefaultPermissionsForRole(activeRole);
+          const existingLocal = localLoginUsers().find(
+            (u) => String(u.username || "").trim().toLowerCase() === activeUsername,
+          );
+          const mustResetFirstLogin = doesUserRequireFirstLoginReset({
+            username: activeUsername,
+            passwordUsed: normalizedPassword,
+            localUser: existingLocal,
+            supabaseUser: session.user,
+          });
           erpStore.updateUserPermission(activeUsername, permissions);
           erpStore.upsertUser({
+            ...existingLocal,
             id: profile.id,
             full_name: profile.full_name || activeUsername,
             username: activeUsername,
             email: profile.email || session.user.email || "",
             phone: profile.phone || "",
             role: activeRole,
+            must_change_password: mustResetFirstLogin,
             permissions,
             created_at: profile.created_at || new Date().toISOString(),
           } as SystemUser);
@@ -625,6 +727,25 @@ function LoginPage() {
               : role === "kitchen"
                 ? "/oven"
                 : "/admin";
+
+          if (mustResetFirstLogin) {
+            localStorage.removeItem(`restocash_pwd_changed_${activeUsername}`);
+            sessionStorage.setItem(
+              FORCE_PASSWORD_RESET_SESSION_KEY,
+              JSON.stringify({
+                id: profile.id,
+                username: activeUsername,
+                email: profile.email || session.user.email || activeEmail,
+                fullName: profile.full_name || activeUsername,
+                role: activeRole,
+                redirect: finalDestination,
+              }),
+            );
+            navigate({ to: "/reset-password" as any, search: { mode: "first-login" } as any });
+            return;
+          }
+
+          sessionStorage.removeItem(FORCE_PASSWORD_RESET_SESSION_KEY);
           navigate({ to: finalDestination as any });
           return;
         }
@@ -710,6 +831,31 @@ function LoginPage() {
             : role === "kitchen"
               ? "/oven"
               : "/admin";
+
+        const mustResetFirstLogin = doesUserRequireFirstLoginReset({
+          username: activeUsername,
+          passwordUsed: normalizedPassword,
+          localUser: foundUser,
+        });
+
+        if (mustResetFirstLogin) {
+          localStorage.removeItem(`restocash_pwd_changed_${activeUsername}`);
+          sessionStorage.setItem(
+            FORCE_PASSWORD_RESET_SESSION_KEY,
+            JSON.stringify({
+              id: foundUser.id,
+              username: activeUsername,
+              email: activeEmail,
+              fullName: foundUser.full_name || activeUsername,
+              role: activeRole,
+              redirect: finalDestination,
+            }),
+          );
+          navigate({ to: "/reset-password" as any, search: { mode: "first-login" } as any });
+          return;
+        }
+
+        sessionStorage.removeItem(FORCE_PASSWORD_RESET_SESSION_KEY);
         navigate({ to: finalDestination as any });
         return;
       }

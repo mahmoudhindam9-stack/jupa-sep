@@ -22,6 +22,7 @@ import {
   Flame,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ChefDishIcon } from "@/components/icons/ChefDishIcon";
 
 type Table = {
   id: string;
@@ -80,6 +81,7 @@ export function TableOrderModal({
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [cart, setCart] = useState<TableCartLine[]>([]);
+  const [selectedCardItemId, setSelectedCardItemId] = useState<string | null>(null);
   const [orderNotes, setOrderNotes] = useState("");
   const [selectedAdditions, setSelectedAdditions] = useState<string[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
@@ -590,6 +592,25 @@ export function TableOrderModal({
 
           <button
             type="button"
+            data-testid="captain-pos-cart-button"
+            onClick={() => setIsCartOpen(true)}
+            className="relative h-9 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white border border-emerald-400/50 text-xs font-black flex items-center gap-2 shadow-sm transition cursor-pointer shrink-0"
+            title={lang === "ar" ? "فتح سلة الطلبات" : "Open Cart"}
+          >
+            <ShoppingCart size={16} className="text-white shrink-0" />
+            <span>{lang === "ar" ? "سلة الطلبات" : "Cart"}</span>
+            {itemCount > 0 && (
+              <span
+                data-testid="captain-pos-cart-badge"
+                className="bg-rose-600 text-white text-[11px] font-black min-w-[20px] h-[20px] rounded-full flex items-center justify-center px-1 border-2 border-white shadow-xs tabular-nums"
+              >
+                {itemCount}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
             onClick={onClose}
             className="w-9 h-9 rounded-xl bg-muted hover:bg-muted/80 flex items-center justify-center text-foreground transition cursor-pointer shrink-0"
             aria-label="إغلاق"
@@ -669,17 +690,20 @@ export function TableOrderModal({
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
             {filteredItems.map((item) => {
               const inCartLine = cart.find((c) => c.item.id === item.id);
+              const isSelectedCard = selectedCardItemId === item.id;
               return (
-                <button
+                <div
                   key={item.id}
-                  type="button"
-                  onClick={() => addToCart(item)}
-                  className={`group bg-card rounded-2xl sm:rounded-3xl overflow-hidden border transition-all hover:-translate-y-0.5 active:scale-[0.98] ${
+                  data-testid={`captain-item-card-${item.id}`}
+                  onClick={() => setSelectedCardItemId(item.id)}
+                  className={`group bg-card rounded-2xl sm:rounded-3xl overflow-hidden border transition-all flex flex-col justify-between select-none ${
                     lang === "ar" ? "text-right" : "text-left"
                   } ${
                     inCartLine
                       ? "border-primary ring-2 ring-primary/20"
-                      : "border-border"
+                      : isSelectedCard
+                        ? "border-amber-500 ring-2 ring-amber-400/35"
+                        : "border-border hover:border-primary/40"
                   }`}
                   style={{ boxShadow: "var(--shadow-card)" }}
                 >
@@ -688,13 +712,13 @@ export function TableOrderModal({
                       <img
                         src={item.image_url}
                         alt={item.name_ar}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 pointer-events-none"
                         loading="lazy"
                         referrerPolicy="no-referrer"
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                        <UtensilsCrossed size={24} />
+                        <ChefDishIcon size={28} />
                       </div>
                     )}
                     <div className="absolute top-2.5 left-2.5 bg-primary text-primary-foreground text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow">
@@ -707,48 +731,44 @@ export function TableOrderModal({
                       </span>
                     )}
                     {inCartLine && (
-                      <div className="absolute bottom-2 left-2 bg-slate-900 text-white min-w-6 h-6 px-1.5 rounded-full flex items-center justify-center text-xs font-black shadow">
+                      <div className="absolute bottom-2 left-2 bg-slate-900 text-white min-w-6 h-6 px-1.5 rounded-full flex items-center justify-center gap-1 text-xs font-black shadow">
+                        <ChefDishIcon size={13} />
                         {inCartLine.quantity}
                       </div>
                     )}
                   </div>
-                  <div className="p-3">
-                    <h4 className="font-bold text-xs sm:text-sm text-card-foreground line-clamp-1">
-                      {item.name_ar}
-                    </h4>
-                    <div className="mt-1.5 flex items-center gap-1.5 text-xs text-primary font-semibold">
-                      <Plus size={14} />
-                      <span>{t.add_to_order}</span>
+                  <div className="p-3 flex flex-col gap-2 flex-1 justify-between">
+                    <div className="flex items-start justify-between gap-1.5">
+                      <h4 className="font-bold text-xs sm:text-sm text-card-foreground line-clamp-2 leading-snug">
+                        {item.name_ar}
+                      </h4>
+                      <span className="shrink-0 rounded-lg bg-primary/10 p-1 text-primary">
+                        <ChefDishIcon size={15} />
+                      </span>
                     </div>
+                    <button
+                      type="button"
+                      data-testid={`captain-add-button-${item.id}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedCardItemId(item.id);
+                        addToCart(item);
+                      }}
+                      className="w-full py-2 px-3 rounded-xl bg-primary hover:bg-primary/90 active:scale-[0.97] text-primary-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-sm hover:shadow transition-all cursor-pointer"
+                    >
+                      <Plus size={16} strokeWidth={3} />
+                      <ChefDishIcon size={15} />
+                      <span>{t.add_to_order}</span>
+                    </button>
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>
         )}
       </div>
 
-      {/* 4. Single Floating Cart Icon on the Bottom-Left (Identical to Restaurant POS & Park POS) */}
-      {!isCartOpen && (
-        <div className="fixed bottom-6 left-6 z-40">
-          <button
-            type="button"
-            onClick={() => setIsCartOpen(true)}
-            className="w-14 h-14 rounded-full shadow-2xl flex items-center justify-center relative hover:scale-105 active:scale-95 transition-all cursor-pointer border-2 border-white/20"
-            style={{ background: "var(--gradient-primary)", color: "white" }}
-            title={lang === "ar" ? "فتح سلة الطلبات" : "Open Cart"}
-          >
-            <ShoppingCart size={24} />
-            {itemCount > 0 && (
-              <span className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-[10px] font-black min-w-[22px] h-[22px] rounded-full flex items-center justify-center px-1 border-2 border-background shadow-sm">
-                {itemCount}
-              </span>
-            )}
-          </button>
-        </div>
-      )}
-
-      {/* 5. Left Slide-Over Cart Drawer (Identical in position, shape, and size to Restaurant POS & Park POS) */}
+      {/* 4. Left Slide-Over Cart Drawer (Identical in position, shape, and size to Restaurant POS & Park POS) */}
       {isCartOpen && (
         <div
           className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex animate-in fade-in"

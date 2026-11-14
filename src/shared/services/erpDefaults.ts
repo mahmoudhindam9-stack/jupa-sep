@@ -4,10 +4,13 @@ import type {
   Branch,
   Employee,
   JournalEntry,
+  MallCustomFieldDefinition,
   MallGardenExpense,
   MallGardenRevenue,
   MallRentalPayment,
   MallShop,
+  MallShopConstructionStatus,
+  MallShopLocationZone,
   ParkCustomer,
   ParkOperationalTreasury,
   ParkTicketItem,
@@ -284,7 +287,213 @@ export const DEFAULT_GARDEN_REVENUES: MallGardenRevenue[] = [];
 
 export const DEFAULT_GARDEN_EXPENSES: MallGardenExpense[] = [];
 
-export const DEFAULT_MALL_SHOPS: MallShop[] = [
+export const MALL_SHOP_LOCATION_LABELS: Record<
+  MallShopLocationZone,
+  { ar: string; en: string; prefix: string; badgeClass: string }
+> = {
+  central: {
+    ar: "السنتر (Central)",
+    en: "Central",
+    prefix: "D",
+    badgeClass: "bg-indigo-50 text-indigo-700 border-indigo-200",
+  },
+  park: {
+    ar: "المنتزه / الحديقة (Park)",
+    en: "Park",
+    prefix: "B",
+    badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  },
+  ground_floor: {
+    ar: "الدور الأرضي (Ground Floor)",
+    en: "Ground Floor",
+    prefix: "G",
+    badgeClass: "bg-sky-50 text-sky-700 border-sky-200",
+  },
+  first_floor: {
+    ar: "الدور الأول (First Floor)",
+    en: "First Floor",
+    prefix: "F",
+    badgeClass: "bg-amber-50 text-amber-700 border-amber-200",
+  },
+  roof: {
+    ar: "الروف / السطح (Roof)",
+    en: "Roof",
+    prefix: "R",
+    badgeClass: "bg-purple-50 text-purple-700 border-purple-200",
+  },
+  other: {
+    ar: "أخرى (Other)",
+    en: "Other",
+    prefix: "-",
+    badgeClass: "bg-slate-100 text-slate-700 border-slate-200",
+  },
+};
+
+export const MALL_SHOP_CONSTRUCTION_LABELS: Record<
+  MallShopConstructionStatus,
+  { ar: string; en: string; badgeClass: string }
+> = {
+  finished: {
+    ar: "مشطب (Finished)",
+    en: "Finished",
+    badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  },
+  red_brick: {
+    ar: "طوب أحمر (Red Brick)",
+    en: "Red Brick",
+    badgeClass: "bg-rose-50 text-rose-700 border-rose-200",
+  },
+  fitted: {
+    ar: "مجهز (Fitted)",
+    en: "Fitted",
+    badgeClass: "bg-blue-50 text-blue-700 border-blue-200",
+  },
+  not_fitted: {
+    ar: "غير مجهز (Not Fitted)",
+    en: "Not Fitted",
+    badgeClass: "bg-orange-50 text-orange-700 border-orange-200",
+  },
+  under_construction: {
+    ar: "تحت الإنشاء (Under Construction)",
+    en: "Under Construction",
+    badgeClass: "bg-amber-50 text-amber-700 border-amber-200",
+  },
+  other: {
+    ar: "أخرى (Other)",
+    en: "Other",
+    badgeClass: "bg-slate-100 text-slate-700 border-slate-200",
+  },
+};
+
+export function detectMallShopLocationFromNumber(shopNumber?: string): MallShopLocationZone {
+  const cleaned = String(shopNumber || "").trim().toUpperCase();
+  if (!cleaned) return "other";
+  const firstChar = cleaned.charAt(0);
+  switch (firstChar) {
+    case "D":
+      return "central";
+    case "B":
+      return "park";
+    case "G":
+      return "ground_floor";
+    case "F":
+      return "first_floor";
+    case "R":
+      return "roof";
+    default:
+      return "other";
+  }
+}
+
+export function resolveMallShopLocation(shop: Partial<MallShop>): MallShopLocationZone {
+  if (shop.location_override && shop.location_zone) {
+    return shop.location_zone;
+  }
+  return detectMallShopLocationFromNumber(shop.shop_number);
+}
+
+export function formatMallShopSerial(indexOrNumber: number): string {
+  const safeNum = Math.max(1, Math.floor(Number(indexOrNumber) || 1));
+  return `SHP-${String(safeNum).padStart(4, "0")}`;
+}
+
+export function normalizeMallShopRecord(shop: MallShop, serialIndex: number): MallShop {
+  const detectedZone = detectMallShopLocationFromNumber(shop.shop_number);
+  const locationOverride = Boolean(shop.location_override);
+  const locationZone: MallShopLocationZone =
+    locationOverride && shop.location_zone ? shop.location_zone : detectedZone;
+  const constructionStatus: MallShopConstructionStatus =
+    shop.construction_status || "finished";
+  const serialNumber =
+    shop.serial_number && String(shop.serial_number).trim()
+      ? String(shop.serial_number).trim()
+      : formatMallShopSerial(serialIndex);
+
+  return {
+    ...shop,
+    serial_number: serialNumber,
+    construction_status: constructionStatus,
+    location_zone: locationZone,
+    location_override: locationOverride,
+    custom_fields: shop.custom_fields ? { ...shop.custom_fields } : {},
+  };
+}
+
+export const DEFAULT_MALL_CUSTOM_FIELDS: MallCustomFieldDefinition[] = [
+  {
+    id: "cf-electricity-meter",
+    key: "electricity_meter_no",
+    name_ar: "رقم عداد الكهرباء",
+    name_en: "Electricity Meter No.",
+    type: "text",
+    enabled: true,
+    archived: false,
+    order: 1,
+    required: false,
+  },
+  {
+    id: "cf-water-connection",
+    key: "has_water_connection",
+    name_ar: "توصيلة مياه وصرف",
+    name_en: "Water & Drainage Connection",
+    type: "checkbox",
+    enabled: true,
+    archived: false,
+    order: 2,
+    required: false,
+  },
+  {
+    id: "cf-facade-type",
+    key: "facade_type",
+    name_ar: "نوع الواجهة",
+    name_en: "Facade Type",
+    type: "dropdown",
+    options: ["واجهة زجاجية سيكوريت", "شتر معدني", "واجهة مزدوجة (ناصية)", "بدون واجهة"],
+    enabled: true,
+    archived: false,
+    order: 3,
+    required: false,
+  },
+];
+
+export const ORACLE_MALL_COMPOUND_ACCOUNTS: Array<{
+  account_number: string;
+  oracle_name: string;
+  reason: string;
+}> = [
+  {
+    account_number: "14010125",
+    oracle_name: "uptown café & lounge - F9&F10",
+    reason: "حساب مركب يجمع وحدتين (F9&F10) في شجرة حسابات أوراكل - لم يتم تقسيمه تلقائياً لمنع إنشاء أرقام محلات غير مؤكدة",
+  },
+  {
+    account_number: "14010350",
+    oracle_name: "verdant investment - F11&F12",
+    reason: "حساب مركب يجمع وحدتين (F11&F12) في شجرة حسابات أوراكل - لم يتم تقسيمه تلقائياً لمنع إنشاء أرقام محلات غير مؤكدة",
+  },
+  {
+    account_number: "14010260",
+    oracle_name: "Ramcial Bank G12-13",
+    reason: "حساب فرعي متداخل مع نطاق سوبر ماركت Market china (G9:G16) في شجرة أوراكل",
+  },
+  {
+    account_number: "14010220",
+    oracle_name: "السيدة اميرة G14 (Amira G14)",
+    reason: "حساب تاريخي ضمن نطاق الوحدات المدمجة (G9:G16) في شجرة أوراكل",
+  },
+  {
+    account_number: "14010250",
+    oracle_name: "Kur N Deng G16-A",
+    reason: "حساب فرعي (G16-A) ضمن نطاق الوحدات المدمجة (G9:G16) في شجرة أوراكل",
+  },
+  {
+    account_number: "14010276",
+    oracle_name: "Mrs / Aluel Deng Awoul-R2",
+    reason: "حساب رديف لنفس المستأجر (Aluel Deng Awoul) على الروف - مسجل للمراجعة الإدارية",
+  },
+];
+
+const RAW_DEFAULT_MALL_SHOPS: MallShop[] = [
   {
     id: "shop-d1",
     shop_number: "D1",
@@ -789,7 +998,119 @@ export const DEFAULT_MALL_SHOPS: MallShop[] = [
     space_sqm: 140,
     notes: "المول",
   },
+  {
+    id: "shop-f1",
+    shop_number: "F1",
+    name_ar: "شركة هيروز إنترناشيونال Heros International",
+    account_number: "14010150",
+    tenant_name: "Heros International Luak kuol",
+    phone: "-",
+    monthly_rent: 0,
+    status: "vacant",
+    space_sqm: 60,
+    notes: "المول - الدور الأول",
+  },
+  {
+    id: "shop-f2",
+    shop_number: "F2",
+    name_ar: "مكتب تجاري وخدمات Mr /Li Jun Bo",
+    account_number: "14010356",
+    tenant_name: "Mr /Li Jun Bo",
+    phone: "-",
+    monthly_rent: 0,
+    status: "vacant",
+    space_sqm: 55,
+    notes: "المول - الدور الأول",
+  },
+  {
+    id: "shop-f3",
+    shop_number: "F3",
+    name_ar: "شركة ليلي للخدمات الهندسية lili co enginering service",
+    account_number: "14010360",
+    tenant_name: "lili co enginering service",
+    phone: "-",
+    monthly_rent: 0,
+    status: "vacant",
+    space_sqm: 60,
+    notes: "المول - الدور الأول",
+  },
+  {
+    id: "shop-f4",
+    shop_number: "F4",
+    name_ar: "شركة كدامة للتجارة kadama trading",
+    account_number: "14010370",
+    tenant_name: "kadama trading",
+    phone: "-",
+    monthly_rent: 0,
+    status: "vacant",
+    space_sqm: 55,
+    notes: "المول - الدور الأول",
+  },
+  {
+    id: "shop-f5",
+    shop_number: "F5",
+    name_ar: "شركة التكنولوجيا والاتصالات Technology Company",
+    account_number: "14010380",
+    tenant_name: "Technology Company",
+    phone: "-",
+    monthly_rent: 0,
+    status: "vacant",
+    space_sqm: 65,
+    notes: "المول - الدور الأول",
+  },
+  {
+    id: "shop-f6",
+    shop_number: "F6",
+    name_ar: "صيدلية وبرايمري كير للتجارة Primary Care General Trading",
+    account_number: "14010392",
+    tenant_name: "Primary Care Genral Trading",
+    phone: "-",
+    monthly_rent: 0,
+    status: "vacant",
+    space_sqm: 60,
+    notes: "المول - الدور الأول",
+  },
+  {
+    id: "shop-f7",
+    shop_number: "F7",
+    name_ar: "مكتب ويني زكريا التجاري Mrs / Winne Emmanya Zakaria",
+    account_number: "14010400",
+    tenant_name: "Mrs / Winne Emmanya Zakaria",
+    phone: "-",
+    monthly_rent: 0,
+    status: "vacant",
+    space_sqm: 50,
+    notes: "المول - الدور الأول",
+  },
+  {
+    id: "shop-f8",
+    shop_number: "F8",
+    name_ar: "مطعم كروم Karoum Restaurant",
+    account_number: "14010230",
+    tenant_name: "Karoum Restaurant",
+    phone: "-",
+    monthly_rent: 0,
+    status: "vacant",
+    space_sqm: 85,
+    notes: "المول - الدور الأول",
+  },
+  {
+    id: "shop-r1",
+    shop_number: "R1",
+    name_ar: "وحدة الروف التجارية Aguet Aguer Reech",
+    account_number: "14010275",
+    tenant_name: "Aguet Aguer Reech",
+    phone: "-",
+    monthly_rent: 0,
+    status: "vacant",
+    space_sqm: 110,
+    notes: "المول - الروف",
+  },
 ];
+
+export const DEFAULT_MALL_SHOPS: MallShop[] = RAW_DEFAULT_MALL_SHOPS.map((shop, idx) =>
+  normalizeMallShopRecord(shop, idx + 1),
+);
 
 export const DEFAULT_MALL_PAYMENTS: MallRentalPayment[] = [];
 

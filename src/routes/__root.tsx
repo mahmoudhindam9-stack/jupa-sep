@@ -15,6 +15,8 @@ import { createAppSync } from "../shared/services/appSync";
 import { studioService } from "@/features/developer-studio/services/studioService";
 import { sanitizeStudioDomEditsMap } from "@/features/developer-studio/models/studio.types";
 import { setupVisualPermissionsRuntime } from "../shared/services/visualPermissionsEngine";
+import { supabase } from "@/integrations/supabase/client";
+import { isUrlPasswordRecoveryCallback } from "@/features/auth/services/managedUserValidation";
 import appCss from "../styles.css?url";
 
 function NotFoundComponent() {
@@ -207,6 +209,30 @@ function RootComponent() {
 
   useEffect(() => {
     setIsClient(true);
+    if (
+      typeof window !== "undefined" &&
+      !window.location.pathname.startsWith("/reset-password") &&
+      isUrlPasswordRecoveryCallback()
+    ) {
+      window.location.replace(
+        `/reset-password${window.location.search || ""}${window.location.hash || ""}`,
+      );
+      return;
+    }
+    const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
+      if (
+        event === "PASSWORD_RECOVERY" &&
+        typeof window !== "undefined" &&
+        !window.location.pathname.startsWith("/reset-password")
+      ) {
+        window.location.replace(
+          `/reset-password${window.location.search || ""}${window.location.hash || ""}`,
+        );
+      }
+    });
+    return () => {
+      authListener?.subscription?.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {

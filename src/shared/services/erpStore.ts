@@ -21,10 +21,12 @@ import {
   type InventorySettings,
   type JournalEntry,
   type JournalLine,
+  type MallCustomFieldDefinition,
   type MallGardenExpense,
   type MallGardenRevenue,
   type MallRentalPayment,
   type MallShop,
+  type MallShopsSyncReport,
   type MenuItemQualitySpecs,
   type ParkCustomer,
   type ParkOperationalTreasury,
@@ -55,6 +57,7 @@ import {
   DEFAULT_EXPIRY_SEED,
   DEFAULT_GARDEN_EXPENSES,
   DEFAULT_GARDEN_REVENUES,
+  DEFAULT_MALL_CUSTOM_FIELDS,
   DEFAULT_MALL_PAYMENTS,
   DEFAULT_MALL_SHOPS,
   DEFAULT_PARK_CUSTOMERS,
@@ -63,11 +66,15 @@ import {
   DEFAULT_PERMISSIONS,
   DEFAULT_SUPPLIERS,
   DEFAULT_TREASURIES,
+  detectMallShopLocationFromNumber,
   EGP_SEED_TRANSACTIONS,
   ensureCurrentManagedUsers,
   ensureEmployeesWithUniqueCodes,
+  formatMallShopSerial,
   generateNextUniqueEmployeeCode,
   LEGACY_DEFAULT_USER_IDS,
+  normalizeMallShopRecord,
+  ORACLE_MALL_COMPOUND_ACCOUNTS,
   OWNER_DEFAULT_ADMIN,
   ROOT_DEFAULT_ADMIN,
   SEED_AH_JOURNAL_ENTRIES,
@@ -78,6 +85,7 @@ export class ERPStore {
   listeners = [];
   constructor() {
     this.state = this.loadState();
+    this.syncMallShops(false);
     this.state.employees = ensureEmployeesWithUniqueCodes(this.state.employees);
     this.state.users = ensureCurrentManagedUsers(this.state.users, this.state.employees);
     const activeLocalUsername = String(this.state.currentUser || "")
@@ -385,6 +393,7 @@ export class ERPStore {
                     : [],
                   park_sales_hard_zero_reset_v4_2026_09_03: true,
                 };
+                this.syncMallShops(false);
                 this.deduplicateSalesTreasuryTransactions(false);
                 this.recalculateAccountBalances();
                 this.saveState();
@@ -723,6 +732,12 @@ export class ERPStore {
           payrolls: isFreshFinancialStart ? parsed.payrolls || [] : [],
           mallShops:
             parsed.mallShops && parsed.mallShops.length > 0 ? parsed.mallShops : DEFAULT_MALL_SHOPS,
+          mallCustomFieldDefinitions:
+            Array.isArray(parsed.mallCustomFieldDefinitions) &&
+            parsed.mallCustomFieldDefinitions.length > 0
+              ? parsed.mallCustomFieldDefinitions
+              : DEFAULT_MALL_CUSTOM_FIELDS,
+          lastMallSyncReport: parsed.lastMallSyncReport || undefined,
           mallPayments: isFreshFinancialStart && Array.isArray(parsed.mallPayments) ? parsed.mallPayments : [],
           mallGardenRevenues: isFreshFinancialStart && Array.isArray(parsed.mallGardenRevenues) ? parsed.mallGardenRevenues : [],
           mallGardenExpenses: isFreshFinancialStart && Array.isArray(parsed.mallGardenExpenses) ? parsed.mallGardenExpenses : [],
@@ -926,6 +941,7 @@ export class ERPStore {
       loans: [],
       payrolls: [],
       mallShops: DEFAULT_MALL_SHOPS,
+      mallCustomFieldDefinitions: DEFAULT_MALL_CUSTOM_FIELDS,
       mallPayments: DEFAULT_MALL_PAYMENTS,
       mallGardenRevenues: DEFAULT_GARDEN_REVENUES,
       mallGardenExpenses: DEFAULT_GARDEN_EXPENSES,
@@ -1124,12 +1140,12 @@ export class ERPStore {
 
     const cloudUsernames = new Set(cloudUsers.map((u) => u.username));
     const cloudEmails = new Set(cloudUsers.map((u) => String(u.email || "").toLowerCase()));
-    const cloudHasAdmin = cloudUsers.some(
-      (u) => u.role === "admin" || u.role === "super_admin",
+    const cloudHasDefaultAdmin = cloudUsers.some(
+      (u) => String(u.username || "").trim().toLowerCase() === "admin",
     );
 
     // Keep any local-only users that have not yet been synced to Supabase,
-    // excluding deleted users and duplicate/default admin accounts when a cloud admin already exists.
+    // excluding deleted users and the default seed u-admin when cloud already has 'admin'.
     const unsyncedLocalUsers = options?.authoritative
       ? []
       : existingLocalUsers.filter((local) => {
@@ -1137,14 +1153,9 @@ export class ERPStore {
           const uname = String(local.username || "").trim().toLowerCase();
           const uemail = String(local.email || "").trim().toLowerCase();
           if (deletedSet.has(uname)) return false;
-          const isLocalAdmin =
-            local.role === "admin" ||
-            local.role === "super_admin" ||
-            uid === "u-admin" ||
-            uid === "u-owner-mahmoud" ||
-            uname === "admin" ||
-            uemail === "admin@restocash.com";
-          if (cloudHasAdmin && isLocalAdmin) return false;
+          const isSeedAdmin =
+            (uid === "u-admin" || uid === "u-owner-mahmoud") && uname === "admin";
+          if (cloudHasDefaultAdmin && isSeedAdmin) return false;
           return !cloudUsernames.has(uname) && (!uemail || !cloudEmails.has(uemail));
         });
 
@@ -1153,6 +1164,14 @@ export class ERPStore {
       this.state.employees,
     ).filter((u) => !deletedSet.has(String(u.username || "").trim().toLowerCase()));
     this.state.users = combinedUsers;
+
+    if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
+      try {
+        localStorage.setItem("local_system_users", JSON.stringify(this.state.users));
+      } catch {
+        // ignore storage quota errors
+      }
+    }
 
     const permissionsByIdentity: Record<string, UserPermission> = {
       ...(this.state.userPermissions || {}),
@@ -1231,9 +1250,23 @@ export class ERPStore {
       this.state.users.push(nextUser);
     }
 
-    // If matched to an HR employee, keep their employee_code in sync
+    // If matched to an HR employee, keep their employee_code, phone, and email in sync
     if (matchedHrEmp && resolvedEmployeeCode) {
       matchedHrEmp.employee_code = resolvedEmployeeCode;
+      if (nextUser.phone && !matchedHrEmp.phone) {
+        matchedHrEmp.phone = nextUser.phone;
+      }
+      if (nextUser.email) {
+        matchedHrEmp.email = nextUser.email;
+      }
+    }
+
+    if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
+      try {
+        localStorage.setItem("local_system_users", JSON.stringify(this.state.users));
+      } catch {
+        // ignore
+      }
     }
 
     if (!this.state.userPermissions) this.state.userPermissions = {};
@@ -1263,6 +1296,13 @@ export class ERPStore {
     ]);
     if (username && !reservedRoleNames.has(username)) delete this.state.userPermissions?.[username];
     if (email && !reservedRoleNames.has(email)) delete this.state.userPermissions?.[email];
+    if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
+      try {
+        localStorage.setItem("local_system_users", JSON.stringify(this.state.users));
+      } catch {
+        // ignore
+      }
+    }
     this.saveState();
   }
   resolveCurrentActorIdentity(): {
@@ -7238,19 +7278,83 @@ export class ERPStore {
       "IMPORT",
     );
   }
+  generateNextMallShopSerial(existingShops = this.state?.mallShops || []): string {
+    const usedSerials = new Set<string>();
+    let maxNum = 0;
+    for (const s of existingShops) {
+      if (s?.serial_number) {
+        const sn = String(s.serial_number).trim().toUpperCase();
+        usedSerials.add(sn);
+        const match = sn.match(/(\d+)$/);
+        if (match) {
+          const parsedNum = parseInt(match[1], 10);
+          if (!Number.isNaN(parsedNum) && parsedNum > maxNum) {
+            maxNum = parsedNum;
+          }
+        }
+      }
+    }
+    let nextCandidate = Math.max(maxNum + 1, existingShops.length + 1);
+    while (usedSerials.has(formatMallShopSerial(nextCandidate))) {
+      nextCandidate++;
+    }
+    return formatMallShopSerial(nextCandidate);
+  }
+
   addMallShop(shop) {
-    const newShop = {
+    const existingShops: MallShop[] = Array.isArray(this.state.mallShops)
+      ? this.state.mallShops
+      : [];
+    const normalizedShopNumber = String(shop?.shop_number || "").trim();
+    const existingDuplicate = existingShops.find(
+      (s) =>
+        String(s.shop_number || "")
+          .trim()
+          .toUpperCase() === normalizedShopNumber.toUpperCase() && normalizedShopNumber !== "",
+    );
+    if (existingDuplicate) {
+      this.updateMallShop(existingDuplicate.id, shop);
+      return existingDuplicate;
+    }
+
+    const serialNumber =
+      shop?.serial_number &&
+      String(shop.serial_number).trim() &&
+      !existingShops.some(
+        (s) =>
+          String(s.serial_number || "")
+            .trim()
+            .toUpperCase() === String(shop.serial_number).trim().toUpperCase(),
+      )
+        ? String(shop.serial_number).trim()
+        : this.generateNextMallShopSerial(existingShops);
+
+    const locationOverride = Boolean(shop?.location_override);
+    const locationZone =
+      locationOverride && shop?.location_zone
+        ? shop.location_zone
+        : detectMallShopLocationFromNumber(normalizedShopNumber);
+
+    const newShop: MallShop = {
       ...shop,
-      id: "shop-" + Date.now(),
+      id: shop?.id || "shop-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
+      shop_number: normalizedShopNumber || shop?.shop_number || "",
+      serial_number: serialNumber,
+      construction_status: shop?.construction_status || "finished",
+      location_zone: locationZone,
+      location_override: locationOverride,
+      custom_fields: shop?.custom_fields ? { ...shop.custom_fields } : {},
     };
-    this.state.mallShops = [...(this.state.mallShops || []), newShop];
+    this.state.mallShops = [...existingShops, newShop];
     this.saveState();
     this.logAction(
       "ADMIN",
       "إضافة محلات المول",
-      `تم إضافة المحل ${newShop.name_ar} (رقم ${newShop.shop_number}) بنجاح`,
+      `تم إضافة المحل ${newShop.name_ar} (رقم ${newShop.shop_number} - مسلسل ${newShop.serial_number}) بنجاح`,
       "CREATE",
     );
+    this.notify();
+    return newShop;
   }
   getShopDescriptionString(shopId: string): string {
     if (!shopId) return "";
@@ -7390,16 +7494,209 @@ export class ERPStore {
     );
   }
   updateMallShop(id, updates) {
-    this.state.mallShops = (this.state.mallShops || []).map((s) =>
+    const currentShops: MallShop[] = Array.isArray(this.state.mallShops)
+      ? this.state.mallShops
+      : [];
+    const targetShop = currentShops.find((s) => s.id === id);
+    if (!targetShop) return;
+
+    // Prevent duplicate shop_number collisions with a different shop
+    let nextShopNumber =
+      updates.shop_number !== undefined ? String(updates.shop_number).trim() : targetShop.shop_number;
+    if (nextShopNumber) {
+      const conflictingShop = currentShops.find(
+        (s) =>
+          s.id !== id &&
+          String(s.shop_number || "")
+            .trim()
+            .toUpperCase() === nextShopNumber.toUpperCase(),
+      );
+      if (conflictingShop) {
+        // Keep original shop_number to prevent duplicates
+        nextShopNumber = targetShop.shop_number;
+      }
+    }
+
+    // Preserve permanent serial_number (never overwrite once assigned)
+    const permanentSerial =
+      targetShop.serial_number && String(targetShop.serial_number).trim()
+        ? targetShop.serial_number
+        : this.generateNextMallShopSerial(currentShops);
+
+    const nextLocationOverride =
+      updates.location_override !== undefined
+        ? Boolean(updates.location_override)
+        : Boolean(targetShop.location_override);
+
+    const nextLocationZone = nextLocationOverride
+      ? updates.location_zone ||
+        targetShop.location_zone ||
+        detectMallShopLocationFromNumber(nextShopNumber)
+      : detectMallShopLocationFromNumber(nextShopNumber);
+
+    const nextConstructionStatus =
+      updates.construction_status || targetShop.construction_status || "finished";
+
+    const nextCustomFields =
+      updates.custom_fields !== undefined
+        ? { ...(targetShop.custom_fields || {}), ...(updates.custom_fields || {}) }
+        : { ...(targetShop.custom_fields || {}) };
+
+    this.state.mallShops = currentShops.map((s) =>
       s.id === id
         ? {
             ...s,
             ...updates,
+            shop_number: nextShopNumber,
+            serial_number: permanentSerial,
+            construction_status: nextConstructionStatus,
+            location_zone: nextLocationZone,
+            location_override: nextLocationOverride,
+            custom_fields: nextCustomFields,
           }
         : s,
     );
     this.saveState();
     this.logAction("ADMIN", "تعديل بيانات المحل", `تم تحديث بيانات المحل رقم ${id}`, "UPDATE");
+    this.notify();
+  }
+
+  getMallCustomFields(includeArchived: boolean = false): MallCustomFieldDefinition[] {
+    const list: MallCustomFieldDefinition[] = Array.isArray(this.state.mallCustomFieldDefinitions)
+      ? this.state.mallCustomFieldDefinitions
+      : DEFAULT_MALL_CUSTOM_FIELDS;
+    return [...list]
+      .filter((f) => (includeArchived ? true : !f.archived))
+      .sort((a, b) => (a.order || 0) - (b.order || 0));
+  }
+
+  addMallCustomField(
+    field: Partial<MallCustomFieldDefinition> & {
+      name_ar: string;
+      type: MallCustomFieldDefinition["type"];
+    },
+  ): MallCustomFieldDefinition {
+    const existing: MallCustomFieldDefinition[] = Array.isArray(
+      this.state.mallCustomFieldDefinitions,
+    )
+      ? [...this.state.mallCustomFieldDefinitions]
+      : [...DEFAULT_MALL_CUSTOM_FIELDS];
+    const maxOrder = existing.reduce((max, f) => Math.max(max, Number(f.order || 0)), 0);
+    const id = field.id || "cf-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6);
+    const rawKey =
+      field.key && String(field.key).trim()
+        ? String(field.key)
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9_]/g, "_")
+        : `custom_${Date.now()}`;
+    const uniqueKey = existing.some((f) => f.key === rawKey) ? `${rawKey}_${existing.length + 1}` : rawKey;
+
+    const newField: MallCustomFieldDefinition = {
+      id,
+      key: uniqueKey,
+      name_ar: String(field.name_ar || "").trim() || "حقل مخصص",
+      name_en: field.name_en ? String(field.name_en).trim() : undefined,
+      type: field.type || "text",
+      options:
+        field.type === "dropdown" || field.type === "multiple_choice"
+          ? Array.isArray(field.options)
+            ? field.options.map((o) => String(o).trim()).filter(Boolean)
+            : []
+          : undefined,
+      enabled: field.enabled !== undefined ? Boolean(field.enabled) : true,
+      archived: Boolean(field.archived),
+      order: field.order !== undefined ? Number(field.order) : maxOrder + 1,
+      required: Boolean(field.required),
+    };
+
+    this.state.mallCustomFieldDefinitions = [...existing, newField];
+    this.saveState();
+    this.logAction(
+      "ADMIN",
+      "إضافة حقل مخصص للمحلات",
+      `تم إضافة الحقل المخصص (${newField.name_ar}) من نوع (${newField.type})`,
+      "CREATE",
+    );
+    this.notify();
+    return newField;
+  }
+
+  updateMallCustomField(id: string, updates: Partial<MallCustomFieldDefinition>) {
+    const existing: MallCustomFieldDefinition[] = Array.isArray(
+      this.state.mallCustomFieldDefinitions,
+    )
+      ? [...this.state.mallCustomFieldDefinitions]
+      : [...DEFAULT_MALL_CUSTOM_FIELDS];
+
+    this.state.mallCustomFieldDefinitions = existing.map((f) => {
+      if (f.id !== id) return f;
+      const nextType = updates.type || f.type;
+      const nextOptions =
+        nextType === "dropdown" || nextType === "multiple_choice"
+          ? updates.options !== undefined
+            ? updates.options.map((o) => String(o).trim()).filter(Boolean)
+            : f.options || []
+          : undefined;
+      return {
+        ...f,
+        ...updates,
+        id: f.id,
+        key: f.key,
+        type: nextType,
+        options: nextOptions,
+      };
+    });
+    this.saveState();
+    this.logAction("ADMIN", "تعديل حقل مخصص للمحلات", `تم تحديث إعدادات الحقل (${id})`, "UPDATE");
+    this.notify();
+  }
+
+  reorderMallCustomFields(orderedIds: string[]) {
+    const existing: MallCustomFieldDefinition[] = Array.isArray(
+      this.state.mallCustomFieldDefinitions,
+    )
+      ? [...this.state.mallCustomFieldDefinitions]
+      : [...DEFAULT_MALL_CUSTOM_FIELDS];
+    const orderMap = new Map<string, number>();
+    orderedIds.forEach((id, idx) => orderMap.set(id, idx + 1));
+    let fallbackIdx = orderedIds.length + 1;
+    this.state.mallCustomFieldDefinitions = existing
+      .map((f) => ({
+        ...f,
+        order: orderMap.has(f.id) ? orderMap.get(f.id)! : fallbackIdx++,
+      }))
+      .sort((a, b) => a.order - b.order);
+    this.saveState();
+    this.notify();
+  }
+
+  moveMallCustomField(id: string, direction: "up" | "down") {
+    const sorted = this.getMallCustomFields(true);
+    const index = sorted.findIndex((f) => f.id === id);
+    if (index < 0) return;
+    const swapIndex = direction === "up" ? index - 1 : index + 1;
+    if (swapIndex < 0 || swapIndex >= sorted.length) return;
+    const next = [...sorted];
+    const temp = next[index];
+    next[index] = next[swapIndex];
+    next[swapIndex] = temp;
+    this.reorderMallCustomFields(next.map((f) => f.id));
+  }
+
+  toggleMallCustomFieldEnabled(id: string, enabled?: boolean) {
+    const existing = this.getMallCustomFields(true);
+    const target = existing.find((f) => f.id === id);
+    if (!target) return;
+    const nextEnabled = enabled !== undefined ? Boolean(enabled) : !target.enabled;
+    this.updateMallCustomField(id, { enabled: nextEnabled });
+  }
+
+  archiveMallCustomField(id: string, archived: boolean = true) {
+    this.updateMallCustomField(id, {
+      archived,
+      enabled: archived ? false : true,
+    });
   }
   deleteMallShop(id) {
     this.state.mallShops = (this.state.mallShops || []).filter((s) => s.id !== id);
@@ -7646,19 +7943,304 @@ export class ERPStore {
     this.saveState();
     this.logAction("ADMIN", "حذف مصروف", `تم حذف المصروف رقم ${id}`, "DELETE");
   }
-  resetMallData() {
-    this.state.mallShops = DEFAULT_MALL_SHOPS;
-    this.state.mallPayments = DEFAULT_MALL_PAYMENTS;
-    this.state.mallGardenRevenues = DEFAULT_GARDEN_REVENUES;
-    this.state.mallGardenExpenses = DEFAULT_GARDEN_EXPENSES;
-    this.state.mallTerminatedContractsArchive = [];
-    this.saveState();
-    this.logAction(
-      "ADMIN",
-      "إعادة ضبط بيانات المول",
-      "تم إعادة تحميل بيانات المحلات والإيجارات الافتراضية بنجاح",
-      "UPDATE",
+  syncMallShops(logAndNotify: boolean = true): MallShopsSyncReport {
+    const currentShops: MallShop[] = Array.isArray(this.state?.mallShops)
+      ? [...this.state.mallShops]
+      : [];
+    const previousCount = currentShops.length;
+
+    // Also inspect localStorage directly in case a user session had saved additional shops
+    let persistedShops: MallShop[] = [];
+    if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
+      try {
+        const raw = localStorage.getItem("erp_store_state");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed?.mallShops)) {
+            persistedShops = parsed.mallShops;
+          }
+        }
+      } catch {
+        /* ignore parse error */
+      }
+    }
+
+    const payments: MallRentalPayment[] = Array.isArray(this.state?.mallPayments)
+      ? this.state.mallPayments
+      : [];
+    const archive = Array.isArray(this.state?.mallTerminatedContractsArchive)
+      ? this.state.mallTerminatedContractsArchive
+      : [];
+
+    const referencedShopIds = new Set<string>();
+    payments.forEach((p) => {
+      if (p?.shop_id) referencedShopIds.add(p.shop_id);
+    });
+    archive.forEach((a) => {
+      if (a?.shop_id) referencedShopIds.add(a.shop_id);
+    });
+
+    const addedShops: string[] = [];
+    const recoveredFromOracle: string[] = [];
+    const recoveredFromArchiveOrPayments: string[] = [];
+    const updatedShops: string[] = [];
+    const duplicatesResolved: string[] = [];
+
+    // Map by normalized uppercase shop_number
+    const byShopNumber = new Map<string, MallShop>();
+    // Map duplicate old IDs -> surviving ID so payments/archives never lose their link
+    const idRedirectMap = new Map<string, string>();
+
+    const mergeTwoShops = (primary: MallShop, secondary: MallShop): MallShop => {
+      // Decide which ID to keep: prefer the one referenced by payments/archive, else primary.id
+      const keepId =
+        referencedShopIds.has(secondary.id) && !referencedShopIds.has(primary.id)
+          ? secondary.id
+          : primary.id || secondary.id;
+      const droppedId = keepId === primary.id ? secondary.id : primary.id;
+      if (droppedId && droppedId !== keepId) {
+        idRedirectMap.set(droppedId, keepId);
+      }
+
+      const hasContractInPrimary = Boolean(primary.contract);
+      const hasContractInSecondary = Boolean(secondary.contract);
+      const mergedContract = hasContractInPrimary
+        ? primary.contract
+        : hasContractInSecondary
+          ? secondary.contract
+          : undefined;
+
+      const mergedStatus =
+        primary.status === "rented" || primary.status === "maintenance"
+          ? primary.status
+          : secondary.status === "rented" || secondary.status === "maintenance"
+            ? secondary.status
+            : primary.status || secondary.status || "vacant";
+
+      const mergedTenant =
+        primary.tenant_name && primary.tenant_name !== "-"
+          ? primary.tenant_name
+          : secondary.tenant_name || primary.tenant_name || "-";
+
+      const mergedPhone =
+        primary.phone && primary.phone !== "-"
+          ? primary.phone
+          : secondary.phone || primary.phone || "-";
+
+      const mergedRent =
+        Number(primary.monthly_rent || 0) > 0
+          ? Number(primary.monthly_rent)
+          : Number(secondary.monthly_rent || primary.monthly_rent || 0);
+
+      const mergedLocationOverride = Boolean(
+        primary.location_override ?? secondary.location_override,
+      );
+      const mergedLocationZone = mergedLocationOverride
+        ? primary.location_zone ||
+          secondary.location_zone ||
+          detectMallShopLocationFromNumber(primary.shop_number)
+        : detectMallShopLocationFromNumber(primary.shop_number);
+
+      return {
+        ...secondary,
+        ...primary,
+        id: keepId,
+        shop_number: String(primary.shop_number || secondary.shop_number).trim(),
+        serial_number: primary.serial_number || secondary.serial_number,
+        name_ar: primary.name_ar || secondary.name_ar,
+        account_number: primary.account_number || secondary.account_number,
+        tenant_name: mergedTenant,
+        phone: mergedPhone,
+        monthly_rent: mergedRent,
+        status: mergedStatus,
+        space_sqm: primary.space_sqm ?? secondary.space_sqm,
+        notes: primary.notes || secondary.notes,
+        contract: mergedContract,
+        construction_status:
+          primary.construction_status || secondary.construction_status || "finished",
+        location_zone: mergedLocationZone,
+        location_override: mergedLocationOverride,
+        custom_fields: {
+          ...(secondary.custom_fields || {}),
+          ...(primary.custom_fields || {}),
+        },
+      };
+    };
+
+    // 1. Seed from current runtime shops (highest priority for user modifications & contracts)
+    for (const shop of currentShops) {
+      if (!shop || !shop.shop_number) continue;
+      const key = String(shop.shop_number).trim().toUpperCase();
+      if (!key) continue;
+      if (byShopNumber.has(key)) {
+        const existing = byShopNumber.get(key)!;
+        byShopNumber.set(key, mergeTwoShops(existing, shop));
+        duplicatesResolved.push(key);
+      } else {
+        byShopNumber.set(key, { ...shop });
+      }
+    }
+
+    // 2. Reconcile any extra shops from localStorage if not already present
+    for (const shop of persistedShops) {
+      if (!shop || !shop.shop_number) continue;
+      const key = String(shop.shop_number).trim().toUpperCase();
+      if (!key) continue;
+      if (byShopNumber.has(key)) {
+        const existing = byShopNumber.get(key)!;
+        byShopNumber.set(key, mergeTwoShops(existing, shop));
+      } else {
+        byShopNumber.set(key, { ...shop });
+        addedShops.push(shop.shop_number);
+      }
+    }
+
+    // 3. Reconcile all 51 canonical shops from DEFAULT_MALL_SHOPS (includes the 9 recovered Oracle F1-F8 & R1 shops)
+    const oracleRecoveredSet = new Set(["F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "R1"]);
+    for (const defShop of DEFAULT_MALL_SHOPS) {
+      const key = String(defShop.shop_number).trim().toUpperCase();
+      if (byShopNumber.has(key)) {
+        const existing = byShopNumber.get(key)!;
+        const merged = mergeTwoShops(existing, defShop);
+        if (
+          !existing.serial_number ||
+          !existing.construction_status ||
+          !existing.location_zone
+        ) {
+          updatedShops.push(defShop.shop_number);
+        }
+        byShopNumber.set(key, merged);
+      } else {
+        byShopNumber.set(key, { ...defShop });
+        addedShops.push(defShop.shop_number);
+        if (oracleRecoveredSet.has(key)) {
+          recoveredFromOracle.push(defShop.shop_number);
+        }
+      }
+    }
+
+    // 4. Recover any shop referenced in mallTerminatedContractsArchive that isn't in byShopNumber
+    for (const term of archive) {
+      const termShopNum = String(term?.shop_number || "").trim();
+      if (!termShopNum) continue;
+      const key = termShopNum.toUpperCase();
+      if (!byShopNumber.has(key)) {
+        const recoveredShop: MallShop = {
+          id: term.shop_id || `shop-${termShopNum.toLowerCase()}`,
+          shop_number: termShopNum,
+          name_ar: term.shop_name || `وحدة تجارية ${termShopNum}`,
+          account_number: `14010-${termShopNum}`,
+          tenant_name: "-",
+          phone: "-",
+          monthly_rent: Number(term.monthly_rent || 0),
+          status: "vacant",
+          notes: "تم استرجاع بيانات الوحدة من أرشيف العقود المنتهية",
+          construction_status: "finished",
+          location_zone: detectMallShopLocationFromNumber(termShopNum),
+          location_override: false,
+          custom_fields: {},
+        };
+        byShopNumber.set(key, recoveredShop);
+        addedShops.push(termShopNum);
+        recoveredFromArchiveOrPayments.push(termShopNum);
+      }
+    }
+
+    // 5. Repoint any payment or archive record whose shop_id was deduplicated
+    if (idRedirectMap.size > 0) {
+      if (Array.isArray(this.state.mallPayments)) {
+        this.state.mallPayments = this.state.mallPayments.map((p) =>
+          idRedirectMap.has(p.shop_id) ? { ...p, shop_id: idRedirectMap.get(p.shop_id)! } : p,
+        );
+      }
+      if (Array.isArray(this.state.mallTerminatedContractsArchive)) {
+        this.state.mallTerminatedContractsArchive =
+          this.state.mallTerminatedContractsArchive.map((a) =>
+            idRedirectMap.has(a.shop_id) ? { ...a, shop_id: idRedirectMap.get(a.shop_id)! } : a,
+          );
+      }
+    }
+
+    // 6. Order canonical shops cleanly (by default order first, then any custom added shops) and assign permanent unique serial numbers
+    const defaultOrderIndex = new Map<string, number>();
+    DEFAULT_MALL_SHOPS.forEach((s, i) =>
+      defaultOrderIndex.set(String(s.shop_number).trim().toUpperCase(), i),
     );
+
+    const unifiedList = Array.from(byShopNumber.values()).sort((a, b) => {
+      const keyA = String(a.shop_number).trim().toUpperCase();
+      const keyB = String(b.shop_number).trim().toUpperCase();
+      const idxA = defaultOrderIndex.has(keyA) ? defaultOrderIndex.get(keyA)! : 9999;
+      const idxB = defaultOrderIndex.has(keyB) ? defaultOrderIndex.get(keyB)! : 9999;
+      if (idxA !== idxB) return idxA - idxB;
+      return keyA.localeCompare(keyB, undefined, { numeric: true });
+    });
+
+    const usedSerials = new Set<string>();
+    let serialCounter = 1;
+    const finalizedShops: MallShop[] = unifiedList.map((shop, idx) => {
+      const normalized = normalizeMallShopRecord(shop, idx + 1);
+      let candidateSerial = normalized.serial_number || formatMallShopSerial(idx + 1);
+      if (usedSerials.has(candidateSerial.toUpperCase())) {
+        while (usedSerials.has(formatMallShopSerial(serialCounter).toUpperCase())) {
+          serialCounter++;
+        }
+        candidateSerial = formatMallShopSerial(serialCounter);
+        duplicatesResolved.push(`SERIAL:${shop.shop_number}`);
+      }
+      usedSerials.add(candidateSerial.toUpperCase());
+      return {
+        ...normalized,
+        serial_number: candidateSerial,
+      };
+    });
+
+    this.state.mallShops = finalizedShops;
+    if (
+      !Array.isArray(this.state.mallCustomFieldDefinitions) ||
+      this.state.mallCustomFieldDefinitions.length === 0
+    ) {
+      this.state.mallCustomFieldDefinitions = [...DEFAULT_MALL_CUSTOM_FIELDS];
+    }
+
+    const preservedContractsCount = finalizedShops.filter((s) => Boolean(s.contract)).length;
+    const preservedPaymentsCount = Array.isArray(this.state.mallPayments)
+      ? this.state.mallPayments.length
+      : 0;
+
+    const report: MallShopsSyncReport = {
+      timestamp: new Date().toISOString(),
+      previousCount,
+      finalCount: finalizedShops.length,
+      addedShops,
+      recoveredFromOracle,
+      recoveredFromArchiveOrPayments,
+      updatedShops,
+      duplicatesResolved,
+      preservedContractsCount,
+      preservedPaymentsCount,
+      discrepancies: ORACLE_MALL_COMPOUND_ACCOUNTS,
+    };
+
+    this.state.lastMallSyncReport = report;
+
+    if (logAndNotify) {
+      this.saveState();
+      this.logAction(
+        "ADMIN",
+        "مزامنة وتوحيد بيانات محلات المول",
+        `تمت المزامنة الآمنة للمحلات: العدد النهائي ${report.finalCount} محل (تم استرجاع ${report.addedShops.length} محل، وحل ${report.duplicatesResolved.length} تعارض) مع الحفاظ الكامل على العقود والمدفوعات.`,
+        "UPDATE",
+      );
+      this.notify();
+    }
+
+    return report;
+  }
+
+  resetMallData() {
+    // Safe non-destructive synchronization (never wipes contracts, payments, or garden records)
+    return this.syncMallShops(true);
   }
   terminateMallContract(record, _treasuryId?) {
     // Terminating a mall contract ONLY updates the contract archive and shop occupancy status.

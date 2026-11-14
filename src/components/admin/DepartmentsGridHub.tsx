@@ -786,58 +786,6 @@ export function DepartmentsGridHub({
                         {dept.title}
                       </h3>
                     </div>
-
-                    <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-9 gap-1.5 rounded-xl border-border bg-muted/50 hover:bg-muted text-xs font-bold text-foreground px-3"
-                          >
-                            <span>الأقسام</span>
-                            <span className="inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-md bg-primary/15 text-primary text-[11px] font-extrabold tabular-nums">
-                              {dept.subSections.length}
-                            </span>
-                            <ChevronDown size={14} className="text-muted-foreground" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent
-                          align="end"
-                          className={cn(
-                            "w-64 p-2 rounded-2xl shadow-2xl border-border bg-popover",
-                            isEn ? "text-left" : "text-right",
-                          )}
-                        >
-                          <DropdownMenuLabel className="px-3 py-1.5 text-xs font-extrabold text-muted-foreground">
-                            {dept.title}
-                          </DropdownMenuLabel>
-                          <DropdownMenuSeparator />
-                          {dept.subSections.map((sub) => {
-                            const SubIcon = sub.icon;
-                            return (
-                              <DropdownMenuItem
-                                key={sub.title}
-                                onClick={() =>
-                                  navigate({
-                                    to: sub.to,
-                                    search: sub.search,
-                                  })
-                                }
-                                className="flex items-center gap-2.5 px-3 py-2 rounded-xl cursor-pointer hover:bg-muted transition group/item"
-                              >
-                                <div className="p-1.5 rounded-lg bg-muted text-primary shrink-0 group-hover/item:bg-primary group-hover/item:text-primary-foreground transition">
-                                  <SubIcon size={15} />
-                                </div>
-                                <span className="text-xs sm:text-sm font-bold text-foreground truncate">
-                                  {sub.title}
-                                </span>
-                              </DropdownMenuItem>
-                            );
-                          })}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
                   </div>
 
                   <div

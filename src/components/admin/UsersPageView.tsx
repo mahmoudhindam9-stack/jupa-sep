@@ -21,11 +21,16 @@ import {
   Users as UsersIcon,
   Save,
   Undo2,
+  KeyRound,
+  Copy,
+  Mail,
 } from "lucide-react";
 import { erpStore, UserPermission, SystemUser } from "@/shared/services/erpStore";
 import { authService } from "@/features/auth/services/authService";
 import {
+  DEFAULT_NEW_USER_PASSWORD,
   inspectManagedUserConditions,
+  isDefaultTemporaryPassword,
   normalizeManagedUsername,
   userValidationErrorMessage,
   validateManagedUserForm,
@@ -1236,19 +1241,21 @@ export function UsersPage() {
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<string | null>(null);
 
-  // Form State
+  // Form State (New users automatically receive default password admin@123456)
   const [form, setForm] = useState(() => ({
     employee_code: erpStore.getNextEmployeeCode(),
     full_name: "",
     username: "",
     email: "",
     phone: "",
-    password: "",
-    confirmPassword: "",
+    password: DEFAULT_NEW_USER_PASSWORD,
+    confirmPassword: DEFAULT_NEW_USER_PASSWORD,
     role: "cashier",
   }));
   const [editing, setEditing] = useState<SystemUser | null>(null);
   const [isConfirmUpsertOpen, setIsConfirmUpsertOpen] = useState(false);
+  const [sendingResetForUserId, setSendingResetForUserId] = useState<string | null>(null);
+  const [copiedSupabaseResetUrl, setCopiedSupabaseResetUrl] = useState(false);
 
   // Permissions Modal State
   const [permissionsUser, setPermissionsUser] = useState<SystemUser | null>(null);
@@ -1332,45 +1339,26 @@ export function UsersPage() {
     usersList: SystemUser[],
     currentAuthUserId?: string,
   ): Promise<SystemUser[]> => {
-    const admins = usersList.filter((u) => u.role === "admin" || u.role === "super_admin");
-    if (admins.length <= 1) return usersList;
-
-    const activeStored =
-      typeof window !== "undefined"
-        ? (
-            localStorage.getItem("restocash_auth_user") ||
-            sessionStorage.getItem("restocash_auth_user") ||
-            ""
-          )
-            .trim()
-            .toLowerCase()
-        : "";
+    // Only deduplicate if there are multiple records with the exact username "admin"
+    const defaultAdmins = usersList.filter(
+      (u) => String(u.username || "").trim().toLowerCase() === "admin",
+    );
+    if (defaultAdmins.length <= 1) return usersList;
 
     const keptAdmin =
-      admins.find((u) => currentAuthUserId && u.id === currentAuthUserId) ||
-      admins.find(
-        (u) =>
-          activeStored &&
-          (String(u.email || "").toLowerCase() === activeStored ||
-            String(u.username || "").toLowerCase() === activeStored ||
-            String(u.username || "").toLowerCase() === activeStored.split("@")[0]),
-      ) ||
-      admins.find(
-        (u) =>
-          u.username !== "admin" && String(u.email || "").toLowerCase() !== "admin@restocash.com",
-      ) ||
-      admins[0];
+      defaultAdmins.find((u) => currentAuthUserId && u.id === currentAuthUserId) ||
+      defaultAdmins.find((u) => !String(u.id || "").startsWith("u-")) ||
+      defaultAdmins[0];
 
-    const duplicateAdmins = admins.filter((u) => u.id !== keptAdmin.id);
+    const duplicateAdmins = defaultAdmins.filter((u) => u.id !== keptAdmin.id);
     for (const dup of duplicateAdmins) {
       erpStore.deleteUser(dup.id);
-      if (currentAuthUserId && dup.id !== currentAuthUserId && !String(dup.id).startsWith("u-")) {
-        await authService.deleteUser(dup.id).catch(() => undefined);
-      }
     }
 
     return usersList.filter(
-      (u) => (u.role !== "admin" && u.role !== "super_admin") || u.id === keptAdmin.id,
+      (u) =>
+        String(u.username || "").trim().toLowerCase() !== "admin" ||
+        u.id === keptAdmin.id,
     );
   };
 
@@ -1589,6 +1577,10 @@ export function UsersPage() {
         assertNoPrivilegeEscalation(permissions as any, validatedForm.role, actorPermissions);
 
         // 1. Save locally first (Local-First)
+        const updatedMustChangePassword = hasPasswordInput
+          ? isDefaultTemporaryPassword(validatedForm.password)
+          : editing.must_change_password;
+
         const updatedLocalUser: SystemUser = {
           ...editing,
           employee_code: requestedCode,
@@ -1598,8 +1590,17 @@ export function UsersPage() {
           phone: validatedForm.phone,
           role: validatedForm.role as any,
           permissions,
+          must_change_password: updatedMustChangePassword,
           ...(hasPasswordInput ? { password: validatedForm.password } : {}),
         };
+
+        if (hasPasswordInput && typeof window !== "undefined") {
+          if (updatedMustChangePassword) {
+            localStorage.removeItem(`restocash_pwd_changed_${updatedLocalUser.username}`);
+          } else {
+            localStorage.setItem(`restocash_pwd_changed_${updatedLocalUser.username}`, "1");
+          }
+        }
 
         erpStore.upsertUser(updatedLocalUser);
         erpStore.updateUserPermission(updatedLocalUser.username, permissions);
@@ -1615,6 +1616,7 @@ export function UsersPage() {
           password: hasPasswordInput ? validatedForm.password : undefined,
           profile: {
             id: updatedLocalUser.id,
+            employee_code: requestedCode,
             username: updatedLocalUser.username,
             email: updatedLocalUser.email,
             full_name: updatedLocalUser.full_name,
@@ -1636,8 +1638,8 @@ export function UsersPage() {
           username: "",
           email: "",
           phone: "",
-          password: "",
-          confirmPassword: "",
+          password: DEFAULT_NEW_USER_PASSWORD,
+          confirmPassword: DEFAULT_NEW_USER_PASSWORD,
           role: "cashier",
         });
         setIsConfirmUpsertOpen(false);
@@ -1661,7 +1663,8 @@ export function UsersPage() {
 
       const emailToUse = validatedForm.email || `${validatedForm.username}@restocash.com`;
 
-      // 1. Save new user locally first (Local-First)
+      // 1. Save new user locally first (Local-First) with mandatory first-login password reset
+      const initialPassword = validatedForm.password || DEFAULT_NEW_USER_PASSWORD;
       const localUser: SystemUser = {
         id: `u-${Date.now()}`,
         employee_code: requestedCode,
@@ -1670,13 +1673,68 @@ export function UsersPage() {
         email: emailToUse,
         phone: validatedForm.phone,
         role: validatedForm.role as any,
-        password: validatedForm.password,
+        password: initialPassword,
+        must_change_password: true,
         permissions,
         created_at: new Date().toISOString(),
       };
 
+      if (typeof window !== "undefined") {
+        localStorage.removeItem(`restocash_pwd_changed_${localUser.username}`);
+      }
+
       erpStore.upsertUser(localUser);
       erpStore.updateUserPermission(localUser.username, permissions);
+
+      // Ensure a linked HR employee record exists or is updated so HR, Users Table, and Chat stay synced
+      const currentEmployees = erpStore.getState().employees || [];
+      const matchedEmp = currentEmployees.find(
+        (emp) =>
+          String(emp.employee_code || "").trim() === requestedCode ||
+          emp.name.trim().toLowerCase() === validatedForm.fullName.trim().toLowerCase(),
+      );
+      if (matchedEmp) {
+        try {
+          erpStore.updateEmployee(matchedEmp.id, {
+            employee_code: requestedCode,
+            name: validatedForm.fullName,
+            phone: validatedForm.phone || matchedEmp.phone,
+            email: emailToUse,
+          });
+        } catch {
+          // ignore if code collision
+        }
+      } else {
+        const roleJobTitleMap: Record<string, { title: string; dept: string }> = {
+          super_admin: { title: "المدير العام", dept: "الإدارة" },
+          admin: { title: "مدير النظام / فرع", dept: "الإدارة" },
+          manager: { title: "مشرف / محاسب مالي", dept: "الإدارة" },
+          cashier: { title: "كاشير", dept: "الصالة والتوصيل" },
+          captain: { title: "كابتن صالة", dept: "الصالة والتوصيل" },
+          kitchen: { title: "شيف مطبخ", dept: "المطبخ" },
+        };
+        const mappedJob = roleJobTitleMap[validatedForm.role] || {
+          title: "موظف",
+          dept: "الصالة والتوصيل",
+        };
+        try {
+          erpStore.addEmployee({
+            employee_code: requestedCode,
+            name: validatedForm.fullName,
+            job_title: mappedJob.title,
+            department: mappedJob.dept,
+            phone: validatedForm.phone || "-",
+            email: emailToUse,
+            hire_date: new Date().toISOString().split("T")[0],
+            salary: 0,
+            currency: "EGP",
+            status: "active",
+          });
+        } catch {
+          // ignore if employee already exists
+        }
+      }
+
       setLocalUsers(localLoginUsers());
       setErpState(erpStore.getState());
       notifyPermissionsUpdated();
@@ -1687,8 +1745,9 @@ export function UsersPage() {
         localUserId: localUser.id,
         username: localUser.username,
         email: emailToUse,
-        password: validatedForm.password,
+        password: initialPassword,
         profile: {
+          employee_code: requestedCode,
           username: localUser.username,
           email: emailToUse,
           full_name: localUser.full_name,
@@ -1709,19 +1768,17 @@ export function UsersPage() {
         username: "",
         email: "",
         phone: "",
-        password: "",
-        confirmPassword: "",
+        password: DEFAULT_NEW_USER_PASSWORD,
+        confirmPassword: DEFAULT_NEW_USER_PASSWORD,
         role: "cashier",
       });
       setIsConfirmUpsertOpen(false);
       setUserSubView("list");
       toast({
         title: syncResult.synced
-          ? "تم حفظ المستخدم محلياً ومزامنته مع قاعدة البيانات ✓"
-          : "تم حفظ المستخدم محلياً وتفعيل صلاحياته بنجاح ✓",
-        description: syncResult.synced
-          ? `تم إنشاء الحساب (${validatedForm.username}) محلياً ومزامنته مع قاعدة البيانات (Supabase) بصلاحياته المحددة.`
-          : `تم حفظ الحساب (${validatedForm.username}) محلياً وتفعيل جدول صلاحياته فوراً، وجدولة مزامنته مع قاعدة البيانات.`,
+          ? "تم حفظ المستخدم الجديد ومزامنته مع قاعدة البيانات ✓"
+          : "تم حفظ المستخدم الجديد وتفعيل صلاحياته بنجاح ✓",
+        description: `تم إنشاء الحساب (${validatedForm.username}) وتفعيله في دليل المستخدمين والشات. سيُطلب من المستخدم إدخال بريده الشخصي وتعيين كلمة مرور جديدة عند أول تسجيل دخول.`,
       });
     } catch (error: any) {
       toast({
@@ -1795,12 +1852,55 @@ export function UsersPage() {
       username: "",
       email: "",
       phone: "",
-      password: "",
-      confirmPassword: "",
+      password: DEFAULT_NEW_USER_PASSWORD,
+      confirmPassword: DEFAULT_NEW_USER_PASSWORD,
       role: "cashier",
     });
     setUserSubView("create");
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleSendSupabaseResetEmail = async (user: SystemUser) => {
+    const email = String(user.email || "").trim().toLowerCase();
+    if (!email || !email.includes("@")) {
+      toast({
+        title: "لا يوجد بريد إلكتروني صالح",
+        description: "يرجى التأكد من تسجيل بريد إلكتروني صالح للمستخدم أولاً.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setSendingResetForUserId(user.id);
+    try {
+      const redirectUrl = await authService.sendSupabasePasswordResetEmail(email);
+      toast({
+        title: "تم إرسال رابط استعادة كلمة المرور عبر Supabase ✓",
+        description: `تم إرسال رابط الريسيت إلى (${email})، وعند الضغط عليه سيفتح صفحة (${redirectUrl}).`,
+      });
+    } catch (err: any) {
+      toast({
+        title: "تعذر إرسال رابط الاستعادة",
+        description: userValidationErrorMessage(err),
+        variant: "destructive",
+      });
+    } finally {
+      setSendingResetForUserId(null);
+    }
+  };
+
+  const handleCopySupabaseResetRedirectUrl = async () => {
+    if (typeof window === "undefined") return;
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/reset-password`);
+      setCopiedSupabaseResetUrl(true);
+      window.setTimeout(() => setCopiedSupabaseResetUrl(false), 2500);
+      toast({
+        title: "تم نسخ رابط صفحة الريسيت ✓",
+        description: `${window.location.origin}/reset-password — يمكنك إضافته في Supabase Redirect URLs.`,
+      });
+    } catch {
+      // ignore
+    }
   };
 
   const startEdit = (p: SystemUser) => {
@@ -2130,7 +2230,16 @@ export function UsersPage() {
               <Label className="text-xs font-bold">ربط بموظف من الموارد البشرية</Label>
               <select
                 className="w-full h-9 rounded-xl border border-input bg-background px-2.5 text-xs font-bold mt-1"
-                value=""
+                value={
+                  (erpState.employees || []).find(
+                    (item) =>
+                      (form.employee_code &&
+                        String(item.employee_code || "").trim() ===
+                          String(form.employee_code || "").trim()) ||
+                      (form.full_name &&
+                        item.name.trim().toLowerCase() === form.full_name.trim().toLowerCase()),
+                  )?.id || ""
+                }
                 onChange={(e) => {
                   const empId = e.target.value;
                   if (!empId) return;
@@ -2141,11 +2250,12 @@ export function UsersPage() {
                       employee_code: emp.employee_code || s.employee_code,
                       full_name: emp.name || s.full_name,
                       phone: emp.phone || s.phone,
+                      email: emp.email || s.email,
                     }));
                   }
                 }}
               >
-                <option value="">-- اختر موظف --</option>
+                <option value="">-- اختر موظف للربط --</option>
                 {(erpState.employees || []).map((emp) => (
                   <option key={emp.id} value={emp.id}>
                     #{emp.employee_code} - {emp.name} ({emp.job_title})
@@ -2216,13 +2326,31 @@ export function UsersPage() {
               />
             </div>
             <div className="md:col-span-2 lg:col-span-2">
-              <Label className="text-xs font-bold">
-                {editing ? "الرقم السري الجديد (اختياري)" : "الرقم السري الجديد *"}
-              </Label>
+              <div className="flex items-center justify-between gap-1">
+                <Label className="text-xs font-bold">
+                  {editing
+                    ? "الرقم السري الجديد (اختياري)"
+                    : "الرقم السري الافتراضي *"}
+                </Label>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setForm((s) => ({
+                      ...s,
+                      password: DEFAULT_NEW_USER_PASSWORD,
+                      confirmPassword: DEFAULT_NEW_USER_PASSWORD,
+                    }))
+                  }
+                  className="text-[10px] font-black text-primary hover:underline cursor-pointer"
+                >
+                  تعيين الافتراضي تلقائياً
+                </button>
+              </div>
               <Input
                 type="password"
-                className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1"
-                placeholder={editing ? "اتركه فارغاً لعدم التغيير" : "8 خانات (حروف + أرقام)"}
+                dir="ltr"
+                className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1 font-mono"
+                placeholder={editing ? "اتركه فارغاً لعدم التغيير" : "••••••••••••"}
                 value={form.password}
                 minLength={8}
                 maxLength={128}
@@ -2234,8 +2362,9 @@ export function UsersPage() {
               <Label className="text-xs font-bold">تأكيد الرقم السري *</Label>
               <Input
                 type="password"
-                className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1"
-                placeholder={editing ? "اتركه فارغًا دون تغيير" : "أعد كتابة الرقم السري"}
+                dir="ltr"
+                className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1 font-mono"
+                placeholder={editing ? "اتركه فارغًا دون تغيير" : "••••••••••••"}
                 required={!editing || Boolean(form.password)}
                 minLength={8}
                 maxLength={128}
@@ -2779,7 +2908,7 @@ export function UsersPage() {
             </div>
           </div>
 
-          {/* Action Card Box (Matching Restaurant Management cards like "فتح وردية جديدة") */}
+          {/* Action Cards: Add New User + Password Reset Link */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <button
               type="button"
@@ -2801,6 +2930,25 @@ export function UsersPage() {
                 فتح ←
               </span>
             </button>
+
+            <Link
+              to="/reset-password"
+              className="group text-right bg-card hover:bg-primary/5 border-2 border-primary/25 hover:border-primary rounded-2xl p-5 shadow-xs hover:shadow-md transition-all cursor-pointer flex items-center justify-between gap-4 no-underline"
+            >
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-amber-500/10 group-hover:bg-primary group-hover:text-primary-foreground text-amber-600 dark:text-amber-400 flex items-center justify-center transition-colors shrink-0">
+                  <KeyRound size={24} />
+                </div>
+                <div>
+                  <h3 className="font-black text-base text-foreground group-hover:text-primary transition-colors">
+                    رابط ريسيت الباسورد
+                  </h3>
+                </div>
+              </div>
+              <span className="text-xs font-black text-primary underline underline-offset-4">
+                فتح ←
+              </span>
+            </Link>
           </div>
 
           {/* Registered Users Directory */}
@@ -2983,6 +3131,19 @@ export function UsersPage() {
                             >
                               <ShieldCheck size={14} />
                               الصلاحيات
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 px-2.5 rounded-lg gap-1 text-amber-700 dark:text-amber-300 border-amber-500/30 hover:bg-amber-500/10 font-bold"
+                              onClick={() => handleSendSupabaseResetEmail(u)}
+                              disabled={
+                                sendingResetForUserId === u.id || userDirectoryStatus !== "ready"
+                              }
+                              title="إرسال رابط استعادة كلمة المرور عبر Supabase لبريد المستخدم"
+                            >
+                              <Mail size={13} />
+                              {sendingResetForUserId === u.id ? "جارٍ الإرسال..." : "ريسيت للإيميل"}
                             </Button>
                             <Button
                               size="sm"

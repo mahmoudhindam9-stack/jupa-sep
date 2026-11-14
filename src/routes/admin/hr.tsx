@@ -10,12 +10,23 @@ import {
   type AttendanceRecord,
   type EmployeeLoan,
   type PayrollRecord,
+  type SystemUser,
 } from "@/shared/services/erpStore";
 import {
   getActiveUserPermissionsSync,
   hasAnyRequestedPermission,
   PERMISSIONS_UPDATED_EVENT,
+  getDefaultPermissionsForRole,
+  notifyPermissionsUpdated,
 } from "@/shared/services/userAuthorization";
+import {
+  DEFAULT_NEW_USER_PASSWORD,
+  isDefaultTemporaryPassword,
+  normalizeManagedUsername,
+  userValidationErrorMessage,
+  validateManagedUserForm,
+} from "@/features/auth/services/managedUserValidation";
+import { queueUserChange } from "@/features/auth/services/userDirectorySync";
 import { printRawHtml } from "@/shared/utils/printAccountingDocument";
 import { UsersPage } from "@/components/admin/UsersPageView";
 import { sendPrivateSalarySlipMessages } from "@/components/Chatbot";
@@ -482,6 +493,37 @@ function HRPage() {
     status: "active" as Employee["status"],
   });
 
+  // Linked / New User Account State inside Employee Dialog
+  const [empUserLinkMode, setEmpUserLinkMode] = useState<"create_new" | "link_existing" | "none">(
+    "create_new",
+  );
+  const [empLinkedUserId, setEmpLinkedUserId] = useState<string>("");
+  const [empNewUserForm, setEmpNewUserForm] = useState({
+    username: "",
+    email: "",
+    role: "cashier",
+    password: DEFAULT_NEW_USER_PASSWORD,
+    confirmPassword: DEFAULT_NEW_USER_PASSWORD,
+  });
+
+  const findLinkedUserForEmployee = (emp: Employee | null | undefined): SystemUser | undefined => {
+    if (!emp) return undefined;
+    const allUsers = erpState.users || [];
+    const empCode = String(emp.employee_code || "").trim();
+    const empName = String(emp.name || "").trim().toLowerCase();
+    const empEmail = String(emp.email || "").trim().toLowerCase();
+    return allUsers.find((u) => {
+      const uCode = String(u.employee_code || "").trim();
+      const uName = String(u.full_name || "").trim().toLowerCase();
+      const uEmail = String(u.email || "").trim().toLowerCase();
+      return (
+        (empCode && uCode && empCode === uCode) ||
+        (empName && uName && empName === uName) ||
+        (empEmail && uEmail && empEmail === uEmail)
+      );
+    });
+  };
+
   // Loan Form State
   const [loanForm, setLoanForm] = useState({
     employee_id: "",
@@ -505,6 +547,15 @@ function HRPage() {
       salary: 5000,
       currency: "EGP",
       status: "active",
+    });
+    setEmpUserLinkMode("create_new");
+    setEmpLinkedUserId("");
+    setEmpNewUserForm({
+      username: "",
+      email: "",
+      role: "cashier",
+      password: DEFAULT_NEW_USER_PASSWORD,
+      confirmPassword: DEFAULT_NEW_USER_PASSWORD,
     });
   };
 
@@ -578,38 +629,253 @@ function HRPage() {
     );
   }, [filteredEmployees, convertPrice]);
 
+  const buildFallbackEmployeeUsername = (
+    rawUsernameInput: string,
+    empName: string,
+    empCode: string,
+    existingUsers: SystemUser[],
+  ): string => {
+    const explicit = normalizeManagedUsername(rawUsernameInput);
+    if (explicit.length >= 3) return explicit;
+
+    const asciiFromName = normalizeManagedUsername(
+      empName
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ".")
+        .replace(/[^a-z0-9._-]/g, ""),
+    );
+    const codeDigits = String(empCode || "").replace(/[^0-9a-z]/gi, "").toLowerCase();
+    let candidate =
+      asciiFromName.length >= 3
+        ? asciiFromName
+        : `user.${codeDigits || Math.floor(1000 + Math.random() * 9000)}`;
+
+    const taken = new Set(
+      existingUsers.map((u) => String(u.username || "").trim().toLowerCase()),
+    );
+    if (taken.has(candidate)) {
+      candidate = `${candidate}.${codeDigits || Math.floor(10 + Math.random() * 89)}`;
+    }
+    return candidate;
+  };
+
+  const syncEmployeeUserAccount = async (
+    savedEmpCode: string,
+    empName: string,
+    empPhone: string,
+    empEmail: string,
+  ): Promise<string | null> => {
+    const existingUsers = erpStore.getState().users || [];
+
+    if (empUserLinkMode === "create_new") {
+      const rawUsername = buildFallbackEmployeeUsername(
+        empNewUserForm.username,
+        empName,
+        savedEmpCode,
+        existingUsers,
+      );
+      const effectiveEmail =
+        (empNewUserForm.email || empEmail || "").trim().toLowerCase() ||
+        `${rawUsername}@restocash.com`;
+      const effectivePassword = empNewUserForm.password?.trim() || DEFAULT_NEW_USER_PASSWORD;
+      const effectiveConfirm =
+        empNewUserForm.confirmPassword?.trim() || effectivePassword;
+
+      const validatedForm = validateManagedUserForm({
+        fullName: empName,
+        username: rawUsername,
+        email: effectiveEmail,
+        phone: empPhone,
+        password: effectivePassword,
+        passwordConfirmation: effectiveConfirm,
+        role: empNewUserForm.role || "cashier",
+        hosted: true,
+        requireEmail: true,
+        requirePassword: true,
+        requirePasswordConfirmation: true,
+        existingUsers,
+        editingUserId: null,
+      });
+
+      const permissions = getDefaultPermissionsForRole(validatedForm.role);
+      const newUser: SystemUser = {
+        id: `u-${Date.now()}`,
+        employee_code: savedEmpCode,
+        full_name: validatedForm.fullName,
+        username: validatedForm.username,
+        email: validatedForm.email || `${validatedForm.username}@restocash.com`,
+        phone: validatedForm.phone,
+        role: validatedForm.role as any,
+        password: effectivePassword,
+        must_change_password: isDefaultTemporaryPassword(effectivePassword),
+        permissions,
+        created_at: new Date().toISOString(),
+      };
+
+      if (typeof window !== "undefined") {
+        if (newUser.must_change_password) {
+          localStorage.removeItem(`restocash_pwd_changed_${newUser.username}`);
+        } else {
+          localStorage.setItem(`restocash_pwd_changed_${newUser.username}`, "1");
+        }
+      }
+
+      erpStore.upsertUser(newUser);
+      erpStore.updateUserPermission(newUser.username, permissions);
+      notifyPermissionsUpdated();
+
+      await queueUserChange({
+        kind: "create",
+        localUserId: newUser.id,
+        username: newUser.username,
+        email: newUser.email,
+        password: effectivePassword,
+        profile: {
+          username: newUser.username,
+          email: newUser.email,
+          full_name: newUser.full_name,
+          phone: newUser.phone,
+          role: newUser.role,
+          permissions,
+        },
+      }).catch(() => undefined);
+
+      return `وتم إنشاء وربط حساب المستخدم (@${newUser.username}) في دليل المستخدمين`;
+    }
+
+    if (empUserLinkMode === "link_existing" && empLinkedUserId) {
+      const targetUser = existingUsers.find((u) => u.id === empLinkedUserId);
+      if (!targetUser) {
+        throw new Error("حساب المستخدم المختار للربط غير موجود.");
+      }
+      const permissions =
+        targetUser.permissions ||
+        erpStore.getState().userPermissions?.[targetUser.username] ||
+        getDefaultPermissionsForRole(targetUser.role || "cashier");
+
+      const updatedUser: SystemUser = {
+        ...targetUser,
+        employee_code: savedEmpCode,
+        full_name: empName,
+        phone: empPhone || targetUser.phone,
+        email: (empEmail || targetUser.email || `${targetUser.username}@restocash.com`)
+          .trim()
+          .toLowerCase(),
+        permissions,
+      };
+
+      erpStore.upsertUser(updatedUser);
+      erpStore.updateUserPermission(updatedUser.username, permissions);
+      notifyPermissionsUpdated();
+
+      await queueUserChange({
+        kind: "upsert",
+        userId: updatedUser.id,
+        username: updatedUser.username,
+        profile: {
+          id: updatedUser.id,
+          username: updatedUser.username,
+          email: updatedUser.email,
+          full_name: updatedUser.full_name,
+          phone: updatedUser.phone,
+          role: updatedUser.role,
+          permissions,
+        },
+      }).catch(() => undefined);
+
+      return `وتم ربط الموظف بحساب المستخدم (@${updatedUser.username}) برقم وظيفي موحد (#${savedEmpCode})`;
+    }
+
+    return null;
+  };
+
   // Handle Employee Actions
-  const handleAddEmployeeSubmit = (e: React.FormEvent) => {
+  const handleAddEmployeeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!empForm.name.trim() || !empForm.job_title.trim() || !empForm.phone.trim()) {
       toast({
         title: "خطأ في الإدخال",
-        description: "يرجى ملء جميع الحقول الإلزامية.",
+        description: "يرجى ملء جميع الحقول الإلزامية (الاسم، المسمى الوظيفي، رقم الهاتف).",
         variant: "destructive",
       });
       return;
     }
     try {
-      erpStore.addEmployee({
+      const existingUsers = erpStore.getState().users || [];
+      const fallbackUsername =
+        empUserLinkMode === "create_new"
+          ? buildFallbackEmployeeUsername(
+              empNewUserForm.username,
+              empForm.name,
+              empForm.employee_code,
+              existingUsers,
+            )
+          : "";
+
+      const resolvedEmail =
+        empUserLinkMode === "create_new"
+          ? (
+              empNewUserForm.email ||
+              empForm.email ||
+              (fallbackUsername ? `${fallbackUsername}@restocash.com` : "")
+            )
+              .trim()
+              .toLowerCase()
+          : empForm.email.trim().toLowerCase();
+
+      // Pre-validate user creation if mode === "create_new" before adding employee
+      if (empUserLinkMode === "create_new") {
+        const effectivePassword = empNewUserForm.password?.trim() || DEFAULT_NEW_USER_PASSWORD;
+        validateManagedUserForm({
+          fullName: empForm.name,
+          username: fallbackUsername,
+          email: resolvedEmail || `${fallbackUsername}@restocash.com`,
+          phone: empForm.phone,
+          password: effectivePassword,
+          passwordConfirmation: empNewUserForm.confirmPassword?.trim() || effectivePassword,
+          role: empNewUserForm.role || "cashier",
+          hosted: true,
+          requireEmail: true,
+          requirePassword: true,
+          requirePasswordConfirmation: true,
+          existingUsers,
+          editingUserId: null,
+        });
+      }
+
+      const createdEmp = erpStore.addEmployee({
         ...empForm,
+        email: resolvedEmail,
         salary: Number(empForm.salary) || 0,
       });
+
+      const userSummary = await syncEmployeeUserAccount(
+        createdEmp.employee_code || empForm.employee_code,
+        createdEmp.name,
+        createdEmp.phone,
+        resolvedEmail,
+      );
+
+      setErpState(erpStore.getState());
       toast({
-        title: "تم الحفظ بنجاح",
-        description: `تم تسجيل الموظف: ${empForm.name}`,
+        title: "تم حفظ الموظف بنجاح ✓",
+        description: `تم تسجيل الموظف (${createdEmp.name}) برقم وظيفي (#${createdEmp.employee_code})${
+          userSummary ? ` ${userSummary}.` : "."
+        }`,
       });
       setIsAddEmpOpen(false);
       resetEmpForm();
     } catch (err: any) {
       toast({
-        title: "خطأ في إضافة الموظف",
-        description: err.message || "تعذر إضافة الموظف.",
+        title: "خطأ في إضافة الموظف أو حساب المستخدم",
+        description: userValidationErrorMessage(err) || err.message || "تعذر إضافة الموظف.",
         variant: "destructive",
       });
     }
   };
 
-  const handleEditEmployeeSubmit = (e: React.FormEvent) => {
+  const handleEditEmployeeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEmp) return;
     if (!empForm.name.trim() || !empForm.job_title.trim() || !empForm.phone.trim()) {
@@ -621,13 +887,66 @@ function HRPage() {
       return;
     }
     try {
+      const existingUsers = erpStore.getState().users || [];
+      const fallbackUsername =
+        empUserLinkMode === "create_new"
+          ? buildFallbackEmployeeUsername(
+              empNewUserForm.username,
+              empForm.name,
+              empForm.employee_code,
+              existingUsers,
+            )
+          : "";
+
+      const resolvedEmail =
+        empUserLinkMode === "create_new"
+          ? (
+              empNewUserForm.email ||
+              empForm.email ||
+              (fallbackUsername ? `${fallbackUsername}@restocash.com` : "")
+            )
+              .trim()
+              .toLowerCase()
+          : empForm.email.trim().toLowerCase();
+
+      if (empUserLinkMode === "create_new") {
+        const effectivePassword = empNewUserForm.password?.trim() || DEFAULT_NEW_USER_PASSWORD;
+        validateManagedUserForm({
+          fullName: empForm.name,
+          username: fallbackUsername,
+          email: resolvedEmail || `${fallbackUsername}@restocash.com`,
+          phone: empForm.phone,
+          password: effectivePassword,
+          passwordConfirmation: empNewUserForm.confirmPassword?.trim() || effectivePassword,
+          role: empNewUserForm.role || "cashier",
+          hosted: true,
+          requireEmail: true,
+          requirePassword: true,
+          requirePasswordConfirmation: true,
+          existingUsers,
+          editingUserId: null,
+        });
+      }
+
       erpStore.updateEmployee(selectedEmp.id, {
         ...empForm,
+        email: resolvedEmail,
         salary: Number(empForm.salary) || 0,
       });
+
+      const userSummary = await syncEmployeeUserAccount(
+        empForm.employee_code,
+        empForm.name,
+        empForm.phone,
+        resolvedEmail,
+      );
+
+      setErpState(erpStore.getState());
       toast({
-        title: "تم التحديث بنجاح",
-        description: `تم حفظ تعديلات الموظف: ${empForm.name}`,
+        title: "تم التحديث بنجاح ✓",
+        description: `تم حفظ تعديلات الموظف: ${empForm.name}${
+          userSummary ? ` ${userSummary}.` : "."
+        }`,
       });
       setIsEditEmpOpen(false);
       setSelectedEmp(null);
@@ -635,7 +954,7 @@ function HRPage() {
     } catch (err: any) {
       toast({
         title: "خطأ في التحديث",
-        description: err.message || "تعذر تحديث بيانات الموظف.",
+        description: userValidationErrorMessage(err) || err.message || "تعذر تحديث بيانات الموظف.",
         variant: "destructive",
       });
     }
@@ -665,19 +984,38 @@ function HRPage() {
     }
   };
 
-  const openEditDialog = (emp: Employee) => {
+  const openEditDialog = (
+    emp: Employee,
+    initialUserMode?: "create_new" | "link_existing" | "none",
+  ) => {
     setSelectedEmp(emp);
+    const matchedUser = findLinkedUserForEmployee(emp);
     setEmpForm({
       employee_code: emp.employee_code || erpStore.getNextEmployeeCode(),
       name: emp.name || "",
       job_title: emp.job_title || "",
       department: emp.department || "المطبخ",
       phone: emp.phone || "",
-      email: emp.email || "",
+      email: emp.email || matchedUser?.email || "",
       hire_date: emp.hire_date || new Date().toISOString().split("T")[0],
       salary: emp.salary || 0,
       currency: emp.currency || "EGP",
       status: emp.status || "active",
+    });
+    if (initialUserMode) {
+      setEmpUserLinkMode(initialUserMode);
+    } else if (matchedUser) {
+      setEmpUserLinkMode("link_existing");
+    } else {
+      setEmpUserLinkMode("none");
+    }
+    setEmpLinkedUserId(matchedUser?.id || "");
+    setEmpNewUserForm({
+      username: "",
+      email: emp.email || "",
+      role: "cashier",
+      password: DEFAULT_NEW_USER_PASSWORD,
+      confirmPassword: DEFAULT_NEW_USER_PASSWORD,
     });
     setIsEditEmpOpen(true);
   };
@@ -1791,6 +2129,49 @@ function HRPage() {
                         </div>
                       </div>
 
+                      {/* Linked User Account Status Box */}
+                      {(() => {
+                        const linkedUser = findLinkedUserForEmployee(emp);
+                        return linkedUser ? (
+                          <div className="flex items-center justify-between gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <UserCheck size={14} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                              <div className="truncate">
+                                <span className="font-black text-emerald-800 dark:text-emerald-300">
+                                  مرتبط بحساب:
+                                </span>{" "}
+                                <span className="font-mono font-bold text-foreground" dir="ltr">
+                                  @{linkedUser.username}
+                                </span>
+                              </div>
+                            </div>
+                            {canViewUsers && (
+                              <button
+                                type="button"
+                                onClick={() => openHrSubpage("users")}
+                                className="text-[11px] font-black text-emerald-700 dark:text-emerald-300 hover:underline shrink-0 cursor-pointer"
+                              >
+                                الصلاحيات ←
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between gap-2 rounded-xl border border-dashed border-border bg-muted/30 px-3 py-2 text-xs">
+                            <span className="text-muted-foreground font-semibold">
+                              غير مرتبط بحساب دخول للنظام
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => openEditDialog(emp, "create_new")}
+                              className="inline-flex items-center gap-1 text-[11px] font-black text-primary hover:underline shrink-0 cursor-pointer"
+                            >
+                              <UserPlus size={12} />
+                              <span>إنشاء / ربط مستخدم</span>
+                            </button>
+                          </div>
+                        );
+                      })()}
+
                       <div className="flex justify-end gap-2 border-t border-border/50 pt-3">
                         <Button
                           variant="outline"
@@ -2504,11 +2885,14 @@ function HRPage() {
 
       {/* DIALOG 1: ADD EMPLOYEE */}
       <Dialog open={isAddEmpOpen} onOpenChange={setIsAddEmpOpen}>
-        <DialogContent className="max-w-md bg-card border border-border">
+        <DialogContent className="max-w-xl bg-card border border-border max-h-[92vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="font-black text-right">إضافة موظف جديد</DialogTitle>
+            <DialogTitle className="font-black text-right">
+              إضافة موظف جديد وربط حساب المستخدم
+            </DialogTitle>
             <DialogDescription className="text-right">
-              أدخل البيانات الأساسية والمالية للموظف لتسجيله في الدليل
+              أدخل البيانات الأساسية والمالية للموظف، ويمكنك في نفس الخطوة إنشاء حساب مستخدم للنظام
+              بالرقم السري الافتراضي ({DEFAULT_NEW_USER_PASSWORD}) أو ربطه بحساب موجود.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleAddEmployeeSubmit} className="space-y-4">
@@ -2606,7 +2990,195 @@ function HRPage() {
               </div>
             </div>
 
-            <DialogFooter className="gap-2 pt-4">
+            {/* USER ACCOUNT CREATION & LINKING SECTION */}
+            <div className="rounded-2xl border border-primary/25 bg-primary/5 p-3.5 space-y-3 text-right">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <UserCheck size={16} className="text-primary shrink-0" />
+                  <span className="text-xs font-black text-foreground">
+                    حساب المستخدم للدخول للنظام والربط التلقائي
+                  </span>
+                </div>
+                <Badge className="bg-primary/15 text-primary border-primary/30 text-[10px] font-bold">
+                  الرقم الوظيفي الموحد: #{empForm.employee_code}
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-3 gap-1.5 bg-card p-1 rounded-xl border border-border">
+                <button
+                  type="button"
+                  onClick={() => setEmpUserLinkMode("create_new")}
+                  className={`py-1.5 px-2 rounded-lg text-[11px] font-black transition cursor-pointer ${
+                    empUserLinkMode === "create_new"
+                      ? "bg-primary text-primary-foreground shadow-2xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  + إنشاء مستخدم جديد وربطه
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEmpUserLinkMode("link_existing")}
+                  className={`py-1.5 px-2 rounded-lg text-[11px] font-black transition cursor-pointer ${
+                    empUserLinkMode === "link_existing"
+                      ? "bg-primary text-primary-foreground shadow-2xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  ربط بمستخدم موجود
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEmpUserLinkMode("none")}
+                  className={`py-1.5 px-2 rounded-lg text-[11px] font-black transition cursor-pointer ${
+                    empUserLinkMode === "none"
+                      ? "bg-slate-700 text-white shadow-2xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  بدون حساب مستخدم حالياً
+                </button>
+              </div>
+
+              {empUserLinkMode === "create_new" && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-bold">
+                      اسم المستخدم للدخول (Username) *
+                    </Label>
+                    <Input
+                      dir="ltr"
+                      value={empNewUserForm.username}
+                      onChange={(e) => {
+                        const nextUser = e.target.value;
+                        setEmpNewUserForm((prev) => {
+                          const prevAuto = prev.username
+                            ? `${normalizeManagedUsername(prev.username)}@restocash.com`
+                            : "";
+                          const shouldAutoEmail = !prev.email || prev.email === prevAuto;
+                          return {
+                            ...prev,
+                            username: nextUser,
+                            email:
+                              shouldAutoEmail && nextUser.trim()
+                                ? `${normalizeManagedUsername(nextUser)}@restocash.com`
+                                : prev.email,
+                          };
+                        });
+                      }}
+                      placeholder="مثال: ahmed.cashier"
+                      className="h-9 rounded-xl bg-card font-mono text-xs"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-bold">البريد الإلكتروني للحساب *</Label>
+                    <Input
+                      type="email"
+                      dir="ltr"
+                      value={empNewUserForm.email}
+                      onChange={(e) =>
+                        setEmpNewUserForm((prev) => ({ ...prev, email: e.target.value }))
+                      }
+                      placeholder="user@restocash.com"
+                      className="h-9 rounded-xl bg-card font-mono text-xs"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-bold">الدور الوظيفي في النظام *</Label>
+                    <select
+                      value={empNewUserForm.role}
+                      onChange={(e) =>
+                        setEmpNewUserForm((prev) => ({ ...prev, role: e.target.value }))
+                      }
+                      className="w-full h-9 rounded-xl border border-input bg-card px-2.5 text-xs font-bold"
+                    >
+                      <option value="cashier">كاشير صالة وتوصيل (Cashier)</option>
+                      <option value="captain">كابتن صالة وطاولات (Captain)</option>
+                      <option value="kitchen">شيف / مطبخ وبار (Kitchen)</option>
+                      <option value="manager">مشرف / محاسب مالي (Manager)</option>
+                      <option value="admin">مدير النظام / مدير فرع (Admin)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-[11px] font-bold">
+                        الرقم السري الافتراضي *
+                      </Label>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setEmpNewUserForm((prev) => ({
+                            ...prev,
+                            password: DEFAULT_NEW_USER_PASSWORD,
+                            confirmPassword: DEFAULT_NEW_USER_PASSWORD,
+                          }))
+                        }
+                        className="text-[10px] font-black text-primary hover:underline cursor-pointer"
+                      >
+                        تعيين الافتراضي تلقائياً
+                      </button>
+                    </div>
+                    <Input
+                      type="password"
+                      dir="ltr"
+                      placeholder="••••••••••••"
+                      value={empNewUserForm.password}
+                      onChange={(e) =>
+                        setEmpNewUserForm((prev) => ({
+                          ...prev,
+                          password: e.target.value,
+                          confirmPassword: e.target.value,
+                        }))
+                      }
+                      className="h-9 rounded-xl bg-card font-mono text-xs font-bold"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2 text-[11px] text-muted-foreground font-semibold bg-card/80 border border-border/70 rounded-xl px-3 py-2">
+                    سيتم ربط الموظف بحساب المستخدم الجديد تلقائياً بالرقم الوظيفي (
+                    <strong className="font-mono text-primary">#{empForm.employee_code}</strong>)،
+                    وسيطلب النظام من المستخدم إدخال بريده الإلكتروني الشخصي وتعيين كلمة مرور جديدة عند أول تسجيل دخول.
+                  </div>
+                </div>
+              )}
+
+              {empUserLinkMode === "link_existing" && (
+                <div className="space-y-1.5 pt-1">
+                  <Label className="text-[11px] font-bold">اختر حساب المستخدم المراد ربطه *</Label>
+                  <select
+                    value={empLinkedUserId}
+                    onChange={(e) => {
+                      const uid = e.target.value;
+                      setEmpLinkedUserId(uid);
+                      const targetUser = (erpState.users || []).find((u) => u.id === uid);
+                      if (targetUser) {
+                        setEmpForm((prev) => ({
+                          ...prev,
+                          employee_code: targetUser.employee_code || prev.employee_code,
+                          name: prev.name || targetUser.full_name || "",
+                          phone: prev.phone || targetUser.phone || "",
+                          email: prev.email || targetUser.email || "",
+                        }));
+                      }
+                    }}
+                    className="w-full h-9 rounded-xl border border-input bg-card px-2.5 text-xs font-bold"
+                  >
+                    <option value="">-- اختر حساب مستخدم من القائمة --</option>
+                    {(erpState.users || []).map((u) => (
+                      <option key={u.id} value={u.id}>
+                        @{u.username} — {u.full_name} (
+                        {u.employee_code ? `#${u.employee_code}` : "بدون رقم وظيفي"})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter className="gap-2 pt-2">
               <Button
                 type="button"
                 variant="outline"
@@ -2616,7 +3188,11 @@ function HRPage() {
                 إلغاء
               </Button>
               <Button type="submit" className="rounded-xl font-bold">
-                تسجيل وحفظ
+                {empUserLinkMode === "create_new"
+                  ? "تسجيل الموظف وإنشاء حساب المستخدم"
+                  : empUserLinkMode === "link_existing"
+                    ? "تسجيل الموظف وربط الحساب"
+                    : "تسجيل وحفظ الموظف"}
               </Button>
             </DialogFooter>
           </form>
@@ -2625,11 +3201,13 @@ function HRPage() {
 
       {/* DIALOG 2: EDIT EMPLOYEE */}
       <Dialog open={isEditEmpOpen} onOpenChange={setIsEditEmpOpen}>
-        <DialogContent className="max-w-md bg-card border border-border">
+        <DialogContent className="max-w-xl bg-card border border-border max-h-[92vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="font-black text-right">تعديل بيانات الموظف</DialogTitle>
+            <DialogTitle className="font-black text-right">
+              تعديل بيانات الموظف وحساب المستخدم المرتبط
+            </DialogTitle>
             <DialogDescription className="text-right">
-              تحديث المعلومات الأساسية والرقم الوظيفي والرواتب للموظف المحدد
+              تحديث المعلومات الأساسية والرقم الوظيفي والرواتب أو إنشاء/ربط حساب مستخدم للنظام
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleEditEmployeeSubmit} className="space-y-4">
@@ -2735,7 +3313,176 @@ function HRPage() {
               </div>
             </div>
 
-            <DialogFooter className="gap-2 pt-4">
+            {/* USER ACCOUNT CREATION & LINKING SECTION IN EDIT MODAL */}
+            <div className="rounded-2xl border border-primary/25 bg-primary/5 p-3.5 space-y-3 text-right">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <UserCheck size={16} className="text-primary shrink-0" />
+                  <span className="text-xs font-black text-foreground">
+                    ربط أو إنشاء حساب مستخدم لهذا الموظف
+                  </span>
+                </div>
+                <Badge className="bg-primary/15 text-primary border-primary/30 text-[10px] font-bold">
+                  الرقم الوظيفي: #{empForm.employee_code}
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-3 gap-1.5 bg-card p-1 rounded-xl border border-border">
+                <button
+                  type="button"
+                  onClick={() => setEmpUserLinkMode("create_new")}
+                  className={`py-1.5 px-2 rounded-lg text-[11px] font-black transition cursor-pointer ${
+                    empUserLinkMode === "create_new"
+                      ? "bg-primary text-primary-foreground shadow-2xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  + إنشاء مستخدم جديد
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEmpUserLinkMode("link_existing")}
+                  className={`py-1.5 px-2 rounded-lg text-[11px] font-black transition cursor-pointer ${
+                    empUserLinkMode === "link_existing"
+                      ? "bg-primary text-primary-foreground shadow-2xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  ربط بمستخدم موجود
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEmpUserLinkMode("none")}
+                  className={`py-1.5 px-2 rounded-lg text-[11px] font-black transition cursor-pointer ${
+                    empUserLinkMode === "none"
+                      ? "bg-slate-700 text-white shadow-2xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  بدون تعديل الحساب
+                </button>
+              </div>
+
+              {empUserLinkMode === "create_new" && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-bold">
+                      اسم المستخدم للدخول (Username) *
+                    </Label>
+                    <Input
+                      dir="ltr"
+                      value={empNewUserForm.username}
+                      onChange={(e) => {
+                        const nextUser = e.target.value;
+                        setEmpNewUserForm((prev) => {
+                          const prevAuto = prev.username
+                            ? `${normalizeManagedUsername(prev.username)}@restocash.com`
+                            : "";
+                          const shouldAutoEmail = !prev.email || prev.email === prevAuto;
+                          return {
+                            ...prev,
+                            username: nextUser,
+                            email:
+                              shouldAutoEmail && nextUser.trim()
+                                ? `${normalizeManagedUsername(nextUser)}@restocash.com`
+                                : prev.email,
+                          };
+                        });
+                      }}
+                      placeholder="مثال: ahmed.cashier"
+                      className="h-9 rounded-xl bg-card font-mono text-xs"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-bold">البريد الإلكتروني للحساب *</Label>
+                    <Input
+                      type="email"
+                      dir="ltr"
+                      value={empNewUserForm.email}
+                      onChange={(e) =>
+                        setEmpNewUserForm((prev) => ({ ...prev, email: e.target.value }))
+                      }
+                      placeholder="user@restocash.com"
+                      className="h-9 rounded-xl bg-card font-mono text-xs"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-bold">الدور الوظيفي في النظام *</Label>
+                    <select
+                      value={empNewUserForm.role}
+                      onChange={(e) =>
+                        setEmpNewUserForm((prev) => ({ ...prev, role: e.target.value }))
+                      }
+                      className="w-full h-9 rounded-xl border border-input bg-card px-2.5 text-xs font-bold"
+                    >
+                      <option value="cashier">كاشير صالة وتوصيل (Cashier)</option>
+                      <option value="captain">كابتن صالة وطاولات (Captain)</option>
+                      <option value="kitchen">شيف / مطبخ وبار (Kitchen)</option>
+                      <option value="manager">مشرف / محاسب مالي (Manager)</option>
+                      <option value="admin">مدير النظام / مدير فرع (Admin)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-[11px] font-bold">
+                        الرقم السري الافتراضي *
+                      </Label>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setEmpNewUserForm((prev) => ({
+                            ...prev,
+                            password: DEFAULT_NEW_USER_PASSWORD,
+                            confirmPassword: DEFAULT_NEW_USER_PASSWORD,
+                          }))
+                        }
+                        className="text-[10px] font-black text-primary hover:underline cursor-pointer"
+                      >
+                        تعيين الافتراضي تلقائياً
+                      </button>
+                    </div>
+                    <Input
+                      type="password"
+                      dir="ltr"
+                      placeholder="••••••••••••"
+                      value={empNewUserForm.password}
+                      onChange={(e) =>
+                        setEmpNewUserForm((prev) => ({
+                          ...prev,
+                          password: e.target.value,
+                          confirmPassword: e.target.value,
+                        }))
+                      }
+                      className="h-9 rounded-xl bg-card font-mono text-xs font-bold"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {empUserLinkMode === "link_existing" && (
+                <div className="space-y-1.5 pt-1">
+                  <Label className="text-[11px] font-bold">حساب المستخدم المرتبط بالموظف *</Label>
+                  <select
+                    value={empLinkedUserId}
+                    onChange={(e) => setEmpLinkedUserId(e.target.value)}
+                    className="w-full h-9 rounded-xl border border-input bg-card px-2.5 text-xs font-bold"
+                  >
+                    <option value="">-- اختر حساب مستخدم من القائمة --</option>
+                    {(erpState.users || []).map((u) => (
+                      <option key={u.id} value={u.id}>
+                        @{u.username} — {u.full_name} (
+                        {u.employee_code ? `#${u.employee_code}` : "بدون رقم وظيفي"})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter className="gap-2 pt-2">
               <Button
                 type="button"
                 variant="outline"

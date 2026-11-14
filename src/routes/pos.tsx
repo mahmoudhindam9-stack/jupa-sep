@@ -7,6 +7,7 @@ import {
 } from "@/shared/services/userAuthorization";
 import { shiftAuditService } from "@/features/shifts/services/shiftAuditService";
 import { RestocashLogo } from "@/components/RestocashLogo";
+import { ChefDishIcon } from "@/components/icons/ChefDishIcon";
 import {
   DEFAULT_RECEIPT_SETTINGS,
   getReceiptDesignSettings,
@@ -136,6 +137,7 @@ const additionsList = [
 function Index() {
   const navigate = useNavigate();
   const [user, setUser] = useState<{ email?: string } | null>(null);
+  const [selectedCardItemId, setSelectedCardItemId] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -1247,48 +1249,60 @@ function Index() {
 
   return (
     <div
-      className="min-h-screen flex bg-background text-foreground animate-fade-in"
+      className="h-screen overflow-hidden flex flex-col bg-background text-foreground animate-fade-in"
       dir={lang === "ar" ? "rtl" : "ltr"}
       style={{ fontFamily: '"Tajawal", "Cairo", system-ui, sans-serif' }}
     >
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
         {/* 1. Permanent Fixed Main Top Bar */}
         <AppMainNavbar user={user} />
 
         {/* 2. Contextual Breadcrumb Bar */}
         <AppBreadcrumbBar />
 
-        {/* Contextual POS Search & Quick Operational Actions Toolbar */}
-        <div className="px-4 sm:px-6 py-2.5 bg-card/95 backdrop-blur border-b border-border flex flex-wrap items-center justify-between gap-3">
+        {/* 3. Secondary Blue Operational Navigation & Cart Toolbar */}
+        <div
+          data-testid="restaurant-pos-secondary-toolbar"
+          className="px-4 sm:px-6 lg:px-8 py-2.5 bg-slate-900 border-b border-slate-800 shadow-md flex flex-wrap items-center justify-between gap-3 text-white shrink-0 z-20"
+        >
           <div className="flex items-center gap-3 min-w-0 flex-1 max-w-2xl flex-wrap">
             <div className="relative flex-1 min-w-[180px]">
               <Search
-                className={`absolute ${lang === "ar" ? "right-3.5" : "left-3.5"} top-1/2 -translate-y-1/2 text-muted-foreground`}
+                className={`absolute ${lang === "ar" ? "right-3.5" : "left-3.5"} top-1/2 -translate-y-1/2 text-emerald-400 pointer-events-none`}
                 size={16}
               />
               <input
                 type="text"
                 placeholder={t.search}
-                className={`w-full bg-background border border-border rounded-xl h-9 ${lang === "ar" ? "pr-10 pl-3" : "pl-10 pr-3"} text-xs sm:text-sm text-foreground placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition`}
+                className={`w-full bg-slate-800/90 border border-slate-700 rounded-xl h-9 ${lang === "ar" ? "pr-10 pl-8" : "pl-10 pr-8"} text-xs sm:text-sm font-semibold text-white placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 focus:bg-slate-800 transition`}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch("")}
+                  className={`absolute ${lang === "ar" ? "left-2.5" : "right-2.5"} top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1 cursor-pointer`}
+                >
+                  <X size={14} />
+                </button>
+              )}
             </div>
 
-            {/* Active Shift / Preview Mode Indicator Badge (matching Park POS) */}
+            {/* Active Shift / Preview Mode Indicator Badge */}
             {activeRestaurantShift ? (
-              <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-800 dark:text-emerald-300 px-3 py-1 rounded-xl text-xs font-bold">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <div className="flex items-center gap-2 bg-emerald-950/90 border border-emerald-700/80 text-emerald-200 px-3 py-1.5 rounded-xl text-xs font-bold">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                 <span>{activeRestaurantShift.shift_number}</span>
-                <span className="text-muted-foreground">•</span>
+                <span className="text-slate-400">•</span>
                 <span className="flex items-center gap-1">
-                  <UserCheck size={13} className="text-emerald-600" />
+                  <UserCheck size={13} className="text-emerald-400" />
                   {activeRestaurantShift.cashier_name}
                 </span>
               </div>
             ) : (
-              <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 px-3 py-1 rounded-xl text-xs font-bold">
-                <Eye size={14} className="text-amber-600 shrink-0" />
+              <div className="flex items-center gap-2 bg-amber-950/90 border border-amber-700/80 text-amber-200 px-3 py-1.5 rounded-xl text-xs font-bold">
+                <Eye size={14} className="text-amber-400 shrink-0" />
                 <span>
                   {lang === "ar"
                     ? "وضع المعاينة (الوردية مغلقة)"
@@ -1304,9 +1318,9 @@ function Index() {
                 <button
                   type="button"
                   onClick={() => setIsShiftLauncherOpen(true)}
-                  className="inline-flex items-center gap-1.5 bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 rounded-lg px-3 h-8 transition text-xs font-bold text-teal-700 dark:text-teal-300 whitespace-nowrap shrink-0 cursor-pointer"
+                  className="inline-flex items-center gap-1.5 bg-teal-950/90 hover:bg-teal-900 border border-teal-700/80 rounded-xl px-3 h-9 transition text-xs font-bold text-teal-200 whitespace-nowrap shrink-0 cursor-pointer"
                 >
-                  <Play size={13} className="text-teal-600 shrink-0" />
+                  <Play size={13} className="text-teal-400 shrink-0" />
                   <span>
                     {isCashier
                       ? lang === "ar"
@@ -1321,9 +1335,9 @@ function Index() {
                   <button
                     type="button"
                     onClick={() => setClosingShift(activeRestaurantShift)}
-                    className="inline-flex items-center gap-1.5 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 rounded-lg px-3 h-8 transition text-xs font-bold text-rose-700 dark:text-rose-300 whitespace-nowrap shrink-0 cursor-pointer"
+                    className="inline-flex items-center gap-1.5 bg-rose-950/90 hover:bg-rose-900 border border-rose-700/80 rounded-xl px-3 h-9 transition text-xs font-bold text-rose-200 whitespace-nowrap shrink-0 cursor-pointer"
                   >
-                    <Lock size={13} className="text-rose-600 shrink-0" />
+                    <Lock size={13} className="text-rose-400 shrink-0" />
                     <span>{lang === "ar" ? "إغلاق الوردية" : "Close Shift"}</span>
                   </button>
                 )}
@@ -1332,9 +1346,9 @@ function Index() {
               <button
                 type="button"
                 onClick={() => setIsShiftLauncherOpen(true)}
-                className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg px-3.5 h-8 transition text-xs font-black whitespace-nowrap shrink-0 shadow-xs cursor-pointer"
+                className="inline-flex items-center gap-1.5 bg-emerald-950/90 hover:bg-emerald-900 border border-emerald-700/80 text-emerald-200 rounded-xl px-3.5 h-9 transition text-xs font-black whitespace-nowrap shrink-0 shadow-xs cursor-pointer"
               >
-                <Plus size={14} className="shrink-0" />
+                <Plus size={14} className="text-emerald-400 shrink-0" />
                 <span>
                   {openRestaurantShifts.length > 0
                     ? isCashier
@@ -1352,9 +1366,9 @@ function Index() {
             <button
               type="button"
               onClick={() => setIsCashierTreasuryModalOpen(true)}
-              className="inline-flex items-center gap-1.5 bg-emerald-500/10 hover:bg-emerald-500/15 border border-emerald-500/30 rounded-lg px-3 h-8 transition text-xs font-bold text-emerald-700 dark:text-emerald-300 whitespace-nowrap shrink-0 cursor-pointer"
+              className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl px-3 h-9 transition text-xs font-bold text-slate-100 whitespace-nowrap shrink-0 cursor-pointer"
             >
-              <Wallet size={14} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <Wallet size={14} className="text-emerald-400 shrink-0" />
               <span>{lang === "ar" ? "خزينة الكاشير" : "Cashier Treasury"}</span>
             </button>
 
@@ -1362,12 +1376,12 @@ function Index() {
               <AlertDialogTrigger asChild>
                 <button
                   type="button"
-                  className="bg-rose-500/10 hover:bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-500/30 text-xs font-bold px-3 h-8 rounded-lg transition cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                  className="bg-rose-950/90 hover:bg-rose-900 text-rose-200 border border-rose-700/80 text-xs font-bold px-3 h-9 rounded-xl transition cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
                   title={
                     lang === "ar" ? "تصفير عداد المبيعات وحذف الطلبات المعلقة" : "Reset Sales"
                   }
                 >
-                  <Trash2 size={13} className="text-rose-500 shrink-0" />
+                  <Trash2 size={13} className="text-rose-400 shrink-0" />
                   <span>{lang === "ar" ? "تصفير المبيعات" : "Reset Sales"}</span>
                 </button>
               </AlertDialogTrigger>
@@ -1393,6 +1407,26 @@ function Index() {
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
+
+            {/* Integrated High-Contrast Shopping Cart Button */}
+            <button
+              type="button"
+              data-testid="restaurant-pos-cart-button"
+              onClick={() => setIsMobileCartOpen(true)}
+              className="relative inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-black text-xs px-3.5 h-9 rounded-xl border border-emerald-400/50 shadow-md transition-all cursor-pointer whitespace-nowrap shrink-0"
+              title={lang === "ar" ? "فتح سلة الطلبات" : "Open Cart"}
+            >
+              <ShoppingCart size={17} className="text-white shrink-0" />
+              <span>{lang === "ar" ? "سلة الطلبات" : "Cart"}</span>
+              {itemCount > 0 && (
+                <span
+                  data-testid="restaurant-pos-cart-badge"
+                  className="bg-rose-600 text-white text-[11px] font-black min-w-[22px] h-[22px] rounded-full flex items-center justify-center px-1.5 border-2 border-white shadow-sm tabular-nums"
+                >
+                  {itemCount}
+                </span>
+              )}
+            </button>
           </div>
         </div>
 
@@ -1467,7 +1501,7 @@ function Index() {
           </div>
         )}
 
-        <div className="px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3.5 border-b border-border bg-card">
+        <div className="px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3.5 border-b border-border bg-card shrink-0">
           <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
             <CategoryPill
               label={t.all}
@@ -1524,43 +1558,89 @@ function Index() {
             <div className="text-center text-muted-foreground py-20">{t.no_items}</div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 lg:gap-5">
-              {filteredItems.map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => addToCart(item)}
-                  className={`group bg-card rounded-2xl sm:rounded-3xl overflow-hidden border border-border transition-all hover:-translate-y-1 active:scale-[0.98] ${lang === "ar" ? "text-right" : "text-left"}`}
-                  style={{ boxShadow: "var(--shadow-card)" }}
-                >
-                  <div className="relative aspect-[4/3] overflow-hidden bg-muted">
-                    {item.image_url && (
-                      <img
-                        src={item.image_url}
-                        alt={item.name_ar}
-                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                        loading="lazy"
-                        referrerPolicy="no-referrer"
-                      />
-                    )}
-                    <div className="absolute top-2.5 left-2.5 bg-primary text-primary-foreground text-[11px] sm:text-xs font-bold px-2.5 py-1 rounded-full shadow">
-                      {formatPrice(item.price)}
-                    </div>
-                    {item.badge && (
-                      <div className="absolute top-0 right-0 bg-slate-900/90 backdrop-blur-md text-white text-[11px] font-black px-3 py-1 rounded-bl-2xl shadow-md z-10">
-                        {item.badge}
+              {filteredItems.map((item) => {
+                const inCartLine = cart.find((c) => c.item.id === item.id);
+                const isSelectedCard = selectedCardItemId === item.id;
+                return (
+                  <div
+                    key={item.id}
+                    data-testid={`pos-item-card-${item.id}`}
+                    onClick={() => setSelectedCardItemId(item.id)}
+                    className={`group bg-card rounded-2xl sm:rounded-3xl overflow-hidden border transition-all flex flex-col justify-between select-none ${
+                      lang === "ar" ? "text-right" : "text-left"
+                    } ${
+                      inCartLine
+                        ? "border-primary ring-2 ring-primary/30 shadow-md"
+                        : isSelectedCard
+                          ? "border-amber-500 ring-2 ring-amber-400/35 shadow-md"
+                          : "border-border hover:border-primary/40"
+                    }`}
+                    style={{ boxShadow: "var(--shadow-card)" }}
+                  >
+                    <div className="relative aspect-[4/3] overflow-hidden bg-muted">
+                      {item.image_url ? (
+                        <img
+                          src={item.image_url}
+                          alt={item.name_ar}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 pointer-events-none"
+                          loading="lazy"
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-primary/60">
+                          <ChefDishIcon size={34} />
+                        </div>
+                      )}
+                      <div className="absolute top-2.5 left-2.5 bg-primary text-primary-foreground text-[11px] sm:text-xs font-bold px-2.5 py-1 rounded-full shadow">
+                        {formatPrice(item.price)}
                       </div>
-                    )}
-                  </div>
-                  <div className="p-3 sm:p-4">
-                    <h4 className="font-bold text-xs sm:text-sm text-card-foreground line-clamp-1">
-                      {item.name_ar}
-                    </h4>
-                    <div className="mt-1.5 sm:mt-2 flex items-center gap-1.5 text-xs text-primary font-semibold">
-                      <Plus size={14} />
-                      <span>{t.add_to_order}</span>
+                      {(inCartLine || isSelectedCard) && (
+                        <div
+                          className={`absolute bottom-2.5 right-2.5 flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-black shadow-md ${
+                            inCartLine
+                              ? "bg-emerald-600 text-white"
+                              : "bg-amber-500 text-slate-950"
+                          }`}
+                        >
+                          <ChefDishIcon size={14} />
+                          <span>
+                            {inCartLine ? `${inCartLine.quantity} في الطلب` : "محدد"}
+                          </span>
+                        </div>
+                      )}
+                      {item.badge && (
+                        <div className="absolute top-0 right-0 bg-slate-900/90 backdrop-blur-md text-white text-[11px] font-black px-3 py-1 rounded-bl-2xl shadow-md z-10">
+                          {item.badge}
+                        </div>
+                      )}
+                    </div>
+                    <div className="p-3 sm:p-4 flex flex-col gap-2.5 flex-1 justify-between">
+                      <div className="flex items-start justify-between gap-2">
+                        <h4 className="font-bold text-xs sm:text-sm text-card-foreground line-clamp-2 leading-snug">
+                          {item.name_ar}
+                        </h4>
+                        <span className="shrink-0 rounded-lg bg-primary/10 p-1.5 text-primary">
+                          <ChefDishIcon size={16} />
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        data-testid={`pos-add-button-${item.id}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedCardItemId(item.id);
+                          addToCart(item);
+                        }}
+                        className="mt-1 w-full py-2.5 px-3 rounded-xl bg-primary hover:bg-primary/90 active:scale-[0.97] text-primary-foreground font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm hover:shadow transition-all cursor-pointer"
+                      >
+                        <Plus size={18} strokeWidth={3} />
+                        <ChefDishIcon size={17} />
+                        <span>{t.add_to_order}</span>
+                      </button>
                     </div>
                   </div>
-                </button>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -2002,26 +2082,6 @@ function Index() {
             </div>
           </div>
         </Modal>
-      )}
-
-      {/* Floating Cart Icon on the Left (matching Park POS) */}
-      {!isMobileCartOpen && (
-        <div className="fixed bottom-6 left-6 z-40">
-          <button
-            type="button"
-            onClick={() => setIsMobileCartOpen(true)}
-            className="w-14 h-14 rounded-full shadow-2xl flex items-center justify-center relative hover:scale-105 active:scale-95 transition-all cursor-pointer border-2 border-white/20"
-            style={{ background: "var(--gradient-primary)", color: "white" }}
-            title={lang === "ar" ? "فتح سلة الطلبات" : "Open Cart"}
-          >
-            <ShoppingCart size={24} />
-            {itemCount > 0 && (
-              <span className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-[10px] font-black min-w-[22px] h-[22px] rounded-full flex items-center justify-center px-1 border-2 border-background shadow-sm">
-                {itemCount}
-              </span>
-            )}
-          </button>
-        </div>
       )}
 
       {/* Full Cart Slide-Over Drawer on the Left */}

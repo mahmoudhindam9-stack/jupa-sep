@@ -10,7 +10,7 @@ const MANAGED_USER_ROLES = new Set([
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
-const MANAGED_PERMISSION_KEYS = new Set([
+export const LEGACY_SUPABASE_RPC_PERMISSION_KEYS = new Set([
   "orders",
   "orders_view",
   "orders_create_custom",
@@ -85,6 +85,19 @@ const MANAGED_PERMISSION_KEYS = new Set([
   "approval_revenues",
 ]);
 
+export function sanitizePermissionsForSupabaseRpc(
+  permissions: Record<string, any> | null | undefined,
+): Record<string, boolean> {
+  if (!permissions || typeof permissions !== "object") return {};
+  const cleaned: Record<string, boolean> = {};
+  for (const [key, value] of Object.entries(permissions)) {
+    if (LEGACY_SUPABASE_RPC_PERMISSION_KEYS.has(key) && typeof value === "boolean") {
+      cleaned[key] = value;
+    }
+  }
+  return cleaned;
+}
+
 export function normalizeManagedDigits(value: string): string {
   return String(value ?? "")
     .replace(/[٠۰]/g, "0")
@@ -107,6 +120,17 @@ export function normalizeManagedEmail(value: string): string {
   return String(value ?? "").trim().toLowerCase();
 }
 
+export function isDefaultPlaceholderEmail(email: string | null | undefined): boolean {
+  const norm = normalizeManagedEmail(email || "");
+  if (!norm || !EMAIL_PATTERN.test(norm)) return true;
+  return (
+    norm.endsWith("@restocash.com") ||
+    norm.endsWith("@restocash.local") ||
+    norm.endsWith("@juba-erp.local") ||
+    norm.endsWith("@juba.com")
+  );
+}
+
 export interface ManagedUserFormInput {
   fullName: string;
   username: string;
@@ -123,10 +147,203 @@ export interface ManagedUserFormInput {
   editingUserId?: string | null;
 }
 
+export const DEFAULT_NEW_USER_PASSWORD = "Admin@123456";
+
+export function isDefaultTemporaryPassword(password: string | null | undefined): boolean {
+  const normalized = normalizeManagedDigits(String(password ?? "")).trim();
+  return normalized.toLowerCase() === DEFAULT_NEW_USER_PASSWORD.toLowerCase();
+}
+
+export function isUrlPasswordRecoveryCallback(href?: string): boolean {
+  if (typeof window === "undefined" && !href) return false;
+  try {
+    const targetHref = href || window.location.href;
+    const url = new URL(targetHref, "http://localhost");
+    const query = url.searchParams;
+    const hashParams = new URLSearchParams(url.hash.replace(/^#/, ""));
+    const typeParam = (query.get("type") || hashParams.get("type") || "").toLowerCase();
+    if (typeParam === "recovery") return true;
+    if (query.get("token_hash") && (!typeParam || typeParam === "recovery")) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 export interface ValidationRuleCheck {
   id: string;
   label: string;
+  labelEn?: string;
   met: boolean;
+}
+
+export interface PasswordResetInspectionResult {
+  checks: ValidationRuleCheck[];
+  isValid: boolean;
+  isEmailValid: boolean;
+  strengthScore: number; // 0 to 100
+  strengthLabelAr: string;
+  strengthLabelEn: string;
+  unmetSummary: string[];
+}
+
+export function inspectPasswordResetConditions(
+  rawPassword: string,
+  rawConfirmPassword: string,
+  options?: {
+    forbidDefaultPassword?: boolean;
+    personalEmail?: string;
+    requirePersonalEmail?: boolean;
+    existingUsers?: Array<{ id?: string; username?: string; email?: string }>;
+    currentUserId?: string;
+    currentUsername?: string;
+  },
+): PasswordResetInspectionResult {
+  const password = normalizeManagedDigits(String(rawPassword ?? ""));
+  const confirmPassword = normalizeManagedDigits(String(rawConfirmPassword ?? ""));
+  const forbidDefault = options?.forbidDefaultPassword !== false;
+  const requirePersonalEmail = Boolean(options?.requirePersonalEmail);
+  const personalEmail = normalizeManagedEmail(options?.personalEmail ?? "");
+
+  const isEmailFormatOk =
+    EMAIL_PATTERN.test(personalEmail) &&
+    personalEmail.length <= 254 &&
+    !isDefaultPlaceholderEmail(personalEmail);
+
+  const isEmailDuplicate =
+    personalEmail.length > 0 &&
+    (options?.existingUsers || []).some((u) => {
+      const uid = String(u.id || "").trim();
+      const uname = normalizeManagedUsername(u.username || "");
+      if (options?.currentUserId && uid === String(options.currentUserId).trim()) return false;
+      if (options?.currentUsername && uname === normalizeManagedUsername(options.currentUsername)) {
+        return false;
+      }
+      return normalizeManagedEmail(u.email || "") === personalEmail;
+    });
+
+  const isEmailValid = !requirePersonalEmail || (isEmailFormatOk && !isEmailDuplicate);
+
+  const hasMinLength = password.length >= 8 && password.length <= 128;
+  const hasLetters = /[A-Za-z]/.test(password);
+  const hasNumbers = /[0-9]/.test(password);
+  const hasLettersAndNumbers = hasLetters && hasNumbers;
+  const hasNoSpaces = password.length > 0 && !/\s/.test(password);
+  const isNotDefault =
+    password.length > 0 &&
+    (!forbidDefault || !isDefaultTemporaryPassword(password));
+  const isMatching =
+    password.length >= 8 &&
+    confirmPassword.length > 0 &&
+    password === confirmPassword;
+
+  const checks: ValidationRuleCheck[] = [
+    ...(requirePersonalEmail
+      ? [
+          {
+            id: "personal_email_valid",
+            label: isEmailDuplicate
+              ? "البريد الإلكتروني المدخل مسجل لمستخدم آخر؛ أدخل بريدك الشخصي الفريد"
+              : "إدخال البريد الإلكتروني الشخصي الصحيح (بدلاً من البريد الافتراضي)",
+            labelEn: isEmailDuplicate
+              ? "Email already belongs to another user; enter your unique personal email"
+              : "Enter a valid personal email address (not the default placeholder email)",
+            met: isEmailFormatOk && !isEmailDuplicate,
+          },
+        ]
+      : []),
+    {
+      id: "password_length",
+      label: "ألا يقل طول كلمة المرور عن 8 خانات (8 أحرف أو أرقام على الأقل)",
+      labelEn: "At least 8 characters long (8–128 characters)",
+      met: hasMinLength,
+    },
+    {
+      id: "password_letters",
+      label: "تحتوي على حروف إنجليزية (A-Z أو a-z)",
+      labelEn: "Contains English letters (A–Z or a–z)",
+      met: hasLetters,
+    },
+    {
+      id: "password_numbers",
+      label: "تحتوي على أرقام (0-9) لتوافق سياسة حماية البرنامج وSupabase",
+      labelEn: "Contains numbers (0–9) to comply with app & Supabase policy",
+      met: hasNumbers,
+    },
+    {
+      id: "password_no_spaces",
+      label: "خالية تماماً من المسافات الفارغة",
+      labelEn: "Contains no spaces",
+      met: hasNoSpaces,
+    },
+    ...(forbidDefault
+      ? [
+          {
+            id: "password_not_default",
+            label: "مختلفة عن كلمة المرور الافتراضية المؤقتة",
+            labelEn: "Different from the temporary default password",
+            met: isNotDefault,
+          },
+        ]
+      : []),
+    {
+      id: "password_match",
+      label: "تطابق كلمة المرور الجديدة مع حقل تأكيد كلمة المرور",
+      labelEn: "New password matches the confirmation field",
+      met: isMatching,
+    },
+  ];
+
+  let score = 0;
+  if (password.length > 0) {
+    if (hasMinLength) score += 25;
+    if (password.length >= 10) score += 10;
+    if (hasLettersAndNumbers) score += 25;
+    if (/[A-Z]/.test(password) && /[a-z]/.test(password)) score += 15;
+    if (/[^A-Za-z0-9\s]/.test(password)) score += 15;
+    if (hasNoSpaces && isNotDefault) score += 10;
+    if (!isNotDefault) score = Math.min(score, 20);
+  }
+  score = Math.min(100, score);
+
+  const strengthLabelAr =
+    password.length === 0
+      ? "لم يتم الإدخال"
+      : !isNotDefault
+        ? "مرفوضة (افتراضية)"
+        : score < 50
+          ? "ضعيفة"
+          : score < 75
+            ? "متوسطة"
+            : score < 90
+              ? "قوية"
+              : "قوية جداً";
+
+  const strengthLabelEn =
+    password.length === 0
+      ? "Not entered"
+      : !isNotDefault
+        ? "Rejected (Default)"
+        : score < 50
+          ? "Weak"
+          : score < 75
+            ? "Fair"
+            : score < 90
+              ? "Strong"
+              : "Very Strong";
+
+  const isValid = checks.every((c) => c.met);
+  const unmetSummary = checks.filter((c) => !c.met).map((c) => c.label);
+
+  return {
+    checks,
+    isValid,
+    isEmailValid,
+    strengthScore: score,
+    strengthLabelAr,
+    strengthLabelEn,
+    unmetSummary,
+  };
 }
 
 export interface ManagedUserInspectionResult {
@@ -342,7 +559,7 @@ export function validateManagedUserForm(input: ManagedUserFormInput): {
     }
     if (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
       throw new Error(
-        "الرقم السري يجب أن يحتوي على حروف إنجليزية وأرقام معاً (مثل Admin@12345).",
+        "الرقم السري يجب أن يحتوي على حروف إنجليزية وأرقام معاً.",
       );
     }
     if (/\s/.test(password)) {
@@ -397,10 +614,7 @@ export function validateManagedProfilePayload(profile: {
   if (!permissions || typeof permissions !== "object" || Array.isArray(permissions)) {
     throw new Error("الصلاحيات يجب أن تكون كائنًا يحتوي قيمًا منطقية فقط.");
   }
-  for (const [key, value] of Object.entries(permissions as Record<string, unknown>)) {
-    if (!MANAGED_PERMISSION_KEYS.has(key)) {
-      throw new Error(`اسم الصلاحية غير معتمد في النظام: ${key}. حدّث التطبيق قبل حفظ هذه الصلاحية.`);
-    }
+  for (const [, value] of Object.entries(permissions as Record<string, unknown>)) {
     if (typeof value !== "boolean") {
       throw new Error("الصلاحيات غير صالحة: كل صلاحية يجب أن تحتوي قيمة true أو false.");
     }

@@ -317,6 +317,8 @@ export interface SystemUser {
   phone: string;
   role: string;
   password?: string;
+  must_change_password?: boolean;
+  password_changed_at?: string;
   permissions?: UserPermission;
   created_at: string;
 }
@@ -513,8 +515,64 @@ export interface PayrollRecord {
   notes?: string;
 }
 
+export type MallShopConstructionStatus =
+  | "finished"
+  | "red_brick"
+  | "fitted"
+  | "not_fitted"
+  | "under_construction"
+  | "other";
+
+export type MallShopLocationZone =
+  | "central"
+  | "park"
+  | "ground_floor"
+  | "first_floor"
+  | "roof"
+  | "other";
+
+export type MallCustomFieldType =
+  | "text"
+  | "number"
+  | "date"
+  | "dropdown"
+  | "multiple_choice"
+  | "checkbox";
+
+export interface MallCustomFieldDefinition {
+  id: string;
+  key: string;
+  name_ar: string;
+  name_en?: string;
+  label_ar?: string;
+  label_en?: string;
+  type: MallCustomFieldType;
+  options?: string[];
+  order: number;
+  enabled: boolean;
+  archived?: boolean;
+  required?: boolean;
+  placeholder?: string;
+  created_at?: string;
+}
+
+export interface MallShopsSyncReport {
+  timestamp: string;
+  previousCount: number;
+  finalCount: number;
+  addedShops: string[];
+  recoveredFromOracle: string[];
+  recoveredFromArchiveOrPayments: string[];
+  updatedShops: string[];
+  duplicatesResolved: string[];
+  preservedContractsCount: number;
+  preservedPaymentsCount: number;
+  discrepancies: Array<{ account_number: string; oracle_name: string; reason: string }>;
+}
+
 export interface MallShop {
   id: string;
+  serial_number?: string;
   shop_number: string;
   name_ar: string;
   account_number: string;
@@ -522,6 +580,10 @@ export interface MallShop {
   phone: string;
   monthly_rent: number;
   status: "rented" | "vacant" | "maintenance";
+  construction_status?: MallShopConstructionStatus;
+  location_zone?: MallShopLocationZone;
+  location_override?: boolean;
+  custom_fields?: Record<string, any>;
   space_sqm?: number;
   notes?: string;
   contract?: {
@@ -804,6 +866,8 @@ export interface ERPStoreState {
   loans?: EmployeeLoan[];
   payrolls?: PayrollRecord[];
   mallShops: MallShop[];
+  mallCustomFieldDefinitions?: MallCustomFieldDefinition[];
+  lastMallSyncReport?: MallShopsSyncReport | null;
   mallPayments: MallRentalPayment[];
   mallGardenRevenues: MallGardenRevenue[];
   mallGardenExpenses: MallGardenExpense[];

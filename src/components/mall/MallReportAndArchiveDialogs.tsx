@@ -93,10 +93,14 @@ export function MallReportAndArchiveDialogs({
     }
 
     const rows = reportData.rows.map((r: any) => ({
+      "المسلسل الدائم": r.serialNumber || "-",
       "رقم المحل": r.shopNumber,
       "اسم النشاط": r.shopName,
+      "الموقع": r.locationText || "-",
+      "حالة الإنشاء": r.constructionStatusText || "-",
       "المستأجر": r.tenant,
-      "الحالة": r.statusText,
+      "حالة الإشغال": r.statusText,
+      "الحقول المخصصة": r.customFieldsText || "-",
       "الإيجار الشهري ($)": r.monthlyRent,
       "المدفوع للشهر ($)": r.amountPaid,
       "المتبقي ($)": r.outstanding,
@@ -542,10 +546,16 @@ export function MallReportAndArchiveDialogs({
                         بيانات المحل العامة
                       </h4>
                       <p>
+                        <strong>المسلسل الدائم:</strong> {reportData.rows[0].serialNumber || "-"} |{" "}
                         <strong>رقم المحل والوحدة:</strong> #{reportData.rows[0].shopNumber}
                       </p>
                       <p>
                         <strong>اسم النشاط والوحدة:</strong> {reportData.rows[0].shopName}
+                      </p>
+                      <p>
+                        <strong>الموقع:</strong> {reportData.rows[0].locationText || "-"} |{" "}
+                        <strong>حالة الإنشاء:</strong>{" "}
+                        {reportData.rows[0].constructionStatusText || "-"}
                       </p>
                       <p>
                         <strong>حساب الأستاذ العام:</strong> {reportData.rows[0].accountNumber}
@@ -554,11 +564,17 @@ export function MallReportAndArchiveDialogs({
                         <strong>مساحة المحل:</strong> {reportData.rows[0].space} متر مربع
                       </p>
                       <p>
-                        <strong>الحالة الحالية:</strong>{" "}
+                        <strong>حالة الإشغال:</strong>{" "}
                         <span className="font-bold text-emerald-700">
                           {reportData.rows[0].statusText}
                         </span>
                       </p>
+                      {reportData.rows[0].customFieldsText &&
+                        reportData.rows[0].customFieldsText !== "-" && (
+                          <p>
+                            <strong>بيانات مخصصة:</strong> {reportData.rows[0].customFieldsText}
+                          </p>
+                        )}
                     </div>
 
                     <div className="border border-gray-200 p-4 rounded-xl bg-gray-50/50 space-y-1">

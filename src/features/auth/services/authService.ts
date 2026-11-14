@@ -2,9 +2,13 @@ import { supabase } from "@/integrations/supabase/client";
 import { createClient } from "@supabase/supabase-js";
 import { Profile } from "@/shared/types";
 import {
+  DEFAULT_NEW_USER_PASSWORD,
+  inspectPasswordResetConditions,
+  isDefaultTemporaryPassword,
   normalizeManagedDigits,
   normalizeManagedEmail,
   normalizeManagedUsername,
+  sanitizePermissionsForSupabaseRpc,
   validateManagedProfilePayload,
   validateManagedUserForm,
   userValidationErrorMessage,
@@ -146,6 +150,7 @@ export const authService = {
 
   async saveManagedProfile(profile: Partial<Profile> & { id: string }): Promise<Profile> {
     validateManagedProfilePayload(profile);
+    const rpcPermissions = sanitizePermissionsForSupabaseRpc(profile.permissions || {});
 
     const { data, error } = await (supabase as any).rpc("upsert_managed_user_profile", {
       p_user_id: profile.id,
@@ -153,7 +158,7 @@ export const authService = {
       p_full_name: String(profile.full_name || "").trim(),
       p_phone: String(profile.phone || "").trim(),
       p_role: String(profile.role).trim().toLowerCase(),
-      p_permissions: profile.permissions || {},
+      p_permissions: rpcPermissions,
     });
 
     if (error) {
@@ -162,7 +167,22 @@ export const authService = {
     if (!data || typeof data !== "object" || !data.id) {
       throw new Error("لم يؤكد Supabase حفظ ملف المستخدم. لم يتم اعتماد التغيير.");
     }
-    return data as Profile;
+    if (profile.email) {
+      await supabase
+        .from("profiles")
+        .update({ email: normalizeEmail(profile.email) } as any)
+        .eq("id", profile.id)
+        .then(() => undefined)
+        .catch(() => undefined);
+    }
+    return {
+      ...(data as Profile),
+      ...(profile.email ? { email: normalizeEmail(profile.email) } : {}),
+      permissions: {
+        ...((data as any).permissions || {}),
+        ...(profile.permissions || {}),
+      },
+    } as Profile;
   },
 
   async createManagedUserAccount(input: {
@@ -174,16 +194,19 @@ export const authService = {
     role: string;
     permissions: Record<string, boolean>;
   }): Promise<{ profile: Profile; sessionConfirmed: boolean }> {
+    const effectivePassword = input.password?.trim() || DEFAULT_NEW_USER_PASSWORD;
     const validated = validateManagedUserForm({
       fullName: input.full_name,
       username: input.username,
       email: input.email,
       phone: input.phone || "",
-      password: input.password,
+      password: effectivePassword,
       role: input.role,
       hosted: true,
       requirePassword: true,
     });
+
+    const rpcPermissions = sanitizePermissionsForSupabaseRpc(input.permissions || {});
 
     // Prefer the atomic server-side RPC which creates auth.users + auth.identities + public.profiles
     // even when GoTrue public signups are disabled.
@@ -196,12 +219,21 @@ export const authService = {
         p_full_name: validated.fullName,
         p_phone: validated.phone,
         p_role: validated.role,
-        p_permissions: input.permissions || {},
+        p_permissions: rpcPermissions,
       },
     );
 
     if (!rpcError && rpcProfile && typeof rpcProfile === "object" && rpcProfile.id) {
-      return { profile: rpcProfile as Profile, sessionConfirmed: true };
+      return {
+        profile: {
+          ...(rpcProfile as Profile),
+          permissions: {
+            ...((rpcProfile as any).permissions || {}),
+            ...(input.permissions || {}),
+          },
+        } as Profile,
+        sessionConfirmed: true,
+      };
     }
 
     const errMsg = String(rpcError?.message || "").toLowerCase();
@@ -221,6 +253,7 @@ export const authService = {
       full_name: validated.fullName,
       phone: validated.phone,
       role: validated.role,
+      must_change_password: isDefaultTemporaryPassword(validated.password),
     });
     if (!created?.user?.id) {
       throw new Error("لم تؤكد Supabase إنشاء حساب المستخدم؛ لم يُضف إلى قائمة المستخدمين.");
@@ -262,6 +295,137 @@ export const authService = {
     }
   },
 
+  async completeOwnPasswordReset(newPassword: string, newEmail?: string): Promise<void> {
+    const normalizedPassword = normalizeManagedDigits(String(newPassword ?? ""));
+    const normalizedEmail = newEmail ? normalizeEmail(newEmail) : "";
+    const inspection = inspectPasswordResetConditions(
+      normalizedPassword,
+      normalizedPassword,
+      {
+        forbidDefaultPassword: true,
+        ...(normalizedEmail
+          ? { personalEmail: normalizedEmail, requirePersonalEmail: true }
+          : {}),
+      },
+    );
+    if (!inspection.isValid) {
+      throw new Error(
+        inspection.unmetSummary[0] ||
+          "البيانات غير مستوفية لشروط البرنامج وSupabase.",
+      );
+    }
+
+    const nowIso = new Date().toISOString();
+    let updatedInCloud = false;
+
+    // 1. Try server-side RPC first if available (with email if supported, then fallback to 1-arg)
+    if (normalizedEmail) {
+      try {
+        const { data: rpcDoneWithEmail, error: rpcEmailErr } = await (supabase as any).rpc(
+          "complete_own_password_reset",
+          {
+            p_new_password: normalizedPassword,
+            p_new_email: normalizedEmail,
+          },
+        );
+        if (!rpcEmailErr && rpcDoneWithEmail === true) {
+          updatedInCloud = true;
+        }
+      } catch {
+        // Fallback below
+      }
+    }
+
+    if (!updatedInCloud) {
+      try {
+        const { data: rpcDone, error: rpcErr } = await (supabase as any).rpc(
+          "complete_own_password_reset",
+          {
+            p_new_password: normalizedPassword,
+          },
+        );
+        if (!rpcErr && rpcDone === true) {
+          updatedInCloud = true;
+        }
+      } catch {
+        // Fallback to standard GoTrue updateUser below
+      }
+    }
+
+    // 2. Also call standard GoTrue updateUser so active session & metadata stay in sync
+    const { data, error: updateError } = await supabase.auth.updateUser({
+      password: normalizedPassword,
+      ...(normalizedEmail ? { email: normalizedEmail } : {}),
+      data: {
+        must_change_password: false,
+        password_changed_at: nowIso,
+        ...(normalizedEmail ? { email: normalizedEmail } : {}),
+      },
+    });
+
+    if (updateError && normalizedEmail) {
+      // If email change failed in GoTrue (e.g. confirmation constraint), still update password & metadata
+      const fallbackRes = await supabase.auth.updateUser({
+        password: normalizedPassword,
+        data: {
+          must_change_password: false,
+          password_changed_at: nowIso,
+          email: normalizedEmail,
+        },
+      });
+      if (!fallbackRes.error && fallbackRes.data?.user?.id) {
+        updatedInCloud = true;
+      } else if (!updatedInCloud && fallbackRes.error) {
+        throw new Error(userValidationErrorMessage(fallbackRes.error), {
+          cause: fallbackRes.error,
+        });
+      }
+    } else if (updateError && !updatedInCloud) {
+      throw new Error(userValidationErrorMessage(updateError), { cause: updateError });
+    } else if (data?.user?.id) {
+      updatedInCloud = true;
+    }
+
+    // 3. Ensure public.profiles has the updated personal email immediately
+    if (normalizedEmail) {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (session?.user?.id) {
+          await supabase
+            .from("profiles")
+            .update({ email: normalizedEmail, updated_at: nowIso } as any)
+            .eq("id", session.user.id);
+        }
+      } catch {
+        // ignore if RLS blocks direct update; RPC / queueUserChange handles it
+      }
+    }
+
+    if (!updatedInCloud) {
+      throw new Error("لم تؤكد Supabase تحديث كلمة المرور.");
+    }
+  },
+
+  async sendSupabasePasswordResetEmail(email: string): Promise<string> {
+    const normalizedEmail = normalizeEmail(email);
+    if (!normalizedEmail || !normalizedEmail.includes("@")) {
+      throw new Error("أدخل بريداً إلكترونياً صالحاً لإرسال رابط الاستعادة.");
+    }
+    const redirectTo =
+      typeof window !== "undefined"
+        ? `${window.location.origin}/reset-password`
+        : "/reset-password";
+    const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+      redirectTo,
+    });
+    if (error) {
+      throw new Error(userValidationErrorMessage(error), { cause: error });
+    }
+    return redirectTo;
+  },
+
   async deleteUser(id: string): Promise<void> {
     if (!id?.trim()) throw new Error("User id is required.");
     const { data, error } = await (supabase as any).rpc("delete_managed_user", {
@@ -298,7 +462,12 @@ export const authService = {
           full_name: validated.fullName,
           phone: validated.phone,
           role: validated.role,
+          must_change_password: isDefaultTemporaryPassword(validated.password),
         },
+        emailRedirectTo:
+          typeof window !== "undefined"
+            ? `${window.location.origin}/reset-password`
+            : undefined,
       },
     });
     if (error) throw new Error(userValidationErrorMessage(error), { cause: error });

@@ -78,6 +78,7 @@ import { getCurrentUserIdentitySync, canCurrentUserCloseShift } from "@/shared/s
 import { shiftAuditService } from "@/features/shifts/services/shiftAuditService";
 import { printerService } from "@/shared/services/printerService";
 import { RestocashLogo } from "@/components/RestocashLogo";
+import { ChefDishIcon } from "@/components/icons/ChefDishIcon";
 import { ParkShiftLauncherModal } from "@/components/mall/ParkShiftLauncherModal";
 import { ParkShiftClosingReportModal } from "@/components/mall/ParkShiftClosingReportModal";
 import { ParkCashierTreasuryModal } from "./ParkCashierTreasuryModal";
@@ -154,6 +155,7 @@ export function ParkTicketsPOSView({ onClosePOS }: ParkTicketsPOSViewProps) {
 
   // Cart State
   const [cartItems, setCartItems] = useState<ParkTicketCartItem[]>([]);
+  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
 
   const [currency, setCurrencyState] = useState<"USD" | "SSP" | "EGP">(
     (globalPosCurrency as "USD" | "SSP" | "EGP") || "USD",
@@ -469,26 +471,33 @@ export function ParkTicketsPOSView({ onClosePOS }: ParkTicketsPOSViewProps) {
       className="fixed inset-0 z-50 bg-background flex flex-col overflow-hidden text-right font-sans antialiased"
       style={{ fontFamily: '"Tajawal", "Cairo", system-ui, sans-serif' }}
     >
-      {/* 1. RESTAURANT-STYLE GRADIENT HEADER */}
+      {/* 1. FIXED / STICKY APPLICATION HEADER (HIGH CONTRAST) */}
       <header
-        className="px-6 lg:px-8 py-4 border-b border-border/20 flex flex-wrap items-center justify-between gap-4 text-white shrink-0 shadow-sm"
-        style={{ background: "var(--gradient-primary)" }}
+        data-testid="park-pos-top-header"
+        className="sticky top-0 z-30 px-4 sm:px-6 lg:px-8 py-3.5 bg-card/95 backdrop-blur-md border-b border-border flex flex-wrap items-center justify-between gap-4 text-foreground shrink-0 shadow-xs"
       >
-        {/* Left Side: Brand Logo & Title */}
+        {/* Right Side (RTL): Brand Logo & Title */}
         <div className="flex items-center gap-3">
-          <RestocashLogo size={32} variant="white" showDeveloper={false} />
+          <RestocashLogo size={32} showDeveloper={false} />
           <div>
-            <h1 className="text-base lg:text-lg font-black leading-tight flex items-center gap-2">
+            <h1 className="text-base lg:text-lg font-black leading-tight text-foreground flex items-center gap-2 flex-wrap">
               <span>نقطة بيع تذاكر الحديقة والمرافق</span>
               <span
-                className={`text-[11px] font-black px-2.5 py-0.5 rounded-full border ${activeShift ? "bg-white/20 backdrop-blur text-white border-white/25" : "bg-destructive text-destructive-foreground border-destructive"}`}
+                className={`text-[11px] font-black px-2.5 py-0.5 rounded-full border ${
+                  activeShift
+                    ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border-emerald-500/35"
+                    : "bg-destructive/15 text-destructive border-destructive/35"
+                }`}
               >
                 {activeShift ? `وردية #${activeShift.shift_number}` : "الوردية مغلقة"}
               </span>
             </h1>
-            <p className="text-xs text-white/80 mt-0.5 flex items-center gap-2">
+            <p className="text-xs text-muted-foreground font-semibold mt-0.5 flex items-center gap-2">
               <span>
-                أمين الصندوق: <strong>{activeShift?.cashier_name || "غير محدد"}</strong>
+                أمين الصندوق:{" "}
+                <strong className="text-foreground font-black">
+                  {activeShift?.cashier_name || "غير محدد"}
+                </strong>
               </span>
               <span>•</span>
               <span>{new Date().toLocaleDateString("ar-EG")}</span>
@@ -498,30 +507,34 @@ export function ParkTicketsPOSView({ onClosePOS }: ParkTicketsPOSViewProps) {
 
         {/* Center: Search Bar */}
         <div className="relative w-full sm:w-72 lg:w-96 order-3 sm:order-2">
-          <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-white/70" size={18} />
+          <Search
+            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-primary pointer-events-none"
+            size={18}
+          />
           <input
             type="text"
             placeholder="البحث في التذاكر والمرافق والألعاب..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-white/15 backdrop-blur border border-white/20 rounded-2xl py-2.5 pr-11 pl-4 text-sm text-white placeholder:text-white/60 outline-none focus:border-white/60 focus:bg-white/20 transition"
+            className="w-full bg-background border border-border rounded-2xl py-2 pr-11 pl-9 text-sm font-semibold text-foreground placeholder:text-muted-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition shadow-2xs"
           />
           {search && (
             <button
+              type="button"
               onClick={() => setSearch("")}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-white/70 hover:text-white p-1"
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1 cursor-pointer"
             >
               <X size={14} />
             </button>
           )}
         </div>
 
-        {/* Right Side: Back to Admin / Mall */}
+        {/* Left Side (RTL): Back to Admin / Park Reports */}
         <div className="flex items-center gap-2 order-2 sm:order-3">
           <button
             type="button"
             onClick={onClosePOS}
-            className="bg-white/15 hover:bg-white/25 active:scale-95 text-white border border-white/25 rounded-2xl px-4 py-2 text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-xs"
+            className="bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 active:scale-95 text-white border border-slate-700 rounded-2xl px-4 py-2 text-xs font-black transition flex items-center gap-2 cursor-pointer shadow-xs"
           >
             <ArrowRight size={15} />
             <span>رجوع للسجل والتقارير</span>
@@ -529,14 +542,17 @@ export function ParkTicketsPOSView({ onClosePOS }: ParkTicketsPOSViewProps) {
         </div>
       </header>
 
-      {/* 2. SUB-BAR: QUICK MANAGEMENT MODALS & CURRENCY CONTROLS */}
-      <div className="px-6 lg:px-8 py-2.5 bg-slate-900 border-b border-border flex flex-wrap items-center justify-between gap-3 text-white shrink-0">
+      {/* 2. SECONDARY BLUE NAVIGATION & OPERATIONAL CONTROLS BAR */}
+      <div
+        data-testid="park-pos-secondary-toolbar"
+        className="px-4 sm:px-6 lg:px-8 py-2.5 bg-slate-900 border-b border-slate-800 shadow-md flex flex-wrap items-center justify-between gap-3 text-white shrink-0 z-20"
+      >
         {/* Quick Action Navigation Buttons */}
         <div className="flex items-center gap-2 flex-wrap">
           <button
             type="button"
             onClick={() => setIsCashierTreasuryModalOpen(true)}
-            className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold px-3 py-1.5 rounded-xl border border-slate-700 transition flex items-center gap-1.5 cursor-pointer"
+            className="bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-bold px-3 py-1.5 rounded-xl border border-slate-700 transition flex items-center gap-1.5 cursor-pointer"
           >
             <Wallet size={14} className="text-emerald-400" />
             <span>خزينة الكاشير</span>
@@ -545,7 +561,7 @@ export function ParkTicketsPOSView({ onClosePOS }: ParkTicketsPOSViewProps) {
           <button
             type="button"
             onClick={() => setIsCustomersModalOpen(true)}
-            className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold px-3 py-1.5 rounded-xl border border-slate-700 transition flex items-center gap-1.5 cursor-pointer"
+            className="bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-bold px-3 py-1.5 rounded-xl border border-slate-700 transition flex items-center gap-1.5 cursor-pointer"
           >
             <Users size={14} className="text-blue-400" />
             <span>إدارة العملاء</span>
@@ -554,7 +570,7 @@ export function ParkTicketsPOSView({ onClosePOS }: ParkTicketsPOSViewProps) {
           <button
             type="button"
             onClick={() => setIsPricesModalOpen(true)}
-            className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold px-3 py-1.5 rounded-xl border border-slate-700 transition flex items-center gap-1.5 cursor-pointer"
+            className="bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-bold px-3 py-1.5 rounded-xl border border-slate-700 transition flex items-center gap-1.5 cursor-pointer"
           >
             <Settings size={14} className="text-amber-400" />
             <span>أسعار التذاكر</span>
@@ -565,7 +581,7 @@ export function ParkTicketsPOSView({ onClosePOS }: ParkTicketsPOSViewProps) {
               <button
                 type="button"
                 onClick={() => setIsShiftLauncherModalOpen(true)}
-                className="bg-teal-950/80 hover:bg-teal-900 text-teal-200 text-xs font-bold px-3 py-1.5 rounded-xl border border-teal-800 transition flex items-center gap-1.5 cursor-pointer"
+                className="bg-teal-950/90 hover:bg-teal-900 text-teal-200 text-xs font-bold px-3 py-1.5 rounded-xl border border-teal-700/80 transition flex items-center gap-1.5 cursor-pointer"
               >
                 <Clock size={14} className="text-teal-400" />
                 <span>{isCashier ? "بيانات الوردية النشطة" : "تبديل / إدارة الوردية"}</span>
@@ -574,7 +590,7 @@ export function ParkTicketsPOSView({ onClosePOS }: ParkTicketsPOSViewProps) {
                 <button
                   type="button"
                   onClick={() => setIsShiftCloseModalOpen(true)}
-                  className="bg-rose-950/80 hover:bg-rose-900 text-rose-200 text-xs font-bold px-3 py-1.5 rounded-xl border border-rose-800 transition flex items-center gap-1.5 cursor-pointer"
+                  className="bg-rose-950/90 hover:bg-rose-900 text-rose-200 text-xs font-bold px-3 py-1.5 rounded-xl border border-rose-700/80 transition flex items-center gap-1.5 cursor-pointer"
                 >
                   <Lock size={14} className="text-rose-400" />
                   <span>إغلاق الوردية</span>
@@ -585,7 +601,7 @@ export function ParkTicketsPOSView({ onClosePOS }: ParkTicketsPOSViewProps) {
             <button
               type="button"
               onClick={() => setIsShiftLauncherModalOpen(true)}
-              className="bg-emerald-950/80 hover:bg-emerald-900 text-emerald-200 text-xs font-bold px-3 py-1.5 rounded-xl border border-emerald-800 transition flex items-center gap-1.5 cursor-pointer"
+              className="bg-emerald-950/90 hover:bg-emerald-900 text-emerald-200 text-xs font-bold px-3 py-1.5 rounded-xl border border-emerald-700/80 transition flex items-center gap-1.5 cursor-pointer"
             >
               <Lock size={14} className="text-emerald-400" />
               <span>فتح وردية جديدة</span>
@@ -593,8 +609,8 @@ export function ParkTicketsPOSView({ onClosePOS }: ParkTicketsPOSViewProps) {
           )}
         </div>
 
-        {/* Currency Switcher & Rate Input */}
-        <div className="flex items-center gap-3">
+        {/* Currency Switcher, Rate Input & Integrated Shopping Cart Button */}
+        <div className="flex items-center gap-2.5 flex-wrap">
           <div className="flex items-center gap-1 bg-slate-800 p-1 rounded-xl border border-slate-700">
             <button
               type="button"
@@ -602,7 +618,7 @@ export function ParkTicketsPOSView({ onClosePOS }: ParkTicketsPOSViewProps) {
               className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
                 currency === "USD"
                   ? "bg-primary text-primary-foreground shadow"
-                  : "text-slate-400 hover:text-white"
+                  : "text-slate-300 hover:text-white"
               }`}
             >
               دولار ($)
@@ -613,7 +629,7 @@ export function ParkTicketsPOSView({ onClosePOS }: ParkTicketsPOSViewProps) {
               className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
                 currency === "SSP"
                   ? "bg-primary text-primary-foreground shadow"
-                  : "text-slate-400 hover:text-white"
+                  : "text-slate-300 hover:text-white"
               }`}
             >
               جنيه (SSP)
@@ -624,7 +640,7 @@ export function ParkTicketsPOSView({ onClosePOS }: ParkTicketsPOSViewProps) {
               className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
                 currency === "EGP"
                   ? "bg-primary text-primary-foreground shadow"
-                  : "text-slate-400 hover:text-white"
+                  : "text-slate-300 hover:text-white"
               }`}
             >
               جنيه مصري (EGP)
@@ -632,17 +648,37 @@ export function ParkTicketsPOSView({ onClosePOS }: ParkTicketsPOSViewProps) {
           </div>
 
           {currency !== "USD" && (
-            <div className="flex items-center gap-1.5 bg-slate-800/80 px-2.5 py-1 rounded-xl border border-slate-700 text-xs">
-              <span className="text-slate-400 font-bold">$1 =</span>
+            <div className="flex items-center gap-1.5 bg-slate-800/90 px-2.5 py-1 rounded-xl border border-slate-700 text-xs">
+              <span className="text-slate-300 font-bold">$1 =</span>
               <input
                 type="number"
                 value={customSspRate}
                 onChange={(e) => setCustomSspRate(Number(e.target.value) || 0)}
-                className="w-16 bg-slate-900 text-white font-bold text-center rounded-lg border border-slate-700 px-1 py-0.5 text-xs outline-none focus:border-primary"
+                className="w-16 bg-slate-950 text-white font-bold text-center rounded-lg border border-slate-700 px-1 py-0.5 text-xs outline-none focus:border-primary"
               />
-              <span className="text-slate-400 font-bold">{currency}</span>
+              <span className="text-slate-300 font-bold">{currency}</span>
             </div>
           )}
+
+          {/* Integrated High-Contrast Shopping Cart Button */}
+          <button
+            type="button"
+            data-testid="park-pos-cart-button"
+            onClick={() => setIsMobileCartOpen(true)}
+            className="relative inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-black text-xs px-3.5 py-2 rounded-xl border border-emerald-400/50 shadow-md transition-all cursor-pointer shrink-0"
+            title="فتح سلة التذاكر"
+          >
+            <ShoppingCart size={17} className="text-white shrink-0" />
+            <span>سلة التذاكر</span>
+            {totalCartCount > 0 && (
+              <span
+                data-testid="park-pos-cart-badge"
+                className="bg-rose-600 text-white text-[11px] font-black min-w-[22px] h-[22px] rounded-full flex items-center justify-center px-1.5 border-2 border-white shadow-sm tabular-nums"
+              >
+                {totalCartCount}
+              </span>
+            )}
+          </button>
         </div>
       </div>
 
@@ -690,6 +726,8 @@ export function ParkTicketsPOSView({ onClosePOS }: ParkTicketsPOSViewProps) {
               <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 lg:gap-4">
                 {filteredTickets.map((ticket) => {
                   const sspPrice = Math.round(ticket.price_usd * customSspRate);
+                  const inCartItem = cartItems.find((c) => c.ticket_id === ticket.id);
+                  const isSelectedTicket = selectedTicketId === ticket.id;
                   const isFam =
                     ticket.type === "family" ||
                     ticket.type === "vip" ||
@@ -705,11 +743,17 @@ export function ParkTicketsPOSView({ onClosePOS }: ParkTicketsPOSViewProps) {
                     ticket.name_ar.includes("مسبح");
 
                   return (
-                    <button
+                    <div
                       key={ticket.id}
-                      type="button"
-                      onClick={() => handleAddToCart(ticket)}
-                      className="group bg-card rounded-2xl overflow-hidden border border-border transition-all hover:-translate-y-1 active:scale-[0.98] text-right cursor-pointer shadow-xs hover:shadow-md flex flex-col justify-between"
+                      data-testid={`park-ticket-card-${ticket.id}`}
+                      onClick={() => setSelectedTicketId(ticket.id)}
+                      className={`group bg-card rounded-2xl overflow-hidden border transition-all text-right shadow-xs hover:shadow-md flex flex-col justify-between select-none ${
+                        inCartItem
+                          ? "border-primary ring-2 ring-primary/30"
+                          : isSelectedTicket
+                            ? "border-amber-500 ring-2 ring-amber-400/35"
+                            : "border-border hover:border-primary/40"
+                      }`}
                       style={{ boxShadow: "var(--shadow-card)" }}
                     >
                       {/* Top Visual Banner */}
@@ -738,32 +782,67 @@ export function ParkTicketsPOSView({ onClosePOS }: ParkTicketsPOSViewProps) {
                             ? `${ticket.persons_count} أفراد`
                             : "فرد واحد"}
                         </div>
+
+                        {(inCartItem || isSelectedTicket) && (
+                          <div
+                            className={`absolute bottom-2 right-2 flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-black shadow ${
+                              inCartItem
+                                ? "bg-emerald-600 text-white"
+                                : "bg-amber-500 text-slate-950"
+                            }`}
+                          >
+                            <ChefDishIcon size={13} />
+                            <span>
+                              {inCartItem ? `${inCartItem.quantity} بالطلب` : "محدد"}
+                            </span>
+                          </div>
+                        )}
                       </div>
 
                       {/* Card Content Details */}
-                      <div className="p-3 flex-1 flex flex-col justify-between">
-                        <div>
-                          <h4 className="font-bold text-xs text-card-foreground line-clamp-2 leading-tight group-hover:text-primary transition">
-                            {ticket.name_ar}
-                          </h4>
-                          <p className="text-[10px] text-muted-foreground line-clamp-1 mt-0.5">
-                            {ticket.name_en || (isFam ? "باقة عائلية شاملة" : "تذكرة دخول نظامية")}
-                          </p>
+                      <div className="p-3 flex-1 flex flex-col justify-between gap-2">
+                        <div className="flex items-start justify-between gap-1.5">
+                          <div>
+                            <h4 className="font-bold text-xs text-card-foreground line-clamp-2 leading-tight group-hover:text-primary transition">
+                              {ticket.name_ar}
+                            </h4>
+                            <p className="text-[10px] text-muted-foreground line-clamp-1 mt-0.5">
+                              {ticket.name_en ||
+                                (isFam ? "باقة عائلية شاملة" : "تذكرة دخول نظامية")}
+                            </p>
+                          </div>
+                          <span className="shrink-0 rounded-lg bg-primary/10 p-1 text-primary">
+                            <ChefDishIcon size={15} />
+                          </span>
                         </div>
 
                         {/* Action Footer */}
-                        <div className="mt-2.5 flex items-center justify-between border-t border-border/50 pt-2">
-                          <span className="text-[11px] text-primary font-bold flex items-center gap-1 group-hover:underline">
-                            <Plus size={12} /> إضافة
-                          </span>
-                          <span className="text-[10px] font-bold text-muted-foreground">
-                            {currency === "USD"
-                              ? `~ ${sspPrice.toLocaleString()} SSP`
-                              : `$${ticket.price_usd.toFixed(2)} USD`}
-                          </span>
+                        <div className="mt-1 space-y-1.5 border-t border-border/50 pt-2">
+                          <div className="flex items-center justify-between text-[10px] font-bold text-muted-foreground">
+                            <span>السعر المقابل:</span>
+                            <span>
+                              {currency === "USD"
+                                ? `~ ${sspPrice.toLocaleString()} SSP`
+                                : `$${ticket.price_usd.toFixed(2)} USD`}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            data-testid={`park-add-button-${ticket.id}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedTicketId(ticket.id);
+                              handleAddToCart(ticket);
+                            }}
+                            className="w-full py-2 px-3 rounded-xl bg-primary hover:bg-primary/90 active:scale-[0.97] text-primary-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-sm hover:shadow transition-all cursor-pointer"
+                          >
+                            <Plus size={16} strokeWidth={3} />
+                            <ChefDishIcon size={15} />
+                            <span>إضافة للطلب</span>
+                          </button>
                         </div>
                       </div>
-                    </button>
+                    </div>
                   );
                 })}
               </div>
@@ -781,27 +860,7 @@ export function ParkTicketsPOSView({ onClosePOS }: ParkTicketsPOSViewProps) {
 
       </div>
 
-      {/* 4. FLOATING CART ICON ON THE LEFT */}
-      {!isMobileCartOpen && (
-        <div className="fixed bottom-6 left-6 z-40">
-          <button
-            type="button"
-            onClick={() => setIsMobileCartOpen(true)}
-            className="w-14 h-14 rounded-full shadow-2xl flex items-center justify-center relative hover:scale-105 active:scale-95 transition-all cursor-pointer border-2 border-white/20"
-            style={{ background: "var(--gradient-primary)", color: "white" }}
-            title="فتح سلة التذاكر"
-          >
-            <ShoppingCart size={24} />
-            {totalCartCount > 0 && (
-              <span className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-[10px] font-black min-w-[22px] h-[22px] rounded-full flex items-center justify-center px-1 border-2 border-background shadow-sm">
-                {totalCartCount}
-              </span>
-            )}
-          </button>
-        </div>
-      )}
-
-      {/* 5. LEFT SLIDE-OVER CART DRAWER (MATCHING RESTAURANT POS) */}
+      {/* 4. LEFT SLIDE-OVER CART DRAWER (MATCHING RESTAURANT POS) */}
       {isMobileCartOpen && (
         <div
           className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex animate-in fade-in"

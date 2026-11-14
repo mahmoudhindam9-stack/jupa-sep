@@ -1,4 +1,5 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
+import { isUrlPasswordRecoveryCallback } from "@/features/auth/services/managedUserValidation";
 
 export const Route = createFileRoute("/")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -14,6 +15,9 @@ export const Route = createFileRoute("/")({
     allowLangSwitch:
       search.allowLangSwitch !== undefined ? String(search.allowLangSwitch) : undefined,
     welcome: search.welcome ? String(search.welcome) : undefined,
+    type: search.type ? String(search.type) : undefined,
+    token_hash: search.token_hash ? String(search.token_hash) : undefined,
+    code: search.code ? String(search.code) : undefined,
   }),
   head: () => ({
     meta: [
@@ -25,6 +29,19 @@ export const Route = createFileRoute("/")({
     ],
   }),
   beforeLoad: ({ search }) => {
+    if (
+      search.type === "recovery" ||
+      Boolean(search.token_hash) ||
+      (typeof window !== "undefined" && isUrlPasswordRecoveryCallback())
+    ) {
+      if (typeof window !== "undefined") {
+        window.location.replace(
+          `/reset-password${window.location.search || ""}${window.location.hash || ""}`,
+        );
+      }
+      throw redirect({ to: "/reset-password" });
+    }
+
     const isMenuQrRedirect =
       search.page === "menu" ||
       search.selfOrder === "1" ||

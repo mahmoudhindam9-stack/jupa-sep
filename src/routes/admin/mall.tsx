@@ -88,16 +88,28 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  detectMallShopLocationFromNumber,
   erpStore,
-  MallShop,
-  MallRentalPayment,
-  MallGardenRevenue,
+  MALL_SHOP_CONSTRUCTION_LABELS,
+  MALL_SHOP_LOCATION_LABELS,
+  MallCustomFieldDefinition,
   MallGardenExpense,
+  MallGardenRevenue,
+  MallRentalPayment,
+  MallShop,
+  MallShopConstructionStatus,
+  MallShopLocationZone,
+  resolveMallShopLocation,
   TerminatedContractRecord,
 } from "@/shared/services/erpStore";
 import { useSyncExternalStore } from "react";
 
 import { MallReportAndArchiveDialogs } from "@/components/mall/MallReportAndArchiveDialogs";
+import {
+  EditShopDataAdminPanel,
+  getShopCustomFieldsDisplayList,
+  MallShopCustomFieldsInputs,
+} from "@/components/mall/EditShopDataAdminPanel";
 
 export const Route = createFileRoute("/admin/mall")({
   head: () => ({ meta: [{ title: "إدارة المول - النظام الشامل" }] }),
@@ -129,6 +141,10 @@ function MallManagementPage() {
   // Permissions for this route are enforced by AdminLayout against the authenticated
   // Supabase profile. Do not infer a role from localStorage defaults.
   const shops: MallShop[] = state.mallShops || [];
+  const customFields: MallCustomFieldDefinition[] = useMemo(
+    () => erpStore.getMallCustomFields(false),
+    [state.mallCustomFieldDefinitions],
+  );
   const payments: MallRentalPayment[] = state.mallPayments || [];
   const gardenRevenues: MallGardenRevenue[] = state.mallGardenRevenues || [];
   const gardenExpenses: MallGardenExpense[] = state.mallGardenExpenses || [];
@@ -136,7 +152,7 @@ function MallManagementPage() {
 
   useEffect(() => {
     if (shops.length === 0) {
-      erpStore.resetMallData();
+      erpStore.syncMallShops(false);
     }
   }, [shops.length]);
 
@@ -156,6 +172,7 @@ function MallManagementPage() {
     if (
       rawTab === "definitions" ||
       rawTab === "shops" ||
+      rawTab === "edit_shops" ||
       rawTab === "units" ||
       rawTab === "tenants" ||
       rawTab === "readings"
@@ -272,6 +289,10 @@ function MallManagementPage() {
     phone: "",
     monthly_rent: 1000,
     status: "rented" as "rented" | "vacant" | "maintenance",
+    construction_status: "finished" as MallShopConstructionStatus,
+    location_override: false,
+    location_zone: "central" as MallShopLocationZone,
+    custom_fields: {} as Record<string, any>,
     space_sqm: 50,
     notes: "",
     contract_image: "",
@@ -464,11 +485,13 @@ function MallManagementPage() {
   const handleSelectShopForContract = (shopId: string) => {
     const s = shops.find((sh) => sh.id === shopId);
     if (s) {
+      const resolvedZone = resolveMallShopLocation(s);
+      const zoneLabel = MALL_SHOP_LOCATION_LABELS[resolvedZone]?.ar || "";
       setContractForm({
         ...contractForm,
         shop_id: s.id,
         custom_shop_name: s.name_ar || "",
-        custom_activity: s.activity_ar || "",
+        custom_activity: s.activity_ar || s.name_ar || "",
         tenant_name: s.tenant_name || "",
         phone: s.phone || "",
         monthly_rent: s.monthly_rent || 1000,
@@ -482,8 +505,8 @@ function MallManagementPage() {
           new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
         language: s.contract?.language || "ar",
         tenant_address: s.contract?.tenant_address || "",
-        floor: s.contract?.floor || "",
-        area: s.contract?.area || "",
+        floor: s.contract?.floor || zoneLabel,
+        area: s.contract?.area || (s.space_sqm ? String(s.space_sqm) : ""),
         lease_term: s.contract?.lease_term || "",
         renewal_option: s.contract?.renewal_option || "",
         currency: s.contract?.currency || "USD",
@@ -660,12 +683,16 @@ function MallManagementPage() {
   const netOperatingIncomeMonth = totalCollectedThisMonth - totalGardenExpenseMonth;
 
   const filteredShops = useMemo(() => {
+    const q = searchQuery.toLowerCase();
     return shops.filter((s) => {
       const matchSearch =
-        s.name_ar.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        s.shop_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        s.account_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        s.tenant_name.toLowerCase().includes(searchQuery.toLowerCase());
+        s.name_ar.toLowerCase().includes(q) ||
+        s.shop_number.toLowerCase().includes(q) ||
+        String(s.serial_number || "")
+          .toLowerCase()
+          .includes(q) ||
+        s.account_number.toLowerCase().includes(q) ||
+        s.tenant_name.toLowerCase().includes(q);
       const matchStatus = filterStatus === "all" || s.status === filterStatus;
       return matchSearch && matchStatus;
     });
@@ -718,12 +745,28 @@ function MallManagementPage() {
       }
 
       const allShopPayments = payments.filter((p) => p.shop_id === shop.id);
+      const resolvedZone = resolveMallShopLocation(shop);
+      const locationText = MALL_SHOP_LOCATION_LABELS[resolvedZone]?.ar || "-";
+      const constructionStatusText =
+        MALL_SHOP_CONSTRUCTION_LABELS[shop.construction_status || "finished"]?.ar || "مشطب";
+      const customFieldsList = getShopCustomFieldsDisplayList(shop, customFields).filter(
+        (item) => item.hasValue,
+      );
+      const customFieldsText =
+        customFieldsList.length > 0
+          ? customFieldsList.map((item) => `${item.label}: ${item.value}`).join(" | ")
+          : "-";
 
       return {
         id: shop.id,
+        serialNumber: shop.serial_number || "-",
         shopNumber: shop.shop_number,
         shopName: shop.name_ar,
         accountNumber: shop.account_number,
+        locationText,
+        constructionStatusText,
+        customFieldsList,
+        customFieldsText,
         status: shop.status,
         statusText,
         tenant,
@@ -751,7 +794,7 @@ function MallManagementPage() {
       reportYear,
       reportMonth,
     };
-  }, [shops, payments, reportShopId, reportDate, selectedYear, selectedMonth]);
+  }, [shops, payments, reportShopId, reportDate, selectedYear, selectedMonth, customFields]);
 
   const handlePrintStatusReport = () => {
     const isAll = reportShopId === "all";
@@ -853,11 +896,13 @@ function MallManagementPage() {
           <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-bottom: 30px; font-size: 13px;">
             <div style="border: 1px solid #e5e7eb; padding: 15px; border-radius: 8px; background-color: #f8fafc;">
               <h3 style="margin-top: 0; color: #0369a1; border-bottom: 1px solid #ddd; padding-bottom: 5px; font-weight: bold;">البيانات العامة للوحدة</h3>
-              <p><strong>رقم المحل:</strong> #${row.shopNumber}</p>
+              <p><strong>المسلسل الدائم:</strong> ${row.serialNumber || "-"} | <strong>رقم المحل:</strong> #${row.shopNumber}</p>
               <p><strong>اسم النشاط:</strong> ${row.shopName}</p>
+              <p><strong>الموقع:</strong> ${row.locationText || "-"} | <strong>حالة الإنشاء:</strong> ${row.constructionStatusText || "-"}</p>
               <p><strong>حساب الأستاذ العام:</strong> ${row.accountNumber}</p>
               <p><strong>مساحة المحل:</strong> ${row.space} م٢</p>
-              <p><strong>الحالة الحالية:</strong> <span style="font-weight: bold; color: ${row.status === "rented" ? "#047857" : "#b91c1c"};">${row.statusText}</span></p>
+              <p><strong>حالة الإشغال:</strong> <span style="font-weight: bold; color: ${row.status === "rented" ? "#047857" : "#b91c1c"};">${row.statusText}</span></p>
+              ${row.customFieldsText && row.customFieldsText !== "-" ? `<p><strong>بيانات مخصصة:</strong> ${row.customFieldsText}</p>` : ""}
             </div>
 
             <div style="border: 1px solid #e5e7eb; padding: 15px; border-radius: 8px; background-color: #f8fafc;">
@@ -961,18 +1006,24 @@ function MallManagementPage() {
 
   const handleOpenAddShop = () => {
     setEditingShop(null);
+    const defaultNum = `D${shops.length + 1}`;
     setShopForm({
-      shop_number: `D${shops.length + 1}`,
+      shop_number: defaultNum,
       name_ar: "",
       account_number: `14030${shops.length + 100}`,
       tenant_name: "",
       phone: "-",
       monthly_rent: 500,
       status: "rented",
+      construction_status: "finished",
+      location_override: false,
+      location_zone: detectMallShopLocationFromNumber(defaultNum),
+      custom_fields: {},
       space_sqm: 45,
       notes: "سنتر بوب",
       contract_image: "",
       id_image: "",
+      treasury_account_id: "",
     });
     setIsShopModalOpen(true);
   };
@@ -987,6 +1038,10 @@ function MallManagementPage() {
       phone: shop.phone,
       monthly_rent: shop.monthly_rent,
       status: shop.status,
+      construction_status: shop.construction_status || "finished",
+      location_override: Boolean(shop.location_override),
+      location_zone: resolveMallShopLocation(shop),
+      custom_fields: { ...(shop.custom_fields || {}) },
       space_sqm: shop.space_sqm || 40,
       notes: shop.notes || "",
       contract_image: shop.contract?.contract_image || "",
@@ -1017,6 +1072,10 @@ function MallManagementPage() {
           }
         : editingShop?.contract;
 
+    const resolvedLocation = shopForm.location_override
+      ? shopForm.location_zone
+      : detectMallShopLocationFromNumber(shopForm.shop_number);
+
     const payload = {
       shop_number: shopForm.shop_number,
       name_ar: shopForm.name_ar,
@@ -1025,6 +1084,10 @@ function MallManagementPage() {
       phone: shopForm.phone,
       monthly_rent: shopForm.monthly_rent,
       status: shopForm.status,
+      construction_status: shopForm.construction_status,
+      location_override: shopForm.location_override,
+      location_zone: resolvedLocation,
+      custom_fields: shopForm.custom_fields,
       space_sqm: shopForm.space_sqm,
       notes: shopForm.notes,
       contract: contractData,
@@ -1389,8 +1452,15 @@ function MallManagementPage() {
           <p><strong>الهاتف/البريد الإلكتروني:</strong> ${form.phone || "........................................................................"}</p>
 
           <h4 style="font-size: 14px; margin-top: 20px; border-bottom: 1px solid #ccc; padding-bottom: 4px;">2. العين المؤجرة</h4>
-          <p><strong>رقم المحل:</strong> ${shopNum} (${form.custom_shop_name}) &nbsp;&nbsp;&nbsp;&nbsp; <strong>الطابق:</strong> ${form.floor || "........................"} &nbsp;&nbsp;&nbsp;&nbsp; <strong>المساحة التقريبية:</strong> ${form.area || "........................"} متر مربع</p>
-          <p><strong>النشاط المصرح به:</strong> ${form.custom_activity || "........................................................................"}</p>
+          <p><strong>رقم المحل:</strong> ${shopNum} (${form.custom_shop_name}) &nbsp;&nbsp;&nbsp;&nbsp; <strong>المسلسل الدائم:</strong> ${shops.find((s) => s.id === form.shop_id)?.serial_number || "-"} &nbsp;&nbsp;&nbsp;&nbsp; <strong>الموقع/الطابق:</strong> ${form.floor || MALL_SHOP_LOCATION_LABELS[resolveMallShopLocation(shops.find((s) => s.id === form.shop_id) || { shop_number: shopNum })]?.ar || "........................"} &nbsp;&nbsp;&nbsp;&nbsp; <strong>المساحة التقريبية:</strong> ${form.area || "........................"} متر مربع</p>
+          <p><strong>حالة الإنشاء والتجهيز:</strong> ${MALL_SHOP_CONSTRUCTION_LABELS[shops.find((s) => s.id === form.shop_id)?.construction_status || "finished"]?.ar || "مشطب"} &nbsp;&nbsp;&nbsp;&nbsp; <strong>النشاط المصرح به:</strong> ${form.custom_activity || "........................................................................"}</p>
+          ${(() => {
+            const targetShop = shops.find((s) => s.id === form.shop_id);
+            const cfList = getShopCustomFieldsDisplayList(targetShop, customFields).filter((i) => i.hasValue);
+            return cfList.length > 0
+              ? `<p><strong>مواصفات وحقول المحل المخصصة:</strong> ${cfList.map((i) => `${i.label}: ${i.value}`).join(" | ")}</p>`
+              : "";
+          })()}
           <p>يُؤجر المحل للغرض التجاري المبين في هذا العقد، ولا يجوز استخدامه في أي نشاط آخر إلا بعد الحصول على الموافقة الكتابية اللازمة من إدارة المول، وبما لا يخالف القوانين واللوائح المعمول بها في جمهورية جنوب السودان.</p>
 
           <h4 style="font-size: 14px; margin-top: 20px; border-bottom: 1px solid #ccc; padding-bottom: 4px;">3. مدة الإيجار</h4>
@@ -1594,16 +1664,47 @@ function MallManagementPage() {
               {totalShops} وحدة
             </Badge>
           </Card>
+
+          <Card
+            onClick={() => openMallSubpage("edit_shops")}
+            className="group cursor-pointer rounded-2xl border border-indigo-500/30 bg-card p-5 hover:border-indigo-500 hover:shadow-md transition flex items-center justify-between gap-4"
+          >
+            <div className="flex items-center gap-3.5">
+              <div className="rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 p-3">
+                <Edit size={22} />
+              </div>
+              <div>
+                <h3 className="font-black text-base text-foreground group-hover:text-indigo-600 transition-colors">
+                  تعديل بيانات المحلات والحقول المخصصة
+                </h3>
+                <p className="text-[11px] text-muted-foreground font-semibold mt-0.5">
+                  الأرقام التسلسلية، حالة الإنشاء، المواقع التلقائية، ومنشئ الحقول المخصصة
+                </p>
+              </div>
+            </div>
+            <Badge variant="outline" className="font-bold border-indigo-200 text-indigo-700">
+              إدارة شاملة
+            </Badge>
+          </Card>
         </div>
       )}
 
-      {activeTab === "definitions" && isMallSubpageOpen && (
+      {activeTab === "definitions" && isMallSubpageOpen && tabParam === "edit_shops" && (
+        <EditShopDataAdminPanel
+          shops={shops}
+          customFields={customFields}
+          onRefresh={() => {}}
+          onOpenAddShopModal={handleOpenAddShop}
+        />
+      )}
+
+      {activeTab === "definitions" && isMallSubpageOpen && tabParam !== "edit_shops" && (
         <div className="space-y-4 animate-in fade-in duration-200">
           <div className="flex flex-col lg:flex-row items-center justify-between gap-4 bg-card p-4 rounded-2xl border border-border">
             <div className="relative w-full lg:w-80">
               <Search className="absolute right-3 top-2.5 text-muted-foreground" size={18} />
               <Input
-                placeholder="بحث برقم المحل، اسم النشاط، أو المستأجر..."
+                placeholder="بحث برقم المحل، المسلسل، اسم النشاط، أو المستأجر..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pr-10 rounded-xl"
@@ -1622,6 +1723,14 @@ function MallManagementPage() {
                 </SelectContent>
               </Select>
               <Button
+                variant="outline"
+                onClick={() => openMallSubpage("edit_shops")}
+                className="font-bold gap-1.5 rounded-xl text-xs h-10 cursor-pointer border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+              >
+                <Edit size={15} />
+                تعديل بيانات المحلات والحقول المخصصة
+              </Button>
+              <Button
                 variant="save"
                 onClick={handleOpenAddShop}
                 className="font-bold gap-1.5 rounded-xl text-xs h-10 cursor-pointer"
@@ -1630,12 +1739,17 @@ function MallManagementPage() {
                 إضافة محل جديد
               </Button>
               <Button
-                onClick={() => erpStore.resetMallData()}
+                onClick={() => {
+                  const rep = erpStore.syncMallShops(true);
+                  toast.success(
+                    `تمت المزامنة الآمنة: إجمالي المحلات المعتمدة ${rep.finalCount} محل دون المساس بأي عقود أو مدفوعات`,
+                  );
+                }}
                 variant="edit"
                 className="font-bold gap-2 rounded-xl text-xs h-10 cursor-pointer"
               >
                 <Building2 size={15} />
-                تحديث المحلات (51 محل)
+                مزامنة المحلات ({totalShops} محل)
               </Button>
             </div>
           </div>
@@ -1649,9 +1763,14 @@ function MallManagementPage() {
                 >
                   <CardHeader className="pb-3 border-b border-border/60 bg-muted/20">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-black bg-primary/10 text-primary px-3 py-1 rounded-full border border-primary/20">
-                        محل #{shop.shop_number}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-black bg-primary/10 text-primary px-3 py-1 rounded-full border border-primary/20">
+                          محل #{shop.shop_number}
+                        </span>
+                        <span className="text-[10px] font-mono font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200">
+                          {shop.serial_number || "SHP"}
+                        </span>
+                      </div>
                       <span
                         className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
                           shop.status === "rented"
@@ -1700,10 +1819,41 @@ function MallManagementPage() {
                     </div>
                     <div className="flex items-center justify-between text-muted-foreground">
                       <span className="flex items-center gap-1">
-                        <Layers size={14} /> المساحة:
+                        <Layers size={14} /> المساحة والموقع:
                       </span>
-                      <span className="font-bold text-foreground">{shop.space_sqm || 0} م٢</span>
+                      <span className="font-bold text-foreground">
+                        {shop.space_sqm || 0} م٢ |{" "}
+                        {MALL_SHOP_LOCATION_LABELS[resolveMallShopLocation(shop)]?.ar}
+                      </span>
                     </div>
+                    <div className="flex items-center justify-between text-muted-foreground">
+                      <span>حالة الإنشاء:</span>
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                          MALL_SHOP_CONSTRUCTION_LABELS[shop.construction_status || "finished"]
+                            ?.badgeClass
+                        }`}
+                      >
+                        {
+                          MALL_SHOP_CONSTRUCTION_LABELS[shop.construction_status || "finished"]
+                            ?.ar
+                        }
+                      </span>
+                    </div>
+                    {getShopCustomFieldsDisplayList(shop, customFields).some((f) => f.hasValue) && (
+                      <div className="flex flex-wrap gap-1 pt-1 border-t border-border/40">
+                        {getShopCustomFieldsDisplayList(shop, customFields)
+                          .filter((f) => f.hasValue)
+                          .map((item) => (
+                            <span
+                              key={item.field.id}
+                              className="inline-flex items-center gap-1 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-bold text-indigo-800 border border-indigo-200"
+                            >
+                              {item.label}: {item.value}
+                            </span>
+                          ))}
+                      </div>
+                    )}
                     <div className="flex items-center justify-between pt-2 border-t border-border/60">
                       <span className="text-muted-foreground font-bold">القيمة التعاقدية:</span>
                       <span className="font-black text-base text-primary">
@@ -2119,17 +2269,32 @@ function MallManagementPage() {
                 variant="excel"
                 onClick={() =>
                   exportToExcel(
-                    shops.map((s) => ({
-                      "رقم المحل": s.shop_number,
-                      "النشاط التجاري": s.name_ar,
-                      المستأجر: s.tenant_name || "-",
-                      الهاتف: s.phone || "-",
-                      الحالة:
-                        s.status === "rented" ? "مؤجر" : s.status === "vacant" ? "فارغ" : "صيانة",
-                      "الإيجار التعاقدي ($)": s.monthly_rent,
-                      "بداية العقد": s.contract?.start_date || "-",
-                      "نهاية العقد": s.contract?.end_date || "-",
-                    })),
+                    shops.map((s) => {
+                      const baseRow: Record<string, any> = {
+                        "المسلسل الدائم": s.serial_number || "-",
+                        "رقم المحل": s.shop_number,
+                        "النشاط التجاري": s.name_ar,
+                        الموقع: MALL_SHOP_LOCATION_LABELS[resolveMallShopLocation(s)]?.ar || "-",
+                        "حالة الإنشاء والتجهيز":
+                          MALL_SHOP_CONSTRUCTION_LABELS[s.construction_status || "finished"]?.ar ||
+                          "مشطب",
+                        المستأجر: s.tenant_name || "-",
+                        الهاتف: s.phone || "-",
+                        "حالة الإشغال":
+                          s.status === "rented"
+                            ? "مؤجر"
+                            : s.status === "vacant"
+                              ? "فارغ"
+                              : "صيانة",
+                        "الإيجار التعاقدي ($)": s.monthly_rent,
+                        "بداية العقد": s.contract?.start_date || "-",
+                        "نهاية العقد": s.contract?.end_date || "-",
+                      };
+                      getShopCustomFieldsDisplayList(s, customFields).forEach((cf) => {
+                        baseRow[cf.label] = cf.value;
+                      });
+                      return baseRow;
+                    }),
                     `mall_shops_report_${new Date().toISOString().slice(0, 10)}`,
                   )
                 }
@@ -2325,6 +2490,85 @@ function MallManagementPage() {
                 </Select>
               </div>
             </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-foreground">حالة الإنشاء والتجهيز</label>
+                <select
+                  value={shopForm.construction_status}
+                  onChange={(e) =>
+                    setShopForm({
+                      ...shopForm,
+                      construction_status: e.target.value as MallShopConstructionStatus,
+                    })
+                  }
+                  className="h-9 w-full rounded-xl border border-border bg-background px-3 text-xs font-bold"
+                >
+                  {(
+                    Object.keys(MALL_SHOP_CONSTRUCTION_LABELS) as MallShopConstructionStatus[]
+                  ).map((cKey) => (
+                    <option key={cKey} value={cKey}>
+                      {MALL_SHOP_CONSTRUCTION_LABELS[cKey].ar}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-foreground">الموقع</label>
+                  <label className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={shopForm.location_override}
+                      onChange={(e) =>
+                        setShopForm({
+                          ...shopForm,
+                          location_override: e.target.checked,
+                          location_zone: e.target.checked
+                            ? shopForm.location_zone
+                            : detectMallShopLocationFromNumber(shopForm.shop_number),
+                        })
+                      }
+                    />
+                    تحديد يدوي
+                  </label>
+                </div>
+                <select
+                  disabled={!shopForm.location_override}
+                  value={
+                    shopForm.location_override
+                      ? shopForm.location_zone
+                      : detectMallShopLocationFromNumber(shopForm.shop_number)
+                  }
+                  onChange={(e) =>
+                    setShopForm({
+                      ...shopForm,
+                      location_zone: e.target.value as MallShopLocationZone,
+                    })
+                  }
+                  className="h-9 w-full rounded-xl border border-border bg-background px-3 text-xs font-bold disabled:opacity-60"
+                >
+                  {(Object.keys(MALL_SHOP_LOCATION_LABELS) as MallShopLocationZone[]).map(
+                    (zKey) => (
+                      <option key={zKey} value={zKey}>
+                        {MALL_SHOP_LOCATION_LABELS[zKey].ar}
+                      </option>
+                    ),
+                  )}
+                </select>
+              </div>
+            </div>
+
+            <MallShopCustomFieldsInputs
+              fields={customFields}
+              values={shopForm.custom_fields}
+              onChange={(nextValues) =>
+                setShopForm({
+                  ...shopForm,
+                  custom_fields: nextValues,
+                })
+              }
+            />
 
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-foreground">ملاحظات</label>

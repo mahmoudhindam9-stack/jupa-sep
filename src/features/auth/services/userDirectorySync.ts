@@ -338,11 +338,18 @@ function cacheConfirmedProfile(profile: ProfilePayload, localUserId?: string): v
   }
 
   const remoteId = String(profile.id);
+  const username = normalizeUsername(profile.username);
+  const existingLocal = erpStore.getUsers().find(
+    (user) =>
+      (localUserId && String(user.id) === String(localUserId)) ||
+      String(user.id) === remoteId ||
+      normalizeUsername(user.username) === username,
+  );
+
   if (localUserId && localUserId !== remoteId) {
     erpStore.deleteUser(localUserId);
   }
 
-  const username = normalizeUsername(profile.username);
   const duplicate = erpStore.getUsers().find(
     (user) =>
       String(user.id) !== remoteId &&
@@ -350,7 +357,19 @@ function cacheConfirmedProfile(profile: ProfilePayload, localUserId?: string): v
   );
   if (duplicate) erpStore.deleteUser(duplicate.id);
 
-  erpStore.upsertUser(profileToUser(profile));
+  const mapped = profileToUser(profile);
+  erpStore.upsertUser({
+    ...existingLocal,
+    ...mapped,
+    employee_code: (profile as any).employee_code || existingLocal?.employee_code,
+    password: existingLocal?.password || mapped.password,
+    must_change_password:
+      typeof (profile as any).must_change_password === "boolean"
+        ? (profile as any).must_change_password
+        : existingLocal?.must_change_password,
+    password_changed_at:
+      (profile as any).password_changed_at || existingLocal?.password_changed_at,
+  });
   erpStore.updateUserPermission(username, profile.permissions || {});
   announceChange();
 }
@@ -589,15 +608,15 @@ async function sendOperation(
           id: operation.userId,
           username: normalizeUsername(operation.profile.username || operation.username),
         });
+        if (confirmedProfile?.id) {
+          cacheConfirmedProfile(confirmedProfile, operation.userId);
+        }
       } catch (err) {
         console.warn("[UserSync] Direct profile RPC fallback to directory snapshot:", err);
       }
     }
 
-    const pushed = await pushUsersDirectorySnapshotToSupabase();
-    if (!pushed && !confirmedProfile) {
-      throw new Error("تعذر الاتصال بقاعدة البيانات لمزامنة التعديلات؛ سيتم إعادة المحاولة تلقائياً.");
-    }
+    await pushUsersDirectorySnapshotToSupabase().catch(() => false);
     clearCreatePassword(operation.id);
     return { sentUpdatedAt, profile: confirmedProfile };
   }
@@ -627,7 +646,14 @@ async function sendOperation(
           permissions: operation.profile.permissions || {},
         });
         if (created?.profile?.id) {
-          confirmedProfile = created.profile;
+          confirmedProfile = {
+            ...created.profile,
+            employee_code:
+              operation.profile.employee_code ||
+              localUser?.employee_code ||
+              (created.profile as any).employee_code,
+          };
+          cacheConfirmedProfile(confirmedProfile, operation.localUserId);
         }
       }
     } catch (err) {
@@ -635,10 +661,7 @@ async function sendOperation(
     }
   }
 
-  const pushed = await pushUsersDirectorySnapshotToSupabase();
-  if (!pushed && !confirmedProfile) {
-    throw new Error("تعذر الاتصال بقاعدة البيانات لمزامنة المستخدم الجديد؛ سيتم إعادة المحاولة تلقائياً.");
-  }
+  await pushUsersDirectorySnapshotToSupabase().catch(() => false);
   clearCreatePassword(operation.id);
   return {
     sentUpdatedAt,
@@ -746,8 +769,15 @@ export async function syncUsersDirectoryWithDatabase(): Promise<{
       ...(snapshot?.deletedUsernames || []),
     ]);
 
-    if (snapshot && Array.isArray(snapshot.users) && snapshot.users.length > 0) {
-      const byUsername = new Map<string, SystemUser>();
+    const currentLocalUsers = erpStore.getUsers().filter((u) => {
+      const uname = normalizeUsername(u?.username);
+      return Boolean(uname) && !deletedSet.has(uname);
+    });
+
+    const byUsername = new Map<string, SystemUser>();
+
+    // First seed from snapshot
+    if (snapshot && Array.isArray(snapshot.users)) {
       for (const u of snapshot.users) {
         if (!u?.username) continue;
         const uname = normalizeUsername(u.username);
@@ -761,35 +791,82 @@ export async function syncUsersDirectoryWithDatabase(): Promise<{
           },
         });
       }
-      for (const p of profileUsers) {
-        const uname = normalizeUsername(p.username);
-        if (!uname || deletedSet.has(uname)) continue;
-        const existing = byUsername.get(uname);
+    }
+
+    // Merge authenticated Supabase profiles
+    for (const p of profileUsers) {
+      const uname = normalizeUsername(p.username);
+      if (!uname || deletedSet.has(uname)) continue;
+      const existing = byUsername.get(uname);
+      byUsername.set(uname, {
+        ...existing,
+        ...p,
+        employee_code: (p as any).employee_code || existing?.employee_code,
+        password: existing?.password || p.password,
+        permissions: {
+          ...(existing?.permissions || {}),
+          ...(p.permissions || {}),
+        },
+      });
+    }
+
+    // Preserve and merge all current local users so newly added users are never lost
+    let hasNewLocalUserNotInSnapshot = false;
+    const snapshotUsernames = new Set(
+      (snapshot?.users || []).map((u) => normalizeUsername(u?.username)).filter(Boolean),
+    );
+    for (const local of currentLocalUsers) {
+      const uname = normalizeUsername(local.username);
+      if (!uname || deletedSet.has(uname)) continue;
+      if (!snapshotUsernames.has(uname)) {
+        hasNewLocalUserNotInSnapshot = true;
+      }
+      const existing = byUsername.get(uname);
+      if (!existing) {
+        byUsername.set(uname, local);
+      } else {
+        const isExistingCloudUuid =
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+            String(existing.id || ""),
+          );
         byUsername.set(uname, {
           ...existing,
-          ...p,
-          employee_code: (p as any).employee_code || existing?.employee_code,
-          password: existing?.password || p.password,
+          ...local,
+          id: isExistingCloudUuid ? existing.id : local.id || existing.id,
+          employee_code: local.employee_code || existing.employee_code,
+          full_name: local.full_name || existing.full_name,
+          email:
+            local.email && !local.email.endsWith("@restocash.com")
+              ? local.email
+              : existing.email || local.email,
+          phone: local.phone || existing.phone,
+          password: local.password || existing.password,
+          must_change_password:
+            typeof local.must_change_password === "boolean"
+              ? local.must_change_password
+              : existing.must_change_password,
           permissions: {
-            ...(existing?.permissions || {}),
-            ...(p.permissions || {}),
+            ...(existing.permissions || {}),
+            ...(local.permissions || {}),
           },
         });
       }
-
-      const mergedList = Array.from(byUsername.values());
-      erpStore.replaceManagedUsers(mergedList, {
-        authoritative: true,
-        deletedUsernames: Array.from(deletedSet),
-      });
-      announceChange();
-      return { connected: true, users: erpStore.getUsers(), authUser };
     }
 
-    if (profileUsers.length > 0) {
-      erpStore.replaceManagedUsers(profileUsers, {
+    if (byUsername.size > 0) {
+      const mergedList = Array.from(byUsername.values());
+      erpStore.replaceManagedUsers(mergedList, {
         deletedUsernames: Array.from(deletedSet),
       });
+      if (hasNewLocalUserNotInSnapshot) {
+        await pushUsersDirectorySnapshotToSupabase(erpStore.getUsers()).catch(() => false);
+      }
+      announceChange();
+      return {
+        connected: Boolean(snapshot || authUser?.id),
+        users: erpStore.getUsers(),
+        authUser,
+      };
     }
 
     // No snapshot existed in Supabase yet -> seed Supabase with current directory immediately

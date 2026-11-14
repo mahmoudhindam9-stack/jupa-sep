@@ -293,6 +293,7 @@ export const NAVIGATION_DEPARTMENTS: NavDepartment[] = [
           p.startsWith("/admin/mall") &&
           (s.includes("tab=definitions") ||
             s.includes("tab=shops") ||
+            s.includes("tab=edit_shops") ||
             s.includes("tab=units") ||
             s.includes("tab=tenants") ||
             s.includes("tab=readings")),
@@ -755,6 +756,11 @@ const SUBPAGE_REGISTRY: Record<
   },
   "/admin/mall": {
     shops: { labelAr: "دليل المحلات والوحدات", labelEn: "Shops & Units", parentTab: "definitions" },
+    edit_shops: {
+      labelAr: "تعديل بيانات المحلات والحقول المخصصة",
+      labelEn: "Edit Shop Data & Custom Fields",
+      parentTab: "definitions",
+    },
     units: { labelAr: "دليل المحلات والوحدات", labelEn: "Shops & Units", parentTab: "definitions" },
     tenants: { labelAr: "سجل المستأجرين", labelEn: "Tenants Directory", parentTab: "definitions" },
     readings: { labelAr: "قراءات العدادات والمرافق", labelEn: "Meter Readings", parentTab: "definitions" },

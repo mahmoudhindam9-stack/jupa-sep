@@ -630,46 +630,19 @@ export function Chatbot() {
             };
           });
 
-        // If more than one admin account exists in Supabase profiles, keep only the active/real admin
-        // and delete the duplicate admin account from Supabase and local store.
-        const cloudAdmins = mapped.filter(
-          (u) => u.role === "admin" || u.role === "super_admin",
+        // Only deduplicate duplicate default "admin" accounts, never other admin/super_admin users
+        const cloudDefaultAdmins = mapped.filter(
+          (u) => String(u.username || "").trim().toLowerCase() === "admin",
         );
-        if (cloudAdmins.length > 1) {
-          const activeStored =
-            typeof window !== "undefined"
-              ? (
-                  localStorage.getItem("restocash_auth_user") ||
-                  sessionStorage.getItem("restocash_auth_user") ||
-                  ""
-                )
-                  .trim()
-                  .toLowerCase()
-              : "";
+        if (cloudDefaultAdmins.length > 1) {
           const keptAdmin =
-            cloudAdmins.find((u) => authUser?.id && u.id === authUser.id) ||
-            cloudAdmins.find(
-              (u) =>
-                activeStored &&
-                (u.email === activeStored ||
-                  u.username === activeStored ||
-                  u.username === activeStored.split("@")[0]),
-            ) ||
-            cloudAdmins.find(
-              (u) => u.username !== "admin" && u.email !== "admin@restocash.com",
-            ) ||
-            cloudAdmins[0];
+            cloudDefaultAdmins.find((u) => authUser?.id && u.id === authUser.id) ||
+            cloudDefaultAdmins.find((u) => !String(u.id || "").startsWith("u-")) ||
+            cloudDefaultAdmins[0];
 
-          const duplicateAdmins = cloudAdmins.filter((u) => u.id !== keptAdmin.id);
-          for (const dup of duplicateAdmins) {
-            erpStore.deleteUser(dup.id);
-            if (authUser?.id && dup.id !== authUser.id && !dup.id.startsWith("u-")) {
-              void authService.deleteUser(dup.id).catch(() => undefined);
-            }
-          }
           mapped = mapped.filter(
             (u) =>
-              (u.role !== "admin" && u.role !== "super_admin") ||
+              String(u.username || "").trim().toLowerCase() !== "admin" ||
               u.id === keptAdmin.id,
           );
         }
@@ -782,53 +755,30 @@ export function Chatbot() {
     });
 
     const allUsers = Array.from(map.values());
-    const admins = allUsers.filter(
-      (u) => u.role === "admin" || u.role === "super_admin",
+    const defaultAdmins = allUsers.filter(
+      (u) => String(u.username || "").trim().toLowerCase() === "admin",
     );
-    if (admins.length <= 1) return allUsers;
+    if (defaultAdmins.length <= 1) return allUsers;
 
-    const activeStored =
-      typeof window !== "undefined"
-        ? (
-            localStorage.getItem("restocash_auth_user") ||
-            sessionStorage.getItem("restocash_auth_user") ||
-            ""
-          )
-            .trim()
-            .toLowerCase()
-        : "";
     const keptAdmin =
-      admins.find(
-        (u) =>
-          activeStored &&
-          (String(u.email || "").toLowerCase() === activeStored ||
-            String(u.username || "").toLowerCase() === activeStored ||
-            String(u.username || "").toLowerCase() === activeStored.split("@")[0]),
-      ) ||
-      admins.find(
-        (u) =>
-          String(u.id || "") !== "u-admin" &&
-          String(u.username || "").toLowerCase() !== "admin" &&
-          String(u.email || "").toLowerCase() !== "admin@restocash.com",
-      ) ||
-      admins[0];
+      defaultAdmins.find((u) => !String(u.id || "").startsWith("u-")) ||
+      defaultAdmins[0];
 
     return allUsers.filter(
       (u) =>
-        (u.role !== "admin" && u.role !== "super_admin") ||
+        String(u.username || "").trim().toLowerCase() !== "admin" ||
         u.id === keptAdmin.id,
     );
   }, [cloudUsers, erpState?.users]);
 
-  // Synchronize Messenger contacts with actual system users (plus any custom non-seed HR employees)
+  // Synchronize Messenger contacts strictly with registered system users in Users & Permissions directory
   const hrEmployees: Employee[] = useMemo(() => {
     const rawHrList: Employee[] = Array.isArray(erpState?.employees)
       ? erpState.employees
       : [];
     const contactsMap = new Map<string, Employee>();
-    const matchedHrIds = new Set<string>();
 
-    // 1. Primary source: Actual users from Users & Permissions page / Supabase profiles
+    // Strict source: Registered users from Users & Permissions directory (syncedSystemUsers)
     syncedSystemUsers.forEach((u: any, idx: number) => {
       const uname = String(u.username || "").trim().toLowerCase();
       const uCode = String(u.employee_code || "").trim();
@@ -840,7 +790,7 @@ export function Chatbot() {
         u.role,
       );
 
-      // Check if this user is linked to an HR employee record
+      // Enrich with linked HR employee record if present
       const linkedHr = rawHrList.find((emp) => {
         if (!emp || !emp.name) return false;
         if (DEFAULT_SEED_EMP_IDS.has(emp.id) && syncedSystemUsers.length > 0) {
@@ -854,50 +804,26 @@ export function Chatbot() {
         );
       });
 
-      if (linkedHr) {
-        matchedHrIds.add(linkedHr.id);
-        contactsMap.set(linkedHr.id, {
-          ...linkedHr,
-          employee_code: linkedHr.employee_code || uCode || String(1000 + idx),
-          name: cleanName || linkedHr.name,
-          job_title: linkedHr.job_title || roleTitleAr(u.role),
-          department: linkedHr.department || roleDepartmentAr(u.role),
-          phone: u.phone || linkedHr.phone || "",
-        });
-      } else {
-        const contactId = u.id
-          ? `user-emp-${u.id}`
-          : `user-emp-${uname || idx}`;
-        contactsMap.set(contactId, {
-          id: contactId,
-          employee_code: uCode || (uname === "admin" ? "1000" : String(1001 + idx)),
-          name: cleanName,
-          job_title: roleTitleAr(u.role),
-          department: roleDepartmentAr(u.role),
-          phone: u.phone || "",
-          hire_date: (u.created_at || new Date().toISOString()).split("T")[0],
-          salary: 0,
-          currency: "EGP",
-          status: "active",
-        });
-      }
-    });
-
-    // 2. Include any custom HR employees added by the user (excluding hardcoded DEFAULT_EMPLOYEES)
-    rawHrList.forEach((emp, idx) => {
-      if (!emp || !emp.name || matchedHrIds.has(emp.id)) return;
-      if (DEFAULT_SEED_EMP_IDS.has(emp.id) && contactsMap.size > 0) return;
-      contactsMap.set(emp.id, {
-        ...emp,
-        name: formatCleanUserDisplayName(emp.name),
-        employee_code: emp.employee_code || String(1010 + idx),
+      const contactId = linkedHr?.id || (u.id ? `user-emp-${u.id}` : `user-emp-${uname || idx}`);
+      contactsMap.set(contactId, {
+        id: contactId,
+        employee_code:
+          linkedHr?.employee_code ||
+          uCode ||
+          (uname === "admin" ? "1000" : String(1001 + idx)),
+        name: cleanName || linkedHr?.name || uname,
+        job_title: linkedHr?.job_title || roleTitleAr(u.role),
+        department: linkedHr?.department || roleDepartmentAr(u.role),
+        phone: u.phone || linkedHr?.phone || "",
+        email: u.email || linkedHr?.email || "",
+        hire_date:
+          linkedHr?.hire_date ||
+          (u.created_at || new Date().toISOString()).split("T")[0],
+        salary: linkedHr?.salary || 0,
+        currency: linkedHr?.currency || "EGP",
+        status: linkedHr?.status || "active",
       });
     });
-
-    // Fallback if store is completely empty
-    if (contactsMap.size === 0) {
-      DEFAULT_EMPLOYEES.forEach((emp) => contactsMap.set(emp.id, emp));
-    }
 
     return Array.from(contactsMap.values());
   }, [syncedSystemUsers, erpState?.employees]);

@@ -612,7 +612,7 @@ export function AdminSectionsGrid({ userPermissions = {} }: AdminSectionsGridPro
               className={`group relative rounded-3xl border ${section.colorTheme.border} ${section.colorTheme.bgLight} p-5 sm:p-6 transition-all duration-200 hover:shadow-lg cursor-pointer flex flex-col justify-between overflow-hidden bg-card`}
             >
               <div className="space-y-4">
-                {/* Top Row: Icon + Badge + Dropdown Trigger */}
+                {/* Top Row: Icon + Title */}
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <div
@@ -630,54 +630,6 @@ export function AdminSectionsGrid({ userPermissions = {} }: AdminSectionsGridPro
                         {section.title}
                       </h3>
                     </div>
-                  </div>
-
-                  {/* SUBSECTIONS DROPDOWN TRIGGER (مطلوب بالشرط رقم 2) */}
-                  <div onClick={(e) => e.stopPropagation()}>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-8 px-2.5 rounded-xl text-xs font-bold gap-1 border-border bg-card/90 hover:bg-accent shrink-0 shadow-xs"
-                          title="عرض الأقسام والعناوين الفرعية"
-                        >
-                          <span className="hidden sm:inline text-[11px]">الأقسام الفرعية</span>
-                          <ChevronDown size={14} className="opacity-70" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent
-                        align="end"
-                        className="w-64 p-1.5 rounded-2xl shadow-xl border-border"
-                      >
-                        <DropdownMenuLabel className="text-xs font-black px-2.5 py-1.5 text-muted-foreground">
-                          عناوين وأقسام {section.title}
-                        </DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        {section.subsections.map((sub, idx) => {
-                          const SubIcon = sub.icon;
-                          return (
-                            <DropdownMenuItem
-                              key={idx}
-                              onClick={() => handleOpenSubsection(sub)}
-                              className="flex items-center gap-2.5 p-2 rounded-xl cursor-pointer text-xs font-semibold hover:bg-muted focus:bg-muted"
-                            >
-                              <div className="w-7 h-7 rounded-lg bg-muted flex items-center justify-center shrink-0 text-foreground">
-                                <SubIcon size={14} />
-                              </div>
-                              <div className="flex-1 min-w-0 text-right">
-                                <p className="font-bold text-foreground truncate">{sub.title}</p>
-                                {sub.description && (
-                                  <p className="text-[10px] text-muted-foreground truncate">
-                                    {sub.description}
-                                  </p>
-                                )}
-                              </div>
-                            </DropdownMenuItem>
-                          );
-                        })}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
                   </div>
                 </div>
 
