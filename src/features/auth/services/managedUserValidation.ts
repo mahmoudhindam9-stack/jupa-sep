@@ -85,6 +85,82 @@ export const LEGACY_SUPABASE_RPC_PERMISSION_KEYS = new Set([
   "approval_revenues",
 ]);
 
+export const EXTENDED_APP_PERMISSION_KEYS = new Set([
+  "messenger_broadcast",
+  // Main section page entry permissions
+  "page_restaurant",
+  "page_mall",
+  "page_park",
+  "page_finance",
+  "page_hr",
+  "page_inventory",
+  "page_shift_audit",
+  "page_audit_logs",
+  "page_developer",
+  // Sub-section page entry permissions
+  "page_restaurant_tables",
+  "page_restaurant_menu",
+  "page_restaurant_inventory",
+  "page_restaurant_vouchers",
+  "page_restaurant_cashier_treasury",
+  "page_mall_shops",
+  "page_mall_payments",
+  "page_mall_expenses",
+  "page_mall_vouchers",
+  "page_mall_reports",
+  "page_park_pos",
+  "page_park_shifts",
+  "page_park_treasury",
+  "page_park_tickets_log",
+  "page_park_customers",
+  "page_park_prices",
+  "page_park_vouchers",
+  "page_finance_position",
+  "page_finance_ledger",
+  "page_finance_journal",
+  "page_finance_vouchers",
+  "page_finance_accounts",
+  "page_finance_treasury",
+  "page_finance_reports",
+  "page_finance_trial",
+  "page_finance_statements",
+  "page_finance_receipts",
+  "page_hr_employees",
+  "page_hr_attendance",
+  "page_hr_payroll",
+  "page_hr_loans",
+  "page_inventory_warehouses",
+  "page_inventory_items",
+  "page_inventory_transfers",
+  "page_inventory_purchases",
+  "page_inventory_suppliers",
+  "page_inventory_transactions",
+  "page_inventory_expiry",
+  "page_inventory_waste",
+  "page_inventory_reports",
+  "page_inventory_settings",
+  "page_shift_audit_matching",
+  "page_shift_audit_variance",
+  "page_system_github",
+  "page_system_access_db",
+  "page_system_status",
+  // Granular action permissions
+  "acc_create_account",
+  "acc_edit_account",
+  "acc_delete_account",
+  "inv_manage_suppliers",
+  "inv_manage_waste",
+  "inv_print_smart_count",
+]);
+
+export function isSupportedManagedPermissionKey(key: string): boolean {
+  return (
+    LEGACY_SUPABASE_RPC_PERMISSION_KEYS.has(key) ||
+    EXTENDED_APP_PERMISSION_KEYS.has(key) ||
+    key.startsWith("ui_item:")
+  );
+}
+
 export function sanitizePermissionsForSupabaseRpc(
   permissions: Record<string, any> | null | undefined,
 ): Record<string, boolean> {
@@ -614,7 +690,10 @@ export function validateManagedProfilePayload(profile: {
   if (!permissions || typeof permissions !== "object" || Array.isArray(permissions)) {
     throw new Error("الصلاحيات يجب أن تكون كائنًا يحتوي قيمًا منطقية فقط.");
   }
-  for (const [, value] of Object.entries(permissions as Record<string, unknown>)) {
+  for (const [key, value] of Object.entries(permissions as Record<string, unknown>)) {
+    if (!isSupportedManagedPermissionKey(key)) {
+      throw new Error(`اسم الصلاحية غير معتمد في النظام: ${key}`);
+    }
     if (typeof value !== "boolean") {
       throw new Error("الصلاحيات غير صالحة: كل صلاحية يجب أن تحتوي قيمة true أو false.");
     }
