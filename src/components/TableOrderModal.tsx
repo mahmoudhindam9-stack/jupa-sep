@@ -23,6 +23,11 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ChefDishIcon } from "@/components/icons/ChefDishIcon";
+import {
+  ProductCustomizationModal,
+  ConfiguredCartSelection,
+} from "@/components/ProductCustomizationModal";
+import { buildCartLineKey, getLineUnitPrice } from "@/shared/utils/productOptions";
 
 type Table = {
   id: string;
@@ -33,24 +38,6 @@ type Table = {
 };
 
 const TAX_RATE = 0.14;
-
-const additionsList = [
-  { id: "cheese", label_ar: "جبنة إضافية", label_en: "Extra Cheese", price: 15 },
-  { id: "fries", label_ar: "بطاطس مقلية", label_en: "Fries", price: 25 },
-  { id: "sauce", label_ar: "صوص حار", label_en: "Spicy Sauce", price: 5 },
-  { id: "water", label_ar: "مياه معدنية", label_en: "Mineral Water", price: 10 },
-];
-
-const QUICK_ITEM_NOTE_PRESETS = [
-  "بدون بصل",
-  "بدون ملح",
-  "بدون شطة",
-  "صوص إضافي",
-  "حار جداً 🌶️",
-  "مستوي زيادة",
-  "سُكر خفيف",
-  "سفري",
-];
 
 const QUICK_ORDER_NOTE_PRESETS = [
   "طلب مستعجل ⚡",
@@ -83,19 +70,17 @@ export function TableOrderModal({
   const [cart, setCart] = useState<TableCartLine[]>([]);
   const [selectedCardItemId, setSelectedCardItemId] = useState<string | null>(null);
   const [orderNotes, setOrderNotes] = useState("");
-  const [selectedAdditions, setSelectedAdditions] = useState<string[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isQuickNoteBarOpen, setIsQuickNoteBarOpen] = useState(false);
-  const [noteEditingItem, setNoteEditingItem] = useState<{
-    id: string;
-    name: string;
-    notes: string;
-  } | null>(null);
+  const [customizingItem, setCustomizingItem] = useState<any | null>(null);
+  const [editingCartLine, setEditingCartLine] = useState<TableCartLine | null>(null);
 
   useEffect(() => {
     if (isOpen && table) {
       setIsCartOpen(false);
       setIsQuickNoteBarOpen(false);
+      setCustomizingItem(null);
+      setEditingCartLine(null);
       const existing = tableOrdersStore.getOrderByTableId(table.id, table.number);
       if (existing) {
         const normalizedLines: TableCartLine[] = (existing.items || []).map((raw: any) => {
@@ -107,11 +92,23 @@ export function TableOrderModal({
             image_url: raw?.image_url || null,
             requires_oven: Boolean(raw?.requires_oven ?? raw?.item?.requires_oven),
           };
+          const selectedOptions = raw?.selectedOptions || [];
+          const selectedAdditions = raw?.selectedAdditions || [];
+          const lineNote = raw?.notes || raw?.note || "";
           return {
+            lineKey:
+              raw?.lineKey ||
+              buildCartLineKey({
+                itemId: itemObj.id,
+                selectedOptions,
+                selectedAdditions,
+                notes: lineNote,
+              }),
             item: itemObj,
             quantity: Number(raw?.quantity ?? 1),
-            notes: raw?.notes || raw?.note || "",
-            selectedAdditions: raw?.selectedAdditions || [],
+            notes: lineNote,
+            selectedOptions,
+            selectedAdditions,
           };
         });
         setCart(normalizedLines);
@@ -127,11 +124,9 @@ export function TableOrderModal({
           .replace(/\[المكان:\s*[^\]]+\]/g, "")
           .trim();
         setOrderNotes(cleanedNotes);
-        setSelectedAdditions(existing.selectedAdditions || []);
       } else {
         setCart([]);
         setOrderNotes("");
-        setSelectedAdditions([]);
       }
     }
   }, [isOpen, table]);
@@ -157,21 +152,42 @@ export function TableOrderModal({
     });
   }, [itemsQuery.data, activeCategory, search]);
 
-  const addToCart = (item: any) => {
+  const upsertCustomizedCartLine = (
+    selection: ConfiguredCartSelection,
+    replaceLineKey?: string,
+  ) => {
     setCart((prev) => {
-      const existing = prev.find((c) => c.item.id === item.id);
-      if (existing) {
-        return prev.map((c) => (c.item.id === item.id ? { ...c, quantity: c.quantity + 1 } : c));
+      const base = replaceLineKey
+        ? prev.filter((c) => (c.lineKey || c.item.id) !== replaceLineKey)
+        : prev;
+      const existingIdx = base.findIndex((c) => (c.lineKey || c.item.id) === selection.lineKey);
+      if (existingIdx >= 0) {
+        const next = [...base];
+        next[existingIdx] = {
+          ...next[existingIdx],
+          quantity: next[existingIdx].quantity + selection.quantity,
+        };
+        return next;
       }
-      return [...prev, { item, quantity: 1 }];
+      return [
+        ...base,
+        {
+          lineKey: selection.lineKey,
+          item: selection.item,
+          quantity: selection.quantity,
+          notes: selection.notes,
+          selectedOptions: selection.selectedOptions,
+          selectedAdditions: selection.selectedAdditions,
+        },
+      ];
     });
   };
 
-  const updateQuantity = (id: string, delta: number) => {
+  const updateQuantity = (lineKey: string, delta: number) => {
     setCart((prev) =>
       prev
         .map((c) => {
-          if (c.item.id === id) {
+          if ((c.lineKey || c.item.id) === lineKey) {
             const newQty = c.quantity + delta;
             return newQty > 0 ? { ...c, quantity: newQty } : null;
           }
@@ -181,17 +197,22 @@ export function TableOrderModal({
     );
   };
 
-  const removeFromCart = (id: string) => {
-    setCart((prev) => prev.filter((c) => c.item.id !== id));
+  const removeFromCart = (lineKey: string) => {
+    setCart((prev) => prev.filter((c) => (c.lineKey || c.item.id) !== lineKey));
   };
 
-  const updateItemNotes = (id: string, notes: string) => {
-    setCart((prev) => prev.map((c) => (c.item.id === id ? { ...c, notes } : c)));
-  };
-
-  const toggleAddition = (id: string) => {
-    setSelectedAdditions((prev) =>
-      prev.includes(id) ? prev.filter((a) => a !== id) : [...prev, id],
+  const updateItemNotes = (lineKey: string, notes: string) => {
+    setCart((prev) =>
+      prev.map((c) => {
+        if ((c.lineKey || c.item.id) !== lineKey) return c;
+        const newKey = buildCartLineKey({
+          itemId: c.item.id,
+          selectedOptions: c.selectedOptions,
+          selectedAdditions: c.selectedAdditions,
+          notes,
+        });
+        return { ...c, notes, lineKey: newKey };
+      }),
     );
   };
 
@@ -203,20 +224,10 @@ export function TableOrderModal({
     });
   };
 
-  const additionsTotal = selectedAdditions.reduce((acc, addId) => {
-    const add = additionsList.find((a) => a.id === addId);
-    return acc + (add ? add.price : 0);
-  }, 0);
-
-  const subTotal =
-    cart.reduce(
-      (acc, c) =>
-        acc +
-        (Number(c.item.price || 0) +
-          (c.selectedAdditions?.reduce((s, a) => s + Number(a.price || 0), 0) || 0)) *
-          c.quantity,
-      0,
-    ) + additionsTotal;
+  const subTotal = cart.reduce(
+    (acc, c) => acc + getLineUnitPrice(Number(c.item.price || 0), c.selectedAdditions) * c.quantity,
+    0,
+  );
   const tax = subTotal * TAX_RATE;
   const total = subTotal + tax;
   const itemCount = cart.reduce((a, c) => a + c.quantity, 0);
@@ -231,7 +242,6 @@ export function TableOrderModal({
     });
     setCart([]);
     setOrderNotes("");
-    setSelectedAdditions([]);
     onChangeTableStatus?.("available");
     toast({
       title: lang === "ar" ? "تم إلغاء ومسح الطلب" : "Order Cancelled",
@@ -256,7 +266,7 @@ export function TableOrderModal({
       items: cart,
       order_type: "dine_in",
       notes: orderNotes,
-      selectedAdditions,
+      selectedAdditions: [],
       subtotal: Number(subTotal.toFixed(2)),
       tax: Number(tax.toFixed(2)),
       total: Number(total.toFixed(2)),
@@ -267,7 +277,7 @@ export function TableOrderModal({
       is_self_order: Boolean(existingOrder?.is_self_order),
     });
 
-    if (cart.length > 0 || orderNotes.trim() || selectedAdditions.length > 0) {
+    if (cart.length > 0 || orderNotes.trim()) {
       onChangeTableStatus?.("occupied");
     }
 
@@ -333,13 +343,18 @@ export function TableOrderModal({
         .filter(Boolean)
         .join(" ");
 
+      const nowIso = new Date().toISOString();
+      const captainConfirmedTs = existingOrder?.captain_confirmed_at || nowIso;
+
       const dbItems = cart.map((c) => ({
         id: c.item.id,
         menu_item_id: c.item.id,
+        lineKey: c.lineKey,
         name_ar: c.item.name_ar,
-        price: c.item.price,
+        price: Number(getLineUnitPrice(Number(c.item.price || 0), c.selectedAdditions).toFixed(2)),
         quantity: c.quantity,
         notes: c.notes || "",
+        selectedOptions: c.selectedOptions || [],
         selectedAdditions: c.selectedAdditions || [],
         requires_oven: c.item.requires_oven || false,
         item: c.item,
@@ -352,7 +367,7 @@ export function TableOrderModal({
 
       try {
         if (existingDbOrderId) {
-          await supabase
+          const { error: extUpdErr } = await (supabase as any)
             .from("orders")
             .update({
               subtotal: Number(finalSubtotal.toFixed(2)),
@@ -361,10 +376,26 @@ export function TableOrderModal({
               status: "preparing",
               notes: formattedNotes,
               items: dbItems as any,
+              captain_confirmed_at: captainConfirmedTs,
+              kitchen_started_at: kitchenStartTs,
             })
             .eq("id", existingDbOrderId);
+
+          if (extUpdErr) {
+            await supabase
+              .from("orders")
+              .update({
+                subtotal: Number(finalSubtotal.toFixed(2)),
+                tax: Number(finalTax.toFixed(2)),
+                total: Number(finalTotal.toFixed(2)),
+                status: "preparing",
+                notes: formattedNotes,
+                items: dbItems as any,
+              })
+              .eq("id", existingDbOrderId);
+          }
         } else {
-          const { data, error } = await supabase
+          let insertRes = await (supabase as any)
             .from("orders")
             .insert({
               subtotal: Number(finalSubtotal.toFixed(2)),
@@ -376,12 +407,33 @@ export function TableOrderModal({
               status: "preparing",
               notes: formattedNotes,
               items: dbItems as any,
+              submitted_at: nowIso,
+              captain_confirmed_at: captainConfirmedTs,
+              kitchen_started_at: kitchenStartTs,
             })
             .select("id, order_number")
             .single();
 
-          if (!error && data) {
-            kitchenOrderId = data.id;
+          if (insertRes.error) {
+            insertRes = await supabase
+              .from("orders")
+              .insert({
+                subtotal: Number(finalSubtotal.toFixed(2)),
+                tax: Number(finalTax.toFixed(2)),
+                total: Number(finalTotal.toFixed(2)),
+                payment_method: "cash",
+                order_type: "dine_in",
+                table_id: cleanTableId(table.id),
+                status: "preparing",
+                notes: formattedNotes,
+                items: dbItems as any,
+              })
+              .select("id, order_number")
+              .single();
+          }
+
+          if (!insertRes.error && insertRes.data) {
+            kitchenOrderId = insertRes.data.id;
           }
         }
       } catch (sbErr) {
@@ -396,7 +448,7 @@ export function TableOrderModal({
         items: cart,
         order_type: "dine_in",
         notes: formattedNotes,
-        selectedAdditions,
+        selectedAdditions: [],
         subtotal: Number(subTotal.toFixed(2)),
         tax: Number(tax.toFixed(2)),
         total: Number(total.toFixed(2)),
@@ -405,6 +457,7 @@ export function TableOrderModal({
         kitchenCompleted: false,
         sentToCashier: alreadySentToCashier,
         kitchenOrderId,
+        captain_confirmed_at: captainConfirmedTs,
         kitchen_started_at: kitchenStartTs,
         is_self_order: Boolean(existingOrder?.is_self_order),
       });
@@ -469,17 +522,32 @@ export function TableOrderModal({
       .filter(Boolean)
       .join(" ");
 
+    const nowIso = new Date().toISOString();
+    const captainConfirmedTs = existingOrder?.captain_confirmed_at || nowIso;
+
     if (existingDbOrderId) {
       try {
-        await supabase
+        const { error: extErr } = await (supabase as any)
           .from("orders")
           .update({
             notes: updatedNotes,
             subtotal: Number(subTotal.toFixed(2)),
             tax: Number(tax.toFixed(2)),
             total: Number(total.toFixed(2)),
+            captain_confirmed_at: captainConfirmedTs,
           })
           .eq("id", existingDbOrderId);
+        if (extErr) {
+          await supabase
+            .from("orders")
+            .update({
+              notes: updatedNotes,
+              subtotal: Number(subTotal.toFixed(2)),
+              tax: Number(tax.toFixed(2)),
+              total: Number(total.toFixed(2)),
+            })
+            .eq("id", existingDbOrderId);
+        }
       } catch (e) {
         console.warn("Supabase cashier order update warning:", e);
       }
@@ -493,7 +561,7 @@ export function TableOrderModal({
       items: cart,
       order_type: "dine_in",
       notes: updatedNotes,
-      selectedAdditions,
+      selectedAdditions: [],
       subtotal: Number(subTotal.toFixed(2)),
       tax: Number(tax.toFixed(2)),
       total: Number(total.toFixed(2)),
@@ -502,6 +570,7 @@ export function TableOrderModal({
       kitchenCompleted: existingOrder?.kitchenCompleted || false,
       sentToCashier: true,
       kitchenOrderId: existingOrder?.kitchenOrderId || existingDbOrderId,
+      captain_confirmed_at: captainConfirmedTs,
       is_self_order: Boolean(existingOrder?.is_self_order),
     });
 
@@ -515,6 +584,70 @@ export function TableOrderModal({
           : `Table #${table.number} order sent to Cashier.`,
     });
 
+    onOrderSent?.();
+    onClose();
+  };
+
+  const activeTableOrder = tableOrdersStore.getOrderByTableId(table.id, table.number);
+
+  const handleConfirmDelivery = async () => {
+    if (!activeTableOrder) return;
+    const nowIso = new Date().toISOString();
+    tableOrdersStore.markDeliveredByOrderOrTable({
+      orderId: activeTableOrder.id,
+      tableId: table.id,
+      tableNumber: table.number,
+    });
+
+    const uuidRegex =
+      /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+    const dbId =
+      activeTableOrder.kitchenOrderId ||
+      (activeTableOrder.id && uuidRegex.test(activeTableOrder.id) ? activeTableOrder.id : null);
+
+    if (dbId) {
+      try {
+        const res1 = await (supabase as any)
+          .from("orders")
+          .update({ status: "delivered", delivered_at: nowIso })
+          .eq("id", dbId);
+        if (res1.error) {
+          const res2 = await (supabase as any)
+            .from("orders")
+            .update({ status: "served", delivered_at: nowIso })
+            .eq("id", dbId);
+          if (res2.error) {
+            await supabase.from("orders").update({ status: "served" }).eq("id", dbId);
+          }
+        }
+      } catch {
+        // ignore network error
+      }
+    }
+
+    if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+      try {
+        const bc = new BroadcastChannel("restocash_self_orders_bc");
+        bc.postMessage({
+          type: "ORDER_DELIVERED",
+          orderId: dbId || activeTableOrder.id,
+          tableId: table.id,
+          tableNumber: table.number,
+          delivered_at: nowIso,
+        });
+        bc.close();
+      } catch {
+        // ignore
+      }
+    }
+
+    toast({
+      title: lang === "ar" ? "تم تأكيد تسليم الطلب للعميل ✅" : "Order Delivery Confirmed ✅",
+      description:
+        lang === "ar"
+          ? `تم تسجيل وقت التسليم وتفعيل شاشة التقييم للعميل على طاولة #${table.number}.`
+          : `Delivery recorded for Table #${table.number}.`,
+    });
     onOrderSent?.();
     onClose();
   };
@@ -578,14 +711,14 @@ export function TableOrderModal({
             type="button"
             onClick={() => setIsQuickNoteBarOpen(true)}
             className={`h-9 px-3 rounded-xl border text-xs font-black flex items-center gap-1.5 transition cursor-pointer ${
-              orderNotes.trim() || selectedAdditions.length > 0
+              orderNotes.trim()
                 ? "bg-amber-50 border-amber-300 text-amber-900"
                 : "bg-muted border-border text-foreground hover:bg-muted/80"
             }`}
           >
             <FileText size={14} className="text-amber-600 shrink-0" />
             <span>{lang === "ar" ? "تفاصيل وإتمام الطلب" : "Order Details"}</span>
-            {(orderNotes.trim() || selectedAdditions.length > 0) && (
+            {orderNotes.trim() && (
               <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
             )}
           </button>
@@ -689,17 +822,23 @@ export function TableOrderModal({
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
             {filteredItems.map((item) => {
-              const inCartLine = cart.find((c) => c.item.id === item.id);
+              const itemTotalQty = cart
+                .filter((c) => c.item.id === item.id)
+                .reduce((sum, c) => sum + c.quantity, 0);
               const isSelectedCard = selectedCardItemId === item.id;
               return (
                 <div
                   key={item.id}
                   data-testid={`captain-item-card-${item.id}`}
-                  onClick={() => setSelectedCardItemId(item.id)}
-                  className={`group bg-card rounded-2xl sm:rounded-3xl overflow-hidden border transition-all flex flex-col justify-between select-none ${
+                  onClick={() => {
+                    setSelectedCardItemId(item.id);
+                    setEditingCartLine(null);
+                    setCustomizingItem(item);
+                  }}
+                  className={`group bg-card rounded-2xl sm:rounded-3xl overflow-hidden border transition-all flex flex-col justify-between select-none cursor-pointer ${
                     lang === "ar" ? "text-right" : "text-left"
                   } ${
-                    inCartLine
+                    itemTotalQty > 0
                       ? "border-primary ring-2 ring-primary/20"
                       : isSelectedCard
                         ? "border-amber-500 ring-2 ring-amber-400/35"
@@ -730,10 +869,10 @@ export function TableOrderModal({
                         فرن
                       </span>
                     )}
-                    {inCartLine && (
-                      <div className="absolute bottom-2 left-2 bg-slate-900 text-white min-w-6 h-6 px-1.5 rounded-full flex items-center justify-center gap-1 text-xs font-black shadow">
+                    {itemTotalQty > 0 && (
+                      <div className="absolute bottom-2 left-2 bg-slate-900 text-white min-w-6 h-6 px-1.5 rounded-full flex items-center justify-center gap-1 text-xs font-black shadow tabular-nums">
                         <ChefDishIcon size={13} />
-                        {inCartLine.quantity}
+                        {itemTotalQty}
                       </div>
                     )}
                   </div>
@@ -752,7 +891,8 @@ export function TableOrderModal({
                       onClick={(e) => {
                         e.stopPropagation();
                         setSelectedCardItemId(item.id);
-                        addToCart(item);
+                        setEditingCartLine(null);
+                        setCustomizingItem(item);
                       }}
                       className="w-full py-2 px-3 rounded-xl bg-primary hover:bg-primary/90 active:scale-[0.97] text-primary-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-sm hover:shadow transition-all cursor-pointer"
                     >
@@ -826,93 +966,138 @@ export function TableOrderModal({
                   <p className="text-sm text-muted-foreground font-bold">{t.empty_cart}</p>
                 </div>
               ) : (
-                cart.map((c) => (
-                  <div
-                    key={c.item.id}
-                    className="flex gap-3 p-3 rounded-2xl bg-muted/50 hover:bg-muted transition group"
-                  >
-                    {c.item.image_url && (
-                      <img
-                        src={c.item.image_url}
-                        alt=""
-                        className="w-12 h-12 rounded-xl object-cover shrink-0"
-                        referrerPolicy="no-referrer"
-                      />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-2">
-                        <h5 className="font-bold text-sm line-clamp-1">{c.item.name_ar}</h5>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setNoteEditingItem({
-                                id: c.item.id,
-                                name: c.item.name_ar,
-                                notes: c.notes || "",
-                              })
-                            }
-                            className={`p-1 rounded-md transition cursor-pointer ${
-                              c.notes
-                                ? "bg-amber-100 text-amber-800 hover:bg-amber-200"
-                                : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                            }`}
-                            title={lang === "ar" ? "ملاحظة للصنف" : "Item note"}
-                          >
-                            <FileText size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => removeFromCart(c.item.id)}
-                            className="text-muted-foreground hover:text-destructive transition p-1 cursor-pointer"
-                            title={lang === "ar" ? "حذف الصنف" : "Remove item"}
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
-                      </div>
-
-                      {c.notes && (
-                        <div className="mt-1 flex items-center justify-between gap-1.5 bg-amber-50 border border-amber-200 text-amber-950 rounded-lg px-2 py-0.5 text-[11px] font-bold">
-                          <span className="truncate">{c.notes}</span>
-                          <button
-                            type="button"
-                            onClick={() => updateItemNotes(c.item.id, "")}
-                            className="text-amber-700 hover:text-rose-600 p-0.5 rounded transition shrink-0"
-                          >
-                            <X size={11} />
-                          </button>
-                        </div>
+                cart.map((c) => {
+                  const lineKey = c.lineKey || c.item.id;
+                  const unitPrice = getLineUnitPrice(Number(c.item.price || 0), c.selectedAdditions);
+                  const hasCustom =
+                    Boolean(c.notes?.trim()) ||
+                    (Array.isArray(c.selectedOptions) && c.selectedOptions.length > 0) ||
+                    (Array.isArray(c.selectedAdditions) && c.selectedAdditions.length > 0);
+                  return (
+                    <div
+                      key={lineKey}
+                      className="flex gap-3 p-3 rounded-2xl bg-muted/50 hover:bg-muted transition group"
+                    >
+                      {c.item.image_url && (
+                        <img
+                          src={c.item.image_url}
+                          alt=""
+                          className="w-12 h-12 rounded-xl object-cover shrink-0"
+                          referrerPolicy="no-referrer"
+                        />
                       )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2">
+                          <h5 className="font-bold text-sm line-clamp-1">{c.item.name_ar}</h5>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingCartLine(c);
+                                setCustomizingItem(c.item);
+                              }}
+                              className={`p-1 rounded-md transition cursor-pointer ${
+                                hasCustom
+                                  ? "bg-amber-100 text-amber-800 hover:bg-amber-200"
+                                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                              }`}
+                              title={lang === "ar" ? "تعديل الخيارات والإضافات" : "Customize options"}
+                            >
+                              <FileText size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => removeFromCart(lineKey)}
+                              className="text-muted-foreground hover:text-destructive transition p-1 cursor-pointer"
+                              title={lang === "ar" ? "حذف الصنف" : "Remove item"}
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        </div>
 
-                      <div className="flex items-center justify-between mt-1.5">
-                        <span className="text-sm font-black text-primary">
-                          {formatPrice(c.item.price * c.quantity)}
-                        </span>
-                        <div
-                          className="flex items-center gap-1.5 bg-card rounded-lg border border-border p-0.5"
-                          dir="ltr"
-                        >
-                          <button
-                            type="button"
-                            onClick={() => updateQuantity(c.item.id, -1)}
-                            className="w-7 h-7 rounded-md hover:bg-muted flex items-center justify-center transition cursor-pointer"
+                        {Array.isArray(c.selectedOptions) && c.selectedOptions.length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {c.selectedOptions.map((opt: any, idx: number) => (
+                              <span
+                                key={idx}
+                                className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-sky-50 border border-sky-200 text-sky-900 text-[10px] font-bold"
+                              >
+                                {typeof opt === "string"
+                                  ? opt
+                                  : lang === "ar"
+                                    ? opt.label_ar
+                                    : opt.label_en || opt.label_ar}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {Array.isArray(c.selectedAdditions) && c.selectedAdditions.length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {c.selectedAdditions.map((add: any, idx: number) => (
+                              <span
+                                key={idx}
+                                className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-900 text-[10px] font-bold"
+                              >
+                                +{typeof add === "string" ? add : add.name_ar || add.name}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {c.notes && (
+                          <div className="mt-1 flex items-center justify-between gap-1.5 bg-amber-50 border border-amber-200 text-amber-950 rounded-lg px-2 py-0.5 text-[11px] font-bold">
+                            <span
+                              className="truncate cursor-pointer hover:underline"
+                              onClick={() => {
+                                setEditingCartLine(c);
+                                setCustomizingItem(c.item);
+                              }}
+                            >
+                              {c.notes}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => updateItemNotes(lineKey, "")}
+                              className="text-amber-700 hover:text-rose-600 p-0.5 rounded transition shrink-0"
+                            >
+                              <X size={11} />
+                            </button>
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-between mt-1.5">
+                          <span className="text-sm font-black text-primary tabular-nums">
+                            {formatPrice(unitPrice * c.quantity)}
+                          </span>
+                          <div
+                            className="flex items-center gap-1.5 bg-card rounded-lg border border-border p-0.5"
+                            dir="ltr"
                           >
-                            <Minus size={14} />
-                          </button>
-                          <span className="text-xs font-bold w-6 text-center">{c.quantity}</span>
-                          <button
-                            type="button"
-                            onClick={() => updateQuantity(c.item.id, 1)}
-                            className="w-7 h-7 rounded-md bg-primary text-primary-foreground hover:opacity-90 flex items-center justify-center transition cursor-pointer"
-                          >
-                            <Plus size={14} />
-                          </button>
+                            <button
+                              type="button"
+                              onClick={() => updateQuantity(lineKey, -1)}
+                              className="w-7 h-7 rounded-md hover:bg-muted flex items-center justify-center transition cursor-pointer"
+                            >
+                              <Minus size={14} />
+                            </button>
+                            <span className="text-xs font-bold w-6 text-center tabular-nums">
+                              {c.quantity}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => updateQuantity(lineKey, 1)}
+                              className="w-7 h-7 rounded-md bg-primary text-primary-foreground hover:opacity-90 flex items-center justify-center transition cursor-pointer"
+                            >
+                              <Plus size={14} />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
 
@@ -996,38 +1181,8 @@ export function TableOrderModal({
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 items-start">
-              {/* Right Column: Additions & General Order Notes */}
+              {/* Right Column: General Order Notes */}
               <div className="md:col-span-7 space-y-3">
-                <div className="bg-muted/40 p-3 rounded-2xl border border-border space-y-2">
-                  <label className="text-xs font-black text-foreground block">
-                    {lang === "ar" ? "الإضافات" : "Additions"}
-                  </label>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {additionsList.map((add) => {
-                      const selected = selectedAdditions.includes(add.id);
-                      return (
-                        <button
-                          key={add.id}
-                          type="button"
-                          onClick={() => toggleAddition(add.id)}
-                          className={`px-2.5 py-2 rounded-xl border text-xs font-bold flex items-center justify-between transition cursor-pointer ${
-                            selected
-                              ? "bg-primary text-primary-foreground border-primary shadow-2xs"
-                              : "bg-card text-foreground border-border hover:border-primary/40"
-                          }`}
-                        >
-                          <span className="truncate">
-                            {lang === "ar" ? add.label_ar : add.label_en}
-                          </span>
-                          <span className="text-[10px] opacity-85 mr-1 tabular-nums">
-                            +{add.price}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
                 <div className="bg-amber-50/60 p-3 rounded-2xl border border-amber-200 space-y-2">
                   <label className="text-xs font-black text-amber-950 flex items-center gap-1.5">
                     <FileText size={14} className="text-amber-600" />
@@ -1128,138 +1283,64 @@ export function TableOrderModal({
                     <span>{lang === "ar" ? "إلغاء الطلب" : "Cancel Order"}</span>
                   </Button>
                 </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* 7. Item Note Modal for Captain Order */}
-      {noteEditingItem && (
-        <div
-          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-[99999] font-cairo"
-          dir={lang === "ar" ? "rtl" : "ltr"}
-        >
-          <div className="bg-white rounded-3xl p-4 sm:p-5 max-w-md w-full shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between pb-2.5 border-b border-slate-100 mb-3">
-              <div className="flex items-center gap-2">
-                <div className="p-2 bg-amber-100 text-amber-800 rounded-xl">
-                  <FileText size={16} />
-                </div>
-                <div>
-                  <h3 className="font-black text-sm text-slate-900">
-                    {lang === "ar" ? "ملاحظة الصنف" : "Item Note"}
-                  </h3>
-                  <p className="text-xs text-slate-500 font-bold line-clamp-1">
-                    {noteEditingItem.name}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setNoteEditingItem(null)}
-                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 transition"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <textarea
-                rows={2}
-                value={noteEditingItem.notes}
-                onChange={(e) =>
-                  setNoteEditingItem((prev) =>
-                    prev ? { ...prev, notes: e.target.value } : null,
-                  )
-                }
-                placeholder={lang === "ar" ? "تفاصيل تحضير الصنف..." : "Item prep note..."}
-                className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-2.5 text-xs font-bold outline-none focus:ring-2 focus:ring-amber-500 resize-none"
-                autoFocus
-              />
-
-              {(() => {
-                const rawNotes = String(noteEditingItem.notes || "").trim();
-                const currentTokens = rawNotes
-                  .split(/[،,\n]+/)
-                  .map((s) => s.trim())
-                  .filter(Boolean);
-                const availablePresets = QUICK_ITEM_NOTE_PRESETS.filter(
-                  (preset) => !currentTokens.includes(preset) && !rawNotes.includes(preset),
-                );
-                if (availablePresets.length === 0) return null;
-                return (
-                  <div className="flex flex-wrap gap-1.5">
-                    {availablePresets.map((preset) => (
-                      <button
-                        key={preset}
-                        type="button"
-                        onClick={() => {
-                          setNoteEditingItem((prev) => {
-                            if (!prev) return null;
-                            const existing = prev.notes.trim();
-                            const newNotes = existing ? `${existing}، ${preset}` : preset;
-                            return { ...prev, notes: newNotes };
-                          });
-                        }}
-                        className="text-[11px] font-bold bg-slate-100 hover:bg-amber-100 hover:text-amber-900 border border-slate-200 px-2.5 py-1 rounded-xl transition active:scale-95 text-slate-700 cursor-pointer"
-                      >
-                        +{preset}
-                      </button>
-                    ))}
-                  </div>
-                );
-              })()}
-
-              <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
-                {noteEditingItem.notes ? (
+                {activeTableOrder && !activeTableOrder.delivered_at && (
                   <Button
                     type="button"
-                    variant="destructive"
-                    size="sm"
-                    className="gap-1 text-xs font-bold rounded-xl h-8"
-                    onClick={() => {
-                      updateItemNotes(noteEditingItem.id, "");
-                      setNoteEditingItem(null);
-                      toast({ title: "تم حذف ملاحظة الصنف" });
-                    }}
+                    onClick={handleConfirmDelivery}
+                    className="w-full h-10 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-black text-xs gap-1.5 shadow cursor-pointer"
                   >
-                    <Trash2 size={13} />
-                    {lang === "ar" ? "حذف" : "Delete"}
+                    <CheckCircle2 size={15} />
+                    <span>
+                      {lang === "ar"
+                        ? "تأكيد تسليم الطلب للعميل"
+                        : "Confirm Delivery to Customer"}
+                    </span>
                   </Button>
-                ) : (
-                  <div />
                 )}
-
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="text-xs font-bold rounded-xl h-8"
-                    onClick={() => setNoteEditingItem(null)}
-                  >
-                    {lang === "ar" ? "إلغاء" : "Cancel"}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-black rounded-xl h-8 gap-1 shadow-xs"
-                    onClick={() => {
-                      updateItemNotes(noteEditingItem.id, noteEditingItem.notes);
-                      setNoteEditingItem(null);
-                      toast({ title: "تم حفظ ملاحظة الصنف بنجاح" });
-                    }}
-                  >
-                    <CheckCircle2 size={14} />
-                    {lang === "ar" ? "حفظ" : "Save"}
-                  </Button>
-                </div>
               </div>
             </div>
           </div>
         </div>
       )}
+
+      {/* 7. Product-Specific Quick Options & Additions Customization Modal */}
+      <ProductCustomizationModal
+        item={customizingItem || editingCartLine?.item || null}
+        categoryNameAr={
+          (categoriesQuery.data ?? []).find(
+            (cat: any) => cat.id === (customizingItem || editingCartLine?.item)?.category_id,
+          )?.name_ar
+        }
+        isOpen={Boolean(customizingItem || editingCartLine)}
+        lang={lang}
+        formatPrice={formatPrice}
+        initialQuantity={editingCartLine?.quantity || 1}
+        initialOptions={editingCartLine?.selectedOptions || []}
+        initialAdditions={editingCartLine?.selectedAdditions || []}
+        initialNotes={editingCartLine?.notes || ""}
+        confirmLabel={
+          editingCartLine
+            ? lang === "ar"
+              ? "حفظ تعديل الصنف"
+              : "Update Item"
+            : lang === "ar"
+              ? "إضافة للطلب"
+              : "Add to Order"
+        }
+        onClose={() => {
+          setCustomizingItem(null);
+          setEditingCartLine(null);
+        }}
+        onConfirm={(selection) => {
+          upsertCustomizedCartLine(
+            selection,
+            editingCartLine ? editingCartLine.lineKey || editingCartLine.item.id : undefined,
+          );
+          setCustomizingItem(null);
+          setEditingCartLine(null);
+        }}
+      />
     </div>
   );
 }

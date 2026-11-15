@@ -16,6 +16,7 @@ import {
   printSmartStocktakingSheet,
 } from "@/shared/utils/printAccountingDocument";
 import { AdvancedFinancialReportsSuite } from "@/components/admin/AdvancedFinancialReportsSuite";
+import { QualityControlReportsView } from "@/components/restaurant/QualityControlReportsView";
 import * as XLSX from "xlsx";
 import {
   ResponsiveContainer,
@@ -927,6 +928,9 @@ export function ReportsPage() {
           <TabsTrigger value="ledger" className="rounded-lg font-bold py-2 px-4">
             شجرة الحسابات والقيود
           </TabsTrigger>
+          <TabsTrigger value="quality" className="rounded-lg font-bold py-2 px-4">
+            تقارير الرقابة والجودة
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="advanced_financial" className="space-y-6 mt-4">
@@ -1613,6 +1617,10 @@ export function ReportsPage() {
               </div>
             </div>
           </div>
+        </TabsContent>
+
+        <TabsContent value="quality" className="space-y-6 mt-4">
+          <QualityControlReportsView initialFrom={from} initialTo={to} />
         </TabsContent>
       </Tabs>
     </div>

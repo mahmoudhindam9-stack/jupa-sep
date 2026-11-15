@@ -69,6 +69,7 @@ export const SUB_SECTION_TO_MAIN_PAGE: Record<string, string> = {
   page_restaurant_inventory: "page_restaurant",
   page_restaurant_vouchers: "page_restaurant",
   page_restaurant_cashier_treasury: "page_restaurant",
+  page_restaurant_quality: "page_restaurant",
   restaurant_open_shift: "page_restaurant",
   // 2. Mall
   page_mall_shops: "page_mall",
@@ -139,6 +140,7 @@ export const SUB_SECTION_FALLBACKS: Record<string, string[]> = {
   page_restaurant_inventory: ["inventory", "inventory_view", "purchasing", "production"],
   page_restaurant_vouchers: ["treasury", "treasury_view", "accounting", "pos"],
   page_restaurant_cashier_treasury: ["treasury", "treasury_view", "pos"],
+  page_restaurant_quality: ["reports", "orders", "pos", "kitchen"],
   restaurant_open_shift: ["restaurant_open_shift", "pos", "treasury_open_close"],
   // 2. Mall
   page_mall_shops: ["mall_manage_shops"],

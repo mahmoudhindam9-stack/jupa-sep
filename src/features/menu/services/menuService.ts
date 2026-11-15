@@ -1,5 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { Category, MenuItem } from "@/shared/types";
+import { getDefaultRecipeSpecByName } from "@/shared/data/defaultRecipes";
+import { resolveProductCustomizationConfig } from "@/shared/utils/productOptions";
 
 const LOCAL_ITEMS_KEY = "local_custom_menu_items";
 const LOCAL_DELETED_ITEMS_KEY = "local_deleted_menu_items";
@@ -205,12 +207,9 @@ export const menuService = {
 
     let dbData: any[] = [];
     try {
-      // Anonymous QR-menu visitors must only receive public product fields.
-      // Recipe and inventory details are fetched only for authenticated staff.
       const { data: authState } = await supabase.auth.getSession();
       const hasStaffSession = Boolean(authState?.session?.user?.id);
-      const menuSelect = hasStaffSession
-        ? `
+      const staffSelect = `
             *,
             recipes (
               id,
@@ -225,25 +224,28 @@ export const menuService = {
                 notes
               )
             )
-          `
-        : "id,name_ar,price,category_id,image_url,is_available,created_at";
+          `;
+      const anonRichSelect =
+        "id,name_ar,price,category_id,image_url,is_available,created_at,badge,requires_oven,quick_options,additions";
+      const anonBaseSelect = "id,name_ar,price,category_id,image_url,is_available,created_at";
 
-      let query = supabase
-        .from("menu_items")
-        .select(menuSelect)
-        .order("created_at");
+      const runMenuQuery = async (selectExpr: string) => {
+        let query = supabase.from("menu_items").select(selectExpr).order("created_at");
+        if (onlyAvailable) {
+          query = query.eq("is_available", true);
+        }
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Supabase timeout")), 1500),
+        );
+        return (await Promise.race([query, timeoutPromise])) as any;
+      };
 
-      if (onlyAvailable) {
-        query = query.eq("is_available", true);
+      let res = await runMenuQuery(hasStaffSession ? staffSelect : anonRichSelect);
+      if (res?.error && !hasStaffSession) {
+        res = await runMenuQuery(anonBaseSelect);
       }
-
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Supabase timeout")), 1200),
-      );
-
-      const { data: resData, error } = (await Promise.race([query, timeoutPromise])) as any;
-      if (!error && resData && resData.length > 0) {
-        dbData = resData;
+      if (!res?.error && res?.data && res.data.length > 0) {
+        dbData = res.data;
       }
     } catch (e) {
       // Ignore background fetch error, use local
@@ -253,6 +255,46 @@ export const menuService = {
     const localTracking = getLocal<Record<string, string>>(LOCAL_TRACKING_KEY, {});
     const latestLocalItems = getLocal<Record<string, MenuItem>>(LOCAL_ITEMS_KEY, {});
     const localDeletedItems = new Set(getLocal<string[]>(LOCAL_DELETED_ITEMS_KEY, []));
+
+    const enrichItem = (base: MenuItem): MenuItem => {
+      const localOverride = latestLocalItems[base.id];
+      const merged: MenuItem = {
+        ...(localOverride || {}),
+        ...base,
+      };
+      const defaultSpec = getDefaultRecipeSpecByName(merged.name_ar);
+      const customConfig = resolveProductCustomizationConfig(merged);
+
+      const quickOptions =
+        Array.isArray(merged.quick_options) && merged.quick_options.length > 0
+          ? merged.quick_options
+          : customConfig.quickOptions;
+      const additions =
+        Array.isArray(merged.additions) && merged.additions.length > 0
+          ? merged.additions
+          : customConfig.additions;
+      const prepInstructions =
+        merged.prep_instructions && String(merged.prep_instructions).trim().length > 0
+          ? merged.prep_instructions
+          : defaultSpec?.prep_instructions || null;
+      const allergens =
+        Array.isArray(merged.allergens) && merged.allergens.length > 0
+          ? merged.allergens
+          : defaultSpec?.allergens || [];
+      const requiresOven =
+        merged.requires_oven !== undefined && merged.requires_oven !== null
+          ? merged.requires_oven
+          : (defaultSpec?.requires_oven ?? false);
+
+      return {
+        ...merged,
+        requires_oven: requiresOven,
+        quick_options: quickOptions,
+        additions,
+        prep_instructions: prepInstructions,
+        allergens,
+      };
+    };
 
     const resultMap = new Map<string, MenuItem>();
 
@@ -283,22 +325,29 @@ export const menuService = {
         localTracking[item.id] ||
         (ingredientsList.length > 0 ? "recipe_required" : "not_tracked");
 
-      const requiresOven = item.requires_oven ?? latestLocalItems[item.id]?.requires_oven ?? false;
+      const requiresOven = item.requires_oven ?? latestLocalItems[item.id]?.requires_oven;
 
-      resultMap.set(item.id, {
-        ...(latestLocalItems[item.id] || {}),
-        ...item,
-        requires_oven: requiresOven,
-        inventory_tracking: trackingMode,
-        ingredients: ingredientsList,
-      } as MenuItem);
+      resultMap.set(
+        item.id,
+        enrichItem({
+          ...(latestLocalItems[item.id] || {}),
+          ...item,
+          requires_oven: requiresOven,
+          inventory_tracking: trackingMode,
+          ingredients: ingredientsList,
+          prep_instructions:
+            item.prep_instructions ||
+            (recipe?.notes && recipe.notes !== "وصفة مضافة من لوحة التحكم" ? recipe.notes : undefined) ||
+            latestLocalItems[item.id]?.prep_instructions,
+        } as MenuItem),
+      );
     }
 
     // Process local custom items not in DB
     for (const item of Object.values(latestLocalItems)) {
       if (localDeletedItems.has(item.id)) continue;
       if (!resultMap.has(item.id)) {
-        resultMap.set(item.id, item);
+        resultMap.set(item.id, enrichItem(item));
       }
     }
 
@@ -454,7 +503,11 @@ export const menuService = {
   },
 
   async upsertMenuItem(payload: Partial<MenuItem>, id?: string): Promise<MenuItem> {
-    const trackingMode = payload.inventory_tracking || "not_tracked";
+    const trackingMode =
+      payload.inventory_tracking ||
+      (Array.isArray(payload.ingredients) && payload.ingredients.length > 0
+        ? "recipe_required"
+        : "not_tracked");
     const formattedPayload: any = {
       name_ar: payload.name_ar || "",
       price: Number(payload.price),
@@ -466,6 +519,9 @@ export const menuService = {
       inventory_tracking: trackingMode,
       badge: payload.badge || null,
       additions: payload.additions || [],
+      quick_options: payload.quick_options || [],
+      prep_instructions: payload.prep_instructions || null,
+      allergens: payload.allergens || [],
     };
 
     let resultItem: any = null;
@@ -499,6 +555,9 @@ export const menuService = {
           err?.message?.includes("ingredients") ||
           err?.message?.includes("inventory_tracking") ||
           err?.message?.includes("requires_oven") ||
+          err?.message?.includes("quick_options") ||
+          err?.message?.includes("prep_instructions") ||
+          err?.message?.includes("allergens") ||
           err?.message?.includes("column") ||
           err?.message?.includes("schema cache");
 
@@ -510,6 +569,9 @@ export const menuService = {
           delete fallbackPayload.requires_oven;
           delete fallbackPayload.badge;
           delete fallbackPayload.additions;
+          delete fallbackPayload.quick_options;
+          delete fallbackPayload.prep_instructions;
+          delete fallbackPayload.allergens;
 
           try {
             if (id) {
@@ -556,6 +618,9 @@ export const menuService = {
       ingredients: formattedPayload.ingredients,
       badge: formattedPayload.badge,
       additions: formattedPayload.additions || [],
+      quick_options: formattedPayload.quick_options || [],
+      prep_instructions: formattedPayload.prep_instructions || null,
+      allergens: formattedPayload.allergens || [],
       created_at: resultItem?.created_at || new Date().toISOString(),
     };
 
@@ -578,7 +643,10 @@ export const menuService = {
         const { data: recipe, error: recError } = await (supabase as any)
           .from("recipes")
           .upsert(
-            { menu_item_id: resultItem.id, notes: "وصفة مضافة من لوحة التحكم" },
+            {
+              menu_item_id: resultItem.id,
+              notes: formattedPayload.prep_instructions || "وصفة مضافة من لوحة التحكم",
+            },
             { onConflict: "menu_item_id" },
           )
           .select("id")

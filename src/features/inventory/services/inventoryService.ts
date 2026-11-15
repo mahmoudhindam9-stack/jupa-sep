@@ -10,6 +10,7 @@ import { localWarehouseStore } from "./warehouseStore";
 import { menuService } from "@/features/menu/services/menuService";
 import { convertToInventoryUnit } from "@/shared/utils/inventoryUtils";
 import { erpStore } from "@/shared/services/erpStore";
+import { getRawMaterialSpec } from "@/shared/data/defaultRecipes";
 
 export interface UpsertInventoryPayload {
   name_ar: string;
@@ -278,20 +279,62 @@ export const inventoryService = {
 
   async addTransaction(payload: CreateTransactionPayload): Promise<void> {
     try {
-      // 1. Insert the transaction record to Supabase if possible
-      // Note: inventory_transactions might not have warehouse_id column in actual DB,
-      // but we try to include it if types allowed it (or it will just ignore/error silently)
-      const { error: txErr } = await (supabase as any).from("inventory_transactions").insert({
+      // 1. Insert the transaction record to Supabase (with graceful fallback if warehouse_id column not yet migrated)
+      let txErr: any = null;
+      const insertPayload: Record<string, any> = {
         inventory_id: payload.inventory_id,
-        // warehouse_id: payload.warehouse_id || null, // Removed as it might not exist in DB
         type: payload.type,
         quantity: payload.quantity,
         note: payload.note || null,
-      });
+      };
+      if (payload.warehouse_id && /^[0-9a-fA-F-]{36}$/.test(payload.warehouse_id)) {
+        insertPayload.warehouse_id = payload.warehouse_id;
+      }
+
+      const firstAttempt = await (supabase as any)
+        .from("inventory_transactions")
+        .insert(insertPayload);
+      txErr = firstAttempt.error;
+
+      if (txErr && insertPayload.warehouse_id) {
+        delete insertPayload.warehouse_id;
+        const retryAttempt = await (supabase as any)
+          .from("inventory_transactions")
+          .insert(insertPayload);
+        txErr = retryAttempt.error;
+      }
 
       if (txErr) console.warn("Supabase Transaction insert skipped/failed:", txErr.message);
 
-      // 2. Update the main inventory table directly in Supabase (Global stock)
+      // 2. Update target warehouse_inventory in Supabase when valid UUID warehouse_id exists
+      if (payload.warehouse_id && /^[0-9a-fA-F-]{36}$/.test(payload.warehouse_id)) {
+        const { data: whRow } = await (supabase as any)
+          .from("warehouse_inventory")
+          .select("quantity")
+          .eq("warehouse_id", payload.warehouse_id)
+          .eq("inventory_id", payload.inventory_id)
+          .maybeSingle();
+
+        const currentWhQty = Number(whRow?.quantity || 0);
+        const nextWhQty =
+          payload.type === "in"
+            ? currentWhQty + payload.quantity
+            : payload.type === "out"
+              ? currentWhQty - payload.quantity
+              : payload.quantity;
+
+        await (supabase as any).from("warehouse_inventory").upsert(
+          {
+            warehouse_id: payload.warehouse_id,
+            inventory_id: payload.inventory_id,
+            quantity: nextWhQty,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "warehouse_id,inventory_id" },
+        );
+      }
+
+      // 3. Update the global inventory summary in Supabase
       const { data: invItem, error: fetchErr } = await supabase
         .from("inventory")
         .select("quantity")
@@ -325,8 +368,7 @@ export const inventoryService = {
       console.error("Supabase integration error in addTransaction:", err);
     }
 
-    // 3. ALWAYS update the localWarehouseStore (This handles the "per-warehouse" stock for the UI)
-    // This is crucial because the DB schema doesn't support multiple warehouses currently.
+    // 4. Keep localWarehouseStore synced for instant UI updates & offline support
     localWarehouseStore.addTransaction({
       inventory_id: payload.inventory_id,
       warehouse_id: payload.warehouse_id,
@@ -339,29 +381,19 @@ export const inventoryService = {
   async getOperationalWarehouseId(): Promise<string> {
     try {
       const warehouses = await this.getWarehouses();
-      const candidates = warehouses.filter((w) => w.name === "مخزن الفرن والمطبخ");
+      if (!warehouses || warehouses.length === 0) return "wh-sub-kitchen";
 
-      if (candidates.length === 0) return "wh-sub-kitchen";
-      if (candidates.length === 1) return candidates[0].id;
+      const kitchenMatch = warehouses.find(
+        (w) =>
+          w.is_active !== false &&
+          (w.name.includes("الفرن") || w.name.includes("مطبخ") || w.name.toLowerCase().includes("kitchen")),
+      );
+      if (kitchenMatch) return kitchenMatch.id;
 
-      // Search for the one with 152 Coca-Cola cans
-      const allInv = await this.getInventory();
-      const cocaItem = allInv.find((i) => i.name_ar.includes("كوكاكولا"));
-      const cocaId = cocaItem?.id || "inv-seed-11";
+      const subWarehouse = warehouses.find((w) => w.is_active !== false && !w.is_default);
+      if (subWarehouse) return subWarehouse.id;
 
-      for (const wh of candidates) {
-        const inv = await this.getWarehouseInventory(wh.id);
-        const coca = inv.find((i) => i.inventory_id === cocaId);
-        // Look for the specific count provided by the user (152)
-        if (coca && Math.round(Number(coca.quantity)) === 152) {
-          return wh.id;
-        }
-      }
-
-      // Fallback to the most recent one if no specific match
-      return candidates.sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-      )[0].id;
+      return warehouses[0]?.id || "wh-sub-kitchen";
     } catch {
       return "wh-sub-kitchen";
     }
@@ -372,15 +404,38 @@ export const inventoryService = {
     items: any[],
     orderNumber: number,
     allowNegative: boolean = true,
-  ): Promise<{ success: boolean; error?: string }> {
+  ): Promise<{ success: boolean; error?: string; skippedAlreadyDeducted?: boolean }> {
     const OPERATIONAL_WH = await this.getOperationalWarehouseId();
     try {
-      // 1. Resolve ingredients for all items
+      // Single-deduction lock check (local + database)
+      if (orderId && localWarehouseStore.isOrderDeducted(orderId)) {
+        return { success: true, skippedAlreadyDeducted: true };
+      }
+
+      const isUuidOrder = Boolean(orderId && /^[0-9a-fA-F-]{36}$/.test(orderId));
+      if (isUuidOrder) {
+        try {
+          const { data: orderRow } = await (supabase as any)
+            .from("orders")
+            .select("inventory_deducted")
+            .eq("id", orderId)
+            .maybeSingle();
+          if (orderRow?.inventory_deducted === true) {
+            localWarehouseStore.markOrderDeducted(orderId);
+            return { success: true, skippedAlreadyDeducted: true };
+          }
+        } catch {
+          // Column may not exist prior to migration; proceed using local lock
+        }
+      }
+
+      // 1. Resolve ingredients (and inventory-linked additions) for all items
       const menuItems = await menuService.getMenuItems();
       const menuMap = Object.fromEntries(menuItems.map((m) => [m.id, m]));
 
       const allInv = await this.getInventory();
       const allInvMap = Object.fromEntries(allInv.map((i) => [i.id, i]));
+      const invByName = new Map(allInv.map((i) => [i.name_ar.trim(), i]));
 
       const kitchenInv = await this.getWarehouseInventory(OPERATIONAL_WH);
       const kitchenInvMap = Object.fromEntries(kitchenInv.map((i) => [i.inventory_id, i]));
@@ -389,6 +444,21 @@ export const inventoryService = {
         string,
         { invId: string; name: string; required: number; available: number; unit: string }
       > = {};
+
+      const addReq = (invItem: InventoryItem, rawQty: number, rawUnit?: string) => {
+        if (!invItem || !Number.isFinite(rawQty) || rawQty <= 0) return;
+        const needed = convertToInventoryUnit(rawQty, rawUnit || invItem.unit, invItem.unit);
+        if (!requirements[invItem.id]) {
+          requirements[invItem.id] = {
+            invId: invItem.id,
+            name: invItem.name_ar,
+            required: 0,
+            available: Number(kitchenInvMap[invItem.id]?.quantity ?? 0),
+            unit: invItem.unit,
+          };
+        }
+        requirements[invItem.id].required += needed;
+      };
 
       const itemsList = Array.isArray(items)
         ? items
@@ -404,33 +474,38 @@ export const inventoryService = {
 
       for (const item of itemsList) {
         if (!item) continue;
+        const qty = Number(item.quantity || 1);
         const menuItemId = item.menu_item_id || item.id;
         const menuItem = menuMap[menuItemId];
-        if (!menuItem) continue;
 
-        const ingredients = menuItem.ingredients || [];
-        for (const ing of ingredients) {
-          const masterInvItem = allInvMap[ing.inventory_id];
-          if (!masterInvItem) continue;
-
-          const totalNeeded =
-            convertToInventoryUnit(Number(ing.weight), ing.unit, masterInvItem.unit) *
-            item.quantity;
-
-          if (!requirements[ing.inventory_id]) {
-            requirements[ing.inventory_id] = {
-              invId: ing.inventory_id,
-              name: masterInvItem.name_ar,
-              required: 0,
-              available: Number(kitchenInvMap[ing.inventory_id]?.quantity ?? 0),
-              unit: masterInvItem.unit,
-            };
+        if (menuItem) {
+          const ingredients = menuItem.ingredients || [];
+          for (const ing of ingredients) {
+            const masterInvItem = allInvMap[ing.inventory_id];
+            if (!masterInvItem) continue;
+            addReq(masterInvItem, Number(ing.weight || 0) * qty, ing.unit);
           }
-          requirements[ing.inventory_id].required += totalNeeded;
+        }
+
+        // Deduct only inventory-linked selected additions
+        const selectedAdds = Array.isArray(item.selectedAdditions) ? item.selectedAdditions : [];
+        for (const add of selectedAdds) {
+          if (!add || typeof add !== "object") continue;
+          const deductQty = Number(add.deduct_qty || 0);
+          if (deductQty <= 0) continue;
+
+          let masterInvItem = add.inventory_id ? allInvMap[add.inventory_id] : undefined;
+          if (!masterInvItem && add.materialKey) {
+            const spec = getRawMaterialSpec(add.materialKey);
+            if (spec) masterInvItem = invByName.get(spec.name_ar.trim());
+          }
+          if (masterInvItem) {
+            addReq(masterInvItem, deductQty * qty, add.deduct_unit || masterInvItem.unit);
+          }
         }
       }
 
-      // 2. Validate availability if not allowed negative
+      // 2. Validate availability if negative stock is disallowed
       if (!allowNegative) {
         const insufficient = Object.values(requirements).filter((r) => r.required > r.available);
         if (insufficient.length > 0) {
@@ -454,6 +529,21 @@ export const inventoryService = {
         });
       }
 
+      // 4. Mark single-deduction lock locally & in DB
+      if (orderId) {
+        localWarehouseStore.markOrderDeducted(orderId);
+        if (isUuidOrder) {
+          try {
+            await (supabase as any)
+              .from("orders")
+              .update({ inventory_deducted: true })
+              .eq("id", orderId);
+          } catch {
+            // ignore schema mismatch
+          }
+        }
+      }
+
       return { success: true };
     } catch (err: any) {
       console.error("Error in deductOrderIngredients:", err);
@@ -465,15 +555,46 @@ export const inventoryService = {
     orderId: string,
     items: any[],
     orderNumber: number,
-  ): Promise<{ success: boolean; error?: string }> {
+  ): Promise<{ success: boolean; error?: string; skippedNotDeducted?: boolean }> {
     const OPERATIONAL_WH = await this.getOperationalWarehouseId();
     try {
+      const isUuidOrder = Boolean(orderId && /^[0-9a-fA-F-]{36}$/.test(orderId));
+      let dbDeducted: boolean | null = null;
+      if (isUuidOrder) {
+        try {
+          const { data: orderRow } = await (supabase as any)
+            .from("orders")
+            .select("inventory_deducted")
+            .eq("id", orderId)
+            .maybeSingle();
+          if (typeof orderRow?.inventory_deducted === "boolean") {
+            dbDeducted = orderRow.inventory_deducted;
+          }
+        } catch {
+          dbDeducted = null;
+        }
+      }
+
+      const localDeducted = orderId ? localWarehouseStore.isOrderDeducted(orderId) : false;
+      if (dbDeducted === false && !localDeducted) {
+        return { success: true, skippedNotDeducted: true };
+      }
+
       const menuItems = await menuService.getMenuItems();
       const menuMap = Object.fromEntries(menuItems.map((m) => [m.id, m]));
       const allInv = await this.getInventory();
       const allInvMap = Object.fromEntries(allInv.map((i) => [i.id, i]));
+      const invByName = new Map(allInv.map((i) => [i.name_ar.trim(), i]));
 
       const requirements: Record<string, { invId: string; required: number }> = {};
+      const addRestore = (invItem: InventoryItem, rawQty: number, rawUnit?: string) => {
+        if (!invItem || !Number.isFinite(rawQty) || rawQty <= 0) return;
+        const totalNeeded = convertToInventoryUnit(rawQty, rawUnit || invItem.unit, invItem.unit);
+        if (!requirements[invItem.id]) {
+          requirements[invItem.id] = { invId: invItem.id, required: 0 };
+        }
+        requirements[invItem.id].required += totalNeeded;
+      };
 
       const itemsList = Array.isArray(items)
         ? items
@@ -488,23 +609,33 @@ export const inventoryService = {
           : [];
 
       for (const item of itemsList) {
+        if (!item) continue;
+        const qty = Number(item.quantity || 1);
         const menuItemId = item.menu_item_id || item.id;
         const menuItem = menuMap[menuItemId];
-        if (!menuItem) continue;
-
-        const ingredients = menuItem.ingredients || [];
-        for (const ing of ingredients) {
-          const masterInvItem = allInvMap[ing.inventory_id];
-          if (!masterInvItem) continue;
-
-          const totalNeeded =
-            convertToInventoryUnit(Number(ing.weight), ing.unit, masterInvItem.unit) *
-            item.quantity;
-
-          if (!requirements[ing.inventory_id]) {
-            requirements[ing.inventory_id] = { invId: ing.inventory_id, required: 0 };
+        if (menuItem) {
+          const ingredients = menuItem.ingredients || [];
+          for (const ing of ingredients) {
+            const masterInvItem = allInvMap[ing.inventory_id];
+            if (!masterInvItem) continue;
+            addRestore(masterInvItem, Number(ing.weight || 0) * qty, ing.unit);
           }
-          requirements[ing.inventory_id].required += totalNeeded;
+        }
+
+        const selectedAdds = Array.isArray(item.selectedAdditions) ? item.selectedAdditions : [];
+        for (const add of selectedAdds) {
+          if (!add || typeof add !== "object") continue;
+          const deductQty = Number(add.deduct_qty || 0);
+          if (deductQty <= 0) continue;
+
+          let masterInvItem = add.inventory_id ? allInvMap[add.inventory_id] : undefined;
+          if (!masterInvItem && add.materialKey) {
+            const spec = getRawMaterialSpec(add.materialKey);
+            if (spec) masterInvItem = invByName.get(spec.name_ar.trim());
+          }
+          if (masterInvItem) {
+            addRestore(masterInvItem, deductQty * qty, add.deduct_unit || masterInvItem.unit);
+          }
         }
       }
 
@@ -517,6 +648,20 @@ export const inventoryService = {
           quantity: req.required,
           note: `إرجاع إلغاء طلب - طلب #${orderNumber}`,
         });
+      }
+
+      if (orderId) {
+        localWarehouseStore.unmarkOrderDeducted(orderId);
+        if (isUuidOrder) {
+          try {
+            await (supabase as any)
+              .from("orders")
+              .update({ inventory_deducted: false })
+              .eq("id", orderId);
+          } catch {
+            // ignore schema mismatch
+          }
+        }
       }
 
       return { success: true };

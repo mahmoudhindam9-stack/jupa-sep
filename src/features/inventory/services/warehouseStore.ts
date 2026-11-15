@@ -12,6 +12,7 @@ const WAREHOUSE_TRANSFERS_KEY = "ydb_warehouse_transfers_v2";
 const INVENTORY_ITEMS_KEY = "ydb_inventory_items_v2";
 const INVENTORY_INITIALIZED_KEY = "ydb_inventory_initialized_v2";
 const TRANSACTIONS_KEY = "ydb_inventory_transactions_v2";
+const DEDUCTED_ORDERS_KEY = "restocash_deducted_order_ids_v1";
 
 const DEFAULT_WAREHOUSES: Warehouse[] = [
   {
@@ -674,6 +675,32 @@ export class LocalWarehouseStore {
     }
 
     return tx;
+  }
+
+  // --- Single Deduction Lock per Order ---
+  getDeductedOrderIds(): string[] {
+    return this.getItem<string[]>(DEDUCTED_ORDERS_KEY, []);
+  }
+
+  isOrderDeducted(orderId?: string | null): boolean {
+    if (!orderId) return false;
+    return this.getDeductedOrderIds().includes(String(orderId));
+  }
+
+  markOrderDeducted(orderId?: string | null): void {
+    if (!orderId) return;
+    const key = String(orderId);
+    const list = this.getDeductedOrderIds();
+    if (!list.includes(key)) {
+      this.setItem(DEDUCTED_ORDERS_KEY, [key, ...list].slice(0, 500));
+    }
+  }
+
+  unmarkOrderDeducted(orderId?: string | null): void {
+    if (!orderId) return;
+    const key = String(orderId);
+    const list = this.getDeductedOrderIds().filter((id) => id !== key);
+    this.setItem(DEDUCTED_ORDERS_KEY, list);
   }
 }
 

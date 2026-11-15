@@ -2,9 +2,11 @@ import { MenuItem } from "@/shared/types";
 import { supabase } from "@/integrations/supabase/client";
 
 export interface TableCartLine {
+  lineKey?: string;
   item: MenuItem;
   quantity: number;
   notes?: string;
+  selectedOptions?: any[];
   selectedAdditions?: any[];
 }
 
@@ -25,7 +27,11 @@ export interface TableOrder {
   sentToCashier?: boolean;
   kitchenCompleted?: boolean;
   kitchenOrderId?: string;
+  submitted_at?: string;
+  captain_confirmed_at?: string;
   kitchen_started_at?: string;
+  ready_at?: string;
+  delivered_at?: string;
   is_self_order?: boolean;
   created_at: string;
   updated_at: string;
@@ -234,10 +240,12 @@ class TableOrdersStore {
             items: (order.items || []).map((line: any) => ({
               id: line?.item?.id || line?.id,
               menu_item_id: line?.item?.id || line?.menu_item_id || line?.id,
+              lineKey: line?.lineKey,
               name_ar: line?.item?.name_ar || line?.name_ar || line?.name || "صنف",
               price: Number(line?.item?.price ?? line?.price ?? 0),
               quantity: Number(line?.quantity ?? 1),
               notes: line?.notes || "",
+              selectedOptions: line?.selectedOptions || [],
               selectedAdditions: line?.selectedAdditions || [],
               requires_oven: Boolean(line?.item?.requires_oven ?? line?.requires_oven),
             })),
@@ -324,7 +332,14 @@ class TableOrdersStore {
       const updated = {
         ...prev,
         ...orderData,
+        submitted_at: prev.submitted_at || orderData.submitted_at || prev.created_at || now,
+        captain_confirmed_at:
+          orderData.captain_confirmed_at ||
+          prev.captain_confirmed_at ||
+          (orderData.status === "sent_to_cashier" ? now : undefined),
         kitchen_started_at: resolvedKitchenStartedAt,
+        ready_at: orderData.ready_at || prev.ready_at,
+        delivered_at: orderData.delivered_at || prev.delivered_at,
         subtotal: Number(orderData.subtotal ?? prev.subtotal ?? 0),
         tax: Number(orderData.tax ?? prev.tax ?? 0),
         total: Number(orderData.total ?? prev.total ?? 0),
@@ -332,6 +347,7 @@ class TableOrdersStore {
       } as TableOrder;
       this.orders[existingIndex] = updated;
       this.saveState();
+      this.syncCustomerHistoryTimestamps(updated);
       this.notify();
       if (updated.sentToKitchen && !prev.sentToKitchen) {
         this.persistKitchenOrderToDatabase(updated);
@@ -357,7 +373,13 @@ class TableOrdersStore {
       sentToKitchen: isSentToKitchen,
       kitchenCompleted: Boolean(orderData.kitchenCompleted),
       kitchenOrderId: orderData.kitchenOrderId,
+      submitted_at: orderData.submitted_at || orderData.created_at || now,
+      captain_confirmed_at:
+        orderData.captain_confirmed_at ||
+        (orderData.status === "sent_to_cashier" ? now : undefined),
       kitchen_started_at: isSentToKitchen ? orderData.kitchen_started_at || now : undefined,
+      ready_at: orderData.ready_at,
+      delivered_at: orderData.delivered_at,
       is_self_order: Boolean(orderData.is_self_order),
       created_at: orderData.created_at || now,
       updated_at: now,
@@ -365,6 +387,7 @@ class TableOrdersStore {
 
     this.orders.push(newOrder);
     this.saveState();
+    this.syncCustomerHistoryTimestamps(newOrder);
     this.notify();
 
     if (newOrder.sentToKitchen) {
@@ -381,10 +404,12 @@ class TableOrdersStore {
     const now = new Date().toISOString();
     target.sentToKitchen = true;
     target.kitchenCompleted = false;
+    target.captain_confirmed_at = target.captain_confirmed_at || now;
     target.kitchen_started_at = target.kitchen_started_at || now;
     target.kitchenOrderId = target.kitchenOrderId || undefined;
     target.updated_at = now;
     this.saveState();
+    this.syncCustomerHistoryTimestamps(target);
     this.notify();
     this.persistKitchenOrderToDatabase(target);
     this.broadcastKitchenOrder(target);
@@ -393,18 +418,28 @@ class TableOrdersStore {
   public completeKitchenOrder(orderId: string) {
     const target = this.orders.find((o) => o.id === orderId);
     if (!target) return;
+    const now = new Date().toISOString();
     target.kitchenCompleted = true;
-    target.updated_at = new Date().toISOString();
+    target.ready_at = target.ready_at || now;
+    target.updated_at = now;
     this.saveState();
+    this.syncCustomerHistoryTimestamps(target);
     this.notify();
   }
 
   public updateStatus(orderId: string, status: TableOrder["status"]) {
     const target = this.orders.find((o) => o.id === orderId);
     if (!target) return;
+    const now = new Date().toISOString();
     target.status = status;
-    target.updated_at = new Date().toISOString();
+    if (status === "sent_to_cashier") {
+      target.captain_confirmed_at = target.captain_confirmed_at || now;
+    } else if (status === "completed") {
+      target.delivered_at = target.delivered_at || now;
+    }
+    target.updated_at = now;
     this.saveState();
+    this.syncCustomerHistoryTimestamps(target);
     this.notify();
   }
 
@@ -636,12 +671,55 @@ class TableOrdersStore {
     void this.clearAllPendingOrders();
   }
 
+  private syncCustomerHistoryTimestamps(order: TableOrder) {
+    try {
+      if (typeof window === "undefined" || typeof localStorage === "undefined") return;
+      const raw = localStorage.getItem("customer_self_orders_history_v1");
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return;
+      let dirty = false;
+      const updated = parsed.map((entry: any) => {
+        if (
+          entry?.id === order.id ||
+          (order.kitchenOrderId && entry?.id === order.kitchenOrderId)
+        ) {
+          dirty = true;
+          const nextStatus = order.delivered_at
+            ? "served"
+            : order.ready_at || order.kitchenCompleted
+              ? "ready"
+              : order.sentToKitchen
+                ? "preparing"
+                : entry.status;
+          return {
+            ...entry,
+            status: nextStatus,
+            submitted_at: entry.submitted_at || order.submitted_at || entry.created_at,
+            captain_confirmed_at: entry.captain_confirmed_at || order.captain_confirmed_at || null,
+            kitchen_started_at: entry.kitchen_started_at || order.kitchen_started_at || null,
+            ready_at: entry.ready_at || order.ready_at || null,
+            delivered_at: entry.delivered_at || order.delivered_at || null,
+          };
+        }
+        return entry;
+      });
+      if (dirty) {
+        localStorage.setItem("customer_self_orders_history_v1", JSON.stringify(updated));
+        window.dispatchEvent(new Event("customer_self_orders_updated"));
+      }
+    } catch {
+      // ignore localStorage error
+    }
+  }
+
   public markKitchenCompletedByTableId(
     tableId?: string | null,
     tableNumber?: number | null,
     orderId?: string | null,
   ) {
     let changed = false;
+    const now = new Date().toISOString();
     this.orders.forEach((o) => {
       const matched =
         (tableId && o.table_id === tableId) ||
@@ -652,7 +730,39 @@ class TableOrdersStore {
         (orderId && (o.id === orderId || o.kitchenOrderId === orderId));
       if (matched && o.sentToKitchen && !o.kitchenCompleted) {
         o.kitchenCompleted = true;
-        o.updated_at = new Date().toISOString();
+        o.ready_at = o.ready_at || now;
+        o.updated_at = now;
+        this.syncCustomerHistoryTimestamps(o);
+        changed = true;
+      }
+    });
+    if (changed) {
+      this.saveState();
+      this.notify();
+    }
+  }
+
+  public markDeliveredByOrderOrTable(params: {
+    orderId?: string | null;
+    tableId?: string | null;
+    tableNumber?: number | null;
+  }) {
+    const now = new Date().toISOString();
+    let changed = false;
+    this.orders.forEach((o) => {
+      const matched =
+        (params.orderId && (o.id === params.orderId || o.kitchenOrderId === params.orderId)) ||
+        (params.tableId && o.table_id === params.tableId) ||
+        (params.tableNumber &&
+          Number(params.tableNumber) > 0 &&
+          Number(params.tableNumber) !== 999 &&
+          Number(o.table_number) === Number(params.tableNumber));
+      if (matched) {
+        o.delivered_at = o.delivered_at || now;
+        o.ready_at = o.ready_at || now;
+        o.kitchenCompleted = true;
+        o.updated_at = now;
+        this.syncCustomerHistoryTimestamps(o);
         changed = true;
       }
     });

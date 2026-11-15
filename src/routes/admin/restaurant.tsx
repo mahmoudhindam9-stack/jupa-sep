@@ -3,6 +3,7 @@ import { extractTabParam, useSyncedSubTab } from "@/components/navigation/naviga
 import { useEffect, useState } from "react";
 import {
   ArrowUpRight,
+  Award,
   ClipboardList,
   Clock,
   Edit,
@@ -38,6 +39,7 @@ import { erpStore, RestaurantShift } from "@/shared/services/erpStore";
 import { shiftAuditService } from "@/features/shifts/services/shiftAuditService";
 import { RestaurantShiftLauncherModal } from "@/components/restaurant/RestaurantShiftLauncherModal";
 import { RestaurantShiftClosingReportModal } from "@/components/restaurant/RestaurantShiftClosingReportModal";
+import { QualityControlReportsView } from "@/components/restaurant/QualityControlReportsView";
 import { ShiftAuditLogViewerModal } from "@/components/admin/ShiftAuditLogViewerModal";
 import { menuService } from "@/features/menu/services/menuService";
 import { inventoryService } from "@/features/inventory/services/inventoryService";
@@ -165,7 +167,12 @@ function RestaurantHubPage() {
   const [activePerms, setActivePerms] = useState<Record<string, boolean>>(() =>
     getActiveUserPermissionsSync(),
   );
-  const activeReportSubpage = tabParam === "rep_shifts" ? "rep_shifts" : null;
+  const activeReportSubpage =
+    tabParam === "rep_shifts"
+      ? "rep_shifts"
+      : tabParam === "rep_quality"
+        ? "rep_quality"
+        : null;
 
   useEffect(() => {
     const refreshStateAndPerms = () => {
@@ -440,6 +447,21 @@ function RestaurantHubPage() {
       badge: `${restaurantShifts.length} وردية`,
       onClick: () => navigate({ to: "/admin/restaurant", search: { tab: "rep_shifts" } as any }),
       permissionKeys: ["page_restaurant", "pos", "pos_access", "orders", "reports"],
+    },
+    {
+      title: "تقارير الرقابة والجودة",
+      icon: Award,
+      color: "from-amber-500/20 to-orange-500/20 text-amber-600 dark:text-amber-400",
+      badge: "الجودة",
+      onClick: () => navigate({ to: "/admin/restaurant", search: { tab: "rep_quality" } as any }),
+      permissionKeys: [
+        "page_restaurant",
+        "page_restaurant_quality",
+        "pos",
+        "pos_access",
+        "orders",
+        "reports",
+      ],
     },
     ...(!isCashier
       ? [
@@ -774,6 +796,13 @@ function RestaurantHubPage() {
                 </table>
               </CardContent>
             </Card>
+          )}
+          {activeReportSubpage === "rep_quality" && (
+            <QualityControlReportsView
+              onBack={() =>
+                navigate({ to: "/admin/restaurant", search: { tab: "reports" } as any })
+              }
+            />
           )}
         </div>
       )}

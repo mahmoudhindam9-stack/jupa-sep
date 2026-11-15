@@ -109,10 +109,23 @@ function CashierTreasuryPage() {
   useEffect(() => {
     setIsMounted(true);
     void shiftAuditService.syncOpenShiftsFromSupabase(erpStore);
-    return erpStore.subscribe(() => {
+    const unsubscribeErp = erpStore.subscribe(() => {
       setErpState({ ...erpStore.getState() });
     });
-  }, []);
+
+    const channel = supabase
+      .channel("cashier_orders_bridge")
+      .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["cashier-treasury", "orders"] });
+        queryClient.invalidateQueries({ queryKey: ["cashier-orders"] });
+      })
+      .subscribe();
+
+    return () => {
+      unsubscribeErp();
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
 
   const applyQuickDate = (preset: string) => {
     setActivePreset(preset);
@@ -475,31 +488,19 @@ function CashierTreasuryPage() {
         container_id: targetContainerId || undefined,
       });
 
-      // Restore inventory ingredients if tracked
+      // Restore inventory ingredients atomically with unit conversion & single-deduction lock reversal
       try {
-        const allMenuItems = await menuService.getMenuItems();
         const rawItems = order.items;
         const itemsList = Array.isArray(rawItems)
           ? rawItems
           : typeof rawItems === "string"
             ? JSON.parse(rawItems)
             : [];
-        for (const item of itemsList) {
-          const matchedMenu = allMenuItems.find(
-            (m: any) => m.id === item.id || m.name_ar === (item.name_ar || item.name),
-          );
-          if (matchedMenu && Array.isArray(matchedMenu.ingredients)) {
-            for (const ing of matchedMenu.ingredients) {
-              if (ing.inventory_item_id && Number(ing.quantity) > 0) {
-                await inventoryService.adjustStock(
-                  ing.inventory_item_id,
-                  Number(ing.quantity) * Number(item.quantity || 1),
-                  `مرتجع طلب رقم #${order.order_number}`,
-                );
-              }
-            }
-          }
-        }
+        await inventoryService.restoreOrderIngredients(
+          order.id,
+          itemsList,
+          Number(order.order_number || 0),
+        );
       } catch {
         // Ignore inventory restore error
       }

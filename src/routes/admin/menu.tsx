@@ -6,6 +6,7 @@ import { convertToInventoryUnit } from "@/shared/utils/inventoryUtils";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -93,7 +94,13 @@ function MenuPage() {
   const [catForm, setCatForm] = useState({ name_ar: "", sort_order: "0" });
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
 
-  const [itemForm, setItemForm] = useState<Partial<MenuItem>>({
+  const [itemForm, setItemForm] = useState<Partial<MenuItem> & {
+    badge?: string;
+    additions?: any[];
+    quick_options?: any[];
+    prep_instructions?: string;
+    allergens?: string[];
+  }>({
     name_ar: "",
     price: 0,
     category_id: "",
@@ -104,6 +111,9 @@ function MenuPage() {
     inventory_tracking: "not_tracked",
     badge: "",
     additions: [],
+    quick_options: [],
+    prep_instructions: "",
+    allergens: [],
   });
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
@@ -124,6 +134,15 @@ function MenuPage() {
   const [ingredientOptional, setIngredientOptional] = useState<boolean>(false);
   const [ingredientWastePercent, setIngredientWastePercent] = useState<string>("");
   const [ingredientNotes, setIngredientNotes] = useState<string>("");
+
+  const [newQuickOptLabelAr, setNewQuickOptLabelAr] = useState<string>("");
+  const [newQuickOptLabelEn, setNewQuickOptLabelEn] = useState<string>("");
+  const [newQuickOptGroup, setNewQuickOptGroup] = useState<string>("prep");
+  const [newAdditionNameAr, setNewAdditionNameAr] = useState<string>("");
+  const [newAdditionPrice, setNewAdditionPrice] = useState<string>("0");
+  const [newAdditionInventoryId, setNewAdditionInventoryId] = useState<string>("");
+  const [newAdditionDeductQty, setNewAdditionDeductQty] = useState<string>("");
+  const [newAdditionDeductUnit, setNewAdditionDeductUnit] = useState<string>("g");
 
   const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -193,16 +212,26 @@ function MenuPage() {
 
   const upsertItem = useMutation({
     mutationFn: async () => {
+      const mergedAllergens = Array.from(
+        new Set([...(qualityForm.allergens || []), ...(itemForm.allergens || [])]),
+      ).filter(Boolean);
+
       const payload: any = {
         name_ar: itemForm.name_ar || "",
         price: Number(itemForm.price),
         category_id: itemForm.category_id || null,
         image_url: itemForm.image_url || null,
         is_available: itemForm.is_available ?? true,
+        requires_oven: !!itemForm.requires_oven,
         ingredients: itemForm.ingredients || [],
-        inventory_tracking: itemForm.inventory_tracking || "not_tracked",
+        inventory_tracking:
+          itemForm.inventory_tracking ||
+          ((itemForm.ingredients || []).length > 0 ? "recipe_required" : "not_tracked"),
         badge: itemForm.badge || null,
         additions: itemForm.additions || [],
+        quick_options: itemForm.quick_options || [],
+        prep_instructions: itemForm.prep_instructions || null,
+        allergens: mergedAllergens,
       };
 
       const result = await menuService.upsertMenuItem(payload, editingItem?.id);
@@ -211,7 +240,7 @@ function MenuPage() {
           menu_item_id: result.id,
           shelf_life_hours: Number(qualityForm.shelf_life_hours || 24),
           storage_condition_label: qualityForm.storage_condition_label || "4°م ثلاجة",
-          allergens: qualityForm.allergens || [],
+          allergens: mergedAllergens,
           quality_checklist: qualityForm.quality_checklist || ["فحص الجودة والسلامة والطزاجة"],
         });
       }
@@ -229,8 +258,14 @@ function MenuPage() {
         category_id: "",
         image_url: "",
         is_available: true,
+        requires_oven: false,
         ingredients: [],
         inventory_tracking: "not_tracked",
+        badge: "",
+        additions: [],
+        quick_options: [],
+        prep_instructions: "",
+        allergens: [],
       });
       setQualityForm({
         shelf_life_hours: 24,
@@ -293,6 +328,9 @@ function MenuPage() {
       inventory_tracking: "not_tracked",
       badge: "",
       additions: [],
+      quick_options: [],
+      prep_instructions: "",
+      allergens: [],
     });
     setQualityForm({
       shelf_life_hours: 24,
@@ -305,23 +343,31 @@ function MenuPage() {
     setIsItemModalOpen(true);
   };
 
-  const startEditItem = (item: MenuItem) => {
+  const startEditItem = (item: MenuItem & any) => {
     setEditingItem(item);
+    const specs = erpStore.getMenuItemQualitySpecs(item.id);
+    const resolvedAllergens =
+      Array.isArray(item.allergens) && item.allergens.length > 0
+        ? item.allergens
+        : specs?.allergens || [];
+
     setItemForm({
       ...item,
       requires_oven: !!item.requires_oven,
       ingredients: Array.isArray(item.ingredients) ? item.ingredients : [],
       inventory_tracking: item.inventory_tracking || "not_tracked",
       additions: Array.isArray(item.additions) ? item.additions : [],
+      quick_options: Array.isArray(item.quick_options) ? item.quick_options : [],
+      prep_instructions: item.prep_instructions || "",
+      allergens: resolvedAllergens,
     });
-    const specs = erpStore.getMenuItemQualitySpecs(item.id);
     if (specs) {
-      setQualityForm(specs);
+      setQualityForm({ ...specs, allergens: resolvedAllergens });
     } else {
       setQualityForm({
         shelf_life_hours: 24,
         storage_condition_label: "4°م ثلاجة مبردة",
-        allergens: [],
+        allergens: resolvedAllergens,
         quality_checklist: ["فحص الطزاجة والرائحة", "التأكد من التغليف المانع للتلوث"],
       });
     }
@@ -341,6 +387,9 @@ function MenuPage() {
       inventory_tracking: "not_tracked",
       badge: "",
       additions: [],
+      quick_options: [],
+      prep_instructions: "",
+      allergens: [],
     });
     setQualityForm({
       shelf_life_hours: 24,
@@ -1282,6 +1331,233 @@ function MenuPage() {
                   <span>لا توجد مكونات جردية مرتبطة بهذا الصنف بعد.</span>
                 </div>
               )}
+
+              {/* Preparation Instructions */}
+              <div className="mt-4 space-y-1.5">
+                <Label className="text-xs font-bold text-foreground">
+                  خطوات وتعليمات التحضير لشاشة المطبخ والفرن
+                </Label>
+                <Textarea
+                  rows={2}
+                  value={itemForm.prep_instructions || ""}
+                  onChange={(e) =>
+                    setItemForm((s) => ({ ...s, prep_instructions: e.target.value }))
+                  }
+                  placeholder="مثال: تُخبز على حرارة 280°م لمدة 7 دقائق وتُقدم ساخنة..."
+                  className="text-xs font-medium"
+                />
+              </div>
+            </div>
+
+            {/* Product-Specific Quick Options & Paid/Inventory Additions Section */}
+            <div className="border-t border-border/40 pt-5 mt-2 space-y-4">
+              <div>
+                <Label className="text-sm font-black text-primary block">
+                  خيارات التحضير السريعة والإضافات الخاصة بهذا الصنف
+                </Label>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  تظهر للكاشير والكابتن والعميل عند اختيار هذا الصنف فقط (مثل: بارد/بدون بصل/إضافة جبنة)
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Quick Options Editor */}
+                <div className="bg-muted/30 p-3.5 rounded-2xl border border-border space-y-3">
+                  <div className="text-xs font-black text-foreground">خيارات سريعة (Quick Options)</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <Input
+                      value={newQuickOptLabelAr}
+                      onChange={(e) => setNewQuickOptLabelAr(e.target.value)}
+                      placeholder="الخيار بالعربية (مثال: بارد)"
+                      className="h-8 text-xs font-bold"
+                    />
+                    <Input
+                      value={newQuickOptLabelEn}
+                      onChange={(e) => setNewQuickOptLabelEn(e.target.value)}
+                      placeholder="English (Cold)"
+                      className="h-8 text-xs"
+                    />
+                    <div className="flex gap-1.5">
+                      <select
+                        className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-xs font-bold"
+                        value={newQuickOptGroup}
+                        onChange={(e) => setNewQuickOptGroup(e.target.value)}
+                      >
+                        <option value="prep">تحضير</option>
+                        <option value="temp">حرارة</option>
+                        <option value="exclude">استبعاد</option>
+                        <option value="sugar">سكر</option>
+                        <option value="ice">ثلج</option>
+                        <option value="spice">توابل</option>
+                      </select>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-8 px-2.5 text-xs font-bold"
+                        onClick={() => {
+                          const label = newQuickOptLabelAr.trim();
+                          if (!label) return;
+                          const nextOpt = {
+                            id: `opt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                            label_ar: label,
+                            label_en: newQuickOptLabelEn.trim() || undefined,
+                            group: newQuickOptGroup,
+                          };
+                          setItemForm((s) => ({
+                            ...s,
+                            quick_options: [...(s.quick_options || []), nextOpt],
+                          }));
+                          setNewQuickOptLabelAr("");
+                          setNewQuickOptLabelEn("");
+                        }}
+                      >
+                        <Plus size={13} />
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(itemForm.quick_options || []).map((opt: any, idx: number) => (
+                      <span
+                        key={opt.id || idx}
+                        className="inline-flex items-center gap-1.5 bg-card border border-border rounded-lg px-2 py-1 text-[11px] font-bold"
+                      >
+                        <span>{opt.label_ar}</span>
+                        <button
+                          type="button"
+                          className="text-destructive hover:opacity-80 cursor-pointer"
+                          onClick={() =>
+                            setItemForm((s) => ({
+                              ...s,
+                              quick_options: (s.quick_options || []).filter((_, i) => i !== idx),
+                            }))
+                          }
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      </span>
+                    ))}
+                    {(!itemForm.quick_options || itemForm.quick_options.length === 0) && (
+                      <span className="text-[11px] text-muted-foreground">
+                        سيتم استخدام الخيارات الافتراضية الذكية لنوع الصنف إن تُرك فارغاً
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Paid / Inventory-linked Additions Editor */}
+                <div className="bg-muted/30 p-3.5 rounded-2xl border border-border space-y-3">
+                  <div className="text-xs font-black text-foreground">
+                    الإضافات (المدفوعة / المرتبطة بالمخزون)
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <Input
+                      value={newAdditionNameAr}
+                      onChange={(e) => setNewAdditionNameAr(e.target.value)}
+                      placeholder="اسم الإضافة (جبنة إضافية)"
+                      className="h-8 text-xs font-bold col-span-2"
+                    />
+                    <Input
+                      type="number"
+                      step="any"
+                      value={newAdditionPrice}
+                      onChange={(e) => setNewAdditionPrice(e.target.value)}
+                      placeholder="السعر"
+                      className="h-8 text-xs font-bold"
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-8 text-xs font-bold"
+                      onClick={() => {
+                        const name = newAdditionNameAr.trim();
+                        if (!name) return;
+                        const nextAdd = {
+                          id: `add_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                          name_ar: name,
+                          price: Number(newAdditionPrice || 0),
+                          inventory_id: newAdditionInventoryId || null,
+                          deduct_qty: newAdditionInventoryId ? Number(newAdditionDeductQty || 0) : 0,
+                          deduct_unit: newAdditionInventoryId ? newAdditionDeductUnit || "g" : undefined,
+                        };
+                        setItemForm((s) => ({
+                          ...s,
+                          additions: [...(s.additions || []), nextAdd],
+                        }));
+                        setNewAdditionNameAr("");
+                        setNewAdditionPrice("0");
+                        setNewAdditionInventoryId("");
+                        setNewAdditionDeductQty("");
+                      }}
+                    >
+                      <Plus size={13} className="ml-1" />
+                      إضافة
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <select
+                      className="h-8 rounded-md border border-input bg-background px-2 text-[11px] font-bold sm:col-span-1"
+                      value={newAdditionInventoryId}
+                      onChange={(e) => setNewAdditionInventoryId(e.target.value)}
+                    >
+                      <option value="">بدون ربط مخزني</option>
+                      {(inventoryQuery.data ?? []).map((inv: any) => (
+                        <option key={inv.id} value={inv.id}>
+                          {inv.name_ar}
+                        </option>
+                      ))}
+                    </select>
+                    <Input
+                      type="number"
+                      step="any"
+                      disabled={!newAdditionInventoryId}
+                      value={newAdditionDeductQty}
+                      onChange={(e) => setNewAdditionDeductQty(e.target.value)}
+                      placeholder="كمية الخصم"
+                      className="h-8 text-xs font-bold"
+                    />
+                    <select
+                      disabled={!newAdditionInventoryId}
+                      className="h-8 rounded-md border border-input bg-background px-2 text-xs font-bold"
+                      value={newAdditionDeductUnit}
+                      onChange={(e) => setNewAdditionDeductUnit(e.target.value)}
+                    >
+                      <option value="g">g</option>
+                      <option value="kg">kg</option>
+                      <option value="ml">ml</option>
+                      <option value="l">l</option>
+                      <option value="pcs">pcs</option>
+                      <option value="can">can</option>
+                      <option value="bottle">bottle</option>
+                    </select>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(itemForm.additions || []).map((add: any, idx: number) => (
+                      <span
+                        key={add.id || idx}
+                        className="inline-flex items-center gap-1.5 bg-card border border-border rounded-lg px-2 py-1 text-[11px] font-bold"
+                      >
+                        <span>
+                          {typeof add === "string"
+                            ? add
+                            : `${add.name_ar}${Number(add.price || 0) > 0 ? ` (+${add.price})` : ""}`}
+                        </span>
+                        <button
+                          type="button"
+                          className="text-destructive hover:opacity-80 cursor-pointer"
+                          onClick={() =>
+                            setItemForm((s) => ({
+                              ...s,
+                              additions: (s.additions || []).filter((_, i) => i !== idx),
+                            }))
+                          }
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Quality & Shelf-Life Specifications Section */}
@@ -1334,18 +1610,17 @@ function MenuPage() {
                   </Label>
                   <Input
                     type="text"
-                    placeholder="مثال: غلوتين، جلبان، ألبان، بيض"
-                    value={(qualityForm.allergens || []).join("، ")}
-                    onChange={(e) =>
-                      setQualityForm((s) => ({
-                        ...s,
-                        allergens: e.target.value
-                          .split("،")
-                          .flatMap((x) => x.split(","))
-                          .map((x) => x.trim())
-                          .filter(Boolean),
-                      }))
-                    }
+                    placeholder="مثال: غلوتين، ألبان، بيض"
+                    value={(qualityForm.allergens || itemForm.allergens || []).join("، ")}
+                    onChange={(e) => {
+                      const nextAllergens = e.target.value
+                        .split("،")
+                        .flatMap((x) => x.split(","))
+                        .map((x) => x.trim())
+                        .filter(Boolean);
+                      setQualityForm((s) => ({ ...s, allergens: nextAllergens }));
+                      setItemForm((s) => ({ ...s, allergens: nextAllergens }));
+                    }}
                     className="h-9 text-xs font-bold mt-1.5"
                   />
                 </div>

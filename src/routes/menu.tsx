@@ -16,6 +16,7 @@ import {
   Globe,
   CheckCircle2,
   X,
+  Pencil,
 } from "lucide-react";
 import { menuService } from "@/features/menu/services/menuService";
 import { tableOrdersStore } from "@/shared/services/tableOrdersStore";
@@ -24,6 +25,15 @@ import { useToast } from "@/hooks/use-toast";
 import { useSettings } from "@/hooks/use-settings";
 import { supabase } from "@/integrations/supabase/client";
 import { CustomerOrderTracker } from "@/components/CustomerOrderTracker";
+import {
+  ProductCustomizationModal,
+  ConfiguredCartSelection,
+} from "@/components/ProductCustomizationModal";
+import {
+  buildCartLineKey,
+  getLineUnitPrice,
+  formatLineCustomizationSummary,
+} from "@/shared/utils/productOptions";
 
 const EN_TRANSLATIONS: Record<string, string> = {
   "البرجر والسندويتشات": "Burgers & Sandwiches",
@@ -235,8 +245,7 @@ function MenuPage() {
   }, []);
 
   const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
-  const [customNotes, setCustomNotes] = useState("");
-  const [selectedAdditions, setSelectedAdditions] = useState<any[]>([]);
+  const [editingCartLine, setEditingCartLine] = useState<any | null>(null);
 
   const categoriesQuery = useQuery({
     queryKey: ["menu_categories"],
@@ -250,6 +259,10 @@ function MenuPage() {
 
   const categories = categoriesQuery.data || [];
   const availableItems = itemsQuery.data || [];
+  const categoriesMap = useMemo(
+    () => Object.fromEntries(categories.map((c: any) => [c.id, c.name_ar])),
+    [categories],
+  );
 
   const filteredItems = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -271,17 +284,9 @@ function MenuPage() {
   };
 
   const quickAddItem = (item: MenuItem) => {
-    if (item.additions && item.additions.length > 0) {
-      handleItemClick(item);
-      return;
-    }
+    const plainKey = buildCartLineKey({ itemId: item.id });
     setCart((prev) => {
-      const existingIdx = prev.findIndex(
-        (p) =>
-          p.item.id === item.id &&
-          !p.notes &&
-          (!p.selectedAdditions || p.selectedAdditions.length === 0),
-      );
+      const existingIdx = prev.findIndex((p) => (p.lineKey || p.item.id) === plainKey);
       if (existingIdx >= 0) {
         const next = [...prev];
         next[existingIdx] = { ...next[existingIdx], quantity: next[existingIdx].quantity + 1 };
@@ -290,9 +295,11 @@ function MenuPage() {
       return [
         ...prev,
         {
+          lineKey: plainKey,
           item,
           quantity: 1,
           notes: "",
+          selectedOptions: [],
           selectedAdditions: [],
         },
       ];
@@ -301,7 +308,13 @@ function MenuPage() {
 
   const quickDecrementItem = (itemId: string) => {
     setCart((prev) => {
-      const idx = prev.findIndex((p) => p.item.id === itemId);
+      let idx = -1;
+      for (let i = prev.length - 1; i >= 0; i--) {
+        if (prev[i].item.id === itemId) {
+          idx = i;
+          break;
+        }
+      }
       if (idx === -1) return prev;
       const next = [...prev];
       if (next[idx].quantity > 1) {
@@ -313,34 +326,36 @@ function MenuPage() {
   };
 
   const handleItemClick = (item: MenuItem) => {
+    setEditingCartLine(null);
     setCustomizingItem(item);
-    setCustomNotes("");
-    setSelectedAdditions([]);
   };
 
-  const confirmAddToCart = () => {
-    if (!customizingItem) return;
-
+  const handleConfirmCustomization = (selection: ConfiguredCartSelection) => {
     setCart((prev) => {
-      const existingIdx = prev.findIndex(
-        (p) =>
-          p.item.id === customizingItem.id &&
-          p.notes === customNotes &&
-          JSON.stringify(p.selectedAdditions) === JSON.stringify(selectedAdditions),
-      );
-
+      const base = editingCartLine
+        ? prev.filter(
+            (p) =>
+              (p.lineKey || p.item.id) !== (editingCartLine.lineKey || editingCartLine.item.id),
+          )
+        : prev;
+      const existingIdx = base.findIndex((p) => (p.lineKey || p.item.id) === selection.lineKey);
       if (existingIdx >= 0) {
-        const next = [...prev];
-        next[existingIdx].quantity += 1;
+        const next = [...base];
+        next[existingIdx] = {
+          ...next[existingIdx],
+          quantity: next[existingIdx].quantity + selection.quantity,
+        };
         return next;
       }
       return [
-        ...prev,
+        ...base,
         {
-          item: customizingItem,
-          quantity: 1,
-          notes: customNotes,
-          selectedAdditions: selectedAdditions,
+          lineKey: selection.lineKey,
+          item: selection.item,
+          quantity: selection.quantity,
+          notes: selection.notes,
+          selectedOptions: selection.selectedOptions,
+          selectedAdditions: selection.selectedAdditions,
         },
       ];
     });
@@ -348,18 +363,19 @@ function MenuPage() {
     toast({
       title: isAr ? "تمت الإضافة للسلة" : "Added to Cart",
       description: isAr
-        ? `تم إضافة ${customizingItem.name_ar} إلى طلبك`
-        : `${translateMenuText(customizingItem.name_ar, "en")} added to your order`,
+        ? `تم تحديث ${selection.item.name_ar} في طلبك`
+        : `${translateMenuText(selection.item.name_ar, "en")} updated in your order`,
       duration: 1200,
     });
+    setEditingCartLine(null);
     setCustomizingItem(null);
   };
 
-  const updateQuantity = (cartIndex: number, delta: number) => {
+  const updateQuantity = (lineKey: string, delta: number) => {
     setCart((prev) =>
       prev
-        .map((p, i) => {
-          if (i === cartIndex) {
+        .map((p) => {
+          if ((p.lineKey || p.item.id) === lineKey) {
             const newQ = p.quantity + delta;
             return newQ > 0 ? { ...p, quantity: newQ } : null;
           }
@@ -369,15 +385,13 @@ function MenuPage() {
     );
   };
 
-  const removeFromCart = (cartIndex: number) => {
-    setCart((prev) => prev.filter((_, i) => i !== cartIndex));
+  const removeFromCart = (lineKey: string) => {
+    setCart((prev) => prev.filter((p) => (p.lineKey || p.item.id) !== lineKey));
   };
 
   const baseTotalUsd = cart.reduce((sum, c) => {
-    const itemTotal =
-      Number(c.item.price || 0) +
-      (c.selectedAdditions?.reduce((s: number, a: any) => s + Number(a.price || 0), 0) || 0);
-    return sum + itemTotal * c.quantity;
+    const unitUsd = getLineUnitPrice(Number(c.item.price || 0), c.selectedAdditions);
+    return sum + unitUsd * c.quantity;
   }, 0);
 
   const totalAmount = convertUsdPrice(baseTotalUsd);
@@ -486,9 +500,19 @@ function MenuPage() {
 
     const enrichedItems = cart.map((line) => ({
       ...line,
+      lineKey:
+        line.lineKey ||
+        buildCartLineKey({
+          itemId: line.item?.id,
+          selectedOptions: line.selectedOptions,
+          selectedAdditions: line.selectedAdditions,
+          notes: line.notes,
+        }),
       name_ar: line.item?.name_ar || "صنف",
       name_en: translateMenuText(line.item?.name_ar, "en"),
-      price: Number(line.item?.price || 0),
+      price: getLineUnitPrice(Number(line.item?.price || 0), line.selectedAdditions),
+      selectedOptions: line.selectedOptions || [],
+      selectedAdditions: line.selectedAdditions || [],
       meta: {
         table_id: resolvedTableId,
         table_number: finalTableNum,
@@ -499,6 +523,7 @@ function MenuPage() {
       },
     }));
 
+    const nowIso = new Date().toISOString();
     const orderPayload = {
       id: orderUuid,
       table_id: resolvedTableId,
@@ -514,7 +539,9 @@ function MenuPage() {
       tax: 0,
       total: baseTotalUsd,
       status: "pending",
-      created_at: new Date().toISOString(),
+      submitted_at: nowIso,
+      is_qr_order: true,
+      created_at: nowIso,
       pricing_currency: "USD",
       payment_currency: selectedCurrency,
       payment_exchange_rate: activeRate,
@@ -548,6 +575,7 @@ function MenuPage() {
         tax: orderPayload.tax,
         total: orderPayload.total,
         status: "draft",
+        submitted_at: nowIso,
         is_self_order: true,
       });
 
@@ -582,16 +610,23 @@ function MenuPage() {
         customer_tracking_token: orderPayload.customer_tracking_token,
       };
 
-      const { error } = await supabase.from("orders").insert(baseDbRow);
+      const extendedRow = {
+        ...baseDbRow,
+        submitted_at: nowIso,
+        is_qr_order: true,
+        customer_name: customerName.trim() || null,
+      };
+
+      const { error } = await supabase.from("orders").insert(extendedRow);
       if (error) {
-        // Fallback if table_id FK failed
-        const fallbackRow = {
-          ...baseDbRow,
-          table_id: null,
-        };
-        const { error: fallbackErr } = await supabase.from("orders").insert(fallbackRow);
-        if (fallbackErr) {
-          console.warn("Supabase fallback order insert warning:", fallbackErr);
+        const { error: baseErr } = await supabase.from("orders").insert(baseDbRow);
+        if (baseErr) {
+          const { error: fallbackErr } = await supabase
+            .from("orders")
+            .insert({ ...baseDbRow, table_id: null });
+          if (fallbackErr) {
+            console.warn("Supabase fallback order insert warning:", fallbackErr);
+          }
         }
       }
     } catch (error) {
@@ -935,103 +970,32 @@ function MenuPage() {
         )}
       </main>
 
-      {/* Item Customization Bottom Sheet */}
-      {customizingItem && (
-        <div
-          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4"
-          onClick={() => setCustomizingItem(null)}
-        >
-          <div
-            className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 space-y-4 max-h-[85vh] overflow-y-auto shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3.5">
-              <div>
-                <h2 className="font-black text-lg text-slate-900">
-                  {translateMenuText(customizingItem.name_ar, activeLang)}
-                </h2>
-                <span className="text-xs font-black text-emerald-600 tabular-nums">
-                  {formatMenuPrice(customizingItem.price)} {currencySymbol}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setCustomizingItem(null)}
-                className="min-h-[36px] px-3 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 font-bold text-xs cursor-pointer"
-              >
-                {isAr ? "إلغاء" : "Cancel"}
-              </button>
-            </div>
-
-            {customizingItem.additions && customizingItem.additions.length > 0 && (
-              <div className="space-y-2">
-                <label className="font-bold text-xs text-slate-700 block">
-                  {isAr ? "إضافات اختيارية:" : "Optional Additions:"}
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  {customizingItem.additions.map((add: any, idx: number) => {
-                    const isSelected = selectedAdditions.some((a) => a.name_ar === add.name_ar);
-                    return (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => {
-                          if (isSelected) {
-                            setSelectedAdditions((prev) =>
-                              prev.filter((a) => a.name_ar !== add.name_ar),
-                            );
-                          } else {
-                            setSelectedAdditions((prev) => [...prev, add]);
-                          }
-                        }}
-                        className={`flex items-center justify-between p-3 rounded-xl border text-xs transition cursor-pointer ${
-                          isSelected
-                            ? "bg-emerald-50 border-emerald-500 text-emerald-950 font-bold"
-                            : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
-                        }`}
-                      >
-                        <div className="flex items-center gap-1.5">
-                          {add.icon && <span>{add.icon}</span>}
-                          <span>{translateMenuText(add.name_ar, activeLang)}</span>
-                        </div>
-                        {add.price ? (
-                          <span className="text-xs font-black text-emerald-600 tabular-nums">
-                            +{formatMenuPrice(add.price)} {currencySymbol}
-                          </span>
-                        ) : null}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <label className="font-bold text-xs text-slate-700 block">
-                {isAr ? "ملاحظات خاصة على الصنف:" : "Special Instructions:"}
-              </label>
-              <textarea
-                value={customNotes}
-                onChange={(e) => setCustomNotes(e.target.value)}
-                placeholder={
-                  isAr
-                    ? "مثال: بدون شطة، بدون بصل، تسوية زيادة..."
-                    : "e.g. No spicy, extra sauce, well done..."
-                }
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm min-h-[80px] focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-            </div>
-
-            <button
-              type="button"
-              onClick={confirmAddToCart}
-              className="w-full min-h-[48px] bg-emerald-600 text-white rounded-2xl py-3.5 font-black text-sm shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 transition cursor-pointer"
-            >
-              {isAr ? "تأكيد وإضافة للسلة" : "Add to Order"}
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Product-Specific Options & Additions Modal */}
+      <ProductCustomizationModal
+        item={customizingItem}
+        categoryNameAr={customizingItem ? categoriesMap[customizingItem.category_id] : undefined}
+        isOpen={Boolean(customizingItem)}
+        lang={activeLang}
+        formatPrice={(usdAmt) => `${formatMenuPrice(usdAmt)} ${currencySymbol}`}
+        initialQuantity={editingCartLine?.quantity || 1}
+        initialOptions={editingCartLine?.selectedOptions || []}
+        initialAdditions={editingCartLine?.selectedAdditions || []}
+        initialNotes={editingCartLine?.notes || ""}
+        confirmLabel={
+          editingCartLine
+            ? isAr
+              ? "تحديث الصنف في السلة"
+              : "Update Cart Item"
+            : isAr
+              ? "تأكيد وإضافة للسلة"
+              : "Add to Order"
+        }
+        onClose={() => {
+          setCustomizingItem(null);
+          setEditingCartLine(null);
+        }}
+        onConfirm={handleConfirmCustomization}
+      />
 
       {/* Sticky Bottom Cart Bar */}
       {cart.length > 0 && (
@@ -1117,23 +1081,40 @@ function MenuPage() {
             {/* Cart Items List */}
             <div className="space-y-3 divide-y divide-slate-100 max-h-60 overflow-y-auto pr-1">
               {cart.map((c, idx) => {
-                const unitPrice =
-                  Number(c.item.price || 0) +
-                  (c.selectedAdditions?.reduce(
-                    (s: number, a: any) => s + Number(a.price || 0),
-                    0,
-                  ) || 0);
+                const unitPrice = getLineUnitPrice(Number(c.item.price || 0), c.selectedAdditions);
+                const lineKey = c.lineKey || `${c.item.id}_${idx}`;
+                const summary = formatLineCustomizationSummary({
+                  selectedOptions: c.selectedOptions,
+                  selectedAdditions: c.selectedAdditions,
+                  notes: c.notes,
+                });
                 return (
                   <div
-                    key={c.item.id + "_" + idx}
+                    key={lineKey}
                     className="pt-3 first:pt-0 flex items-center justify-between gap-3"
                   >
                     <div className="min-w-0 flex-1">
                       <h4 className="font-bold text-slate-900 text-sm truncate">
                         {translateMenuText(c.item.name_ar, activeLang)}
                       </h4>
+                      {Array.isArray(c.selectedOptions) && c.selectedOptions.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-0.5">
+                          {c.selectedOptions.map((opt: any, oIdx: number) => (
+                            <span
+                              key={oIdx}
+                              className="inline-flex px-1.5 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-bold"
+                            >
+                              {typeof opt === "string"
+                                ? opt
+                                : isAr
+                                  ? opt.label_ar
+                                  : opt.label_en || opt.label_ar}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                       {c.selectedAdditions && c.selectedAdditions.length > 0 && (
-                        <div className="text-[11px] text-indigo-600 font-semibold">
+                        <div className="text-[11px] text-indigo-600 font-semibold mt-0.5">
                           +{" "}
                           {c.selectedAdditions
                             .map((a: any) => translateMenuText(a.name_ar, activeLang))
@@ -1143,14 +1124,30 @@ function MenuPage() {
                       {c.notes && (
                         <div className="text-[11px] text-amber-700 font-medium">{c.notes}</div>
                       )}
+                      {!summary && (
+                        <div className="text-[10px] text-slate-400">
+                          {isAr ? "بدون إضافات" : "Standard"}
+                        </div>
+                      )}
                       <span className="text-xs text-emerald-600 font-black tabular-nums">
                         {formatMenuPrice(unitPrice * c.quantity)} {currencySymbol}
                       </span>
                     </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="flex items-center gap-1 shrink-0">
                       <button
                         type="button"
-                        onClick={() => updateQuantity(idx, -1)}
+                        onClick={() => {
+                          setEditingCartLine(c);
+                          setCustomizingItem(c.item);
+                        }}
+                        title={isAr ? "تعديل الخيارات" : "Edit options"}
+                        className="w-8 h-8 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-700 hover:bg-indigo-100 cursor-pointer"
+                      >
+                        <Pencil size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateQuantity(c.lineKey || c.item.id, -1)}
                         className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700 hover:bg-slate-200 cursor-pointer"
                       >
                         <Minus size={14} />
@@ -1160,14 +1157,14 @@ function MenuPage() {
                       </span>
                       <button
                         type="button"
-                        onClick={() => updateQuantity(idx, 1)}
+                        onClick={() => updateQuantity(c.lineKey || c.item.id, 1)}
                         className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700 hover:bg-slate-200 cursor-pointer"
                       >
                         <Plus size={14} />
                       </button>
                       <button
                         type="button"
-                        onClick={() => removeFromCart(idx)}
+                        onClick={() => removeFromCart(c.lineKey || c.item.id)}
                         className="w-8 h-8 rounded-xl bg-rose-50 flex items-center justify-center text-rose-600 hover:bg-rose-100 ms-1 cursor-pointer"
                       >
                         <Trash2 size={14} />

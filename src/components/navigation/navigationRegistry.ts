@@ -788,6 +788,7 @@ const SUBPAGE_REGISTRY: Record<
     inventory: { labelAr: "الريسبي ومكونات الأصناف", labelEn: "Recipes & Ingredients", parentTab: "definitions" },
     rep_sales: { labelAr: "تقرير مبيعات المطعم التفصيلي", labelEn: "Restaurant Sales Report", parentTab: "reports" },
     rep_shifts: { labelAr: "سجل وتقارير ورديات المطعم", labelEn: "Restaurant Shifts Report", parentTab: "reports" },
+    rep_quality: { labelAr: "تقارير الرقابة والجودة", labelEn: "Quality Control Reports", parentTab: "reports" },
     rep_items: { labelAr: "تقرير الأصناف الأكثر مبيعاً", labelEn: "Top Selling Items Report", parentTab: "reports" },
     daily_summary: { labelAr: "ملخص المبيعات اليومي", labelEn: "Daily Sales Summary", parentTab: "reports" },
   },

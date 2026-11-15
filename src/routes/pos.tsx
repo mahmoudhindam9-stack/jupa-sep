@@ -64,6 +64,15 @@ import { MenuExportModal } from "@/components/MenuExportModal";
 import { AppMainNavbar } from "@/components/navigation/AppMainNavbar";
 import { AppBreadcrumbBar } from "@/components/navigation/AppBreadcrumbBar";
 import {
+  ProductCustomizationModal,
+  ConfiguredCartSelection,
+} from "@/components/ProductCustomizationModal";
+import {
+  buildCartLineKey,
+  getLineUnitPrice,
+} from "@/shared/utils/productOptions";
+import { getRawMaterialSpec } from "@/shared/data/defaultRecipes";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -95,11 +104,22 @@ type MenuItem = {
   price: number;
   category_id: string;
   image_url: string | null;
+  badge?: string | null;
+  requires_oven?: boolean;
+  quick_options?: any[];
+  additions?: any[];
   ingredients?: any;
   inventory_tracking?: string;
 };
 type Table = { id: string; number: number; name: string | null; status: string };
-type CartLine = { item: MenuItem; quantity: number; notes?: string; selectedAdditions?: any[] };
+type CartLine = {
+  lineKey: string;
+  item: MenuItem;
+  quantity: number;
+  notes?: string;
+  selectedOptions?: any[];
+  selectedAdditions?: any[];
+};
 type PaymentMethod = "cash" | "card" | "wallet";
 type OrderType = "dine_in" | "takeaway" | "delivery";
 type CompletedOrder = {
@@ -115,7 +135,14 @@ type CompletedOrder = {
   order_type: OrderType;
   table_id: string | null;
   status: string;
-  items: { name_ar: string; price: number; quantity: number }[];
+  items: {
+    name_ar: string;
+    price: number;
+    quantity: number;
+    selectedOptions?: any[];
+    selectedAdditions?: any[];
+    notes?: string;
+  }[];
   created_at: string;
 };
 
@@ -123,13 +150,6 @@ const orderTypeOptions: { key: OrderType; label: string; icon: LucideIcon }[] = 
   { key: "dine_in", label: "داخل المطعم", icon: UtensilsCrossed },
   { key: "takeaway", label: "Takeaway", icon: Package },
   { key: "delivery", label: "توصيل", icon: Car },
-];
-
-const additionsList = [
-  { id: "cheese", label_ar: "جبنة إضافية", label_en: "Extra Cheese", price: 15 },
-  { id: "fries", label_ar: "بطاطس مقلية", label_en: "Fries", price: 25 },
-  { id: "sauce", label_ar: "صوص حار", label_en: "Spicy Sauce", price: 5 },
-  { id: "water", label_ar: "مياه معدنية", label_en: "Mineral Water", price: 10 },
 ];
 
 
@@ -263,12 +283,8 @@ function Index() {
   const { pendingCashierOrders, updateStatus, removeOrder } = useTableOrders();
   const [selectedTable, setSelectedTable] = useState<string>("");
   const [orderNotes, setOrderNotes] = useState("");
-  const [selectedAdditions, setSelectedAdditions] = useState<string[]>([]);
-  const [noteEditingItem, setNoteEditingItem] = useState<{
-    id: string;
-    name: string;
-    notes: string;
-  } | null>(null);
+  const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
+  const [editingCartLine, setEditingCartLine] = useState<CartLine | null>(null);
   const [activeTableOrderSentToKitchen, setActiveTableOrderSentToKitchen] =
     useState<boolean>(false);
   const [activeTableKitchenOrderId, setActiveTableKitchenOrderId] = useState<string | null>(null);
@@ -310,20 +326,35 @@ function Index() {
               table_id: tableId,
               table_number: tableNum,
               table_name: tableNum !== 999 ? `طاولة ${tableNum}` : "طلب سفري / عام",
-              items: (Array.isArray(row.items) ? row.items : []).map((line: any, idx: number) => ({
-                ...line,
-                item: line?.item || {
+              items: (Array.isArray(row.items) ? row.items : []).map((line: any, idx: number) => {
+                const itemObj = line?.item || {
                   id: line?.menu_item_id || line?.id || `item-${idx}`,
                   name_ar: line?.name_ar || line?.name || "صنف",
                   price: Number(line?.price ?? 0),
                   category_id: line?.category_id || "all",
                   image_url: line?.image_url || null,
                   requires_oven: Boolean(line?.requires_oven),
-                },
-                quantity: Number(line?.quantity ?? 1),
-                notes: line?.notes || line?.note || "",
-                selectedAdditions: line?.selectedAdditions || [],
-              })),
+                };
+                const selectedOpts = line?.selectedOptions || [];
+                const selectedAdds = line?.selectedAdditions || [];
+                const lineNote = line?.notes || line?.note || "";
+                return {
+                  ...line,
+                  lineKey:
+                    line?.lineKey ||
+                    buildCartLineKey({
+                      itemId: itemObj.id,
+                      selectedOptions: selectedOpts,
+                      selectedAdditions: selectedAdds,
+                      notes: lineNote,
+                    }),
+                  item: itemObj,
+                  quantity: Number(line?.quantity ?? 1),
+                  notes: lineNote,
+                  selectedOptions: selectedOpts,
+                  selectedAdditions: selectedAdds,
+                };
+              }),
               order_type: (row.order_type as OrderType) || "dine_in",
               notes: notesStr,
               selectedAdditions: [],
@@ -353,18 +384,33 @@ function Index() {
   }, []);
 
   const handleLoadTableOrderToCart = (tableOrder: TableOrder) => {
-    const normalizedItems: CartLine[] = (tableOrder.items || []).map((line: any, idx: number) => ({
-      item: line?.item || {
+    const normalizedItems: CartLine[] = (tableOrder.items || []).map((line: any, idx: number) => {
+      const itemObj = line?.item || {
         id: line?.menu_item_id || line?.id || `item-${idx}`,
         name_ar: line?.name_ar || line?.name || "صنف",
         price: Number(line?.price ?? 0),
         category_id: line?.category_id || "all",
         image_url: line?.image_url || null,
-      },
-      quantity: Number(line?.quantity ?? 1),
-      notes: line?.notes || line?.note || "",
-      selectedAdditions: line?.selectedAdditions || [],
-    }));
+      };
+      const selectedOpts = line?.selectedOptions || [];
+      const selectedAdds = line?.selectedAdditions || [];
+      const lineNote = line?.notes || line?.note || "";
+      return {
+        lineKey:
+          line?.lineKey ||
+          buildCartLineKey({
+            itemId: itemObj.id,
+            selectedOptions: selectedOpts,
+            selectedAdditions: selectedAdds,
+            notes: lineNote,
+          }),
+        item: itemObj,
+        quantity: Number(line?.quantity ?? 1),
+        notes: lineNote,
+        selectedOptions: selectedOpts,
+        selectedAdditions: selectedAdds,
+      };
+    });
 
     const cleanedNotes = String(tableOrder.notes || "")
       .replace(/\[SELF_ORDER_PENDING_CAPTAIN\]/g, "")
@@ -383,7 +429,6 @@ function Index() {
     setSelectedTable(tableOrder.table_id || "");
     setOrderType(tableOrder.order_type || "dine_in");
     setOrderNotes(cleanedNotes);
-    setSelectedAdditions(tableOrder.selectedAdditions || []);
     setActiveTableOrderSentToKitchen(!!tableOrder.sentToKitchen);
     setActiveTableKitchenOrderId(resolvedDbOrderId);
     setActiveTableOrderId(tableOrder.id);
@@ -469,21 +514,40 @@ function Index() {
     };
   }, [queryClient]);
 
-  const addToCart = (item: MenuItem) => {
+  const upsertCustomizedCartLine = (
+    selection: ConfiguredCartSelection,
+    replaceLineKey?: string,
+  ) => {
     setCart((prev) => {
-      const existing = prev.find((c) => c.item.id === item.id);
-      if (existing) {
-        return prev.map((c) => (c.item.id === item.id ? { ...c, quantity: c.quantity + 1 } : c));
+      const base = replaceLineKey ? prev.filter((c) => c.lineKey !== replaceLineKey) : prev;
+      const existingIdx = base.findIndex((c) => c.lineKey === selection.lineKey);
+      if (existingIdx >= 0) {
+        const next = [...base];
+        next[existingIdx] = {
+          ...next[existingIdx],
+          quantity: next[existingIdx].quantity + selection.quantity,
+        };
+        return next;
       }
-      return [...prev, { item, quantity: 1 }];
+      return [
+        ...base,
+        {
+          lineKey: selection.lineKey,
+          item: selection.item as MenuItem,
+          quantity: selection.quantity,
+          notes: selection.notes,
+          selectedOptions: selection.selectedOptions,
+          selectedAdditions: selection.selectedAdditions,
+        },
+      ];
     });
   };
 
-  const updateQuantity = (id: string, delta: number) => {
+  const updateQuantity = (lineKey: string, delta: number) => {
     setCart((prev) =>
       prev
         .map((c) => {
-          if (c.item.id === id) {
+          if (c.lineKey === lineKey) {
             const newQty = c.quantity + delta;
             return newQty > 0 ? { ...c, quantity: newQty } : null;
           }
@@ -493,10 +557,22 @@ function Index() {
     );
   };
 
-  const removeFromCart = (id: string) => setCart((prev) => prev.filter((c) => c.item.id !== id));
+  const removeFromCart = (lineKey: string) =>
+    setCart((prev) => prev.filter((c) => c.lineKey !== lineKey));
 
-  const updateItemNotes = (id: string, notes: string) => {
-    setCart((prev) => prev.map((c) => (c.item.id === id ? { ...c, notes } : c)));
+  const updateItemNotes = (lineKey: string, notes: string) => {
+    setCart((prev) =>
+      prev.map((c) => {
+        if (c.lineKey !== lineKey) return c;
+        const newKey = buildCartLineKey({
+          itemId: c.item.id,
+          selectedOptions: c.selectedOptions,
+          selectedAdditions: c.selectedAdditions,
+          notes,
+        });
+        return { ...c, notes, lineKey: newKey };
+      }),
+    );
   };
   const [receiptSettings, setReceiptSettings] = useState<any>(DEFAULT_RECEIPT_SETTINGS);
 
@@ -561,13 +637,10 @@ function Index() {
     saveReceiptDesignSettings(updated);
   };
 
-  const additionsTotal = selectedAdditions.reduce((acc, addId) => {
-    const add = additionsList.find((a) => a.id === addId);
-    return acc + (add ? add.price : 0);
-  }, 0);
-
-  const itemsSubtotal =
-    cart.reduce((acc, c) => acc + c.item.price * c.quantity, 0) + additionsTotal;
+  const itemsSubtotal = cart.reduce(
+    (acc, c) => acc + getLineUnitPrice(c.item.price, c.selectedAdditions) * c.quantity,
+    0,
+  );
 
   // Discount calculation
   let discountAmount = 0;
@@ -662,6 +735,33 @@ function Index() {
         }
       > = {};
 
+      const allInvByName = new Map((allInv ?? []).map((i) => [i.name_ar.trim(), i]));
+      const pushRequiredInv = (masterInvItem: any, rawWeight: number, rawUnit?: string, lineQty = 1) => {
+        if (!masterInvItem || !Number.isFinite(rawWeight) || rawWeight <= 0) return;
+        const subInvItem = kitchenInvMap[masterInvItem.id];
+        const mainInvItem = mainInvMap[masterInvItem.id];
+        const convertedWeight = convertToInventoryUnit(
+          rawWeight,
+          rawUnit || masterInvItem.unit,
+          masterInvItem.unit,
+        );
+        const totalNeeded = convertedWeight * lineQty;
+        const key = `${OPERATIONAL_WH}:${masterInvItem.id}`;
+        if (!requiredByWarehouse[key]) {
+          requiredByWarehouse[key] = {
+            warehouseId: OPERATIONAL_WH,
+            invId: masterInvItem.id,
+            name: masterInvItem.name_ar,
+            required: 0,
+            subAvailable: Number(subInvItem?.quantity ?? 0),
+            mainAvailable: Number(mainInvItem?.quantity ?? 0),
+            unit: masterInvItem.unit,
+            costPerUnit: masterInvItem.cost || 0,
+          };
+        }
+        requiredByWarehouse[key].required += totalNeeded;
+      };
+
       for (const cartItem of cart) {
         const menuItem = menuMap[cartItem.item.id];
 
@@ -686,33 +786,23 @@ function Index() {
         }
 
         for (const ing of ingredients) {
-          const subInvItem = kitchenInvMap[ing.inventory_id];
-          const mainInvItem = mainInvMap[ing.inventory_id];
           const masterInvItem = allInvMap[ing.inventory_id];
+          pushRequiredInv(masterInvItem, Number(ing.weight), ing.unit, cartItem.quantity);
+        }
 
+        // Include inventory-linked additions on this cart line
+        const lineAdds = Array.isArray(cartItem.selectedAdditions) ? cartItem.selectedAdditions : [];
+        for (const add of lineAdds) {
+          if (!add || typeof add !== "object") continue;
+          const deductQty = Number(add.deduct_qty || 0);
+          if (deductQty <= 0) continue;
+          let masterInvItem = add.inventory_id ? allInvMap[add.inventory_id] : undefined;
+          if (!masterInvItem && add.materialKey) {
+            const spec = getRawMaterialSpec(add.materialKey);
+            if (spec) masterInvItem = allInvByName.get(spec.name_ar.trim());
+          }
           if (masterInvItem) {
-            // Convert to inventory unit
-            const convertedWeight = convertToInventoryUnit(
-              Number(ing.weight),
-              ing.unit,
-              masterInvItem.unit,
-            );
-            const totalNeeded = convertedWeight * cartItem.quantity;
-
-            const key = `${OPERATIONAL_WH}:${ing.inventory_id}`;
-            if (!requiredByWarehouse[key]) {
-              requiredByWarehouse[key] = {
-                warehouseId: OPERATIONAL_WH,
-                invId: ing.inventory_id,
-                name: masterInvItem.name_ar,
-                required: 0,
-                subAvailable: Number(subInvItem?.quantity ?? 0),
-                mainAvailable: Number(mainInvItem?.quantity ?? 0),
-                unit: masterInvItem.unit,
-                costPerUnit: masterInvItem.cost || 0,
-              };
-            }
-            requiredByWarehouse[key].required += totalNeeded;
+            pushRequiredInv(masterInvItem, deductQty, add.deduct_unit || masterInvItem.unit, cartItem.quantity);
           }
         }
       }
@@ -764,18 +854,10 @@ function Index() {
         }
       }
 
-      const additionsText = selectedAdditions
-        .map((id) => {
-          const add = additionsList.find((a) => a.id === id);
-          return lang === "ar" ? add?.label_ar : add?.label_en;
-        })
-        .join("، ");
-
       const combinedNotes = [
         orderNotes
           ? `${lang === "ar" ? "الطلبات الخاصة: " : "Special Requests: "}${orderNotes}`
           : "",
-        additionsText ? `${lang === "ar" ? "الإضافات: " : "Additions: "}${additionsText}` : "",
       ]
         .filter(Boolean)
         .join(" | ");
@@ -818,7 +900,7 @@ function Index() {
         notes: finalNotes || null,
 
         items: cart.map((c) => {
-          // Calculate individual item cost for reports
+          // Calculate individual item cost (recipe + inventory-linked additions) for reports
           const menuItem = menuMap[c.item.id];
           let ingredients =
             Array.isArray(menuItem?.ingredients) && menuItem.ingredients.length > 0
@@ -853,13 +935,36 @@ function Index() {
             }
           }
 
+          const lineAdds = Array.isArray(c.selectedAdditions) ? c.selectedAdditions : [];
+          for (const add of lineAdds) {
+            if (!add || typeof add !== "object") continue;
+            const deductQty = Number(add.deduct_qty || 0);
+            if (deductQty <= 0) continue;
+            let masterInvItem = add.inventory_id ? allInvMap[add.inventory_id] : undefined;
+            if (!masterInvItem && add.materialKey) {
+              const spec = getRawMaterialSpec(add.materialKey);
+              if (spec) masterInvItem = allInvByName.get(spec.name_ar.trim());
+            }
+            if (masterInvItem) {
+              const convertedWeight = convertToInventoryUnit(
+                deductQty,
+                add.deduct_unit || masterInvItem.unit,
+                masterInvItem.unit,
+              );
+              singleItemCost += convertedWeight * (masterInvItem.cost || 0);
+            }
+          }
+
           return {
             id: c.item.id,
             menu_item_id: c.item.id,
+            lineKey: c.lineKey,
             name_ar: c.item.name_ar,
-            price: c.item.price,
+            price: Number(getLineUnitPrice(c.item.price, c.selectedAdditions).toFixed(2)),
             quantity: c.quantity,
             notes: c.notes || "",
+            selectedOptions: c.selectedOptions || [],
+            selectedAdditions: lineAdds,
             requires_oven: (c.item as any).requires_oven || false,
             cost_price: Number(singleItemCost.toFixed(2)),
           };
@@ -1097,7 +1202,6 @@ function Index() {
       setCart([]);
       setSelectedTable("");
       setOrderNotes("");
-      setSelectedAdditions([]);
       setAuthNumber("");
       setMobileNumber("");
       setCheckoutOpen(false);
@@ -1559,17 +1663,23 @@ function Index() {
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 lg:gap-5">
               {filteredItems.map((item) => {
-                const inCartLine = cart.find((c) => c.item.id === item.id);
+                const itemTotalQty = cart
+                  .filter((c) => c.item.id === item.id)
+                  .reduce((sum, c) => sum + c.quantity, 0);
                 const isSelectedCard = selectedCardItemId === item.id;
                 return (
                   <div
                     key={item.id}
                     data-testid={`pos-item-card-${item.id}`}
-                    onClick={() => setSelectedCardItemId(item.id)}
-                    className={`group bg-card rounded-2xl sm:rounded-3xl overflow-hidden border transition-all flex flex-col justify-between select-none ${
+                    onClick={() => {
+                      setSelectedCardItemId(item.id);
+                      setEditingCartLine(null);
+                      setCustomizingItem(item);
+                    }}
+                    className={`group bg-card rounded-2xl sm:rounded-3xl overflow-hidden border transition-all flex flex-col justify-between select-none cursor-pointer ${
                       lang === "ar" ? "text-right" : "text-left"
                     } ${
-                      inCartLine
+                      itemTotalQty > 0
                         ? "border-primary ring-2 ring-primary/30 shadow-md"
                         : isSelectedCard
                           ? "border-amber-500 ring-2 ring-amber-400/35 shadow-md"
@@ -1594,17 +1704,17 @@ function Index() {
                       <div className="absolute top-2.5 left-2.5 bg-primary text-primary-foreground text-[11px] sm:text-xs font-bold px-2.5 py-1 rounded-full shadow">
                         {formatPrice(item.price)}
                       </div>
-                      {(inCartLine || isSelectedCard) && (
+                      {(itemTotalQty > 0 || isSelectedCard) && (
                         <div
                           className={`absolute bottom-2.5 right-2.5 flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-black shadow-md ${
-                            inCartLine
+                            itemTotalQty > 0
                               ? "bg-emerald-600 text-white"
                               : "bg-amber-500 text-slate-950"
                           }`}
                         >
                           <ChefDishIcon size={14} />
                           <span>
-                            {inCartLine ? `${inCartLine.quantity} في الطلب` : "محدد"}
+                            {itemTotalQty > 0 ? `${itemTotalQty} في الطلب` : "محدد"}
                           </span>
                         </div>
                       )}
@@ -1629,7 +1739,8 @@ function Index() {
                         onClick={(e) => {
                           e.stopPropagation();
                           setSelectedCardItemId(item.id);
-                          addToCart(item);
+                          setEditingCartLine(null);
+                          setCustomizingItem(item);
                         }}
                         className="mt-1 w-full py-2.5 px-3 rounded-xl bg-primary hover:bg-primary/90 active:scale-[0.97] text-primary-foreground font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm hover:shadow transition-all cursor-pointer"
                       >
@@ -1845,36 +1956,6 @@ function Index() {
                   )}
                 </div>
 
-                {/* Additions Section */}
-                <div>
-                  <Label className="text-xs font-bold block mb-1">{t.additions}</Label>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {additionsList.map((add) => {
-                      const label = lang === "ar" ? add.label_ar : add.label_en;
-                      const checked = selectedAdditions.includes(add.id);
-                      return (
-                        <button
-                          key={add.id}
-                          onClick={() => {
-                            setSelectedAdditions((prev) =>
-                              checked ? prev.filter((id) => id !== add.id) : [...prev, add.id],
-                            );
-                          }}
-                          className={`flex items-center justify-between p-2 rounded-lg border text-[11px] font-bold transition ${
-                            checked
-                              ? "border-primary bg-primary/5 text-primary"
-                              : "border-border hover:border-primary/40 bg-card text-muted-foreground"
-                          } ${lang === "ar" ? "text-right" : "text-left"}`}
-                        >
-                          <span className="truncate">{label}</span>
-                          <span className="text-[10px] opacity-85 shrink-0">
-                            +{formatPrice(add.price)}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
               </div>
 
               {/* Left Column: Notes, Discounts/Taxes/Service, Totals & Confirm Button */}
@@ -2144,118 +2225,152 @@ function Index() {
                   </p>
                 </div>
               ) : (
-                cart.map((c) => (
-                  <div
-                    key={c.item.id}
-                    className="flex gap-3 p-3 rounded-2xl bg-muted/50 hover:bg-muted transition group"
-                  >
-                    {c.item.image_url && (
-                      <img
-                        src={c.item.image_url}
-                        alt=""
-                        className="w-14 h-14 rounded-xl object-cover shrink-0"
-                        referrerPolicy="no-referrer"
-                      />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-2">
-                        <h5 className="font-bold text-sm line-clamp-1">{c.item.name_ar}</h5>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setNoteEditingItem({
-                                id: c.item.id,
-                                name: c.item.name_ar,
-                                notes: c.notes || "",
-                              })
-                            }
-                            className={`p-1 rounded-md transition cursor-pointer ${
-                              c.notes
-                                ? "bg-amber-100 text-amber-800 hover:bg-amber-200"
-                                : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                            }`}
-                            title={lang === "ar" ? "ملاحظة للصنف" : "Item note"}
-                          >
-                            <FileText size={14} />
-                          </button>
-                          <button
-                            onClick={() => removeFromCart(c.item.id)}
-                            className="text-muted-foreground hover:text-destructive transition p-1"
-                            title={lang === "ar" ? "حذف الصنف" : "Remove item"}
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </div>
-
-                      {c.notes ? (
-                        <div className="mt-1.5 flex items-center justify-between gap-1.5 bg-amber-50 border border-amber-200 text-amber-950 rounded-lg px-2 py-1 text-[11px] font-bold">
-                          <div
-                            className="flex-1 min-w-0 truncate cursor-pointer hover:underline flex items-center gap-1"
-                            onClick={() =>
-                              setNoteEditingItem({
-                                id: c.item.id,
-                                name: c.item.name_ar,
-                                notes: c.notes || "",
-                              })
-                            }
-                          >
-                            <span className="text-amber-700 font-extrabold shrink-0">ملاحظة:</span>
-                            <span className="truncate">{c.notes}</span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => updateItemNotes(c.item.id, "")}
-                            className="text-amber-700 hover:text-rose-600 p-0.5 rounded transition shrink-0"
-                            title="حذف الملاحظة"
-                          >
-                            <X size={12} />
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setNoteEditingItem({
-                              id: c.item.id,
-                              name: c.item.name_ar,
-                              notes: "",
-                            })
-                          }
-                          className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold text-muted-foreground hover:text-primary transition cursor-pointer"
-                        >
-                          <Plus size={11} />
-                          <span>{lang === "ar" ? "إضافة ملاحظة..." : "Add note..."}</span>
-                        </button>
+                cart.map((c) => {
+                  const unitPrice = getLineUnitPrice(c.item.price, c.selectedAdditions);
+                  const hasCustom =
+                    Boolean(c.notes?.trim()) ||
+                    (Array.isArray(c.selectedOptions) && c.selectedOptions.length > 0) ||
+                    (Array.isArray(c.selectedAdditions) && c.selectedAdditions.length > 0);
+                  return (
+                    <div
+                      key={c.lineKey}
+                      className="flex gap-3 p-3 rounded-2xl bg-muted/50 hover:bg-muted transition group"
+                    >
+                      {c.item.image_url && (
+                        <img
+                          src={c.item.image_url}
+                          alt=""
+                          className="w-14 h-14 rounded-xl object-cover shrink-0"
+                          referrerPolicy="no-referrer"
+                        />
                       )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2">
+                          <h5 className="font-bold text-sm line-clamp-1">{c.item.name_ar}</h5>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingCartLine(c);
+                                setCustomizingItem(c.item);
+                              }}
+                              className={`p-1 rounded-md transition cursor-pointer ${
+                                hasCustom
+                                  ? "bg-amber-100 text-amber-800 hover:bg-amber-200"
+                                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                              }`}
+                              title={lang === "ar" ? "تعديل الخيارات والإضافات" : "Customize options"}
+                            >
+                              <FileText size={14} />
+                            </button>
+                            <button
+                              onClick={() => removeFromCart(c.lineKey)}
+                              className="text-muted-foreground hover:text-destructive transition p-1"
+                              title={lang === "ar" ? "حذف الصنف" : "Remove item"}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </div>
 
-                      <div className="flex items-center justify-between mt-2">
-                        <span className="text-sm font-black text-primary">
-                          {formatPrice(c.item.price * c.quantity)}
-                        </span>
-                        <div
-                          className="flex items-center gap-1.5 bg-card rounded-lg border border-border p-0.5"
-                          dir="ltr"
-                        >
+                        {Array.isArray(c.selectedOptions) && c.selectedOptions.length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {c.selectedOptions.map((opt: any, idx: number) => (
+                              <span
+                                key={idx}
+                                className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-sky-50 border border-sky-200 text-sky-900 text-[10px] font-bold"
+                              >
+                                {typeof opt === "string"
+                                  ? opt
+                                  : lang === "ar"
+                                    ? opt.label_ar
+                                    : opt.label_en || opt.label_ar}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {Array.isArray(c.selectedAdditions) && c.selectedAdditions.length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {c.selectedAdditions.map((add: any, idx: number) => (
+                              <span
+                                key={idx}
+                                className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-900 text-[10px] font-bold"
+                              >
+                                +{typeof add === "string" ? add : add.name_ar || add.name}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {c.notes ? (
+                          <div className="mt-1.5 flex items-center justify-between gap-1.5 bg-amber-50 border border-amber-200 text-amber-950 rounded-lg px-2 py-1 text-[11px] font-bold">
+                            <div
+                              className="flex-1 min-w-0 truncate cursor-pointer hover:underline flex items-center gap-1"
+                              onClick={() => {
+                                setEditingCartLine(c);
+                                setCustomizingItem(c.item);
+                              }}
+                            >
+                              <span className="text-amber-700 font-extrabold shrink-0">ملاحظة:</span>
+                              <span className="truncate">{c.notes}</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => updateItemNotes(c.lineKey, "")}
+                              className="text-amber-700 hover:text-rose-600 p-0.5 rounded transition shrink-0"
+                              title="حذف الملاحظة"
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                        ) : (
                           <button
-                            onClick={() => updateQuantity(c.item.id, -1)}
-                            className="w-7 h-7 rounded-md hover:bg-muted flex items-center justify-center transition"
+                            type="button"
+                            onClick={() => {
+                              setEditingCartLine(c);
+                              setCustomizingItem(c.item);
+                            }}
+                            className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold text-muted-foreground hover:text-primary transition cursor-pointer"
                           >
-                            <Minus size={14} />
+                            <Plus size={11} />
+                            <span>
+                              {lang === "ar"
+                                ? "تخصيص الخيارات والملاحظة..."
+                                : "Customize options & note..."}
+                            </span>
                           </button>
-                          <span className="text-xs font-bold w-6 text-center">{c.quantity}</span>
-                          <button
-                            onClick={() => updateQuantity(c.item.id, 1)}
-                            className="w-7 h-7 rounded-md bg-primary text-primary-foreground hover:opacity-90 flex items-center justify-center transition"
+                        )}
+
+                        <div className="flex items-center justify-between mt-2">
+                          <span className="text-sm font-black text-primary tabular-nums">
+                            {formatPrice(unitPrice * c.quantity)}
+                          </span>
+                          <div
+                            className="flex items-center gap-1.5 bg-card rounded-lg border border-border p-0.5"
+                            dir="ltr"
                           >
-                            <Plus size={14} />
-                          </button>
+                            <button
+                              onClick={() => updateQuantity(c.lineKey, -1)}
+                              className="w-7 h-7 rounded-md hover:bg-muted flex items-center justify-center transition"
+                            >
+                              <Minus size={14} />
+                            </button>
+                            <span className="text-xs font-bold w-6 text-center tabular-nums">
+                              {c.quantity}
+                            </span>
+                            <button
+                              onClick={() => updateQuantity(c.lineKey, 1)}
+                              className="w-7 h-7 rounded-md bg-primary text-primary-foreground hover:opacity-90 flex items-center justify-center transition"
+                            >
+                              <Plus size={14} />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
 
@@ -2309,154 +2424,39 @@ function Index() {
         </Modal>
       )}
 
-      {noteEditingItem && (
-        <Modal onClose={() => setNoteEditingItem(null)}>
-          <div
-            className="p-6 font-cairo max-w-md w-full mx-auto"
-            dir={lang === "ar" ? "rtl" : "ltr"}
-          >
-            <div className="flex items-center justify-between pb-3 border-b border-border mb-4">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 bg-amber-100 text-amber-800 rounded-xl">
-                  <FileText size={18} />
-                </div>
-                <div>
-                  <h3 className="font-black text-base text-foreground">
-                    {lang === "ar" ? "ملاحظة خاصة بالصنف" : "Item Note"}
-                  </h3>
-                  <p className="text-xs text-muted-foreground font-bold line-clamp-1">
-                    {noteEditingItem.name}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setNoteEditingItem(null)}
-                className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground transition cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1.5">
-                  {lang === "ar" ? "نص الملاحظة للطلب والمطبخ:" : "Note for Order & Kitchen:"}
-                </label>
-                <textarea
-                  rows={3}
-                  value={noteEditingItem.notes}
-                  onChange={(e) =>
-                    setNoteEditingItem((prev) => (prev ? { ...prev, notes: e.target.value } : null))
-                  }
-                  placeholder={
-                    lang === "ar"
-                      ? "مثال: بدون بصل، صوص إضافي، بدون ملح، مستوي زيادة..."
-                      : "e.g. No onion, extra sauce, well done..."
-                  }
-                  className="w-full bg-background border border-input rounded-xl p-3 text-xs font-bold outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none leading-relaxed"
-                  autoFocus
-                />
-              </div>
-
-              {(() => {
-                const allPresets = [
-                  "بدون بصل",
-                  "بدون ملح",
-                  "بدون شطة",
-                  "صوص إضافي",
-                  "حار جداً 🌶️",
-                  "مستوي زيادة",
-                  "سُكر خفيف",
-                  "تغليف سفري",
-                ];
-                const rawNotes = String(noteEditingItem.notes || "").trim();
-                const currentTokens = rawNotes
-                  .split(/[،,\n]+/)
-                  .map((s) => s.trim())
-                  .filter(Boolean);
-                const availablePresets = allPresets.filter(
-                  (preset) => !currentTokens.includes(preset) && !rawNotes.includes(preset),
-                );
-
-                if (availablePresets.length === 0) return null;
-
-                return (
-                  <div>
-                    <span className="text-[11px] font-bold text-muted-foreground block mb-2">
-                      {lang === "ar" ? "اختيارات سريعة شائعة:" : "Quick Preset Options:"}
-                    </span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {availablePresets.map((preset) => (
-                        <button
-                          key={preset}
-                          type="button"
-                          onClick={() => {
-                            setNoteEditingItem((prev) => {
-                              if (!prev) return null;
-                              const existing = prev.notes.trim();
-                              const newNotes = existing ? `${existing}، ${preset}` : preset;
-                              return { ...prev, notes: newNotes };
-                            });
-                          }}
-                          className="text-[11px] font-bold bg-muted hover:bg-amber-100 hover:text-amber-900 border border-border px-2.5 py-1 rounded-lg transition active:scale-95 cursor-pointer"
-                        >
-                          +{preset}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })()}
-
-              <div className="pt-3 border-t border-border flex items-center justify-between gap-2">
-                {noteEditingItem.notes ? (
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    size="sm"
-                    className="gap-1 text-xs font-bold rounded-xl h-9"
-                    onClick={() => {
-                      updateItemNotes(noteEditingItem.id, "");
-                      setNoteEditingItem(null);
-                      toast({ title: "تم حذف ملاحظة الصنف" });
-                    }}
-                  >
-                    <Trash2 size={13} />
-                    {lang === "ar" ? "حذف الملاحظة" : "Delete Note"}
-                  </Button>
-                ) : (
-                  <div />
-                )}
-
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="text-xs font-bold rounded-xl h-9"
-                    onClick={() => setNoteEditingItem(null)}
-                  >
-                    {lang === "ar" ? "إلغاء" : "Cancel"}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="bg-primary text-primary-foreground text-xs font-bold rounded-xl h-9 gap-1 shadow-sm"
-                    onClick={() => {
-                      updateItemNotes(noteEditingItem.id, noteEditingItem.notes);
-                      setNoteEditingItem(null);
-                      toast({ title: "تم حفظ ملاحظة الصنف بنجاح" });
-                    }}
-                  >
-                    <CheckCircle2 size={14} />
-                    {lang === "ar" ? "حفظ الملاحظة" : "Save Note"}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </Modal>
-      )}
+      <ProductCustomizationModal
+        item={(customizingItem || editingCartLine?.item || null) as any}
+        categoryNameAr={
+          (categoriesQuery.data ?? []).find(
+            (cat) => cat.id === (customizingItem || editingCartLine?.item)?.category_id,
+          )?.name_ar
+        }
+        isOpen={Boolean(customizingItem || editingCartLine)}
+        lang={lang}
+        formatPrice={formatPrice}
+        initialQuantity={editingCartLine?.quantity || 1}
+        initialOptions={editingCartLine?.selectedOptions || []}
+        initialAdditions={editingCartLine?.selectedAdditions || []}
+        initialNotes={editingCartLine?.notes || ""}
+        confirmLabel={
+          editingCartLine
+            ? lang === "ar"
+              ? "حفظ تعديل الصنف"
+              : "Update Item"
+            : lang === "ar"
+              ? "إضافة للطلب"
+              : "Add to Order"
+        }
+        onClose={() => {
+          setCustomizingItem(null);
+          setEditingCartLine(null);
+        }}
+        onConfirm={(selection) => {
+          upsertCustomizedCartLine(selection, editingCartLine?.lineKey);
+          setCustomizingItem(null);
+          setEditingCartLine(null);
+        }}
+      />
 
       <RestaurantCashierTreasuryModal
         isOpen={isCashierTreasuryModalOpen}
@@ -2732,7 +2732,7 @@ function InvoiceView({ invoice, onClose }: { invoice: CompletedOrder; onClose: (
 
       <div className="space-y-2 mb-4">
         {itemsList.map((it, i) => (
-          <div key={i} className="space-y-0.5">
+          <div key={it.lineKey || i} className="space-y-0.5">
             <div className="flex justify-between text-sm">
               <span className="flex-1">
                 <span className="text-muted-foreground mx-1">×{it.quantity}</span>
@@ -2740,6 +2740,30 @@ function InvoiceView({ invoice, onClose }: { invoice: CompletedOrder; onClose: (
               </span>
               <span className="font-bold">{formatPrice(it.price * it.quantity)}</span>
             </div>
+            {Array.isArray(it.selectedOptions) && it.selectedOptions.length > 0 && (
+              <div className="flex flex-wrap gap-1 mr-3">
+                {it.selectedOptions.map((opt: any, idx: number) => (
+                  <span
+                    key={idx}
+                    className="text-[10px] bg-sky-50 border border-sky-200 text-sky-900 rounded px-1.5 py-0.5 font-bold"
+                  >
+                    {typeof opt === "string" ? opt : opt.label_ar || opt.label_en}
+                  </span>
+                ))}
+              </div>
+            )}
+            {Array.isArray(it.selectedAdditions) && it.selectedAdditions.length > 0 && (
+              <div className="flex flex-wrap gap-1 mr-3">
+                {it.selectedAdditions.map((add: any, idx: number) => (
+                  <span
+                    key={idx}
+                    className="text-[10px] bg-emerald-50 border border-emerald-200 text-emerald-900 rounded px-1.5 py-0.5 font-bold"
+                  >
+                    +{typeof add === "string" ? add : add.name_ar || add.name}
+                  </span>
+                ))}
+              </div>
+            )}
             {Boolean(it.notes || it.note) && (
               <div className="text-[11px] text-amber-900 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 font-bold mr-3 inline-block">
                 ملاحظة: {it.notes || it.note}

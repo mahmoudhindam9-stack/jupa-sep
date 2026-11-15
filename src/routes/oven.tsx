@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { format } from "date-fns";
-import { CheckCircle2, UtensilsCrossed, ArrowRight, Trash2, Flame, Pencil } from "lucide-react";
+import { CheckCircle2, UtensilsCrossed, Trash2, Flame, Pencil, ChefHat, AlertTriangle, BookOpen } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,6 +27,12 @@ import { OrderTimer } from "@/components/OrderTimer";
 import { useToast } from "@/hooks/use-toast";
 import { AppMainNavbar } from "@/components/navigation/AppMainNavbar";
 import { AppBreadcrumbBar } from "@/components/navigation/AppBreadcrumbBar";
+import { menuService } from "@/features/menu/services/menuService";
+import { inventoryService } from "@/features/inventory/services/inventoryService";
+import { erpStore } from "@/shared/services/erpStore";
+import { getDefaultRecipeSpecByName, getRawMaterialSpec } from "@/shared/data/defaultRecipes";
+import { isNonKitchenNotificationOrder, sanitizeKitchenNotes } from "@/shared/utils/productOptions";
+import { MenuItem, InventoryItem } from "@/shared/types";
 
 export const Route = createFileRoute("/oven")({
   head: () => ({ meta: [{ title: "شاشة الفرن والمطبخ (KDS)" }] }),
@@ -38,8 +44,31 @@ function OvenPage() {
   const [filterOvenOnly, setFilterOvenOnly] = useState<boolean>(false);
   const [editingOrder, setEditingOrder] = useState<any | null>(null);
   const [editNotes, setEditNotes] = useState("");
-  const [editTotal, setEditTotal] = useState("");
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+  const [recipeModalData, setRecipeModalData] = useState<{
+    orderItem: any;
+    menuItem: MenuItem | null;
+    defaultSpec: ReturnType<typeof getDefaultRecipeSpecByName>;
+    qualitySpecs: ReturnType<typeof erpStore.getMenuItemQualitySpecs>;
+  } | null>(null);
   const { toast } = useToast();
+
+  useEffect(() => {
+    const loadReferenceData = async () => {
+      try {
+        const [mItems, iItems] = await Promise.all([
+          menuService.getMenuItems(),
+          inventoryService.getInventory(),
+        ]);
+        setMenuItems(mItems);
+        setInventoryItems(iItems);
+      } catch {
+        // non-blocking
+      }
+    };
+    void loadReferenceData();
+  }, []);
 
   useEffect(() => {
     fetchPendingOrders();
@@ -88,36 +117,24 @@ function OvenPage() {
   };
 
   const getKitchenNotes = (rawNotes: string | null | undefined): string => {
-    if (!rawNotes) return "";
-    const withoutTags = String(rawNotes)
-      .replace(/\[SELF_ORDER_PENDING_CAPTAIN\]/g, "")
-      .replace(/\[SELF_ORDER_ACTIVE\]/g, "")
-      .replace(/\[SENT_TO_KITCHEN\]/g, "")
-      .replace(/\[KITCHEN_START:[^\]]+\]/g, "")
-      .replace(/\[SENT_TO_CASHIER\]/g, "")
-      .replace(/\[CASHIER_PAID\]/g, "")
-      .replace(/\[TABLE_ASSISTANCE_CALL\]/g, "")
-      .trim();
+    return sanitizeKitchenNotes(rawNotes);
+  };
 
-    const cleaned = withoutTags
-      .split("|")
-      .map((part) => part.trim())
-      .filter((part) => {
-        if (!part) return false;
-        // Filter out currency mentions (e.g. "العملة: USD", "Currency: USD")
-        if (/^(العملة|currency)\s*:/i.test(part)) return false;
-        // Filter out delivery fee mentions (e.g. "رسوم توصيل: 20.00", "رسوم التوصيل: 20")
-        if (/^(رسوم\s*(ال)?توصيل|delivery\s*fee)\s*:/i.test(part)) return false;
-        // Filter out other cashier financial metadata
-        if (/^(الخصم|discount)\s*:/i.test(part)) return false;
-        if (/^(خدمة\s*صالة|service\s*fee)\s*:/i.test(part)) return false;
-        if (/^AUTH#\s*:/i.test(part)) return false;
-        return true;
-      })
-      .join(" | ")
-      .trim();
-
-    return cleaned;
+  const resolveOrderItemRecipe = (item: any) => {
+    const itemId = item?.menu_item_id || item?.id;
+    const itemName = String(item?.name_ar || item?.name || "").trim();
+    const matchedMenu =
+      menuItems.find((m) => m.id === itemId) ||
+      menuItems.find((m) => m.name_ar.trim() === itemName) ||
+      null;
+    const defaultSpec = getDefaultRecipeSpecByName(matchedMenu?.name_ar || itemName);
+    const qualitySpecs = matchedMenu ? erpStore.getMenuItemQualitySpecs(matchedMenu.id) : null;
+    return {
+      orderItem: item,
+      menuItem: matchedMenu,
+      defaultSpec,
+      qualitySpecs,
+    };
   };
 
   const fetchPendingOrders = async () => {
@@ -125,7 +142,7 @@ function OvenPage() {
       let dbOrders: any[] = [];
       const { data, error } = await supabase
         .from("orders")
-        .select("*")
+        .select("id, order_number, table_id, order_type, status, notes, items, created_at, kitchen_started_at")
         .in("status", ["pending", "preparing", "in_kitchen"])
         .order("created_at", { ascending: true });
 
@@ -135,17 +152,10 @@ function OvenPage() {
             if (tableOrdersStore.shouldIgnoreRemoteOrder(row.id, row.created_at)) {
               return false;
             }
-            const notesStr = String(row.notes || "");
-            // Never show unapproved QR self-orders, table assistance calls, cancelled, or already paid orders in Kitchen
-            if (
-              notesStr.includes("[SELF_ORDER_PENDING_CAPTAIN]") ||
-              notesStr.includes("[TABLE_ASSISTANCE_CALL]") ||
-              notesStr.includes("[CASHIER_PAID]") ||
-              notesStr.includes("[CANCELLED_BY_CAPTAIN]")
-            ) {
+            if (isNonKitchenNotificationOrder(row)) {
               return false;
             }
-            // If it's an active QR self-order, only show it in Kitchen if the Captain pressed "إرسال للمطبخ"
+            const notesStr = String(row.notes || "");
             if (
               notesStr.includes("[SELF_ORDER_ACTIVE]") &&
               !notesStr.includes("[SENT_TO_KITCHEN]") &&
@@ -158,7 +168,11 @@ function OvenPage() {
           .map((row) => {
             const notesStr = String(row.notes || "");
             const kitchenStartMatch = notesStr.match(/\[KITCHEN_START:([^\]]+)\]/);
-            const kitchenStartedAt = kitchenStartMatch?.[1] || row.created_at || new Date().toISOString();
+            const kitchenStartedAt =
+              row.kitchen_started_at ||
+              kitchenStartMatch?.[1] ||
+              row.created_at ||
+              new Date().toISOString();
             return {
               ...row,
               table_number: extractTableNumber(row),
@@ -173,7 +187,8 @@ function OvenPage() {
           (o) =>
             (o.status === "draft" || o.status === "sent_to_cashier" || o.status === "in_checkout") &&
             o.sentToKitchen &&
-            !o.kitchenCompleted,
+            !o.kitchenCompleted &&
+            !isNonKitchenNotificationOrder(o),
         )
         .map((lo) => ({
           id: lo.kitchenOrderId || lo.id,
@@ -183,13 +198,14 @@ function OvenPage() {
           status: "preparing",
           notes: lo.notes || `طاولة #${lo.table_number}`,
           created_at: lo.kitchen_started_at || lo.created_at || new Date().toISOString(),
-          total: lo.total || 0,
           items: Array.isArray(lo.items)
             ? lo.items.map((i) => ({
                 id: i?.item?.id || i?.id || Math.random().toString(),
+                menu_item_id: i?.item?.id || i?.menu_item_id || i?.id,
                 name_ar: i?.item?.name_ar || i?.name_ar || i?.name || "عنصر غير معروف",
                 quantity: i?.quantity || 1,
                 notes: i?.notes || i?.note || "",
+                selectedOptions: i?.selectedOptions || i?.item?.selectedOptions || [],
                 selectedAdditions: i?.selectedAdditions || i?.item?.selectedAdditions || [],
                 requires_oven: i?.item?.requires_oven || i?.requires_oven || false,
               }))
@@ -213,6 +229,7 @@ function OvenPage() {
 
   const markAsCompleted = async (order: any) => {
     try {
+      const nowIso = new Date().toISOString();
       if (order.id && !order.isLocalStore) {
         const notesStr = String(order.notes || "");
         const isUnpaidTableOrSelfOrder =
@@ -220,18 +237,25 @@ function OvenPage() {
             notesStr.includes("[SENT_TO_KITCHEN]") ||
             notesStr.includes("[SENT_TO_CASHIER]")) &&
           !notesStr.includes("[CASHIER_PAID]");
+        const targetStatus = isUnpaidTableOrSelfOrder ? "ready" : "ready";
         const { error } = await supabase
           .from("orders")
-          .update({ status: isUnpaidTableOrSelfOrder ? "ready" : "served" })
+          .update({ status: targetStatus, ready_at: nowIso } as any)
           .eq("id", order.id);
-        if (error) throw error;
+        if (error) {
+          const fallbackRes = await supabase
+            .from("orders")
+            .update({ status: targetStatus })
+            .eq("id", order.id);
+          if (fallbackRes.error) throw fallbackRes.error;
+        }
       }
       tableOrdersStore.markKitchenCompletedByTableId(
         order.table_id,
         order.table_number || extractTableNumber(order),
         order.id,
       );
-      toast({ title: "الطلب جاهز! 👨‍🍳", description: "تم تحديث حالة الطلب إلى جاهز/مكتمل." });
+      toast({ title: "الطلب جاهز! 👨‍🍳", description: "تم تحديث حالة الطلب إلى جاهز للتسليم." });
       fetchPendingOrders();
     } catch (e: any) {
       toast({ title: "خطأ", description: e.message || "فشل تحديث الطلب", variant: "destructive" });
@@ -421,7 +445,8 @@ function OvenPage() {
 
                 <div className="space-y-2.5">
                   {displayItems.map((item: any, idx: number) => {
-                    const itemNote = (item.notes || item.note || "").trim();
+                    const itemNote = sanitizeKitchenNotes(item.notes || item.note || "");
+                    const options = Array.isArray(item.selectedOptions) ? item.selectedOptions : [];
                     const additions = Array.isArray(item.selectedAdditions)
                       ? item.selectedAdditions
                       : [];
@@ -436,13 +461,28 @@ function OvenPage() {
                             <div className="flex items-center gap-1.5 flex-wrap">
                               {item.requires_oven && (
                                 <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-black border border-orange-200">
-                                  فرن 🍕
+                                  فرن
                                 </span>
                               )}
                               <span className="text-sm font-black text-slate-900">
                                 {item.name_ar || item.name}
                               </span>
                             </div>
+
+                            {options.length > 0 && (
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {options.map((opt: any, oIdx: number) => (
+                                  <span
+                                    key={oIdx}
+                                    className="text-[11px] font-bold text-sky-900 bg-sky-50 border border-sky-200 px-1.5 py-0.5 rounded-md"
+                                  >
+                                    {typeof opt === "string"
+                                      ? opt
+                                      : opt.label_ar || opt.label_en || opt.id}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
 
                             {additions.length > 0 && (
                               <div className="mt-1 flex flex-wrap gap-1">
@@ -461,7 +501,7 @@ function OvenPage() {
                             )}
                           </div>
 
-                          <div className="font-black bg-slate-900 text-white px-2 py-0.5 rounded-md text-xs shrink-0">
+                          <div className="font-black bg-slate-900 text-white px-2 py-0.5 rounded-md text-xs shrink-0 tabular-nums">
                             ×{item.quantity}
                           </div>
                         </div>
@@ -475,6 +515,19 @@ function OvenPage() {
                             </div>
                           </div>
                         )}
+
+                        <div className="mt-2 pt-1.5 border-t border-slate-200/70 flex justify-end">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setRecipeModalData(resolveOrderItemRecipe(item))}
+                            className="h-7 px-2.5 text-[11px] font-bold gap-1 text-orange-800 border-orange-200 bg-orange-50/70 hover:bg-orange-100 cursor-pointer"
+                          >
+                            <ChefHat size={13} />
+                            المكونات والوصفة
+                          </Button>
+                        </div>
                       </div>
                     );
                   })}
@@ -551,6 +604,160 @@ function OvenPage() {
                 </Button>
               </div>
             </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Ingredients & Recipe Modal */}
+      {recipeModalData && (
+        <Dialog open={!!recipeModalData} onOpenChange={(open) => !open && setRecipeModalData(null)}>
+          <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto text-right rounded-3xl font-cairo">
+            <DialogHeader className="border-b border-border/50 pb-3">
+              <DialogTitle className="text-right text-lg font-black flex items-center gap-2 text-orange-700">
+                <ChefHat size={20} />
+                المكونات والوصفة: {recipeModalData.orderItem?.name_ar || recipeModalData.orderItem?.name}
+              </DialogTitle>
+            </DialogHeader>
+
+            {(() => {
+              const { orderItem, menuItem, defaultSpec, qualitySpecs } = recipeModalData;
+              const qty = Number(orderItem?.quantity || 1);
+              const invById = Object.fromEntries(inventoryItems.map((i) => [i.id, i]));
+              const dbIngredients = Array.isArray(menuItem?.ingredients) ? menuItem!.ingredients : [];
+              const displayIngredients =
+                dbIngredients.length > 0
+                  ? dbIngredients.map((ing) => {
+                      const inv = invById[ing.inventory_id];
+                      return {
+                        name: inv?.name_ar || ing.notes || "مكون",
+                        perServing: Number(ing.weight || 0),
+                        totalNeeded: Number(ing.weight || 0) * qty,
+                        unit: ing.unit || inv?.unit || "",
+                        optional: Boolean(ing.optional),
+                      };
+                    })
+                  : (defaultSpec?.ingredients || []).map((spec) => {
+                      const rawSpec = getRawMaterialSpec(spec.materialKey);
+                      return {
+                        name: rawSpec?.name_ar || spec.materialKey,
+                        perServing: Number(spec.weight || 0),
+                        totalNeeded: Number(spec.weight || 0) * qty,
+                        unit: spec.unit,
+                        optional: Boolean(spec.optional),
+                      };
+                    });
+
+              const prepText =
+                (menuItem?.prep_instructions && String(menuItem.prep_instructions).trim()) ||
+                defaultSpec?.prep_instructions ||
+                "لا توجد تعليمات تحضير مسجلة لهذا الصنف.";
+
+              const allergensList = Array.from(
+                new Set([
+                  ...(Array.isArray(menuItem?.allergens) ? menuItem!.allergens : []),
+                  ...(Array.isArray(qualitySpecs?.allergens) ? qualitySpecs!.allergens : []),
+                  ...(Array.isArray(defaultSpec?.allergens) ? defaultSpec.allergens : []),
+                ]),
+              ).filter(Boolean);
+
+              const itemAdds = Array.isArray(orderItem?.selectedAdditions)
+                ? orderItem.selectedAdditions
+                : [];
+              const itemOpts = Array.isArray(orderItem?.selectedOptions)
+                ? orderItem.selectedOptions
+                : [];
+
+              return (
+                <div className="space-y-4 py-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-bold">
+                    <span>الكمية المطلوبة بالطلب:</span>
+                    <Badge className="bg-slate-900 text-white tabular-nums">×{qty}</Badge>
+                  </div>
+
+                  {(itemOpts.length > 0 || itemAdds.length > 0) && (
+                    <div className="bg-sky-50/70 border border-sky-200 rounded-xl p-3 space-y-2">
+                      <div className="text-xs font-black text-sky-900">تخصيصات العميل على هذا الطلب</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {itemOpts.map((opt: any, idx: number) => (
+                          <Badge key={`opt-${idx}`} variant="outline" className="bg-white border-sky-300 text-sky-900 font-bold">
+                            {typeof opt === "string" ? opt : opt.label_ar || opt.label_en}
+                          </Badge>
+                        ))}
+                        {itemAdds.map((add: any, idx: number) => (
+                          <Badge key={`add-${idx}`} variant="outline" className="bg-white border-emerald-300 text-emerald-900 font-bold">
+                            + {typeof add === "string" ? add : add.name_ar || add.name}
+                            {add?.deduct_qty
+                              ? ` (${Number(add.deduct_qty) * qty} ${add.deduct_unit || ""})`
+                              : ""}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <div className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                      <BookOpen size={14} className="text-orange-600" />
+                      المكونات والكميات المطلوبة
+                    </div>
+                    {displayIngredients.length > 0 ? (
+                      <div className="divide-y divide-border rounded-xl border border-border overflow-hidden bg-card">
+                        {displayIngredients.map((row, idx) => (
+                          <div
+                            key={idx}
+                            className="flex items-center justify-between px-3 py-2 text-xs"
+                          >
+                            <div className="flex items-center gap-1.5 font-bold text-foreground">
+                              <span>{row.name}</span>
+                              {row.optional && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
+                                  اختياري
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-left font-black text-orange-700 tabular-nums">
+                              {row.totalNeeded} {row.unit}
+                              {qty > 1 && (
+                                <span className="text-[10px] text-muted-foreground font-medium mr-1.5">
+                                  ({row.perServing} / حصة)
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-muted-foreground bg-muted/40 rounded-xl p-3 border border-dashed">
+                        لا توجد مكونات مسجلة لهذا الصنف حتى الآن.
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5 bg-amber-50/70 border border-amber-200 rounded-xl p-3">
+                    <div className="text-xs font-black text-amber-900">طريقة وخطوات التحضير</div>
+                    <p className="text-xs leading-relaxed text-amber-950 font-medium">{prepText}</p>
+                  </div>
+
+                  <div className="space-y-1.5 bg-rose-50/60 border border-rose-200 rounded-xl p-3">
+                    <div className="text-xs font-black text-rose-800 flex items-center gap-1.5">
+                      <AlertTriangle size={14} />
+                      مسببات الحساسية (Allergens)
+                    </div>
+                    {allergensList.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {allergensList.map((al, i) => (
+                          <Badge key={i} variant="destructive" className="text-[11px] font-bold">
+                            {al}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-emerald-700 font-bold">لا توجد مسببات حساسية مسجلة</p>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
           </DialogContent>
         </Dialog>
       )}

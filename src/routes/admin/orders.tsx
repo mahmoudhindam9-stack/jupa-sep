@@ -55,11 +55,29 @@ type Order = {
 
 type Table = { id: string; number: number; name: string | null };
 
-function ElapsedTimer({ createdAt, status }: { createdAt: string; status: string }) {
+function ElapsedTimer({
+  createdAt,
+  status,
+  deliveredAt,
+}: {
+  createdAt: string;
+  status: string;
+  deliveredAt?: string | null;
+}) {
   const [minutes, setMinutes] = useState(0);
+  const isFinished =
+    ["served", "delivered", "completed", "cancelled"].includes(status) || Boolean(deliveredAt);
 
   useEffect(() => {
-    if (["served", "cancelled"].includes(status)) return;
+    if (isFinished) {
+      if (deliveredAt) {
+        const diff = Math.floor(
+          (new Date(deliveredAt).getTime() - new Date(createdAt).getTime()) / 60000,
+        );
+        setMinutes(diff >= 0 ? diff : 0);
+      }
+      return;
+    }
     const calculate = () => {
       const diff = Math.floor((new Date().getTime() - new Date(createdAt).getTime()) / 60000);
       setMinutes(diff >= 0 ? diff : 0);
@@ -67,9 +85,16 @@ function ElapsedTimer({ createdAt, status }: { createdAt: string; status: string
     calculate();
     const interval = setInterval(calculate, 30000);
     return () => clearInterval(interval);
-  }, [createdAt, status]);
+  }, [createdAt, status, deliveredAt, isFinished]);
 
-  if (["served", "cancelled"].includes(status)) return null;
+  if (isFinished) {
+    return deliveredAt ? (
+      <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full border border-teal-300 bg-teal-50 text-teal-700 tabular-nums">
+        <CheckCircle size={11} />
+        {minutes} د
+      </span>
+    ) : null;
+  }
 
   let colorClass = "text-muted-foreground bg-muted";
   if (status === "pending" && minutes > 10) {
@@ -101,6 +126,7 @@ function OrdersPage() {
     pending: t.status_pending || "قيد الانتظار",
     preparing: t.status_preparing || "جاري التحضير",
     ready: t.status_ready || "جاهز",
+    delivered: "تم التسليم",
     served: t.status_served || "مكتمل",
     cancelled: "ملغي / مرتجع",
   };
@@ -149,8 +175,30 @@ function OrdersPage() {
 
   const updateStatus = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) => {
-      const { error } = await supabase.from("orders").update({ status }).eq("id", id);
-      if (error) throw error;
+      const nowIso = new Date().toISOString();
+      const payload: Record<string, any> = { status };
+      if (status === "preparing") {
+        payload.kitchen_started_at = nowIso;
+      } else if (status === "ready") {
+        payload.ready_at = nowIso;
+      } else if (status === "delivered" || status === "served") {
+        payload.delivered_at = nowIso;
+      }
+
+      const { error } = await (supabase as any).from("orders").update(payload).eq("id", id);
+      if (error) {
+        const fallbackStatus = status === "delivered" ? "served" : status;
+        const { error: fallbackErr } = await supabase
+          .from("orders")
+          .update({ status: fallbackStatus })
+          .eq("id", id);
+        if (fallbackErr) throw fallbackErr;
+      }
+
+      if (status === "delivered" || status === "served") {
+        const { tableOrdersStore } = await import("@/shared/services/tableOrdersStore");
+        tableOrdersStore.markDeliveredByOrderOrTable({ orderId: id });
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin", "orders"] });
@@ -356,6 +404,16 @@ function OrdersPage() {
                       ))}
                     </select>
                     <div className="flex items-center gap-1">
+                      {o.status === "ready" && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 px-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white border-teal-600 text-[11px] font-black"
+                          onClick={() => updateStatus.mutate({ id: o.id, status: "delivered" })}
+                        >
+                          تسليم
+                        </Button>
+                      )}
                       <Button
                         variant="outline"
                         size="icon"
@@ -434,7 +492,11 @@ function OrdersPage() {
                             : "-"}
                         </div>
                         <div className="mt-1">
-                          <ElapsedTimer createdAt={o.created_at} status={o.status} />
+                          <ElapsedTimer
+                            createdAt={o.created_at}
+                            status={o.status}
+                            deliveredAt={(o as any).delivered_at}
+                          />
                         </div>
                       </td>
                       <td className="p-4">
@@ -465,6 +527,16 @@ function OrdersPage() {
                       </td>
                       <td className="p-4">
                         <div className="flex items-center justify-center gap-1.5">
+                          {o.status === "ready" && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 px-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white border-teal-600 text-[11px] font-black"
+                              onClick={() => updateStatus.mutate({ id: o.id, status: "delivered" })}
+                            >
+                              تسليم
+                            </Button>
+                          )}
                           <Button
                             variant="outline"
                             size="icon"

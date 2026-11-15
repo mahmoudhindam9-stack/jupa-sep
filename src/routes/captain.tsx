@@ -46,6 +46,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { QrCode, Printer } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import { cleanTableId } from "@/shared/utils/inventoryUtils";
+import { buildCartLineKey } from "@/shared/utils/productOptions";
 
 export const Route = createFileRoute("/captain")({
   head: () => ({ meta: [{ title: "Captain Order" }] }),
@@ -582,6 +583,72 @@ function CaptainPage() {
     [handleChangeTableStatus, lang, toast],
   );
 
+  const handleConfirmCustomerDelivery = useCallback(
+    async (table: Table, activeOrder: any, e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!activeOrder) return;
+      const nowIso = new Date().toISOString();
+      tableOrdersStore.markDeliveredByOrderOrTable({
+        orderId: activeOrder.id,
+        tableId: table.id,
+        tableNumber: table.number,
+      });
+
+      const uuidRegex =
+        /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+      const dbId =
+        activeOrder.kitchenOrderId ||
+        (activeOrder.id && uuidRegex.test(activeOrder.id) ? activeOrder.id : null);
+
+      if (dbId) {
+        try {
+          const res1 = await (supabase as any)
+            .from("orders")
+            .update({ status: "delivered", delivered_at: nowIso })
+            .eq("id", dbId);
+          if (res1.error) {
+            const res2 = await (supabase as any)
+              .from("orders")
+              .update({ status: "served", delivered_at: nowIso })
+              .eq("id", dbId);
+            if (res2.error) {
+              await supabase.from("orders").update({ status: "served" }).eq("id", dbId);
+            }
+          }
+        } catch (err) {
+          console.warn("Supabase delivery update warning:", err);
+        }
+      }
+
+      if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+        try {
+          const bc = new BroadcastChannel("restocash_self_orders_bc");
+          bc.postMessage({
+            type: "ORDER_DELIVERED",
+            payload: {
+              orderId: dbId || activeOrder.id,
+              tableId: table.id,
+              tableNumber: table.number,
+              delivered_at: nowIso,
+            },
+          });
+          bc.close();
+        } catch {
+          // ignore
+        }
+      }
+
+      toast({
+        title: lang === "ar" ? `تم تأكيد تسليم طلب طاولة #${table.number}` : `Table #${table.number} Order Delivered`,
+        description:
+          lang === "ar"
+            ? "تم تسجيل وقت التسليم الفعلي للعميل وتنبيه صفحة التتبع بالتقييم."
+            : "Customer delivery time recorded.",
+      });
+    },
+    [lang, toast],
+  );
+
   const handleClearAllPendingOrders = useCallback(async () => {
     await tableOrdersStore.clearAllPendingOrders();
     const currentTables = getLocalTables();
@@ -632,8 +699,10 @@ function CaptainPage() {
       if (
         notesStr.includes("[CASHIER_PAID]") ||
         notesStr.includes("[CANCELLED_BY_CAPTAIN]") ||
-        order.status === "served" ||
-        order.status === "cancelled"
+        order.status === "cancelled" ||
+        (order.status === "served" &&
+          !notesStr.includes("[SENT_TO_CASHIER]") &&
+          !order.delivered_at)
       ) {
         const tblNum = extractTableNumberFromOrder(order);
         tableOrdersStore.completeCashierOrder({
@@ -673,11 +742,23 @@ function CaptainPage() {
           image_url: rawLine?.image_url || null,
           requires_oven: Boolean(rawLine?.requires_oven ?? rawLine?.item?.requires_oven),
         };
+        const lineNotes = rawLine?.notes || rawLine?.note || "";
+        const selectedOptions = rawLine?.selectedOptions || [];
+        const selectedAdditions = rawLine?.selectedAdditions || [];
         return {
+          lineKey:
+            rawLine?.lineKey ||
+            buildCartLineKey({
+              itemId: String(baseItem.id),
+              selectedOptions,
+              selectedAdditions,
+              notes: lineNotes,
+            }),
           item: baseItem,
           quantity: Number(rawLine?.quantity ?? 1),
-          notes: rawLine?.notes || rawLine?.note || "",
-          selectedAdditions: rawLine?.selectedAdditions || [],
+          notes: lineNotes,
+          selectedOptions,
+          selectedAdditions,
         };
       });
 
@@ -692,9 +773,13 @@ function CaptainPage() {
         notesStr.includes("[SENT_TO_KITCHEN]") ||
         order.status === "preparing" ||
         order.status === "in_kitchen" ||
-        order.status === "ready";
+        order.status === "ready" ||
+        order.status === "delivered";
       const kitchenCompletedFlag =
-        Boolean(existingLocal?.kitchenCompleted) || order.status === "ready";
+        Boolean(existingLocal?.kitchenCompleted) ||
+        order.status === "ready" ||
+        order.status === "delivered" ||
+        Boolean(order.delivered_at);
       const sentToCashierFlag =
         Boolean(existingLocal?.sentToCashier) ||
         existingLocal?.status === "sent_to_cashier" ||
@@ -703,15 +788,25 @@ function CaptainPage() {
       const kitchenStartMatch = notesStr.match(/\[KITCHEN_START:([^\]]+)\]/);
       const resolvedKitchenStartedAt =
         existingLocal?.kitchen_started_at ||
+        order.kitchen_started_at ||
         (kitchenStartMatch ? kitchenStartMatch[1] : undefined) ||
         (sentToKitchenFlag ? order.updated_at || order.created_at || new Date().toISOString() : undefined);
+      const resolvedReadyAt =
+        existingLocal?.ready_at ||
+        order.ready_at ||
+        (kitchenCompletedFlag ? order.updated_at || new Date().toISOString() : undefined);
+      const resolvedDeliveredAt =
+        existingLocal?.delivered_at ||
+        order.delivered_at ||
+        (order.status === "delivered" ? order.updated_at || new Date().toISOString() : undefined);
 
       // Avoid redundant saveOrder on every 2.5s poll so OrderTimer never resets or flickers
       if (
         isAlreadyInStore &&
         Boolean(existingLocal?.sentToKitchen) === sentToKitchenFlag &&
         Boolean(existingLocal?.kitchenCompleted) === kitchenCompletedFlag &&
-        Boolean(existingLocal?.sentToCashier) === sentToCashierFlag
+        Boolean(existingLocal?.sentToCashier) === sentToCashierFlag &&
+        Boolean(existingLocal?.delivered_at) === Boolean(resolvedDeliveredAt)
       ) {
         return;
       }
@@ -733,7 +828,14 @@ function CaptainPage() {
         sentToKitchen: sentToKitchenFlag,
         kitchenCompleted: kitchenCompletedFlag,
         sentToCashier: sentToCashierFlag,
+        submitted_at: order.submitted_at || existingLocal?.submitted_at || order.created_at,
+        captain_confirmed_at:
+          order.captain_confirmed_at ||
+          existingLocal?.captain_confirmed_at ||
+          (sentToKitchenFlag || sentToCashierFlag ? order.updated_at : undefined),
         kitchen_started_at: resolvedKitchenStartedAt,
+        ready_at: resolvedReadyAt,
+        delivered_at: resolvedDeliveredAt,
         is_self_order:
           notesStr.includes("[SELF_ORDER") || Boolean(order.is_self_order || existingLocal?.is_self_order),
         created_at: order.created_at || existingLocal?.created_at || new Date().toISOString(),
@@ -757,7 +859,7 @@ function CaptainPage() {
         const { data, error } = await supabase
           .from("orders")
           .select("*")
-          .in("status", ["pending", "preparing", "in_kitchen", "ready", "served", "cancelled"])
+          .in("status", ["pending", "preparing", "in_kitchen", "ready", "delivered", "served", "cancelled"])
           .order("created_at", { ascending: false })
           .limit(25);
 
@@ -813,6 +915,9 @@ function CaptainPage() {
             attachIncomingSelfOrderToTable(ev.data.order || ev.data.payload, true);
           } else if (ev.data?.type === "TABLE_ASSISTANCE_REQUEST" && ev.data?.payload) {
             upsertAssistanceAlert(ev.data.payload, true);
+          } else if (ev.data?.type === "ORDER_DELIVERED" && ev.data?.payload) {
+            tableOrdersStore.markDeliveredByOrderOrTable(ev.data.payload);
+            queryClient.invalidateQueries({ queryKey: ["tables"] });
           } else if (
             ev.data?.type === "TABLE_STATUS_CHANGED" ||
             ev.data?.type === "TABLE_PAID_AND_CLEANING" ||
@@ -1261,16 +1366,29 @@ function CaptainPage() {
                           createdAt={activeOrder.kitchen_started_at || activeOrder.created_at}
                         />
                       </div>
-                    ) : activeOrder.kitchenCompleted ? (
-                      <div className="h-7 flex justify-between items-center bg-emerald-100 border border-emerald-300 px-2 rounded-lg">
-                        <span className="text-[11px] font-black text-emerald-900">
-                          جاهز من الفرن ✅
+                    ) : activeOrder.delivered_at ? (
+                      <div className="h-7 flex justify-between items-center bg-teal-100 border border-teal-300 px-2 rounded-lg">
+                        <span className="text-[11px] font-black text-teal-900 truncate">
+                          تم التسليم للعميل ✓
                         </span>
-                        <span className="text-[10px] font-bold text-emerald-800">
+                        <span className="text-[10px] font-bold text-teal-800">
                           {activeOrder.status === "sent_to_cashier" || activeOrder.sentToCashier
                             ? "مرسل للكاشير 💰"
-                            : "اضغط للإرسال للكاشير"}
+                            : "جاهز للتحصيل"}
                         </span>
+                      </div>
+                    ) : activeOrder.kitchenCompleted ? (
+                      <div className="h-7 flex justify-between items-center bg-emerald-100 border border-emerald-300 px-1.5 rounded-lg gap-1">
+                        <span className="text-[11px] font-black text-emerald-900 truncate">
+                          جاهز من الفرن ✅
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => handleConfirmCustomerDelivery(t, activeOrder, e)}
+                          className="px-2 py-0.5 rounded bg-emerald-700 hover:bg-emerald-800 text-white text-[10px] font-black shrink-0 cursor-pointer"
+                        >
+                          تأكيد التسليم
+                        </button>
                       </div>
                     ) : activeOrder.status === "sent_to_cashier" ||
                       activeOrder.status === "in_checkout" ||
