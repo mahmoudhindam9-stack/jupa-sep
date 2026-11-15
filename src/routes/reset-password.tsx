@@ -730,15 +730,23 @@ function ResetPasswordPage() {
                   required
                   dir="ltr"
                   placeholder={isEn ? "Enter strong password" : "أدخل كلمة مرور قوية (حروف إنجليزية + أرقام)"}
-                  className="h-11 rounded-xl bg-muted/40 focus:bg-background font-mono text-sm pl-11"
+                  className="h-11 rounded-xl bg-muted/40 focus:bg-background font-mono text-sm pl-11 [&::-ms-reveal]:hidden [&::-ms-clear]:hidden"
                 />
                 <button
                   type="button"
+                  data-perm-studio-ignore="true"
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={() => setShowPassword((value) => !value)}
-                  className="absolute inset-y-0 left-0 flex items-center px-3 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                  className="absolute inset-y-0 left-0 z-10 flex items-center px-3 text-muted-foreground hover:text-foreground transition-colors cursor-pointer select-none [&_svg]:pointer-events-none"
                   aria-label={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
+                  aria-pressed={showPassword}
+                  title={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
                 >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {showPassword ? (
+                    <EyeOff className="h-4 w-4 pointer-events-none" />
+                  ) : (
+                    <Eye className="h-4 w-4 pointer-events-none" />
+                  )}
                 </button>
               </div>
             </div>
@@ -760,15 +768,23 @@ function ResetPasswordPage() {
                   required
                   dir="ltr"
                   placeholder={isEn ? "Re-enter new password" : "أعد كتابة كلمة المرور الجديدة للتأكيد"}
-                  className="h-11 rounded-xl bg-muted/40 focus:bg-background font-mono text-sm pl-11"
+                  className="h-11 rounded-xl bg-muted/40 focus:bg-background font-mono text-sm pl-11 [&::-ms-reveal]:hidden [&::-ms-clear]:hidden"
                 />
                 <button
                   type="button"
+                  data-perm-studio-ignore="true"
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={() => setShowConfirm((value) => !value)}
-                  className="absolute inset-y-0 left-0 flex items-center px-3 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                  className="absolute inset-y-0 left-0 z-10 flex items-center px-3 text-muted-foreground hover:text-foreground transition-colors cursor-pointer select-none [&_svg]:pointer-events-none"
                   aria-label={showConfirm ? "إخفاء التأكيد" : "إظهار التأكيد"}
+                  aria-pressed={showConfirm}
+                  title={showConfirm ? "إخفاء التأكيد" : "إظهار التأكيد"}
                 >
-                  {showConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {showConfirm ? (
+                    <EyeOff className="h-4 w-4 pointer-events-none" />
+                  ) : (
+                    <Eye className="h-4 w-4 pointer-events-none" />
+                  )}
                 </button>
               </div>
             </div>

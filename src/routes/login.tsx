@@ -152,23 +152,10 @@ function LoginPage() {
   const { lang } = useSettings();
   const navigate = useNavigate();
   const [isMounted, setIsMounted] = useState(false);
-  const [username, setUsername] = useState(() => {
-    if (typeof window === "undefined") return "";
-    return localStorage.getItem("remember_me") !== "false"
-      ? localStorage.getItem("restocash_saved_username") || ""
-      : "";
-  });
-  const [password, setPassword] = useState(() => {
-    if (typeof window === "undefined") return "";
-    return localStorage.getItem("remember_me") !== "false"
-      ? localStorage.getItem("restocash_saved_password") || ""
-      : "";
-  });
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(() => {
-    if (typeof window === "undefined") return true;
-    return localStorage.getItem("remember_me") !== "false";
-  });
+  const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [hasLocalAccounts, setHasLocalAccounts] = useState(true);
@@ -997,16 +984,23 @@ function LoginPage() {
                 onChange={(e) => setBootstrapPassword(e.target.value)}
                 autoComplete="new-password"
                 dir="ltr"
-                className="pl-10"
+                className="pl-10 [&::-ms-reveal]:hidden [&::-ms-clear]:hidden"
               />
               <button
                 type="button"
+                data-perm-studio-ignore="true"
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => setShowBootstrapPassword((prev) => !prev)}
-                className="absolute inset-y-0 left-0 flex items-center px-3 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                className="absolute inset-y-0 left-0 z-10 flex items-center px-3 text-muted-foreground hover:text-foreground transition-colors cursor-pointer select-none [&_svg]:pointer-events-none"
                 aria-label={showBootstrapPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
+                aria-pressed={showBootstrapPassword}
                 title={showBootstrapPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
               >
-                {showBootstrapPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {showBootstrapPassword ? (
+                  <EyeOff className="w-4 h-4 pointer-events-none" />
+                ) : (
+                  <Eye className="w-4 h-4 pointer-events-none" />
+                )}
               </button>
             </div>
           </div>
@@ -1021,16 +1015,23 @@ function LoginPage() {
                 onChange={(e) => setBootstrapConfirm(e.target.value)}
                 autoComplete="new-password"
                 dir="ltr"
-                className="pl-10"
+                className="pl-10 [&::-ms-reveal]:hidden [&::-ms-clear]:hidden"
               />
               <button
                 type="button"
+                data-perm-studio-ignore="true"
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => setShowBootstrapPassword((prev) => !prev)}
-                className="absolute inset-y-0 left-0 flex items-center px-3 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                className="absolute inset-y-0 left-0 z-10 flex items-center px-3 text-muted-foreground hover:text-foreground transition-colors cursor-pointer select-none [&_svg]:pointer-events-none"
                 aria-label={showBootstrapPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
+                aria-pressed={showBootstrapPassword}
                 title={showBootstrapPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
               >
-                {showBootstrapPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {showBootstrapPassword ? (
+                  <EyeOff className="w-4 h-4 pointer-events-none" />
+                ) : (
+                  <Eye className="w-4 h-4 pointer-events-none" />
+                )}
               </button>
             </div>
           </div>
@@ -1118,16 +1119,23 @@ function LoginPage() {
                 placeholder="••••••••"
                 autoComplete="current-password"
                 dir="ltr"
-                className="h-11 rounded-xl bg-muted/40 focus:bg-background font-mono text-sm pl-10"
+                className="h-11 rounded-xl bg-muted/40 focus:bg-background font-mono text-sm pl-10 [&::-ms-reveal]:hidden [&::-ms-clear]:hidden"
               />
               <button
                 type="button"
+                data-perm-studio-ignore="true"
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => setShowPassword((prev) => !prev)}
-                className="absolute inset-y-0 left-0 flex items-center px-3 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                className="absolute inset-y-0 left-0 z-10 flex items-center px-3 text-muted-foreground hover:text-foreground transition-colors cursor-pointer select-none [&_svg]:pointer-events-none"
                 aria-label={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
+                aria-pressed={showPassword}
                 title={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
               >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {showPassword ? (
+                  <EyeOff className="w-4 h-4 pointer-events-none" />
+                ) : (
+                  <Eye className="w-4 h-4 pointer-events-none" />
+                )}
               </button>
             </div>
           </div>
