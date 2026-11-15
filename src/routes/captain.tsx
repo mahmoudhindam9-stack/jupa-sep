@@ -374,44 +374,27 @@ function CaptainPage() {
       setQrExchangeRate(String(currentRate));
     }
   }, [currency, exchangeRates]);
+  const DEFAULT_CUSTOMER_MENU_URL = "https://juba-aug.vercel.app";
   const [customBaseUrl, setCustomBaseUrl] = useState<string>(() => {
     if (typeof window !== "undefined") {
       const saved = window.localStorage.getItem("restocash_qr_base_url_v1");
-      if (saved && saved.trim()) return saved.trim().replace(/\/+$/, "");
-      const orig = (window.location.origin || "").replace(/\/+$/, "");
-      if (
-        orig &&
-        orig !== "null" &&
-        !orig.includes("localhost") &&
-        !orig.includes("127.0.0.1") &&
-        !orig.includes("::1")
-      ) {
-        return orig;
+      if (saved && saved.trim()) {
+        try {
+          const parsed = new URL(saved.trim());
+          const isVercelPreview =
+            parsed.hostname.endsWith(".vercel.app") &&
+            parsed.hostname !== "juba-aug.vercel.app";
+          const isTemporaryPreview = parsed.hostname.endsWith(".run.app");
+          if (parsed.protocol === "https:" && !isVercelPreview && !isTemporaryPreview) {
+            return parsed.origin;
+          }
+        } catch {
+          // Ignore invalid or temporary preview URLs saved by older builds.
+        }
       }
     }
-    return "https://jupa-sep.vercel.app";
+    return DEFAULT_CUSTOMER_MENU_URL;
   });
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const saved = window.localStorage.getItem("restocash_qr_base_url_v1");
-      const orig = (window.location.origin || "").replace(/\/+$/, "");
-      if (orig && orig.includes(".vercel.app")) {
-        setCustomBaseUrl(orig);
-        window.localStorage.setItem("restocash_qr_base_url_v1", orig);
-      } else if (saved && saved.trim()) {
-        setCustomBaseUrl(saved.trim().replace(/\/+$/, ""));
-      } else if (
-        orig &&
-        orig !== "null" &&
-        !orig.includes("localhost") &&
-        !orig.includes("127.0.0.1") &&
-        !orig.includes("::1")
-      ) {
-        setCustomBaseUrl(orig);
-      }
-    }
-  }, []);
   const [editingTable, setEditingTable] = useState<Table | null>(null);
   const [form, setForm] = useState({ number: "", name: "", capacity: "" });
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -472,12 +455,7 @@ function CaptainPage() {
 
   const tablesList = tablesQuery.data || getLocalTables() || [];
 
-  // Default QR table selection to first table so customer QR codes always target a real table card
-  useEffect(() => {
-    if (!qrTableId && tablesList.length > 0) {
-      setQrTableId(tablesList[0].id);
-    }
-  }, [qrTableId, tablesList]);
+
 
   const handleChangeTableStatus = useCallback(
     async (
@@ -721,17 +699,19 @@ function CaptainPage() {
 
       const extractedNum = extractTableNumberFromOrder(order);
       const rawId = order.table_id || order.items?.[0]?.meta?.table_id || "";
+      const hasExplicitTableAssignment = Boolean(rawId && rawId !== "tbl-999") || extractedNum > 0;
       const tblMatch =
         tablesList.find(
           (t) =>
             (rawId && t.id === rawId) ||
             (extractedNum > 0 && Number(t.number) === Number(extractedNum)),
-        ) || tablesList[0];
+        ) || null;
 
-      const finalTblId = tblMatch ? tblMatch.id : rawId || "tbl-1";
-      const finalTblNum = tblMatch ? tblMatch.number : extractedNum > 0 ? extractedNum : 1;
+      // Never attach an order from the general menu to the first table.
+      const finalTblId = tblMatch ? tblMatch.id : hasExplicitTableAssignment ? rawId || `tbl-${extractedNum}` : "";
+      const finalTblNum = tblMatch ? tblMatch.number : extractedNum > 0 ? extractedNum : 999;
       const finalTblName =
-        tblMatch?.name || order.table_name || `طاولة ${finalTblNum}`;
+        tblMatch?.name || order.table_name || (hasExplicitTableAssignment ? `طاولة ${finalTblNum}` : "طلب عام / بدون طاولة");
 
       const normalizedItems = (Array.isArray(order.items) ? order.items : []).map((rawLine: any) => {
         const baseItem = rawLine?.item || {
@@ -1116,15 +1096,13 @@ function CaptainPage() {
             <Button
               size="sm"
               onClick={() => {
-                if (!qrTableId && tablesList.length > 0) {
-                  setQrTableId(tablesList[0].id);
-                }
+                setQrTableId("");
                 setIsQrModalOpen(true);
               }}
               className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold gap-1.5 h-8 text-xs shadow-2xs"
             >
               <QrCode size={14} />
-              {lang === "ar" ? "باركود الطلب الذاتي" : "Self-Order QR"}
+              {lang === "ar" ? "باركود عام للمنيو" : "General Menu QR"}
             </Button>
             <Button
               size="sm"
@@ -1623,7 +1601,7 @@ function CaptainPage() {
             const selectedT = tablesList.find((t) => t.id === qrTableId);
             const displayedTableNumber = selectedT ? selectedT.number : "";
             const displayedTableName = selectedT?.name || "";
-            const cleanBaseUrl = (customBaseUrl || "https://jupa-sep.vercel.app")
+            const cleanBaseUrl = (customBaseUrl || DEFAULT_CUSTOMER_MENU_URL)
               .trim()
               .replace(/\/+$/, "")
               .replace(/\/menu$/i, "");
@@ -1637,10 +1615,12 @@ function CaptainPage() {
 
             const params = new URLSearchParams();
             params.set("page", "menu");
-            if (qrTableId) params.set("tableId", qrTableId);
-            if (displayedTableNumber) params.set("table", String(displayedTableNumber));
-            if (displayedTableName) params.set("tableName", displayedTableName);
-            if (qrZone.trim()) params.set("zone", qrZone.trim());
+            if (selectedT) {
+              params.set("tableId", selectedT.id);
+              params.set("table", String(selectedT.number));
+              if (displayedTableName) params.set("tableName", displayedTableName);
+              if (qrZone.trim()) params.set("zone", qrZone.trim());
+            }
             if (qrCurrency) params.set("currency", qrCurrency);
             params.set("rate", String(effectiveQrRate));
             params.set("lang", qrMenuLang);
@@ -1668,9 +1648,8 @@ function CaptainPage() {
                             <button
                               type="button"
                               onClick={() => {
-                                const orig = window.location.origin.replace(/\/+$/, "");
-                                setCustomBaseUrl(orig);
-                                window.localStorage.setItem("restocash_qr_base_url_v1", orig);
+                                setCustomBaseUrl(DEFAULT_CUSTOMER_MENU_URL);
+                                window.localStorage.setItem("restocash_qr_base_url_v1", DEFAULT_CUSTOMER_MENU_URL);
                               }}
                               className="text-[11px] font-bold text-indigo-600 hover:underline cursor-pointer"
                             >
@@ -1690,7 +1669,7 @@ function CaptainPage() {
                             );
                           }
                         }}
-                        placeholder="https://your-project.vercel.app"
+                        placeholder="https://juba-aug.vercel.app"
                         className="h-8 text-xs font-mono"
                       />
                     </div>
@@ -1698,25 +1677,16 @@ function CaptainPage() {
                     <div className="grid grid-cols-2 gap-2">
                       <div className="space-y-1">
                         <Label className="text-xs font-bold text-slate-700">
-                          {lang === "ar" ? "رقم الطاولة" : "Table"}
+                          {lang === "ar" ? "وجهة الباركود" : "QR Destination"}
                         </Label>
-                        <select
-                          value={qrTableId}
-                          onChange={(e) => setQrTableId(e.target.value)}
-                          className="w-full h-8 rounded-lg border border-slate-300 bg-white px-2 text-xs font-semibold"
-                        >
-                          <option value="">
-                            {lang === "ar" ? "-- عام / سفري --" : "-- General --"}
-                          </option>
-                          {tablesList.map((t) => (
-                            <option key={t.id} value={t.id}>
-                              #{t.number} — {t.name || `طاولة ${t.number}`}
-                            </option>
-                          ))}
-                        </select>
+                        <div className="h-8 rounded-lg border border-slate-200 bg-slate-50 px-2 flex items-center text-xs font-bold text-slate-700">
+                          {selectedT
+                            ? (lang === "ar" ? `طاولة #${selectedT.number} — ${displayedTableName}` : `Table #${selectedT.number} — ${displayedTableName}`)
+                            : (lang === "ar" ? "منيو عام — بدون ربط بطاولة" : "General menu — no table assigned")}
+                        </div>
                       </div>
 
-                      <div className="space-y-1">
+                      {selectedT && <div className="space-y-1">
                         <Label className="text-xs font-bold text-slate-700">
                           {lang === "ar" ? "القسم" : "Zone"}
                         </Label>
@@ -1734,7 +1704,7 @@ function CaptainPage() {
                           <option value="الحديقة" />
                           <option value="VIP" />
                         </datalist>
-                      </div>
+                      </div>}
                     </div>
 
                     <div className="grid grid-cols-3 gap-2">
@@ -1849,7 +1819,7 @@ function CaptainPage() {
                     <h3 className="text-xs font-black text-slate-800 mb-0.5 text-center">
                       {qrWelcomeMessage || (qrMenuLang === "en" ? "Welcome!" : "أهلاً بك!")}
                     </h3>
-                    {(displayedTableNumber || qrZone) && (
+                    {selectedT && (
                       <p className="text-xs font-bold text-indigo-700 mb-2" id="print-table-number">
                         {[
                           displayedTableNumber
