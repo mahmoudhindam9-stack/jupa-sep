@@ -189,7 +189,7 @@ function MenuPage() {
     });
   };
 
-  // Resolve table number & location accurately (default to Table #1 if none passed in URL)
+  // A table is assigned only when the URL explicitly comes from a table-specific QR code.
   const rawTableId = tableId || table_id || "";
   const urlTableNum = useMemo(() => {
     if (table && /^\d+$/.test(String(table).trim())) {
@@ -202,23 +202,21 @@ function MenuPage() {
     return 0;
   }, [table, rawTableId]);
 
-  const [manualTableNum, setManualTableNum] = useState<number>(() =>
-    urlTableNum > 0 && urlTableNum !== 999 ? urlTableNum : 1,
-  );
-
-  useEffect(() => {
-    if (urlTableNum > 0 && urlTableNum !== 999) {
-      setManualTableNum(urlTableNum);
-    }
-  }, [urlTableNum]);
-
-  const parsedTableNum = urlTableNum > 0 && urlTableNum !== 999 ? urlTableNum : manualTableNum;
-  const resolvedTableId =
-    rawTableId && rawTableId !== "tbl-999" ? rawTableId : `tbl-${parsedTableNum}`;
-  const resolvedTableName =
-    tableName || (isAr ? `طاولة ${parsedTableNum}` : `Table ${parsedTableNum}`);
-  const resolvedZone = zone ? translateMenuText(zone, activeLang) : "";
-  const fullLocationLabel = [resolvedTableName, resolvedZone].filter(Boolean).join(" · ");
+  const parsedTableNum = urlTableNum > 0 && urlTableNum !== 999 ? urlTableNum : 0;
+  const validTableId = rawTableId && rawTableId !== "tbl-999" ? rawTableId : "";
+  const hasTableContext = Boolean(validTableId || parsedTableNum > 0);
+  const resolvedTableId = validTableId || (parsedTableNum > 0 ? `tbl-${parsedTableNum}` : "");
+  const resolvedTableName = hasTableContext
+    ? tableName || (parsedTableNum > 0 ? (isAr ? `طاولة ${parsedTableNum}` : `Table ${parsedTableNum}`) : isAr ? "طاولة" : "Table")
+    : isAr
+      ? "قائمة عامة — غير مرتبطة بطاولة"
+      : "General Menu — No Table Assigned";
+  const resolvedZone = hasTableContext && zone ? translateMenuText(zone, activeLang) : "";
+  const fullLocationLabel = hasTableContext
+    ? [resolvedTableName, resolvedZone].filter(Boolean).join(" · ")
+    : isAr
+      ? "امسح باركود الطاولة لربط طلبك بها"
+      : "Scan your table QR code to link your order to a table";
 
   const [cart, setCart] = useState<any[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
@@ -232,7 +230,9 @@ function MenuPage() {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("ALL");
   const [customerName, setCustomerName] = useState("");
   const [orderGeneralNotes, setOrderGeneralNotes] = useState("");
-  const [diningType, setDiningType] = useState<"dine_in" | "takeaway">("dine_in");
+  const [diningType, setDiningType] = useState<"dine_in" | "takeaway">(
+    hasTableContext ? "dine_in" : "takeaway",
+  );
   const [brokenImages, setBrokenImages] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
@@ -397,7 +397,7 @@ function MenuPage() {
   const totalAmount = convertUsdPrice(baseTotalUsd);
 
   const sendTableAssistanceRequest = async (requestType: "call_captain" | "request_bill") => {
-    if (isCallingCaptain) return;
+    if (!hasTableContext || isCallingCaptain) return;
     setIsCallingCaptain(true);
 
     const alertUuid = generateValidUuid();
@@ -405,8 +405,8 @@ function MenuPage() {
       id: alertUuid,
       table_id: resolvedTableId,
       table_number: parsedTableNum || "عام",
-      table_name: parsedTableNum > 0 ? `طاولة ${parsedTableNum}` : tableName || "طاولة عامة",
-      zone: zone || "",
+      table_name: resolvedTableName,
+      zone: resolvedZone,
       request_type: requestType,
       customer_name: customerName.trim() || undefined,
       notes:
@@ -476,6 +476,16 @@ function MenuPage() {
     if (cart.length === 0 || isSubmitting) return;
     setIsSubmitting(true);
 
+    if (!hasTableContext) {
+      toast({
+        title: isAr ? "امسح باركود الطاولة أولاً" : "Scan a Table QR Code First",
+        description: isAr
+          ? "هذه صفحة المنيو العامة. لا يمكن ربط الطلب بطاولة إلا من خلال باركود الطاولة الموجود على بطاقة الطاولة في شاشة الكابتن."
+          : "This is the general menu page. A table order can only be linked through the QR code on that table's card in Captain Order.",
+      });
+      return;
+    }
+
     const finalTableNum = parsedTableNum > 0 ? parsedTableNum : 999;
     const orderUuid = generateValidUuid();
     const trackingTokenForOrder = generateValidUuid();
@@ -514,7 +524,7 @@ function MenuPage() {
       selectedOptions: line.selectedOptions || [],
       selectedAdditions: line.selectedAdditions || [],
       meta: {
-        table_id: resolvedTableId,
+        table_id: resolvedTableId || null,
         table_number: finalTableNum,
         table_name: tableArLabel,
         zone: zoneArLabel,
@@ -526,7 +536,7 @@ function MenuPage() {
     const nowIso = new Date().toISOString();
     const orderPayload = {
       id: orderUuid,
-      table_id: resolvedTableId,
+      table_id: resolvedTableId || null,
       table_number: finalTableNum,
       table_name: tableArLabel,
       zone: zoneArLabel,
@@ -564,7 +574,7 @@ function MenuPage() {
 
       tableOrdersStore.saveOrder({
         id: orderPayload.id,
-        table_id: orderPayload.table_id,
+        table_id: orderPayload.table_id || "",
         table_number: orderPayload.table_number,
         table_name: [tableArLabel, zoneArLabel].filter(Boolean).join(" — "),
         items: orderPayload.items,
@@ -704,18 +714,12 @@ function MenuPage() {
                 <MapPin size={13} className="text-emerald-600" />
                 <span>{fullLocationLabel}</span>
               </span>
-              {urlTableNum === 0 && (
-                <select
-                  value={manualTableNum}
-                  onChange={(e) => setManualTableNum(Number(e.target.value) || 1)}
-                  className="h-7 rounded-lg border border-emerald-300 bg-white px-2 text-xs font-black text-emerald-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                >
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
-                    <option key={num} value={num}>
-                      {isAr ? `طاولة #${num}` : `Table #${num}`}
-                    </option>
-                  ))}
-                </select>
+              {!hasTableContext && (
+                <span className="text-amber-700 font-bold">
+                  {isAr
+                    ? "هذه نسخة عامة من المنيو. امسح باركود الطاولة لبدء طلب مرتبط بها."
+                    : "This is the general menu. Scan a table QR code to place a table order."}
+                </span>
               )}
               {welcome && (
                 <>
@@ -726,7 +730,8 @@ function MenuPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          {hasTableContext && (
+            <div className="flex items-center gap-2">
             <button
               type="button"
               disabled={isCallingCaptain}
@@ -745,7 +750,8 @@ function MenuPage() {
               <Receipt size={14} className="text-slate-600" />
               <span>{isAr ? "طلب الفاتورة" : "Request Bill"}</span>
             </button>
-          </div>
+            </div>
+          )}
         </div>
       </section>
 
@@ -1052,31 +1058,39 @@ function MenuPage() {
               </button>
             </div>
 
-            {/* Dining Preference Selector */}
-            <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-xl">
-              <button
-                type="button"
-                onClick={() => setDiningType("dine_in")}
-                className={`py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
-                  diningType === "dine_in"
-                    ? "bg-white text-slate-900 shadow-2xs"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                {isAr ? "داخل المطعم (على الطاولة)" : "Dine-In (At Table)"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setDiningType("takeaway")}
-                className={`py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
-                  diningType === "takeaway"
-                    ? "bg-white text-slate-900 shadow-2xs"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                {isAr ? "سفري (تيك أواي)" : "Takeaway"}
-              </button>
-            </div>
+            {/* Dining preference is table-specific; the public page remains a menu-only landing page. */}
+            {hasTableContext ? (
+              <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setDiningType("dine_in")}
+                  className={`py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    diningType === "dine_in"
+                      ? "bg-white text-slate-900 shadow-2xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  {isAr ? "داخل المطعم (على الطاولة)" : "Dine-In (At Table)"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDiningType("takeaway")}
+                  className={`py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    diningType === "takeaway"
+                      ? "bg-white text-slate-900 shadow-2xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  {isAr ? "سفري (تيك أواي)" : "Takeaway"}
+                </button>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
+                {isAr
+                  ? "هذه صفحة منيو عامة للعرض. امسح باركود الطاولة لربط طلبك بالطاولة الصحيحة."
+                  : "This is a general menu for browsing. Scan your table QR code to link an order to the correct table."}
+              </div>
+            )}
 
             {/* Cart Items List */}
             <div className="space-y-3 divide-y divide-slate-100 max-h-60 overflow-y-auto pr-1">
@@ -1204,7 +1218,7 @@ function MenuPage() {
               </div>
               <button
                 type="button"
-                disabled={isSubmitting}
+                disabled={isSubmitting || !hasTableContext}
                 onClick={submitOrder}
                 className="w-full min-h-[50px] bg-emerald-600 text-white py-3.5 rounded-2xl font-black shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 disabled:opacity-60 transition flex items-center justify-center gap-2 cursor-pointer"
               >
