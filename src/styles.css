@@ -421,6 +421,12 @@ html[data-theme="luxury-gold"] {
     appearance: textfield;
   }
 
+  /* Prevent Edge/Chromium native password reveal icon from overlapping custom eye toggle */
+  input::-ms-reveal,
+  input::-ms-clear {
+    display: none !important;
+  }
+
   /* Refined custom scrollbars */
   ::-webkit-scrollbar {
     width: 8px;

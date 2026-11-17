@@ -5,6 +5,7 @@ import {
   createRootRouteWithContext,
   HeadContent,
   Scripts,
+  useRouterState,
 } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Toaster } from "@/components/ui/sonner";
@@ -206,6 +207,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const [isClient, setIsClient] = useState(false);
+  const currentPathname = useRouterState({
+    select: (state) => state.location.pathname || "",
+  });
+  const isAuthOrPublicRoute =
+    currentPathname.startsWith("/login") ||
+    currentPathname.startsWith("/reset-password") ||
+    currentPathname.startsWith("/menu") ||
+    currentPathname.startsWith("/setup");
 
   useEffect(() => {
     setIsClient(true);
@@ -648,7 +657,7 @@ function RootComponent() {
         <QueryClientProvider client={queryClient}>
           <Outlet />
           <Toaster />
-          {isClient && <Chatbot />}
+          {isClient && !isAuthOrPublicRoute && <Chatbot />}
         </QueryClientProvider>
         <Scripts />
       </body>

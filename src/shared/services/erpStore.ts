@@ -6492,7 +6492,7 @@ export class ERPStore {
       ...emp,
       employee_code: resolvedCode,
       salary: Number(emp.salary) || 0,
-      id: "emp-" + Date.now(),
+      id: `emp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     };
     this.state.employees.push(newEmp);
     this.saveState();

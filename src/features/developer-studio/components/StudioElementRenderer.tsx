@@ -9,6 +9,7 @@ import { ElementModel, getElementDisplayName } from "../models/studio.types";
 import { evaluateArithmeticExpression, formatArithmeticResult } from "../utils/arithmetic";
 import { cn } from "@/lib/utils";
 import { Lock, EyeOff } from "lucide-react";
+import { toast } from "sonner";
 
 interface StudioElementRendererProps {
   element: ElementModel;
@@ -190,19 +191,19 @@ export function StudioElementRenderer({
                 return;
               }
               if (c.action === "alert") {
-                window.alert(c.message || label);
+                toast.info(c.message || label);
               } else if (c.action === "formula") {
                 try {
                   const result = evaluateArithmeticExpression(c.formula || "");
-                  window.alert(`نتيجة المعادلة: ${formatArithmeticResult(result)}`);
+                  toast.success(`نتيجة المعادلة: ${formatArithmeticResult(result)}`);
                 } catch (error) {
-                  window.alert(error instanceof Error ? error.message : "تحقق من المعادلة الحسابية.");
+                  toast.error(error instanceof Error ? error.message : "تحقق من المعادلة الحسابية.");
                 }
               } else if (c.action === "toggle") {
                 const targetId = String(c.targetElementId || "");
                 const target = targetId ? document.getElementById(`studio-elem-${targetId}`) : null;
                 if (!target) {
-                  window.alert("اختر العنصر المطلوب أولًا من إعدادات الزر.");
+                  toast.warning("اختر العنصر المطلوب أولًا من إعدادات الزر.");
                 } else {
                   target.classList.toggle("hidden");
                   target.setAttribute("aria-hidden", target.classList.contains("hidden") ? "true" : "false");
@@ -210,7 +211,7 @@ export function StudioElementRenderer({
               } else if (c.action === "submit") {
                 const form = (e.currentTarget as HTMLButtonElement).closest("form");
                 if (form) form.requestSubmit();
-                else window.alert("ضع الزر داخل نموذج حتى يتمكن من إرسال البيانات.");
+                else toast.warning("ضع الزر داخل نموذج حتى يتمكن من إرسال البيانات.");
               }
             }}
           >

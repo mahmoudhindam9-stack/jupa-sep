@@ -43,7 +43,9 @@ import {
   Loader2,
   ArrowRight,
   ArrowUpLeft,
+  Sparkles,
 } from "lucide-react";
+import { BulkInventoryAiModal } from "@/components/ai/BulkInventoryAiModal";
 import { Badge } from "@/components/ui/badge";
 import { WarehouseManagement } from "@/features/inventory/components/WarehouseManagement";
 import { SupplierManagement } from "@/features/inventory/components/SupplierManagement";
@@ -193,6 +195,7 @@ function InventoryPage() {
   useSyncedSubTab("/admin/inventory", invSection, setInvSection as any, "operations");
   const [search, setSearch] = useState("");
   const [filterLowStock, setFilterLowStock] = useState(false);
+  const [isBulkInvAiOpen, setIsBulkInvAiOpen] = useState(false);
   const [reportSearchQuery, setReportSearchQuery] = useState("");
   const [reportCategoryFilter, setReportCategoryFilter] = useState("all");
   const [reportDateStart, setReportDateStart] = useState(() => {
@@ -286,6 +289,7 @@ function InventoryPage() {
   const [showInventorySaveConfirm, setShowInventorySaveConfirm] = useState(false);
   const [showInventoryCancelConfirm, setShowInventoryCancelConfirm] = useState(false);
   const [inventoryItemToDelete, setInventoryItemToDelete] = useState<Inventory | null>(null);
+  const [showClearAllConfirm, setShowClearAllConfirm] = useState(false);
   const [txForm, setTxForm] = useState({ inventory_id: "", type: "in", quantity: "", note: "" });
 
   // Expiry & Quality state
@@ -973,7 +977,10 @@ function InventoryPage() {
       notes: "",
     });
     setErpState(erpStore.getState());
-    alert("تم إنشاء أمر التوريد بنجاح! يمكنك الآن استلام البضائع من جدول أوامر الشراء أدناه.");
+    toast({
+      title: "تم إنشاء أمر التوريد",
+      description: "تم إنشاء أمر التوريد بنجاح! يمكنك الآن استلام البضائع من جدول أوامر الشراء أدناه.",
+    });
   };
 
   const handleReceivePOPartialSubmit = async (e: React.FormEvent) => {
@@ -991,19 +998,27 @@ function InventoryPage() {
     // Filter items where received quantity > 0
     const activeReceives = itemsArr.filter((i) => i.received_quantity > 0);
     if (activeReceives.length === 0) {
-      alert("يرجى تحديد كميات مستلمة أكبر من الصفر!");
+      toast({
+        title: "تنبيه",
+        description: "يرجى تحديد كميات مستلمة أكبر من الصفر!",
+        variant: "destructive",
+      });
       return;
     }
 
     const treasuryId = selectedReceiveTreasuryId || erpState.treasuries[0]?.id;
     if (!treasuryId) {
-      alert("لا يوجد حساب خزينة متاح للدفع!");
+      toast({
+        title: "تنبيه",
+        description: "لا يوجد حساب خزينة متاح للدفع!",
+        variant: "destructive",
+      });
       return;
     }
 
     try {
       // 1. Call erpStore
-      const { receivedTotal, isFullyReceived } = erpStore.receivePurchaseOrderPartial(
+      const { receivedTotal } = erpStore.receivePurchaseOrderPartial(
         receivingPoId,
         activeReceives,
         treasuryId,
@@ -1028,12 +1043,17 @@ function InventoryPage() {
       setReceivingPoId(null);
       setReceiveQuantities({});
       setSelectedReceiveTreasuryId("");
-      alert(
-        `تم تسجيل الاستلام وتحديث أرصدة الخزينة والمخازن بنجاح! القيمة المحسوبة: ${formatPrice(receivedTotal)}`,
-      );
+      toast({
+        title: "تم الاستلام بنجاح",
+        description: `تم تسجيل الاستلام وتحديث أرصدة الخزينة والمخازن بنجاح! القيمة المحسوبة: ${formatPrice(receivedTotal)}`,
+      });
     } catch (err: any) {
       console.error(err);
-      alert(err.message || "حدث خطأ أثناء معالجة الاستلام");
+      toast({
+        title: "خطأ في الاستلام",
+        description: err.message || "حدث خطأ أثناء معالجة الاستلام",
+        variant: "destructive",
+      });
     }
   };
 
@@ -1051,7 +1071,11 @@ function InventoryPage() {
 
     const activeReturns = itemsArr.filter((i) => i.returned_quantity > 0);
     if (activeReturns.length === 0) {
-      alert("يرجى تحديد كميات مرتجعة أكبر من الصفر!");
+      toast({
+        title: "تنبيه",
+        description: "يرجى تحديد كميات مرتجعة أكبر من الصفر!",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -1081,12 +1105,17 @@ function InventoryPage() {
       // Reset states
       setReturningPoId(null);
       setReturnQuantities({});
-      alert(
-        `تم تسجيل المرتجع للمورد بنجاح! القيمة الإجمالية المخصومة: ${formatPrice(returnedTotal)}`,
-      );
+      toast({
+        title: "تم تسجيل المرتجع",
+        description: `تم تسجيل المرتجع للمورد بنجاح! القيمة الإجمالية المخصومة: ${formatPrice(returnedTotal)}`,
+      });
     } catch (err: any) {
       console.error(err);
-      alert(err.message || "حدث خطأ أثناء معالجة المرتجعات");
+      toast({
+        title: "خطأ في المرتجعات",
+        description: err.message || "حدث خطأ أثناء معالجة المرتجعات",
+        variant: "destructive",
+      });
     }
   };
 
@@ -1644,6 +1673,15 @@ function InventoryPage() {
 
                 <div className="flex items-center gap-2 flex-wrap">
                   <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsBulkInvAiOpen(true)}
+                    className="font-bold border-primary/40 text-primary hover:bg-primary/10 flex items-center gap-2 h-10 px-4 rounded-xl cursor-pointer"
+                  >
+                    <Sparkles size={16} />
+                    <span>رفع أصناف المخزن</span>
+                  </Button>
+                  <Button
                     onClick={openAddInventoryModal}
                     className="font-bold bg-primary hover:bg-primary/90 text-primary-foreground flex items-center gap-2 h-10 px-5 rounded-xl shadow-xs cursor-pointer"
                   >
@@ -1681,15 +1719,7 @@ function InventoryPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => {
-                      if (
-                        confirm(
-                          "هل تريد مسح جميع الأصناف الحالية وتفريغ المخزن ليصبح (0 أصناف) للبدء من الصفر؟",
-                        )
-                      ) {
-                        clearAllItemsMutation.mutate();
-                      }
-                    }}
+                    onClick={() => setShowClearAllConfirm(true)}
                     disabled={clearAllItemsMutation.isPending}
                     className="rounded-full text-xs font-bold text-destructive hover:bg-destructive/10 border-destructive/30 h-7"
                   >
@@ -5069,6 +5099,44 @@ function InventoryPage() {
           </div>
         </div>
       )}
+
+      <AlertDialog open={showClearAllConfirm} onOpenChange={setShowClearAllConfirm}>
+        <AlertDialogContent dir="rtl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>تأكيد تصفير المخزن</AlertDialogTitle>
+            <AlertDialogDescription>
+              هل تريد مسح جميع الأصناف الحالية وتفريغ المخزن ليصبح (0 أصناف) للبدء من الصفر؟
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2">
+            <AlertDialogCancel>إلغاء</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                setShowClearAllConfirm(false);
+                clearAllItemsMutation.mutate();
+              }}
+            >
+              تأكيد التصفير
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <BulkInventoryAiModal
+        open={isBulkInvAiOpen}
+        onOpenChange={setIsBulkInvAiOpen}
+        warehouses={warehousesQuery.data ?? []}
+        defaultWarehouseId={selectedStockWarehouseId}
+        existingInventory={inventoryQuery.data ?? []}
+        onSaved={() => {
+          queryClient.invalidateQueries({ queryKey: ["admin", "inventory"] });
+          queryClient.invalidateQueries({ queryKey: ["admin", "warehouse_inventory"] });
+          queryClient.invalidateQueries({ queryKey: ["admin", "warehouses"] });
+          setErpState(erpStore.getState());
+        }}
+        toast={toast}
+      />
     </div>
   );
 }

@@ -46,10 +46,19 @@ import {
   ShoppingBag,
   Sparkles,
   Utensils,
+  Camera,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { printAccountingDocument } from "../../shared/utils/printAccountingDocument";
 import { ViewModeToggle, useViewMode } from "../ui/view-mode-toggle";
+import { postAiEndpoint } from "../../shared/services/aiClient";
+import {
+  fileToBase64Payload,
+  matchInventoryItemByName,
+  normalizeArabicText,
+  normalizeUnit,
+} from "../../shared/services/aiImportUtils";
 
 function exportRowsToExcelCsv(filename: string, headers: string[], rows: string[][]) {
   const escapeCsvCell = (val: string) => {
@@ -302,6 +311,8 @@ export function VouchersLedgerSection({
   const [newItemUnit, setNewItemUnit] = useState("كجم");
   const [newItemCost, setNewItemCost] = useState("");
   const [newItemMinQty, setNewItemMinQty] = useState("5");
+  const [isScanningInvoice, setIsScanningInvoice] = useState(false);
+  const invoiceScanInputRef = React.useRef<HTMLInputElement>(null);
 
   // Step-by-Step Voucher Wizard State (1: Type -> 2: Department -> 3: Form -> 4: Print Preview)
   const [wizardStep, setWizardStep] = useState<
@@ -3005,6 +3016,123 @@ export function VouchersLedgerSection({
                             className="app-link text-xs font-black text-orange-700 shrink-0"
                           >
                             {isAddingInventoryItem ? "إغلاق" : "+ صنف مخزني فوري"}
+                          </button>
+                          <input
+                            ref={invoiceScanInputRef}
+                            type="file"
+                            accept="image/*,.pdf"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              e.target.value = "";
+                              if (!file) return;
+                              setIsScanningInvoice(true);
+                              try {
+                                const { base64, mimeType } = await fileToBase64Payload(file);
+                                const parsed = await postAiEndpoint<{
+                                  supplier_name?: string;
+                                  invoice_number?: string;
+                                  items?: Array<{
+                                    name_ar: string;
+                                    unit: string;
+                                    quantity: number;
+                                    unit_price: number;
+                                  }>;
+                                }>("/api/ai/parse-invoice", {
+                                  base64,
+                                  mimeType,
+                                  inventoryNames: inventoryItems.map((i) => i.name_ar),
+                                });
+
+                                if (parsed.supplier_name && !selectedSupplierId) {
+                                  const normSup = normalizeArabicText(parsed.supplier_name);
+                                  const matchedSup = suppliers.find((s) => {
+                                    const n = normalizeArabicText(s.name_ar);
+                                    return n.includes(normSup) || normSup.includes(n);
+                                  });
+                                  if (matchedSup) {
+                                    setSelectedSupplierId(matchedSup.id);
+                                  } else {
+                                    setFormBeneficiary(parsed.supplier_name);
+                                  }
+                                }
+
+                                if (parsed.invoice_number && !formDescription.trim()) {
+                                  setFormDescription(`فاتورة مشتريات #${parsed.invoice_number}`);
+                                }
+
+                                const currentInv = [...localWarehouseStore.getInventory()];
+                                const newLines: VoucherPurchaseItem[] = [];
+                                for (const row of parsed.items || []) {
+                                  const rawName = String(row.name_ar || "").trim();
+                                  if (!rawName) continue;
+                                  const qty = Math.max(0.01, Number(row.quantity) || 1);
+                                  const unitPrice = Math.max(0, Number(row.unit_price) || 0);
+                                  const unit = normalizeUnit(row.unit);
+                                  let matched = matchInventoryItemByName(rawName, currentInv);
+                                  if (!matched) {
+                                    matched = localWarehouseStore.upsertInventoryItem(
+                                      {
+                                        name_ar: rawName,
+                                        unit,
+                                        quantity: 0,
+                                        min_level: 5,
+                                        cost: unitPrice,
+                                      },
+                                      undefined,
+                                      "wh-main-default",
+                                    );
+                                    inventoryService
+                                      .upsertInventoryItem(
+                                        {
+                                          name_ar: rawName,
+                                          unit,
+                                          quantity: 0,
+                                          min_level: 5,
+                                          cost: unitPrice,
+                                        },
+                                        matched.id,
+                                        "wh-main-default",
+                                      )
+                                      .catch(() => {});
+                                    currentInv.push(matched);
+                                  }
+                                  newLines.push({
+                                    inventory_id: matched.id,
+                                    name_ar: matched.name_ar,
+                                    unit: matched.unit || unit,
+                                    quantity: qty,
+                                    unit_price: unitPrice,
+                                    total: Number((qty * unitPrice).toFixed(2)),
+                                  });
+                                }
+
+                                if (newLines.length > 0) {
+                                  setInventoryItems([...currentInv]);
+                                  setPurchaseItems((prev) => [...prev, ...newLines]);
+                                  toast.success(`تمت قراءة ${newLines.length} صنف من الفاتورة`);
+                                } else {
+                                  toast.error("لم يتم العثور على أصناف واضحة في الفاتورة");
+                                }
+                              } catch (err: any) {
+                                toast.error(err?.message || "تعذر قراءة صورة الفاتورة");
+                              } finally {
+                                setIsScanningInvoice(false);
+                              }
+                            }}
+                          />
+                          <button
+                            type="button"
+                            disabled={isScanningInvoice}
+                            onClick={() => invoiceScanInputRef.current?.click()}
+                            className="inline-flex items-center gap-1 px-2.5 h-8 rounded-lg border border-primary/40 bg-primary/10 text-primary text-xs font-black hover:bg-primary/15 shrink-0 cursor-pointer disabled:opacity-60"
+                          >
+                            {isScanningInvoice ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Camera className="w-3.5 h-3.5" />
+                            )}
+                            <span>قراءة فاتورة بصورة</span>
                           </button>
                         </div>
 

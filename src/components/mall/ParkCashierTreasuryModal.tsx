@@ -1,8 +1,11 @@
-import React, { useMemo } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import React, { useMemo, useState } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Landmark, Printer, RotateCcw, Lock, Eye } from "lucide-react";
+import { toast } from "sonner";
 import { erpStore } from "@/shared/services/erpStore";
 import { canCurrentUserCloseShift } from "@/shared/services/userAuthorization";
 import { printRawHtml } from "@/shared/utils/printAccountingDocument";
@@ -21,6 +24,8 @@ interface Props {
 }
 
 export function ParkCashierTreasuryModal({ isOpen, onClose, onOpenCloseShift }: Props) {
+  const [refundTxId, setRefundTxId] = useState<string | null>(null);
+  const [refundReason, setRefundReason] = useState("");
   const state = erpStore.getState();
   const activeShift = erpStore.getActiveParkShift();
   const canCloseShift = canCurrentUserCloseShift();
@@ -102,12 +107,22 @@ export function ParkCashierTreasuryModal({ isOpen, onClose, onOpenCloseShift }: 
   };
 
   const handleRefund = (txId: string) => {
-    const reason = prompt("يرجى كتابة سبب الإرجاع:");
-    if (!reason) return;
+    setRefundTxId(txId);
+    setRefundReason("");
+  };
+
+  const confirmRefund = () => {
+    if (!refundTxId || !refundReason.trim()) {
+      toast.error("يرجى كتابة سبب الإرجاع");
+      return;
+    }
     try {
-      erpStore.refundParkTicketTransaction(txId, reason);
+      erpStore.refundParkTicketTransaction(refundTxId, refundReason.trim());
+      toast.success("تم إرجاع التذكرة وتسوية الخزينة بنجاح");
+      setRefundTxId(null);
+      setRefundReason("");
     } catch (e: any) {
-      alert(e.message);
+      toast.error(e?.message || "تعذر تنفيذ الإرجاع");
     }
   };
 
@@ -252,6 +267,30 @@ export function ParkCashierTreasuryModal({ isOpen, onClose, onOpenCloseShift }: 
           </div>
         )}
       </DialogContent>
+
+      <Dialog open={Boolean(refundTxId)} onOpenChange={(open) => !open && setRefundTxId(null)}>
+        <DialogContent className="sm:max-w-md rounded-2xl" dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-black">تأكيد إرجاع التذكرة</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label className="text-xs font-bold">سبب الإرجاع</Label>
+            <Input
+              value={refundReason}
+              onChange={(e) => setRefundReason(e.target.value)}
+              placeholder="اكتب سبب الإرجاع..."
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setRefundTxId(null)}>
+              إلغاء
+            </Button>
+            <Button variant="destructive" onClick={confirmRefund}>
+              تأكيد الإرجاع
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }

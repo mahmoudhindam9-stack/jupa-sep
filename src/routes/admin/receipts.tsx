@@ -32,6 +32,17 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { toast } from "sonner";
+import {
   getReceiptDesignSettings,
   saveReceiptDesignSettings,
   resetReceiptDesignSettings,
@@ -55,6 +66,7 @@ function ReceiptDesignerPage() {
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [activeTab, setActiveTab] = useState("sales");
   const [isPrinterConnected, setIsPrinterConnected] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   useEffect(() => {
     setSettings(getReceiptDesignSettings());
@@ -81,14 +93,14 @@ function ReceiptDesignerPage() {
   };
 
   const handleReset = () => {
-    if (
-      window.confirm(
-        "هل أنت تأكد من إعادة جميع إعدادات تصميم الإيصالات والسندات إلى الوضع الافتراضي؟",
-      )
-    ) {
-      const def = resetReceiptDesignSettings();
-      setSettings(def);
-    }
+    setShowResetConfirm(true);
+  };
+
+  const confirmReset = () => {
+    const def = resetReceiptDesignSettings();
+    setSettings(def);
+    setShowResetConfirm(false);
+    toast.success("تمت إعادة إعدادات تصميم الإيصالات إلى الوضع الافتراضي.");
   };
 
   const handleConnectPrinter = async () => {
@@ -1623,6 +1635,26 @@ function ReceiptDesignerPage() {
           </div>
         </div>
       </div>
+
+      <AlertDialog open={showResetConfirm} onOpenChange={setShowResetConfirm}>
+        <AlertDialogContent dir="rtl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>إعادة ضبط تصميم الإيصالات</AlertDialogTitle>
+            <AlertDialogDescription>
+              هل أنت متأكد من إعادة جميع إعدادات تصميم الإيصالات والسندات إلى الوضع الافتراضي؟
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2">
+            <AlertDialogCancel>إلغاء</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={confirmReset}
+            >
+              تأكيد الإعادة
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

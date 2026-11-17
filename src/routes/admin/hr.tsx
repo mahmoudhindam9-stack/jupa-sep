@@ -63,10 +63,13 @@ import {
   Eye,
   ShieldCheck,
   ArrowUpLeft,
+  Sparkles,
 } from "lucide-react";
+import { BulkHrAiModal } from "@/components/ai/BulkHrAiModal";
 import { ViewModeToggle, useViewMode } from "@/components/ui/view-mode-toggle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -202,6 +205,7 @@ function HRPage() {
   // Search & Filter States
   const [empSearch, setEmpSearch] = useState("");
   const [empDeptFilter, setEmpDeptFilter] = useState("all");
+  const [isBulkHrAiOpen, setIsBulkHrAiOpen] = useState(false);
 
   // Attendance Date
   const [attendanceDate, setAttendanceDate] = useState<string>(
@@ -725,13 +729,14 @@ function HRPage() {
       erpStore.updateUserPermission(newUser.username, permissions);
       notifyPermissionsUpdated();
 
-      await queueUserChange({
+      const syncResult = await queueUserChange({
         kind: "create",
         localUserId: newUser.id,
         username: newUser.username,
         email: newUser.email,
         password: effectivePassword,
         profile: {
+          employee_code: savedEmpCode,
           username: newUser.username,
           email: newUser.email,
           full_name: newUser.full_name,
@@ -739,7 +744,18 @@ function HRPage() {
           role: newUser.role,
           permissions,
         },
-      }).catch(() => undefined);
+      }).catch((syncErr: any) => ({
+        synced: false,
+        queued: true,
+        error: syncErr?.message || "تعذرت المزامنة الفورية مع قاعدة البيانات",
+      }));
+
+      if (syncResult && (syncResult as any).error && !(syncResult as any).synced) {
+        toast({
+          title: "تنبيه مزامنة المستخدم",
+          description: `تم حفظ حساب (@${newUser.username}) محلياً وإضافته لقائمة الانتظار: ${(syncResult as any).error}`,
+        });
+      }
 
       return `وتم إنشاء وربط حساب المستخدم (@${newUser.username}) في دليل المستخدمين`;
     }
@@ -774,6 +790,7 @@ function HRPage() {
         userId: updatedUser.id,
         username: updatedUser.username,
         profile: {
+          employee_code: savedEmpCode,
           id: updatedUser.id,
           username: updatedUser.username,
           email: updatedUser.email,
@@ -782,7 +799,12 @@ function HRPage() {
           role: updatedUser.role,
           permissions,
         },
-      }).catch(() => undefined);
+      }).catch((syncErr: any) => {
+        toast({
+          title: "تنبيه مزامنة المستخدم",
+          description: `تم ربط الحساب محلياً وسيتم إكمال المزامنة لاحقاً: ${syncErr?.message || ""}`,
+        });
+      });
 
       return `وتم ربط الموظف بحساب المستخدم (@${updatedUser.username}) برقم وظيفي موحد (#${savedEmpCode})`;
     }
@@ -1874,13 +1896,24 @@ function HRPage() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {activeTab === "employees" && canViewEmployees && (
-            <Button
-              onClick={openAddEmployeeDialog}
-              className="gap-1.5 rounded-xl font-bold text-xs h-9 px-4"
-            >
-              <UserPlus size={15} />
-              إضافة موظف جديد
-            </Button>
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsBulkHrAiOpen(true)}
+                className="gap-1.5 rounded-xl font-bold text-xs h-9 px-3.5 border-primary/40 text-primary hover:bg-primary/10 cursor-pointer"
+              >
+                <Sparkles size={15} />
+                رفع قائمة الموظفين
+              </Button>
+              <Button
+                onClick={openAddEmployeeDialog}
+                className="gap-1.5 rounded-xl font-bold text-xs h-9 px-4"
+              >
+                <UserPlus size={15} />
+                إضافة موظف جديد
+              </Button>
+            </>
           )}
           <ViewModeToggle mode={viewMode} onChange={setViewMode} />
         </div>
@@ -2891,8 +2924,7 @@ function HRPage() {
               إضافة موظف جديد وربط حساب المستخدم
             </DialogTitle>
             <DialogDescription className="text-right">
-              أدخل البيانات الأساسية والمالية للموظف، ويمكنك في نفس الخطوة إنشاء حساب مستخدم للنظام
-              بالرقم السري الافتراضي ({DEFAULT_NEW_USER_PASSWORD}) أو ربطه بحساب موجود.
+              أدخل البيانات الأساسية والمالية للموظف، ويمكنك في نفس الخطوة إنشاء حساب مستخدم للنظام أو ربطه بحساب موجود.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleAddEmployeeSubmit} className="space-y-4">
@@ -3121,8 +3153,7 @@ function HRPage() {
                         تعيين الافتراضي تلقائياً
                       </button>
                     </div>
-                    <Input
-                      type="password"
+                    <PasswordInput
                       dir="ltr"
                       placeholder="••••••••••••"
                       value={empNewUserForm.password}
@@ -3444,8 +3475,7 @@ function HRPage() {
                         تعيين الافتراضي تلقائياً
                       </button>
                     </div>
-                    <Input
-                      type="password"
+                    <PasswordInput
                       dir="ltr"
                       placeholder="••••••••••••"
                       value={empNewUserForm.password}
@@ -4331,6 +4361,13 @@ function HRPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <BulkHrAiModal
+        open={isBulkHrAiOpen}
+        onOpenChange={setIsBulkHrAiOpen}
+        onSaved={() => setErpState(erpStore.getState())}
+        toast={toast}
+      />
     </div>
   );
 }

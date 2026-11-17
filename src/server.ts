@@ -2,6 +2,7 @@ import "./lib/error-capture";
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
+import { handleAiApiRequest } from "./server/aiHandler";
 
 // Sanitize malformed environment variables (e.g. if an API key was mistakenly assigned to SUPABASE_URL)
 if (
@@ -86,7 +87,8 @@ export default {
     try {
       const url = new URL(request.url);
 
-
+      const aiResponse = await handleAiApiRequest(request, url);
+      if (aiResponse) return aiResponse;
 
       if (url.pathname === "/api/developer-studio/agent" && request.method === "POST") {
         const responseJson = (payload: Record<string, unknown>, status = 200) =>
@@ -281,10 +283,87 @@ export default {
         }
       }
 
+function redactGitSecrets(text: string, secret?: string): string {
+  let out = String(text || "");
+  if (secret) {
+    out = out.split(secret).join("[REDACTED]");
+    out = out.split(encodeURIComponent(secret)).join("[REDACTED]");
+  }
+  return out.replace(/https:\/\/x-access-token:[^@]+@/gi, "https://x-access-token:[REDACTED]@");
+}
+
+async function authorizeGitHubAdminRequest(
+  request: Request,
+  url: URL,
+): Promise<Response | null> {
+  const origin = request.headers.get("origin");
+  if (origin) {
+    try {
+      if (new URL(origin).origin !== url.origin) {
+        return jsonError("مصدر الطلب غير مسموح.", 403);
+      }
+    } catch {
+      return jsonError("مصدر الطلب غير صالح.", 403);
+    }
+  }
+
+  const authHeader = request.headers.get("authorization") || "";
+  const accessToken = authHeader.match(/^Bearer\s+(.+)$/i)?.[1]?.trim() || "";
+  if (!accessToken) {
+    return jsonError("يجب تسجيل الدخول أولاً بصلاحية مدير لتنفيذ عمليات GitHub.", 401);
+  }
+
+  const { createClient } = await import("@supabase/supabase-js");
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+  const supabaseAnonKey =
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.VITE_SUPABASE_ANON_KEY ||
+    process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+    "";
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return jsonError("إعداد اتصال Supabase الخادمي غير مكتمل.", 503);
+  }
+
+  const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: { Authorization: "Bearer " + accessToken } },
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+  const { data: userResult, error: userError } = await userClient.auth.getUser(accessToken);
+  if (userError || !userResult?.user?.id) {
+    return jsonError("جلسة المستخدم غير صالحة أو انتهت.", 401);
+  }
+
+  const { data: profile, error: profileError } = await userClient
+    .from("profiles")
+    .select("role, permissions")
+    .eq("id", userResult.user.id)
+    .maybeSingle();
+
+  const role = String(profile?.role || "").trim().toLowerCase();
+  const perms = (profile?.permissions || {}) as Record<string, any>;
+  const isAuthorized =
+    !profileError &&
+    (role === "super_admin" ||
+      role === "admin" ||
+      perms.super_admin_full_access === true ||
+      perms.system_backup_update === true ||
+      perms.developer_options === true);
+
+  if (!isAuthorized) {
+    return jsonError("ليس لديك صلاحية تنفيذ عمليات النشر على GitHub.", 403);
+  }
+
+  return null;
+}
+
       if (url.pathname === "/api/github/push" && request.method === "POST") {
+        let token = "";
         try {
+          const authFailure = await authorizeGitHubAdminRequest(request, url);
+          if (authFailure) return authFailure;
+
           const body = await request.json();
-          const token = typeof body?.token === "string" ? body.token.trim() : "";
+          token = typeof body?.token === "string" ? body.token.trim() : "";
           const requestedRepo = typeof body?.repo === "string" ? body.repo.trim() : "";
           const targetRepo = requestedRepo || "mahmoudhindam9-stack/jupa-sep";
           const requestedCommitMsg =
@@ -348,15 +427,16 @@ export default {
             JSON.stringify({
               success: true,
               message: `تم رفع التحديثات إلى GitHub (${targetRepo}) بنجاح! 🚀`,
-              output: pushOutput || "Updates pushed successfully",
+              output: redactGitSecrets(pushOutput || "Updates pushed successfully", token),
             }),
             {
               headers: { "Content-Type": "application/json" },
             },
           );
         } catch (pushErr: any) {
-          console.error("Git push failed:", pushErr);
-          const errMsg = pushErr?.stderr?.toString() || pushErr?.message || "فشلت عملية الرفع";
+          const rawErrMsg = pushErr?.stderr?.toString() || pushErr?.message || "فشلت عملية الرفع";
+          const errMsg = redactGitSecrets(rawErrMsg, token);
+          console.error("Git push failed:", errMsg);
           let friendlyMsg = errMsg;
           if (
             errMsg.includes("Authentication failed") ||
@@ -382,9 +462,13 @@ export default {
       }
 
       if (url.pathname === "/api/github/release" && request.method === "POST") {
+        let token = "";
         try {
+          const authFailure = await authorizeGitHubAdminRequest(request, url);
+          if (authFailure) return authFailure;
+
           const body = await request.json();
-          const token = typeof body?.token === "string" ? body.token.trim() : "";
+          token = typeof body?.token === "string" ? body.token.trim() : "";
           const requestedRepo = typeof body?.repo === "string" ? body.repo.trim() : "";
           const targetRepo = requestedRepo || "mahmoudhindam9-stack/jupa-sep";
           const requestedTag = typeof body?.tagName === "string" ? body.tagName.trim() : "";
@@ -456,8 +540,11 @@ export default {
           const pushUrl = `https://x-access-token:${sanitizedToken}@github.com/${targetRepo}.git`;
           try {
             execFileSync("git", ["push", pushUrl, "main"], { encoding: "utf8", stdio: "pipe" });
-          } catch (pushErr) {
-            console.warn("Git push warning during release:", pushErr);
+          } catch (pushErr: any) {
+            console.warn(
+              "Git push warning during release:",
+              redactGitSecrets(pushErr?.stderr?.toString() || pushErr?.message || "", token),
+            );
           }
 
           // Create release via GitHub REST API
@@ -518,10 +605,11 @@ export default {
             },
           );
         } catch (relErr: any) {
-          console.error("Release creation failed:", relErr);
+          const safeMsg = redactGitSecrets(relErr?.message || "حدث خطأ غير متوقع أثناء إنشاء الإصدار", token);
+          console.error("Release creation failed:", safeMsg);
           return new Response(
             JSON.stringify({
-              error: relErr?.message || "حدث خطأ غير متوقع أثناء إنشاء الإصدار",
+              error: safeMsg,
             }),
             {
               status: 500,

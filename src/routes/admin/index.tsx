@@ -243,6 +243,10 @@ function AdminDashboard() {
   });
   const [treasuryToDelete, setTreasuryToDelete] = useState<any | null>(null);
   const [treasuryToggleStatusDialog, setTreasuryToggleStatusDialog] = useState<any | null>(null);
+  const [reconcileTreasuryDialog, setReconcileTreasuryDialog] = useState<{
+    treasury: any;
+    actualCount: string;
+  } | null>(null);
   const [isProcessingTreasuryAction, setIsProcessingTreasuryAction] = useState(false);
 
   // Treasury Reporting & Movement Document Center State
@@ -560,7 +564,11 @@ function AdminDashboard() {
   const handleVoucherSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!voucherForm.amount || !voucherForm.treasury_id || !voucherForm.description) {
-      alert("يرجى ملء جميع الخانات الإلزامية");
+      toast({
+        title: "بيانات ناقصة",
+        description: "يرجى ملء جميع الخانات الإلزامية",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -572,7 +580,10 @@ function AdminDashboard() {
       `[${voucherForm.cost_center}] - ${voucherForm.description}`,
     );
 
-    alert("تم تسجيل السند المالي، قيد المحاسبة التلقائي، وتحديث أرصدة الخزائن!");
+    toast({
+      title: "تم تسجيل السند المالي",
+      description: "تم تسجيل السند المالي، قيد المحاسبة التلقائي، وتحديث أرصدة الخزائن!",
+    });
     setVoucherForm({
       type: "payment",
       category: "رواتب الموظفين",
@@ -624,7 +635,10 @@ function AdminDashboard() {
       );
     }
 
-    alert("تم إجراء الحركة على الخزينة وربطها بالدفاتر المالية المحاسبية!");
+    toast({
+      title: "تمت الحركة المالية",
+      description: "تم إجراء الحركة على الخزينة وربطها بالدفاتر المالية المحاسبية!",
+    });
     setTreasuryForm({
       actionType: "deposit",
       treasury_id: "",
@@ -1468,22 +1482,12 @@ function AdminDashboard() {
                               <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={() => {
-                                  const count = prompt(
-                                    tr.currency === "MULTI"
-                                      ? `جرد خزينة متعددة العملات: ${tr.name_ar}\nالرصيد الافتراضي بالجنيه المصري (EGP) هو ${tr.balance} EGP.\nأدخل المبلغ المالي الفعلي بالعملة الأساسية (EGP) للتسوية المحاسبية:`
-                                      : `جرد خزينة: ${tr.name_ar}\nالرصيد الدفتري الحالي: ${tr.balance} ${tr.currency}\nأدخل المبلغ المالي الفعلي المخزن بالصندوق حالياً:`,
-                                  );
-                                  if (count !== null && !isNaN(Number(count))) {
-                                    erpStore.reconcileTreasury(
-                                      tr.id,
-                                      Number(count),
-                                      "مطابقة جرد سريعة",
-                                    );
-                                    alert("تمت التسوية بنجاح!");
-                                    setErpState(erpStore.getState());
-                                  }
-                                }}
+                                onClick={() =>
+                                  setReconcileTreasuryDialog({
+                                    treasury: tr,
+                                    actualCount: String(tr.balance ?? 0),
+                                  })
+                                }
                                 className="text-[11px] font-bold h-7 py-0 px-2.5 rounded-lg border-primary/40 text-primary hover:bg-primary/5"
                               >
                                 جرد 🔍
@@ -2539,6 +2543,76 @@ function AdminDashboard() {
                   <Trash2 size={16} />
                 )}
                 <span>تأكيد الحذف والأرشفة</span>
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TREASURY RECONCILE MODAL */}
+      {reconcileTreasuryDialog && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 text-right">
+          <div className="bg-card border border-border text-card-foreground rounded-2xl w-full max-w-md p-6 flex flex-col shadow-2xl gap-4">
+            <div>
+              <h3 className="text-lg font-black text-foreground">
+                جرد ومطابقة: {reconcileTreasuryDialog.treasury.name_ar}
+              </h3>
+              <p className="text-xs text-muted-foreground mt-1">
+                {reconcileTreasuryDialog.treasury.currency === "MULTI"
+                  ? `الرصيد الدفتري الحالي: ${reconcileTreasuryDialog.treasury.balance} EGP — أدخل المبلغ الفعلي بالعملة الأساسية (EGP)`
+                  : `الرصيد الدفتري الحالي: ${reconcileTreasuryDialog.treasury.balance} ${reconcileTreasuryDialog.treasury.currency} — أدخل المبلغ الفعلي بالصندوق`}
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold">المبلغ الفعلي المعدود</Label>
+              <Input
+                type="number"
+                step="any"
+                value={reconcileTreasuryDialog.actualCount}
+                onChange={(e) =>
+                  setReconcileTreasuryDialog({
+                    ...reconcileTreasuryDialog,
+                    actualCount: e.target.value,
+                  })
+                }
+                className="font-mono font-bold text-left"
+                dir="ltr"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                variant="outline"
+                className="rounded-xl text-xs font-bold"
+                onClick={() => setReconcileTreasuryDialog(null)}
+              >
+                إلغاء
+              </Button>
+              <Button
+                className="rounded-xl text-xs font-black"
+                onClick={() => {
+                  const val = Number(reconcileTreasuryDialog.actualCount);
+                  if (reconcileTreasuryDialog.actualCount.trim() === "" || isNaN(val) || val < 0) {
+                    toast({
+                      title: "قيمة غير صالحة",
+                      description: "يرجى إدخال مبلغ رقمي صحيح غير سالب.",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+                  erpStore.reconcileTreasury(
+                    reconcileTreasuryDialog.treasury.id,
+                    val,
+                    "مطابقة جرد سريعة",
+                  );
+                  setErpState(erpStore.getState());
+                  setReconcileTreasuryDialog(null);
+                  toast({
+                    title: "تمت التسوية بنجاح",
+                    description: "تمت مطابقة رصيد الخزينة وتحديث الدفاتر المحاسبية.",
+                  });
+                }}
+              >
+                تأكيد التسوية
               </Button>
             </div>
           </div>

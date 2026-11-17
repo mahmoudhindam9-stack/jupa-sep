@@ -8,6 +8,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
   Lock,
@@ -57,6 +59,12 @@ export function ParkShiftClosingReportModal({
   const [activeTab, setActiveTab] = useState<
     "summary" | "transactions" | "journal_entries" | "treasuries"
   >("summary");
+  const [editFieldDialog, setEditFieldDialog] = useState<{
+    field: "shift_number" | "cashier_name" | "manual_tx";
+    label: string;
+    value: string;
+    txId?: string;
+  } | null>(null);
   const canCloseShift = canCurrentUserCloseShift();
 
   const allShifts = useMemo(() => {
@@ -664,17 +672,11 @@ export function ParkShiftClosingReportModal({
                         type="button"
                         onClick={() => {
                           if (!currentShift) return;
-                          const next = window.prompt(
-                            "تعديل رقم الوردية:",
-                            currentShift.shift_number,
-                          );
-                          if (next !== null && next.trim() !== "") {
-                            erpStore.updateParkShift(currentShift.id, {
-                              shift_number: next.trim(),
-                            });
-                            toast.success("تم تحديث رقم الوردية بنجاح");
-                            setClosedResult({ ...currentShift, shift_number: next.trim() });
-                          }
+                          setEditFieldDialog({
+                            field: "shift_number",
+                            label: "تعديل رقم الوردية",
+                            value: currentShift.shift_number || "",
+                          });
                         }}
                         className="text-muted-foreground hover:text-teal-600 p-0.5 cursor-pointer"
                       >
@@ -692,17 +694,11 @@ export function ParkShiftClosingReportModal({
                         type="button"
                         onClick={() => {
                           if (!currentShift) return;
-                          const next = window.prompt(
-                            "تعديل اسم الكاشير:",
-                            currentShift.cashier_name,
-                          );
-                          if (next !== null && next.trim() !== "") {
-                            erpStore.updateParkShift(currentShift.id, {
-                              cashier_name: next.trim(),
-                            });
-                            toast.success("تم تحديث اسم الكاشير بنجاح");
-                            setClosedResult({ ...currentShift, cashier_name: next.trim() });
-                          }
+                          setEditFieldDialog({
+                            field: "cashier_name",
+                            label: "تعديل اسم الكاشير",
+                            value: currentShift.cashier_name || "",
+                          });
                         }}
                         className="text-muted-foreground hover:text-teal-600 p-0.5 cursor-pointer"
                       >
@@ -810,16 +806,14 @@ export function ParkShiftClosingReportModal({
                               </span>
                               <button
                                 type="button"
-                                onClick={() => {
-                                  const next = window.prompt("تعديل الرقم:", manualNum);
-                                  if (next !== null && next.trim() !== "") {
-                                    erpStore.updateParkTicketTransaction(tx.id, {
-                                      manual_tx_number: next.trim(),
-                                    });
-                                    toast.success("تم التحديث");
-                                    setClosedResult(currentShift ? { ...currentShift } : null);
-                                  }
-                                }}
+                                onClick={() =>
+                                  setEditFieldDialog({
+                                    field: "manual_tx",
+                                    label: "تعديل الرقم اليدوي",
+                                    value: String(manualNum || ""),
+                                    txId: tx.id,
+                                  })
+                                }
                                 className="text-muted-foreground hover:text-teal-600 p-0.5 cursor-pointer"
                               >
                                 <Edit size={11} />
@@ -943,6 +937,57 @@ export function ParkShiftClosingReportModal({
           </div>
         )}
       </DialogContent>
+
+      <Dialog open={Boolean(editFieldDialog)} onOpenChange={(open) => !open && setEditFieldDialog(null)}>
+        <DialogContent className="sm:max-w-sm rounded-2xl" dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-black">{editFieldDialog?.label}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label className="text-xs font-bold">القيمة الجديدة</Label>
+            <Input
+              value={editFieldDialog?.value ?? ""}
+              onChange={(e) =>
+                editFieldDialog &&
+                setEditFieldDialog({ ...editFieldDialog, value: e.target.value })
+              }
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setEditFieldDialog(null)}>
+              إلغاء
+            </Button>
+            <Button
+              onClick={() => {
+                if (!editFieldDialog) return;
+                const trimmed = editFieldDialog.value.trim();
+                if (!trimmed) {
+                  toast.error("يرجى إدخال قيمة صحيحة");
+                  return;
+                }
+                if (editFieldDialog.field === "shift_number" && currentShift) {
+                  erpStore.updateParkShift(currentShift.id, { shift_number: trimmed });
+                  toast.success("تم تحديث رقم الوردية بنجاح");
+                  setClosedResult({ ...currentShift, shift_number: trimmed });
+                } else if (editFieldDialog.field === "cashier_name" && currentShift) {
+                  erpStore.updateParkShift(currentShift.id, { cashier_name: trimmed });
+                  toast.success("تم تحديث اسم الكاشير بنجاح");
+                  setClosedResult({ ...currentShift, cashier_name: trimmed });
+                } else if (editFieldDialog.field === "manual_tx" && editFieldDialog.txId) {
+                  erpStore.updateParkTicketTransaction(editFieldDialog.txId, {
+                    manual_tx_number: trimmed,
+                  });
+                  toast.success("تم التحديث");
+                  setClosedResult(currentShift ? { ...currentShift } : null);
+                }
+                setEditFieldDialog(null);
+              }}
+            >
+              حفظ
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }

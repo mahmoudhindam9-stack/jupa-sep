@@ -1,4 +1,5 @@
 // Thermal Printer Service (Web Serial & ESC/POS + Fallback to Browser Print Preview)
+import { toast } from "sonner";
 import { getReceiptDesignSettings } from "./receiptSettings";
 import { printRawHtml } from "@/shared/utils/printAccountingDocument";
 
@@ -74,7 +75,7 @@ class ThermalPrinterService {
 
   public async connectThermalPrinter(): Promise<boolean> {
     if (typeof window === "undefined" || !("serial" in navigator)) {
-      alert("متصفحك لا يدعم الاتصال المباشر عبر Web Serial. يمكنك استخدام طباعة المتصفح العادية.");
+      toast.info("متصفحك لا يدعم الاتصال المباشر عبر Web Serial. يمكنك استخدام طباعة المتصفح العادية.");
       return false;
     }
 
@@ -355,41 +356,37 @@ class ThermalPrinterService {
       </html>
     `;
 
-    const printWindow = window.open("", "_blank", "width=320,height=600,left=100,top=100");
-    if (printWindow) {
-      printWindow.document.write(html);
-      printWindow.document.close();
-      printWindow.focus();
+    // Print via hidden thermal iframe (iFrame-safe; avoids popup blockers & embedded preview issues)
+    let iframe = document.getElementById("thermal-print-iframe") as HTMLIFrameElement;
+    if (!iframe) {
+      iframe = document.createElement("iframe");
+      iframe.id = "thermal-print-iframe";
+      iframe.style.position = "fixed";
+      iframe.style.right = "0";
+      iframe.style.bottom = "0";
+      iframe.style.width = "80mm";
+      iframe.style.height = "100vh";
+      iframe.style.zIndex = "-9999";
+      iframe.style.opacity = "0";
+      iframe.style.pointerEvents = "none";
+      iframe.style.border = "0";
+      document.body.appendChild(iframe);
+    }
+    const doc = iframe.contentWindow?.document || iframe.contentDocument;
+    if (doc) {
+      doc.open();
+      doc.write(html);
+      doc.close();
       setTimeout(() => {
-        printWindow.print();
-        setTimeout(() => printWindow.close(), 500);
-      }, 250);
-    } else {
-      // Fallback for popups blocked: inject a specialized thermal iframe
-      let iframe = document.getElementById("thermal-print-iframe") as HTMLIFrameElement;
-      if (!iframe) {
-        iframe = document.createElement("iframe");
-        iframe.id = "thermal-print-iframe";
-        iframe.style.position = "fixed";
-        iframe.style.right = "0";
-        iframe.style.bottom = "0";
-        iframe.style.width = "80mm";
-        iframe.style.height = "100vh";
-        iframe.style.zIndex = "-9999";
-        iframe.style.opacity = "0";
-        iframe.style.border = "0";
-        document.body.appendChild(iframe);
-      }
-      const doc = iframe.contentWindow?.document || iframe.contentDocument;
-      if (doc) {
-        doc.open();
-        doc.write(html);
-        doc.close();
-        setTimeout(() => {
+        try {
           iframe.contentWindow?.focus();
           iframe.contentWindow?.print();
-        }, 500);
-      }
+        } catch {
+          printRawHtml(html);
+        }
+      }, 400);
+    } else {
+      printRawHtml(html);
     }
   }
 

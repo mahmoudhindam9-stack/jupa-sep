@@ -235,6 +235,7 @@ function SystemUpdatePage() {
   const [isUpdatingSystem, setIsUpdatingSystem] = useState(false);
   const [showConfirmDownloadAccess, setShowConfirmDownloadAccess] = useState(false);
   const [showConfirmSystemUpdate, setShowConfirmSystemUpdate] = useState(false);
+  const [showConfirmWipeSystem, setShowConfirmWipeSystem] = useState(false);
   const [showSchemaDialog, setShowSchemaDialog] = useState(false);
 
   // GitHub update state
@@ -253,7 +254,8 @@ function SystemUpdatePage() {
 
   useEffect(() => {
     try {
-      const token = localStorage.getItem("restocash_github_pat_token");
+      localStorage.removeItem("restocash_github_pat_token");
+      const token = sessionStorage.getItem("restocash_github_pat_token");
       if (token) setGithubToken(token);
     } catch {
       // Ignore storage error
@@ -296,7 +298,8 @@ function SystemUpdatePage() {
     }
 
     try {
-      localStorage.setItem("restocash_github_pat_token", githubToken.trim());
+      localStorage.removeItem("restocash_github_pat_token");
+      sessionStorage.setItem("restocash_github_pat_token", githubToken.trim());
     } catch {
       // Ignore storage error
     }
@@ -309,9 +312,16 @@ function SystemUpdatePage() {
     });
 
     try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const accessToken = session?.access_token || "";
       const res = await fetch("/api/github/push", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
         body: JSON.stringify({
           token: githubToken.trim(),
           repo: updateSettings.repo,
@@ -358,7 +368,8 @@ function SystemUpdatePage() {
     }
 
     try {
-      localStorage.setItem("restocash_github_pat_token", githubToken.trim());
+      localStorage.removeItem("restocash_github_pat_token");
+      sessionStorage.setItem("restocash_github_pat_token", githubToken.trim());
     } catch {
       // Ignore storage error
     }
@@ -371,9 +382,16 @@ function SystemUpdatePage() {
     });
 
     try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const accessToken = session?.access_token || "";
       const res = await fetch("/api/github/release", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
         body: JSON.stringify({
           token: githubToken.trim(),
           repo: updateSettings.repo,
@@ -1377,19 +1395,7 @@ git push origin ${releaseTagName}`}
                   <Button
                     variant="destructive"
                     className="w-full font-black rounded-xl h-10 cursor-pointer"
-                    onClick={() => {
-                      if (
-                        confirm(
-                          "هل أنت متأكد من رغبتك في مسح جميع الحركات وتصفير جميع الأرصدة؟ لا يمكن التراجع عن هذه الخطوة!",
-                        )
-                      ) {
-                        erpStore.deleteAllSystemData();
-                        toast({
-                          title: "تم",
-                          description: "تم مسح جميع البيانات وتصفير النظام بنجاح.",
-                        });
-                      }
-                    }}
+                    onClick={() => setShowConfirmWipeSystem(true)}
                   >
                     مسح جميع البيانات وتصفير النظام
                   </Button>
@@ -1988,6 +1994,42 @@ vercel --prod`}
               className="font-bold text-xs bg-amber-600 hover:bg-amber-700 text-white"
             >
               تأكيد التحديث المباشر
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Confirmation Dialog 3: Danger Zone Wipe */}
+      <AlertDialog open={showConfirmWipeSystem} onOpenChange={setShowConfirmWipeSystem}>
+        <AlertDialogContent className="font-cairo max-w-md">
+          <AlertDialogHeader className="text-right">
+            <AlertDialogTitle className="text-lg font-black text-red-600 flex items-center gap-2">
+              <AlertTriangle size={22} />
+              تأكيد مسح جميع البيانات وتصفير النظام
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs sm:text-sm text-muted-foreground mt-2 leading-relaxed">
+              هل أنت متأكد من رغبتك في مسح جميع الحركات وتصفير جميع الأرصدة؟ لا يمكن التراجع عن هذه الخطوة!
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex flex-row gap-2 justify-end mt-4">
+            <AlertDialogCancel
+              onClick={() => setShowConfirmWipeSystem(false)}
+              className="font-bold text-xs"
+            >
+              إلغاء
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setShowConfirmWipeSystem(false);
+                erpStore.deleteAllSystemData();
+                toast({
+                  title: "تم",
+                  description: "تم مسح جميع البيانات وتصفير النظام بنجاح.",
+                });
+              }}
+              className="font-bold text-xs bg-red-600 hover:bg-red-700 text-white"
+            >
+              تأكيد المسح والتصفير
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

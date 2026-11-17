@@ -20,6 +20,16 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Table,
   TableBody,
   TableCell,
@@ -54,6 +64,7 @@ export const WarehouseManagement: React.FC = () => {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isTransferOpen, setIsTransferOpen] = useState(false);
   const [selectedWarehouse, setSelectedWarehouse] = useState<Warehouse | null>(null);
+  const [warehouseToDelete, setWarehouseToDelete] = useState<Warehouse | null>(null);
 
   // Print & View Transfer State
   const [selectedTransfer, setSelectedTransfer] = useState<WarehouseTransfer | null>(null);
@@ -480,11 +491,7 @@ export const WarehouseManagement: React.FC = () => {
 
                     {!wh.is_default && (
                       <Button
-                        onClick={() => {
-                          if (confirm(`هل أنت أصل ومتحقق من حذف المخزن "${wh.name}"؟`)) {
-                            deleteWarehouseMutation.mutate(wh.id);
-                          }
-                        }}
+                        onClick={() => setWarehouseToDelete(wh)}
                         variant="ghost"
                         size="sm"
                         className="h-8 px-2.5 font-bold text-destructive hover:bg-destructive/10"
@@ -1062,6 +1069,36 @@ export const WarehouseManagement: React.FC = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={Boolean(warehouseToDelete)}
+        onOpenChange={(open) => {
+          if (!open) setWarehouseToDelete(null);
+        }}
+      >
+        <AlertDialogContent dir="rtl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>تأكيد حذف المخزن</AlertDialogTitle>
+            <AlertDialogDescription>
+              هل أنت متأكد من حذف المخزن "{warehouseToDelete?.name}"؟ لا يمكن التراجع عن هذا الإجراء.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2">
+            <AlertDialogCancel>إلغاء</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (warehouseToDelete) {
+                  deleteWarehouseMutation.mutate(warehouseToDelete.id);
+                  setWarehouseToDelete(null);
+                }
+              }}
+            >
+              تأكيد الحذف
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

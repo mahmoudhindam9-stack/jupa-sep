@@ -55,6 +55,7 @@ import {
 import { menuService } from "@/features/menu/services/menuService";
 import { inventoryService } from "@/features/inventory/services/inventoryService";
 import { erpStore, MenuItemQualitySpecs } from "@/shared/services/erpStore";
+import { BulkMenuAiModal } from "@/components/ai/BulkMenuAiModal";
 
 export const Route = createFileRoute("/admin/menu")({
   head: () => ({ meta: [{ title: "إدارة المنيو" }] }),
@@ -90,6 +91,7 @@ function MenuPage() {
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [itemToDelete, setItemToDelete] = useState<MenuItem | null>(null);
   const [viewMode, setViewMode] = useViewMode("menu-items", "grid");
+  const [isBulkAiOpen, setIsBulkAiOpen] = useState(false);
 
   const [catForm, setCatForm] = useState({ name_ar: "", sort_order: "0" });
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
@@ -585,8 +587,17 @@ function MenuPage() {
                 />
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <ViewModeToggle mode={viewMode} onChange={setViewMode} />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsBulkAiOpen(true)}
+                  className="font-bold border-primary/40 text-primary hover:bg-primary/10 flex items-center gap-2 h-10 px-4 rounded-xl cursor-pointer"
+                >
+                  <Sparkles size={16} />
+                  <span>إضافة منيو بالـ AI</span>
+                </Button>
                 <Button
                   onClick={openAddModal}
                   className="font-bold bg-primary hover:bg-primary/90 text-primary-foreground flex items-center gap-2 h-10 px-5 rounded-xl shadow-xs cursor-pointer"
@@ -1704,6 +1715,19 @@ function MenuPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <BulkMenuAiModal
+        open={isBulkAiOpen}
+        onOpenChange={setIsBulkAiOpen}
+        existingCategories={categoriesQuery.data ?? []}
+        inventoryItems={inventoryQuery.data ?? []}
+        onSaved={() => {
+          queryClient.invalidateQueries({ queryKey: ["admin", "menu_categories"] });
+          queryClient.invalidateQueries({ queryKey: ["admin", "menu_items"] });
+          queryClient.invalidateQueries({ queryKey: ["admin", "inventory"] });
+        }}
+        toast={toast}
+      />
     </div>
   );
 }

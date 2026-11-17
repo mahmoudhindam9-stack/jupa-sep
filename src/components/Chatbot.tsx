@@ -589,6 +589,7 @@ export function Chatbot() {
   // Subscribe to HR Employees & Users/Permissions in erpStore + Live Cloud Profiles
   const [erpState, setErpState] = useState(() => erpStore.getState());
   const [cloudUsers, setCloudUsers] = useState<SystemUser[]>([]);
+  const messengerRtChannelRef = useRef<any>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -1266,7 +1267,7 @@ export function Chatbot() {
       .trim()
       .toLowerCase();
 
-    const channel = supabase
+    const activeChannel = supabase
       .channel("restocash_employee_messenger_rt", {
         config: { presence: { key: currentSenderEmployee.id } },
       })
@@ -1313,9 +1314,15 @@ export function Chatbot() {
         }
       });
 
+    const channel = activeChannel;
+    messengerRtChannelRef.current = channel;
+
     return () => {
       window.removeEventListener("restocash-messenger-external-sync", handleExternalSync);
       bc?.close();
+      if (messengerRtChannelRef.current === channel) {
+        messengerRtChannelRef.current = null;
+      }
       supabase.removeChannel(channel);
     };
   }, [
@@ -1340,16 +1347,14 @@ export function Chatbot() {
     try {
       const sizeEst = JSON.stringify(msg).length;
       if (sizeEst < 900_000) {
-        const ch = supabase.channel("restocash_employee_messenger_rt");
-        ch.subscribe(async (status) => {
-          if (status === "SUBSCRIBED") {
-            await ch.send({
-              type: "broadcast",
-              event: "NEW_MESSAGE",
-              payload: msg,
-            });
-          }
-        });
+        const activeCh = messengerRtChannelRef.current;
+        if (activeCh) {
+          void activeCh.send({
+            type: "broadcast",
+            event: "NEW_MESSAGE",
+            payload: msg,
+          });
+        }
       }
     } catch {
       // ignore

@@ -50,6 +50,10 @@ import { AppBreadcrumbBar } from "@/components/navigation/AppBreadcrumbBar";
 import { extractTabParam } from "@/components/navigation/navigationRegistry";
 import { isAiStudioPreview, isHostedDeployment } from "@/shared/services/previewAccess";
 import {
+  isDefaultTemporaryPassword,
+  isUrlPasswordRecoveryCallback,
+} from "@/features/auth/services/managedUserValidation";
+import {
   PERMISSIONS_UPDATED_EVENT,
   getDefaultPermissionsForRole,
   hasAnyRequestedPermission,
@@ -408,26 +412,65 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
     };
 
     const checkAuth = async () => {
+      if (typeof window !== "undefined" && isUrlPasswordRecoveryCallback()) {
+        window.location.replace(
+          `/reset-password${window.location.search || ""}${window.location.hash || ""}`,
+        );
+        return;
+      }
       const localUser =
         localStorage.getItem("restocash_auth_user") ||
         sessionStorage.getItem("restocash_auth_user");
       try {
-        // Safe timeout for Supabase getSession (max 1200ms)
+        // Safe timeout for Supabase getSession (max 4000ms)
         const sessionPromise = supabase.auth.getSession();
         const timeoutPromise = new Promise<{ data: { session: null } }>((resolve) =>
-          setTimeout(() => resolve({ data: { session: null } }), 1200)
+          setTimeout(() => resolve({ data: { session: null } }), 4000),
         );
-        const { data: { session } } = await Promise.race([sessionPromise, timeoutPromise]);
+        const {
+          data: { session },
+        } = await Promise.race([sessionPromise, timeoutPromise]);
         if (!mounted) return;
 
         // 1. Always prefer an active Supabase Auth session if present
         if (session?.user?.id) {
           const profilePromise = loadHostedProfile(session);
           const profileTimeout = new Promise<boolean>((resolve) =>
-            setTimeout(() => resolve(false), 1200)
+            setTimeout(() => resolve(false), 4000),
           );
           const loaded = await Promise.race([profilePromise, profileTimeout]);
-          if (loaded) return;
+          if (loaded) {
+            const uname = String(
+              session.user.user_metadata?.username ||
+                session.user.email?.split("@")[0] ||
+                "",
+            )
+              .trim()
+              .toLowerCase();
+            const pwdChanged =
+              typeof window !== "undefined" &&
+              uname &&
+              localStorage.getItem(`restocash_pwd_changed_${uname}`) === "1";
+            if (
+              !pwdChanged &&
+              (Boolean(sessionStorage.getItem("restocash_force_password_reset_user")) ||
+                session.user.user_metadata?.must_change_password === true)
+            ) {
+              navigate({ to: "/reset-password" as any, search: { mode: "first-login" } as any });
+            }
+            return;
+          }
+
+          // Fallback using verified Supabase session metadata / local cache if profile RPC was slow
+          const fallbackUser = localUser
+            ? readLocalUser(localUser)
+            : readLocalUser(
+                session.user.email || String(session.user.user_metadata?.username || ""),
+              );
+          if (fallbackUser) {
+            setUser(fallbackUser);
+            return;
+          }
         }
 
         if (requiresSupabaseSession) {
@@ -440,6 +483,35 @@ export function AdminLayout({ children }: { children?: ReactNode }) {
         } else if (localUser) {
           const local = readLocalUser(localUser);
           if (local) {
+            const matchedStateUser = (erpStore.getState().users || []).find(
+              (u: any) =>
+                String(u.username || "").trim().toLowerCase() ===
+                String(local.username || "").trim().toLowerCase(),
+            );
+            const pwdChanged =
+              typeof window !== "undefined" &&
+              local.username &&
+              localStorage.getItem(`restocash_pwd_changed_${local.username}`) === "1";
+            if (
+              !pwdChanged &&
+              (Boolean(sessionStorage.getItem("restocash_force_password_reset_user")) ||
+                matchedStateUser?.must_change_password === true ||
+                isDefaultTemporaryPassword(matchedStateUser?.password))
+            ) {
+              sessionStorage.setItem(
+                "restocash_force_password_reset_user",
+                JSON.stringify({
+                  id: matchedStateUser?.id || local.username,
+                  username: local.username,
+                  email: local.email || "",
+                  fullName: matchedStateUser?.full_name || local.username,
+                  role: local.role || "cashier",
+                  redirect: pathname || "/admin",
+                }),
+              );
+              navigate({ to: "/reset-password" as any, search: { mode: "first-login" } as any });
+              return;
+            }
             setUser(local);
           } else {
             localStorage.removeItem("restocash_auth_user");

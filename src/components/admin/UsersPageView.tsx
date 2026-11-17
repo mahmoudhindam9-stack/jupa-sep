@@ -3,6 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ViewModeToggle, useViewMode } from "@/components/ui/view-mode-toggle";
@@ -1663,8 +1664,9 @@ export function UsersPage() {
 
       const emailToUse = validatedForm.email || `${validatedForm.username}@restocash.com`;
 
-      // 1. Save new user locally first (Local-First) with mandatory first-login password reset
+      // 1. Save new user locally first; require first-login reset only if using default temporary password
       const initialPassword = validatedForm.password || DEFAULT_NEW_USER_PASSWORD;
+      const requiresFirstLoginReset = isDefaultTemporaryPassword(initialPassword);
       const localUser: SystemUser = {
         id: `u-${Date.now()}`,
         employee_code: requestedCode,
@@ -1674,13 +1676,17 @@ export function UsersPage() {
         phone: validatedForm.phone,
         role: validatedForm.role as any,
         password: initialPassword,
-        must_change_password: true,
+        must_change_password: requiresFirstLoginReset,
         permissions,
         created_at: new Date().toISOString(),
       };
 
       if (typeof window !== "undefined") {
-        localStorage.removeItem(`restocash_pwd_changed_${localUser.username}`);
+        if (requiresFirstLoginReset) {
+          localStorage.removeItem(`restocash_pwd_changed_${localUser.username}`);
+        } else {
+          localStorage.setItem(`restocash_pwd_changed_${localUser.username}`, "1");
+        }
       }
 
       erpStore.upsertUser(localUser);
@@ -2346,8 +2352,7 @@ export function UsersPage() {
                   تعيين الافتراضي تلقائياً
                 </button>
               </div>
-              <Input
-                type="password"
+              <PasswordInput
                 dir="ltr"
                 className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1 font-mono"
                 placeholder={editing ? "اتركه فارغاً لعدم التغيير" : "••••••••••••"}
@@ -2360,8 +2365,7 @@ export function UsersPage() {
             </div>
             <div className="md:col-span-2 lg:col-span-2">
               <Label className="text-xs font-bold">تأكيد الرقم السري *</Label>
-              <Input
-                type="password"
+              <PasswordInput
                 dir="ltr"
                 className="h-9 rounded-xl border-input bg-background px-3 text-xs mt-1 font-mono"
                 placeholder={editing ? "اتركه فارغًا دون تغيير" : "••••••••••••"}

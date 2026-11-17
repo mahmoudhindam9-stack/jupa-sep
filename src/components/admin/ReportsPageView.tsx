@@ -3,6 +3,7 @@ import { createFileRoute, useLocation, useNavigate, Link } from "@tanstack/react
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -45,7 +46,11 @@ import {
   ShieldAlert,
   Sliders,
   Filter,
+  Sparkles,
+  Loader2,
 } from "lucide-react";
+import { postAiEndpoint } from "@/shared/services/aiClient";
+import { SmartInsightsPanel, SmartInsightCard } from "@/components/ai/SmartInsightsPanel";
 
 
 type OrderItem = { name_ar: string; price: number; quantity: number; cost_price?: number };
@@ -98,6 +103,8 @@ export function ReportsPage() {
   const [to, setTo] = useState<string>("");
   const [branchFilter, setBranchFilter] = useState<string>("all");
   const [currencyFilter, setCurrencyFilter] = useState<string>("USD");
+  const [aiInsights, setAiInsights] = useState<SmartInsightCard[]>([]);
+  const [isLoadingInsights, setIsLoadingInsights] = useState(false);
 
   // Sync state with erpStore
   const [erpState, setErpState] = useState(erpStore.getState());
@@ -249,7 +256,7 @@ export function ReportsPage() {
   const exportReport = () => {
     const orders = ordersQuery.data ?? [];
     if (orders.length === 0) {
-      alert("لا توجد مبيعات للتصدير حالياً");
+      toast.warning("لا توجد مبيعات للتصدير حالياً");
       return;
     }
     const rows = orders.map((o) => {
@@ -819,6 +826,45 @@ export function ReportsPage() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Button
+            type="button"
+            variant="outline"
+            disabled={isLoadingInsights}
+            onClick={async () => {
+              setIsLoadingInsights(true);
+              try {
+                const invItems = (inventoryQuery.data ?? []) as any[];
+                const lowStockItems = invItems
+                  .filter((i) => Number(i.quantity || 0) <= Number(i.min_level || 0))
+                  .slice(0, 8)
+                  .map((i) => i.name_ar);
+                const res = await postAiEndpoint<{ insights: SmartInsightCard[] }>(
+                  "/api/ai/insights",
+                  {
+                    snapshot: {
+                      ordersCount: summary.count,
+                      byCurrency: summary.byCurrency,
+                      topItems: summary.topItems?.slice(0, 5),
+                      lowStockCount: lowStockItems.length,
+                      lowStockItems,
+                      activeEmployeesCount: (erpState.employees || []).filter(
+                        (e) => e.status === "active",
+                      ).length,
+                    },
+                  },
+                );
+                setAiInsights(res.insights || []);
+              } catch (err: any) {
+                toast.error(err?.message || "تعذر تشغيل التحليل الذكي");
+              } finally {
+                setIsLoadingInsights(false);
+              }
+            }}
+            className="gap-2 rounded-xl text-xs font-bold py-5 border-primary/40 text-primary hover:bg-primary/10 cursor-pointer"
+          >
+            {isLoadingInsights ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+            <span>تحليل ذكي</span>
+          </Button>
+          <Button
             onClick={() => {
               const invItems = inventoryQuery.data ?? [];
               const rows = invItems.map((item: any) => {
@@ -921,6 +967,8 @@ export function ReportsPage() {
           />
         </div>
       </div>
+
+      <SmartInsightsPanel insights={aiInsights} onClose={() => setAiInsights([])} />
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
         <TabsList className="bg-muted p-1 rounded-xl flex flex-wrap gap-1 h-auto print:hidden">

@@ -1,10 +1,10 @@
 import { useNavigate } from "@tanstack/react-router";
 import React, { useState, useEffect } from "react";
-import { Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { RestocashLogo } from "@/components/RestocashLogo";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
@@ -56,13 +56,12 @@ async function signInHostedUser(username: string, password: string) {
         ...(matchedLocalUser?.email ? [matchedLocalUser.email.trim().toLowerCase()] : []),
         `${normalized}@restocash.com`,
         `${normalized}@juba.com`,
-        `${normalized}@restocash.local`,
         ...(normalized === "admin" || normalized === "mahmoud.admin"
           ? ["admin@restocash.com", "admin@juba.com", "mahmoudhindam9@gmail.com"]
-          : []),
+          : [`${normalized}@restocash.local`]),
       ];
 
-  for (const email of Array.from(new Set(candidates))) {
+  for (const email of Array.from(new Set(candidates)).slice(0, 4)) {
     try {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error || !data?.session?.user?.id) continue;
@@ -73,8 +72,33 @@ async function signInHostedUser(username: string, password: string) {
         console.warn("Could not load hosted user profile.", err);
       }
       if (!profile?.id || !profile?.username) {
-        await supabase.auth.signOut().catch(() => undefined);
-        return null;
+        const meta = (data.session.user.user_metadata || {}) as Record<string, any>;
+        const derivedUsername = String(
+          meta.username ||
+            matchedLocalUser?.username ||
+            (email.includes("@") ? email.split("@")[0] : normalized),
+        )
+          .trim()
+          .toLowerCase();
+        const isAdminAccount =
+          meta.role === "admin" ||
+          meta.role === "super_admin" ||
+          matchedLocalUser?.role === "admin" ||
+          matchedLocalUser?.role === "super_admin" ||
+          derivedUsername === "admin" ||
+          email === "mahmoudhindam9@gmail.com";
+        profile = {
+          id: data.session.user.id,
+          username: derivedUsername || "admin",
+          full_name: meta.full_name || matchedLocalUser?.full_name || derivedUsername,
+          email: data.session.user.email || email,
+          phone: meta.phone || matchedLocalUser?.phone || "",
+          role: String(meta.role || matchedLocalUser?.role || (isAdminAccount ? "admin" : "cashier")),
+          permissions:
+            matchedLocalUser?.permissions ||
+            (isAdminAccount ? getDefaultPermissionsForRole("admin") : undefined),
+          created_at: data.session.user.created_at || new Date().toISOString(),
+        };
       }
       return { session: data.session, email, profile };
     } catch {
@@ -89,23 +113,9 @@ export function LoginView() {
   const { lang } = useSettings();
   const navigate = useNavigate();
   const [isMounted, setIsMounted] = useState(false);
-  const [username, setUsername] = useState(() => {
-    if (typeof window === "undefined") return "";
-    return localStorage.getItem("remember_me") !== "false"
-      ? localStorage.getItem("restocash_saved_username") || ""
-      : "";
-  });
-  const [password, setPassword] = useState(() => {
-    if (typeof window === "undefined") return "";
-    return localStorage.getItem("remember_me") !== "false"
-      ? localStorage.getItem("restocash_saved_password") || ""
-      : "";
-  });
-  const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(() => {
-    if (typeof window === "undefined") return true;
-    return localStorage.getItem("remember_me") !== "false";
-  });
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [hasLocalAccounts, setHasLocalAccounts] = useState(true);
@@ -126,10 +136,9 @@ export function LoginView() {
     setRememberMe(savedRemember);
     if (savedRemember) {
       const savedUser = localStorage.getItem("restocash_saved_username");
-      const savedPass = localStorage.getItem("restocash_saved_password");
       if (savedUser) setUsername(savedUser);
-      if (savedPass) setPassword(savedPass);
     }
+    localStorage.removeItem("restocash_saved_password");
     const currentLocalUsers = localLoginUsers();
     setHasLocalAccounts(currentLocalUsers.length > 0);
 
@@ -346,17 +355,98 @@ export function LoginView() {
     localStorage.setItem("remember_me", rememberMe ? "true" : "false");
 
     const persistRememberedCredentials = () => {
+      localStorage.removeItem("restocash_saved_password");
       if (rememberMe) {
         localStorage.setItem("restocash_saved_username", username.trim());
-        localStorage.setItem("restocash_saved_password", password);
       } else {
         localStorage.removeItem("restocash_saved_username");
-        localStorage.removeItem("restocash_saved_password");
       }
     };
 
+    const tryLocalDirectoryLogin = (): boolean => {
+      const directoryUsers = localLoginUsers();
+      const inputBaseUsername = normalizedUsername.includes("@")
+        ? normalizedUsername.split("@")[0]
+        : normalizedUsername;
+      const foundUser = directoryUsers.find((user) => {
+        const storedUsername = String(user.username || "")
+          .trim()
+          .toLowerCase();
+        const storedEmail = String(user.email || "")
+          .trim()
+          .toLowerCase();
+        return (
+          storedUsername === normalizedUsername ||
+          storedUsername === inputBaseUsername ||
+          (Boolean(storedEmail) && storedEmail === normalizedUsername) ||
+          `${storedUsername}@restocash.com` === normalizedUsername ||
+          `${storedUsername}@restocash.local` === normalizedUsername ||
+          `${storedUsername}@juba.com` === normalizedUsername
+        );
+      });
+
+      const storedPassword = String(foundUser?.password || "");
+      const passwordMatches =
+        Boolean(foundUser) &&
+        Boolean(storedPassword) &&
+        (storedPassword === password ||
+          normalizeDigits(storedPassword) === normalizedPassword);
+
+      if (!foundUser || !passwordMatches) {
+        return false;
+      }
+
+      const activeUsername = String(foundUser.username).trim().toLowerCase();
+      const activeRole = String(foundUser.role || "cashier").trim().toLowerCase();
+      const activeEmail =
+        foundUser.email ||
+        (activeUsername.includes("@")
+          ? activeUsername
+          : `${activeUsername}@restocash.com`);
+      localStorage.removeItem("restocash_auth_user");
+      sessionStorage.removeItem("restocash_auth_user");
+      localStorage.removeItem("restocash_user_role");
+      sessionStorage.removeItem("restocash_user_role");
+      if (rememberMe) {
+        localStorage.setItem("restocash_auth_user", activeEmail);
+        localStorage.setItem("restocash_user_role", activeRole);
+      }
+      sessionStorage.setItem("restocash_auth_user", activeEmail);
+      sessionStorage.setItem("restocash_user_role", activeRole);
+      persistRememberedCredentials();
+      const statePermissions = erpStore.getState().userPermissions;
+      const permissions =
+        activeRole === "admin" || activeRole === "super_admin" || activeUsername === "admin"
+          ? getDefaultPermissionsForRole("admin")
+          : (hasAnyEnabledPermission(foundUser.permissions) ? foundUser.permissions : null) ||
+            (hasAnyEnabledPermission(statePermissions?.[activeUsername])
+              ? statePermissions[activeUsername]
+              : null) ||
+            (hasAnyEnabledPermission(statePermissions?.[activeRole])
+              ? statePermissions[activeRole]
+              : null) ||
+            getDefaultPermissionsForRole(activeRole);
+      erpStore.updateUserPermission(activeUsername, permissions);
+      erpStore.setCurrentUser(activeUsername);
+      notifyPermissionsUpdated();
+      const role = activeRole;
+      const finalDestination = new URLSearchParams(window.location.search).has("redirect")
+        ? destination
+        : role === "captain"
+          ? "/captain"
+          : role === "kitchen"
+            ? "/oven"
+            : "/admin";
+      navigate({ to: finalDestination as any });
+      return true;
+    };
+
     try {
-      // 1. Always attempt Supabase Auth + public.profiles login first on ANY host
+      if (!isHostedDeployment() && tryLocalDirectoryLogin()) {
+        return;
+      }
+
+      // 1. Attempt Supabase Auth + public.profiles login
       try {
         const authenticated = await signInHostedUser(normalizedUsername, normalizedPassword);
         if (authenticated && "session" in authenticated && authenticated.session?.user?.id) {
@@ -413,78 +503,8 @@ export function LoginView() {
         console.warn("Supabase authentication check did not match:", hostedErr);
       }
 
-      // 2. Authenticate strictly against the Users Page directory (erpStore.getUsers())
-      const directoryUsers = localLoginUsers();
-      const inputBaseUsername = normalizedUsername.includes("@")
-        ? normalizedUsername.split("@")[0]
-        : normalizedUsername;
-      const foundUser = directoryUsers.find((user) => {
-        const storedUsername = String(user.username || "")
-          .trim()
-          .toLowerCase();
-        const storedEmail = String(user.email || "")
-          .trim()
-          .toLowerCase();
-        return (
-          storedUsername === normalizedUsername ||
-          storedUsername === inputBaseUsername ||
-          (Boolean(storedEmail) && storedEmail === normalizedUsername) ||
-          `${storedUsername}@restocash.com` === normalizedUsername ||
-          `${storedUsername}@restocash.local` === normalizedUsername ||
-          `${storedUsername}@juba.com` === normalizedUsername
-        );
-      });
-
-      const storedPassword = String(foundUser?.password || "");
-      const passwordMatches =
-        Boolean(foundUser) &&
-        Boolean(storedPassword) &&
-        (storedPassword === password ||
-          normalizeDigits(storedPassword) === normalizedPassword);
-
-      if (foundUser && passwordMatches) {
-        const activeUsername = String(foundUser.username).trim().toLowerCase();
-        const activeRole = String(foundUser.role || "cashier").trim().toLowerCase();
-        const activeEmail =
-          foundUser.email ||
-          (activeUsername.includes("@")
-            ? activeUsername
-            : `${activeUsername}@restocash.com`);
-        localStorage.removeItem("restocash_auth_user");
-        sessionStorage.removeItem("restocash_auth_user");
-        localStorage.removeItem("restocash_user_role");
-        sessionStorage.removeItem("restocash_user_role");
-        if (rememberMe) {
-          localStorage.setItem("restocash_auth_user", activeEmail);
-          localStorage.setItem("restocash_user_role", activeRole);
-        }
-        sessionStorage.setItem("restocash_auth_user", activeEmail);
-        sessionStorage.setItem("restocash_user_role", activeRole);
-        persistRememberedCredentials();
-        const statePermissions = erpStore.getState().userPermissions;
-        const permissions =
-          activeRole === "admin" || activeRole === "super_admin" || activeUsername === "admin"
-            ? getDefaultPermissionsForRole("admin")
-            : (hasAnyEnabledPermission(foundUser.permissions) ? foundUser.permissions : null) ||
-              (hasAnyEnabledPermission(statePermissions?.[activeUsername])
-                ? statePermissions[activeUsername]
-                : null) ||
-              (hasAnyEnabledPermission(statePermissions?.[activeRole])
-                ? statePermissions[activeRole]
-                : null) ||
-              getDefaultPermissionsForRole(activeRole);
-        erpStore.updateUserPermission(activeUsername, permissions);
-        erpStore.setCurrentUser(activeUsername);
-        notifyPermissionsUpdated();
-        const role = activeRole;
-        const finalDestination = new URLSearchParams(window.location.search).has("redirect")
-          ? destination
-          : role === "captain"
-            ? "/captain"
-            : role === "kitchen"
-              ? "/oven"
-              : "/admin";
-        navigate({ to: finalDestination as any });
+      // 2. Fallback against the Users Page directory (erpStore.getUsers())
+      if (tryLocalDirectoryLogin()) {
         return;
       }
 
@@ -616,51 +636,29 @@ export function LoginView() {
           </div>
           <div className="space-y-1.5">
             <Label>كلمة المرور الجديدة (8 أحرف على الأقل، مع تطبيق سياسة Supabase)</Label>
-            <div className="relative">
-              <Input
-                required
-                type={showBootstrapPassword ? "text" : "password"}
-                minLength={8}
-                value={bootstrapPassword}
-                onChange={(e) => setBootstrapPassword(e.target.value)}
-                autoComplete="new-password"
-                dir="ltr"
-                className="pl-10"
-              />
-              <button
-                type="button"
-                onClick={() => setShowBootstrapPassword((prev) => !prev)}
-                className="absolute inset-y-0 left-0 flex items-center px-3 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                aria-label={showBootstrapPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
-                title={showBootstrapPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
-              >
-                {showBootstrapPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
+            <PasswordInput
+              required
+              visible={showBootstrapPassword}
+              onVisibleChange={setShowBootstrapPassword}
+              minLength={8}
+              value={bootstrapPassword}
+              onChange={(e) => setBootstrapPassword(e.target.value)}
+              autoComplete="new-password"
+              dir="ltr"
+            />
           </div>
           <div className="space-y-1.5">
             <Label>تأكيد كلمة المرور</Label>
-            <div className="relative">
-              <Input
-                required
-                type={showBootstrapPassword ? "text" : "password"}
-                minLength={8}
-                value={bootstrapConfirm}
-                onChange={(e) => setBootstrapConfirm(e.target.value)}
-                autoComplete="new-password"
-                dir="ltr"
-                className="pl-10"
-              />
-              <button
-                type="button"
-                onClick={() => setShowBootstrapPassword((prev) => !prev)}
-                className="absolute inset-y-0 left-0 flex items-center px-3 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                aria-label={showBootstrapPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
-                title={showBootstrapPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
-              >
-                {showBootstrapPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
+            <PasswordInput
+              required
+              visible={showBootstrapPassword}
+              onVisibleChange={setShowBootstrapPassword}
+              minLength={8}
+              value={bootstrapConfirm}
+              onChange={(e) => setBootstrapConfirm(e.target.value)}
+              autoComplete="new-password"
+              dir="ltr"
+            />
           </div>
           {error && (
             <p
@@ -712,26 +710,14 @@ export function LoginView() {
           </div>
           <div>
             <Label>كلمة المرور</Label>
-            <div className="relative mt-1">
-              <Input
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                placeholder="••••••"
-                dir="ltr"
-                className="text-right pl-10"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((prev) => !prev)}
-                className="absolute inset-y-0 left-0 flex items-center px-3 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                aria-label={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
-                title={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
-              >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
+            <PasswordInput
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              placeholder="••••••"
+              dir="ltr"
+              className="mt-1"
+            />
           </div>
 
           <div className="flex items-center space-x-2 space-x-reverse">
