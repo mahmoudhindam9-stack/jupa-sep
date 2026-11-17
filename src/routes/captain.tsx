@@ -46,7 +46,11 @@ import { QRCodeSVG } from "qrcode.react";
 import { QrCode, Printer } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import { cleanTableId } from "@/shared/utils/inventoryUtils";
-import { buildCartLineKey } from "@/shared/utils/productOptions";
+import {
+  buildCartLineKey,
+  formatOrderAmount,
+  resolveOrderCurrencySnapshot,
+} from "@/shared/utils/productOptions";
 
 export const Route = createFileRoute("/captain")({
   head: () => ({ meta: [{ title: "Captain Order" }] }),
@@ -179,6 +183,18 @@ function CaptainPage() {
     () => EMPTY_ORDERS,
   );
   const tableOrders = isMounted ? rawTableOrders : EMPTY_ORDERS;
+  const [paymentStatusMap, setPaymentStatusMap] = useState<Record<string, any>>(() =>
+    tableOrdersStore.getAllTablePaymentStatuses(),
+  );
+  useEffect(() => {
+    setPaymentStatusMap({ ...tableOrdersStore.getAllTablePaymentStatuses() });
+    const unsub = tableOrdersStore.subscribe(() => {
+      setPaymentStatusMap({ ...tableOrdersStore.getAllTablePaymentStatuses() });
+    });
+    return () => {
+      unsub();
+    };
+  }, []);
 
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -465,6 +481,13 @@ function CaptainPage() {
     ) => {
       if (e) {
         e.stopPropagation();
+      }
+
+      if (newStatus === "available" || newStatus === "occupied") {
+        tableOrdersStore.clearTablePaymentStatus({
+          tableId: table.id,
+          tableNumber: table.number,
+        });
       }
 
       // 1. Update local storage immediately
@@ -786,7 +809,11 @@ function CaptainPage() {
         Boolean(existingLocal?.sentToKitchen) === sentToKitchenFlag &&
         Boolean(existingLocal?.kitchenCompleted) === kitchenCompletedFlag &&
         Boolean(existingLocal?.sentToCashier) === sentToCashierFlag &&
-        Boolean(existingLocal?.delivered_at) === Boolean(resolvedDeliveredAt)
+        Boolean(existingLocal?.delivered_at) === Boolean(resolvedDeliveredAt) &&
+        (existingLocal?.payment_currency || "") === (order.payment_currency || existingLocal?.payment_currency || "") &&
+        Number(existingLocal?.payment_exchange_rate ?? 0) ===
+          Number(order.payment_exchange_rate ?? existingLocal?.payment_exchange_rate ?? 0) &&
+        Number(existingLocal?.total ?? 0) === Number(order.total ?? 0)
       ) {
         return;
       }
@@ -804,6 +831,11 @@ function CaptainPage() {
         subtotal: Number(order.subtotal ?? order.total ?? 0),
         tax: Number(order.tax ?? 0),
         total: Number(order.total ?? 0),
+        pricing_currency: order.pricing_currency || existingLocal?.pricing_currency || "USD",
+        payment_currency: order.payment_currency || existingLocal?.payment_currency,
+        payment_exchange_rate:
+          order.payment_exchange_rate ?? existingLocal?.payment_exchange_rate,
+        payment_amount: order.payment_amount ?? existingLocal?.payment_amount,
         status: sentToCashierFlag ? "sent_to_cashier" : "draft",
         sentToKitchen: sentToKitchenFlag,
         kitchenCompleted: kitchenCompletedFlag,
@@ -823,7 +855,9 @@ function CaptainPage() {
 
       if (!isAlreadyInStore && order.id && !notifiedOrderIdsRef.current.has(order.id)) {
         notifiedOrderIdsRef.current.add(order.id);
-        handleChangeTableStatus({ id: finalTblId, number: finalTblNum, name: finalTblName }, "occupied");
+        if (hasExplicitTableAssignment && finalTblId) {
+          handleChangeTableStatus({ id: finalTblId, number: finalTblNum, name: finalTblName }, "occupied");
+        }
         if (shouldNotify) {
           playCaptainNotificationSound();
           toast({
@@ -898,11 +932,27 @@ function CaptainPage() {
           } else if (ev.data?.type === "ORDER_DELIVERED" && ev.data?.payload) {
             tableOrdersStore.markDeliveredByOrderOrTable(ev.data.payload);
             queryClient.invalidateQueries({ queryKey: ["tables"] });
+          } else if (ev.data?.type === "TABLE_PAID_AND_CLEANING") {
+            tableOrdersStore.setTablePaymentStatus({
+              tableId: ev.data?.tableId,
+              tableNumber: ev.data?.tableNumber,
+              status: "paid",
+            });
+            queryClient.invalidateQueries({ queryKey: ["tables"] });
           } else if (
             ev.data?.type === "TABLE_STATUS_CHANGED" ||
-            ev.data?.type === "TABLE_PAID_AND_CLEANING" ||
             ev.data?.type === "ORDER_COMPLETED_BY_CASHIER"
           ) {
+            if (ev.data?.type === "ORDER_COMPLETED_BY_CASHIER" && ev.data?.payload) {
+              const p = ev.data.payload;
+              if (p.tableId || p.tableNumber) {
+                tableOrdersStore.setTablePaymentStatus({
+                  tableId: p.tableId,
+                  tableNumber: p.tableNumber,
+                  status: "paid",
+                });
+              }
+            }
             queryClient.invalidateQueries({ queryKey: ["tables"] });
           }
         };
@@ -1226,6 +1276,14 @@ function CaptainPage() {
                       .trim() || "مسودة محفوظة بدون أصناف"
                   : "مسودة محفوظة بدون أصناف";
 
+            const paymentNotice =
+              (isMounted
+                ? paymentStatusMap[`id:${t.id}`] || paymentStatusMap[`num:${t.number}`]
+                : null) || null;
+            const orderCurrSnap = activeOrder
+              ? resolveOrderCurrencySnapshot(activeOrder, currency, exchangeRates)
+              : null;
+
             return (
               <div
                 key={t.id}
@@ -1260,6 +1318,11 @@ function CaptainPage() {
                     <span className="text-[11px] font-extrabold px-2 py-0.5 rounded-full bg-white/85 border border-current shrink-0">
                       {lang === "ar" ? statusLabels[t.status] : t.status}
                     </span>
+                    {!activeOrder && paymentNotice === "paid" && (
+                      <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-emerald-600 text-white shrink-0 shadow-2xs">
+                        ✓ تم الدفع
+                      </span>
+                    )}
                     {hasBillAlert && (
                       <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-indigo-600 text-white animate-pulse shrink-0">
                         🧾 فاتورة
@@ -1317,8 +1380,23 @@ function CaptainPage() {
 
                       <div className="flex items-center gap-1.5 shrink-0">
                         <span className="font-black text-xs text-slate-900 tabular-nums">
-                          {formatPrice(Number(activeOrder.total ?? 0))}
+                          {orderCurrSnap
+                            ? formatOrderAmount(
+                                Number(activeOrder.total ?? 0),
+                                orderCurrSnap.paymentCurrency,
+                                orderCurrSnap.paymentExchangeRate,
+                                lang,
+                              )
+                            : formatPrice(Number(activeOrder.total ?? 0))}
                         </span>
+                        {orderCurrSnap && (
+                          <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-700">
+                            {orderCurrSnap.paymentCurrency}
+                            {orderCurrSnap.paymentCurrency !== "USD"
+                              ? ` ×${orderCurrSnap.paymentExchangeRate}`
+                              : ""}
+                          </span>
+                        )}
                         <button
                           type="button"
                           title={lang === "ar" ? "إلغاء ومسح الطلب" : "Cancel Order"}
@@ -1351,7 +1429,7 @@ function CaptainPage() {
                         </span>
                         <span className="text-[10px] font-bold text-teal-800">
                           {activeOrder.status === "sent_to_cashier" || activeOrder.sentToCashier
-                            ? "مرسل للكاشير 💰"
+                            ? "في انتظار الدفع 💰"
                             : "جاهز للتحصيل"}
                         </span>
                       </div>
@@ -1373,7 +1451,7 @@ function CaptainPage() {
                       activeOrder.sentToCashier ? (
                       <div className="h-7 flex justify-between items-center bg-emerald-50 border border-emerald-300 px-2 rounded-lg">
                         <span className="text-[11px] font-black text-emerald-800 truncate">
-                          مرسل للكاشير (بانتظار الدفع) 💰
+                          في انتظار الدفع 💰 (مرسل للكاشير)
                         </span>
                       </div>
                     ) : (
@@ -1384,13 +1462,31 @@ function CaptainPage() {
                   </div>
                 ) : (
                   <div className="h-[120px] shrink-0 relative z-10 px-3 rounded-xl border border-dashed border-current/25 bg-white/45 flex flex-col items-center justify-center text-center gap-1">
-                    <UtensilsCrossed size={18} className=" opacity-50" />
-                    <span className="text-xs font-bold text-slate-700">
-                      لا يوجد طلب حالي على الطاولة
-                    </span>
-                    <span className="text-[10px] font-semibold text-slate-600">
-                      اضغط على الطاولة لإضافة طلب جديد
-                    </span>
+                    {paymentNotice === "paid" ? (
+                      <>
+                        <span className="px-2.5 py-0.5 rounded-full bg-emerald-600 text-white text-xs font-black shadow-2xs">
+                          ✓ تم الدفع
+                        </span>
+                        <span className="text-xs font-bold text-slate-700">
+                          {t.status === "cleaning"
+                            ? "الطاولة قيد التنظيف بعد الدفع"
+                            : "تم تحصيل الفاتورة بالكاشير"}
+                        </span>
+                        <span className="text-[10px] font-semibold text-slate-600">
+                          اضغط على الطاولة لإضافة طلب جديد
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <UtensilsCrossed size={18} className=" opacity-50" />
+                        <span className="text-xs font-bold text-slate-700">
+                          لا يوجد طلب حالي على الطاولة
+                        </span>
+                        <span className="text-[10px] font-semibold text-slate-600">
+                          اضغط على الطاولة لإضافة طلب جديد
+                        </span>
+                      </>
+                    )}
                   </div>
                 )}
 

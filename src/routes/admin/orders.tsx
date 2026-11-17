@@ -20,6 +20,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useSettings, translations } from "@/hooks/use-settings";
+import { resolveOrderCurrencySnapshot, formatOrderAmount } from "@/shared/utils/productOptions";
 import { useToast } from "@/hooks/use-toast";
 import {
   CheckCircle,
@@ -48,6 +49,10 @@ type Order = {
   order_type: string;
   payment_method: string;
   total: number;
+  pricing_currency?: string;
+  payment_currency?: string;
+  payment_exchange_rate?: number;
+  payment_amount?: number;
   table_id: string | null;
   notes: string | null;
   items: { id: string; name_ar: string; price: number; quantity: number }[];
@@ -118,7 +123,7 @@ function ElapsedTimer({
 }
 
 function OrdersPage() {
-  const { lang } = useSettings();
+  const { lang, exchangeRates } = useSettings();
   const t = translations[lang] || translations["ar"];
   const { toast } = useToast();
 
@@ -264,23 +269,17 @@ function OrdersPage() {
     },
   });
 
-  const getOrderCurrency = (notes: string | null) => {
-    if (!notes) return "USD";
-    if (notes.includes("العملة: EGP") || notes.includes("EGP")) return "EGP";
-    if (notes.includes("العملة: SSP") || notes.includes("SSP")) return "SSP";
-    if (notes.includes("العملة: USD") || notes.includes("USD")) return "USD";
-    return "USD";
-  };
-
-  const formatOrderPrice = (amount: number, notes: string | null) => {
-    const curr = getOrderCurrency(notes);
-    const val = Number(amount || 0).toLocaleString("en-US", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
-    if (curr === "EGP") return `${val} ج.م`;
-    if (curr === "SSP") return `${val} ج.ج.س`;
-    return `${val} $`;
+  const formatOrderPrice = (order: Order) => {
+    const snap = resolveOrderCurrencySnapshot(order, "USD", exchangeRates);
+    const formatted = formatOrderAmount(
+      Number(order?.total || 0),
+      snap.paymentCurrency,
+      snap.paymentExchangeRate,
+      lang,
+    );
+    return snap.paymentCurrency !== "USD"
+      ? `${formatted} ($${Number(order?.total || 0).toFixed(2)})`
+      : formatted;
   };
 
   const orders = ordersQuery.data || [];
@@ -388,7 +387,7 @@ function OrdersPage() {
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
                     <span>{table ? table.name || `طاولة ${table.number}` : "-"}</span>
                     <span className="font-black text-emerald-600 text-sm">
-                      {formatOrderPrice(o.total, o.notes)}
+                      {formatOrderPrice(o)}
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-2 pt-2 border-t">
@@ -508,7 +507,7 @@ function OrdersPage() {
                         {table ? table.name || `طاولة ${table.number}` : "-"}
                       </td>
                       <td className="p-4 font-black text-emerald-600">
-                        {formatOrderPrice(o.total, o.notes)}
+                        {formatOrderPrice(o)}
                       </td>
                       <td className="p-4">
                         <select
@@ -635,7 +634,7 @@ function OrdersPage() {
               <div className="border-t pt-3 flex justify-between items-center text-sm font-black">
                 <span>الإجمالي الكلي:</span>
                 <span className="text-emerald-600">
-                  {formatOrderPrice(selectedOrder.total, selectedOrder.notes)}
+                  {formatOrderPrice(selectedOrder)}
                 </span>
               </div>
             </div>

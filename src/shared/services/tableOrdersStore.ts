@@ -1,5 +1,8 @@
 import { MenuItem } from "@/shared/types";
 import { supabase } from "@/integrations/supabase/client";
+import { getLineUnitPrice } from "@/shared/utils/productOptions";
+
+export type TablePaymentNoticeStatus = "awaiting_payment" | "paid";
 
 export interface TableCartLine {
   lineKey?: string;
@@ -22,6 +25,10 @@ export interface TableOrder {
   subtotal: number;
   tax: number;
   total: number;
+  pricing_currency?: string;
+  payment_currency?: string;
+  payment_exchange_rate?: number;
+  payment_amount?: number;
   status: "draft" | "sent_to_cashier" | "in_checkout" | "completed" | "cancelled";
   sentToKitchen?: boolean;
   sentToCashier?: boolean;
@@ -38,6 +45,7 @@ export interface TableOrder {
 }
 
 const STORAGE_KEY = "restocash_table_orders_v1";
+const TABLE_PAYMENT_NOTICES_KEY = "restocash_table_payment_notifications_v1";
 const CANCELLED_IDS_KEY = "restocash_cancelled_order_ids_v1";
 const CLEARED_BEFORE_TS_KEY = "restocash_orders_cleared_before_ts_v1";
 const ONE_TIME_WIPE_KEY = "restocash_clear_pending_v3_done";
@@ -54,7 +62,7 @@ class TableOrdersStore {
     this.runOneTimePendingWipeIfNeeded();
     if (typeof window !== "undefined") {
       window.addEventListener("storage", (e) => {
-        if (e.key === STORAGE_KEY) {
+        if (e.key === STORAGE_KEY || e.key === TABLE_PAYMENT_NOTICES_KEY) {
           this.loadState();
           this.notify();
         }
@@ -225,12 +233,20 @@ class TableOrdersStore {
           .replace(/\[SELF_ORDER_PENDING_CAPTAIN\]/g, "")
           .trim();
 
-        const { data, error } = await supabase
+        const { data, error } = await (supabase as any)
           .from("orders")
           .insert({
             subtotal: Number(order.subtotal || 0),
             tax: Number(order.tax || 0),
             total: Number(order.total || 0),
+            ...(order.pricing_currency ? { pricing_currency: order.pricing_currency } : {}),
+            ...(order.payment_currency ? { payment_currency: order.payment_currency } : {}),
+            ...(order.payment_exchange_rate !== undefined
+              ? { payment_exchange_rate: Number(order.payment_exchange_rate) }
+              : {}),
+            ...(order.payment_amount !== undefined
+              ? { payment_amount: Number(order.payment_amount) }
+              : {}),
             payment_method: "cash",
             order_type: order.order_type,
             table_id:
@@ -242,7 +258,12 @@ class TableOrdersStore {
               menu_item_id: line?.item?.id || line?.menu_item_id || line?.id,
               lineKey: line?.lineKey,
               name_ar: line?.item?.name_ar || line?.name_ar || line?.name || "صنف",
-              price: Number(line?.item?.price ?? line?.price ?? 0),
+              price: Number(
+                getLineUnitPrice(
+                  Number(line?.item?.price ?? line?.price ?? 0),
+                  line?.selectedAdditions,
+                ).toFixed(2),
+              ),
               quantity: Number(line?.quantity ?? 1),
               notes: line?.notes || "",
               selectedOptions: line?.selectedOptions || [],
@@ -343,9 +364,21 @@ class TableOrdersStore {
         subtotal: Number(orderData.subtotal ?? prev.subtotal ?? 0),
         tax: Number(orderData.tax ?? prev.tax ?? 0),
         total: Number(orderData.total ?? prev.total ?? 0),
+        pricing_currency: orderData.pricing_currency || prev.pricing_currency || "USD",
+        payment_currency: orderData.payment_currency || prev.payment_currency,
+        payment_exchange_rate:
+          orderData.payment_exchange_rate ?? prev.payment_exchange_rate,
+        payment_amount: orderData.payment_amount ?? prev.payment_amount,
         updated_at: now,
       } as TableOrder;
       this.orders[existingIndex] = updated;
+      if (updated.status === "sent_to_cashier" || updated.sentToCashier) {
+        this.writeTablePaymentStatus(
+          { tableId: updated.table_id, tableNumber: updated.table_number },
+          "awaiting_payment",
+          false,
+        );
+      }
       this.saveState();
       this.syncCustomerHistoryTimestamps(updated);
       this.notify();
@@ -369,8 +402,13 @@ class TableOrdersStore {
       subtotal: Number(orderData.subtotal ?? 0),
       tax: Number(orderData.tax ?? 0),
       total: Number(orderData.total ?? 0),
+      pricing_currency: orderData.pricing_currency || "USD",
+      payment_currency: orderData.payment_currency,
+      payment_exchange_rate: orderData.payment_exchange_rate,
+      payment_amount: orderData.payment_amount,
       status: orderData.status || "draft",
       sentToKitchen: isSentToKitchen,
+      sentToCashier: Boolean(orderData.sentToCashier || orderData.status === "sent_to_cashier"),
       kitchenCompleted: Boolean(orderData.kitchenCompleted),
       kitchenOrderId: orderData.kitchenOrderId,
       submitted_at: orderData.submitted_at || orderData.created_at || now,
@@ -386,6 +424,13 @@ class TableOrdersStore {
     };
 
     this.orders.push(newOrder);
+    if (newOrder.status === "sent_to_cashier" || newOrder.sentToCashier) {
+      this.writeTablePaymentStatus(
+        { tableId: newOrder.table_id, tableNumber: newOrder.table_number },
+        "awaiting_payment",
+        false,
+      );
+    }
     this.saveState();
     this.syncCustomerHistoryTimestamps(newOrder);
     this.notify();
@@ -434,6 +479,12 @@ class TableOrdersStore {
     target.status = status;
     if (status === "sent_to_cashier") {
       target.captain_confirmed_at = target.captain_confirmed_at || now;
+      target.sentToCashier = true;
+      this.writeTablePaymentStatus(
+        { tableId: target.table_id, tableNumber: target.table_number },
+        "awaiting_payment",
+        false,
+      );
     } else if (status === "completed") {
       target.delivered_at = target.delivered_at || now;
     }
@@ -441,6 +492,93 @@ class TableOrdersStore {
     this.saveState();
     this.syncCustomerHistoryTimestamps(target);
     this.notify();
+  }
+
+  private readPaymentStatusMap(): Record<string, TablePaymentNoticeStatus> {
+    try {
+      if (typeof window === "undefined" || typeof localStorage === "undefined") return {};
+      const raw = localStorage.getItem(TABLE_PAYMENT_NOTICES_KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  private writeTablePaymentStatus(
+    params: { tableId?: string | null; tableNumber?: number | null },
+    status: TablePaymentNoticeStatus | null,
+    shouldNotify = true,
+  ) {
+    try {
+      if (typeof window === "undefined" || typeof localStorage === "undefined") return;
+      const map = this.readPaymentStatusMap();
+      const keys: string[] = [];
+      if (params.tableId && String(params.tableId).trim()) {
+        keys.push(`id:${String(params.tableId).trim()}`);
+      }
+      if (
+        params.tableNumber !== undefined &&
+        params.tableNumber !== null &&
+        Number(params.tableNumber) > 0 &&
+        Number(params.tableNumber) !== 999
+      ) {
+        keys.push(`num:${Number(params.tableNumber)}`);
+      }
+      if (keys.length === 0) return;
+
+      for (const k of keys) {
+        if (status === null) {
+          delete map[k];
+        } else {
+          map[k] = status;
+        }
+      }
+      localStorage.setItem(TABLE_PAYMENT_NOTICES_KEY, JSON.stringify(map));
+      if (shouldNotify) {
+        window.dispatchEvent(new Event("table-orders-updated"));
+        this.notify();
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }
+
+  public getAllTablePaymentStatuses(): Record<string, TablePaymentNoticeStatus> {
+    return this.readPaymentStatusMap();
+  }
+
+  public getTablePaymentStatus(
+    tableId?: string | null,
+    tableNumber?: number | null,
+  ): TablePaymentNoticeStatus | null {
+    const map = this.readPaymentStatusMap();
+    if (tableId && map[`id:${tableId}`]) return map[`id:${tableId}`];
+    if (
+      tableNumber !== undefined &&
+      tableNumber !== null &&
+      Number(tableNumber) > 0 &&
+      Number(tableNumber) !== 999 &&
+      map[`num:${Number(tableNumber)}`]
+    ) {
+      return map[`num:${Number(tableNumber)}`];
+    }
+    return null;
+  }
+
+  public setTablePaymentStatus(params: {
+    tableId?: string | null;
+    tableNumber?: number | null;
+    status: TablePaymentNoticeStatus | null;
+  }) {
+    this.writeTablePaymentStatus(params, params.status, true);
+  }
+
+  public clearTablePaymentStatus(params: {
+    tableId?: string | null;
+    tableNumber?: number | null;
+  }) {
+    this.writeTablePaymentStatus(params, null, true);
   }
 
   public removeOrder(orderId: string) {
@@ -508,6 +646,7 @@ class TableOrdersStore {
     });
 
     this.markIdsCancelled(Array.from(matchedIds));
+    this.writeTablePaymentStatus({ tableId, tableNumber }, null, false);
     this.saveState();
     this.notify();
 
@@ -586,6 +725,13 @@ class TableOrdersStore {
       // ignore
     }
     this.orders = [];
+    try {
+      if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
+        localStorage.removeItem(TABLE_PAYMENT_NOTICES_KEY);
+      }
+    } catch {
+      // ignore
+    }
     this.saveState();
     this.notify();
 
@@ -633,6 +779,9 @@ class TableOrdersStore {
     if (orderId) removedIds.push(orderId);
     if (kitchenOrderId) removedIds.push(kitchenOrderId);
 
+    let resolvedTableId = tableId || null;
+    let resolvedTableNumber = tableNumber ?? null;
+
     this.orders = this.orders.filter((o) => {
       const match =
         (orderId && (o.id === orderId || o.kitchenOrderId === orderId)) ||
@@ -645,11 +794,20 @@ class TableOrdersStore {
       if (match) {
         if (o.id) removedIds.push(o.id);
         if (o.kitchenOrderId) removedIds.push(o.kitchenOrderId);
+        if (!resolvedTableId && o.table_id) resolvedTableId = o.table_id;
+        if ((!resolvedTableNumber || resolvedTableNumber === 999) && o.table_number) {
+          resolvedTableNumber = o.table_number;
+        }
         return false;
       }
       return true;
     });
     this.markIdsCancelled(removedIds);
+    this.writeTablePaymentStatus(
+      { tableId: resolvedTableId, tableNumber: resolvedTableNumber },
+      "paid",
+      false,
+    );
     this.saveState();
     this.notify();
 

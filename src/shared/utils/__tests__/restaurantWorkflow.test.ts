@@ -1,10 +1,14 @@
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   buildCartLineKey,
+  formatOrderAmount,
+  getAdditionsUnitPrice,
   getLineUnitPrice,
+  isNonKitchenNotificationOrder,
+  resolveOrderCurrencySnapshot,
   resolveProductCustomizationConfig,
   sanitizeKitchenNotes,
-  isNonKitchenNotificationOrder,
+  shouldOpenCustomizationOnAdd,
 } from "@/shared/utils/productOptions";
 import { computeQualityControlSummary } from "@/shared/utils/qualityControlMetrics";
 import {
@@ -13,6 +17,7 @@ import {
   getRawMaterialSpec,
 } from "@/shared/data/defaultRecipes";
 import { localWarehouseStore } from "@/features/inventory/services/warehouseStore";
+import { tableOrdersStore } from "@/shared/services/tableOrdersStore";
 
 describe("Product-specific customization & cart line separation", () => {
   it("resolves tailored quick options for water, hot drinks, and pizzas", () => {
@@ -27,6 +32,19 @@ describe("Product-specific customization & cart line separation", () => {
     const pizzaCfg = resolveProductCustomizationConfig({ name_ar: "بيتزا مارجريتا" }, "بيتزا");
     expect(pizzaCfg.quickOptions.some((o) => o.id === "no_onion")).toBe(true);
     expect(pizzaCfg.additions.some((a) => a.materialKey === "mozzarella")).toBe(true);
+  });
+
+  it("opens customization modal whenever quickOptions or additions exist", () => {
+    expect(shouldOpenCustomizationOnAdd({ name_ar: "مياه معدنية" }, "مشروبات")).toBe(true);
+    expect(shouldOpenCustomizationOnAdd({ name_ar: "بيتزا مارجريتا" }, "بيتزا")).toBe(true);
+    expect(
+      shouldOpenCustomizationOnAdd({
+        name_ar: "قهوة تركي",
+        quick_options: [{ id: "sugar_none", label_ar: "سادة", label_en: "No Sugar" }],
+        additions: [],
+      }),
+    ).toBe(true);
+    expect(shouldOpenCustomizationOnAdd(null)).toBe(false);
   });
 
   it("produces distinct lineKeys for identical menu items with different options or notes", () => {
@@ -53,12 +71,114 @@ describe("Product-specific customization & cart line separation", () => {
     expect(k1).toBe(k1Dup);
   });
 
-  it("adds paid addition prices accurately to unit price", () => {
-    const unit = getLineUnitPrice(10, [
+  it("adds paid addition prices accurately to unit price without double-counting on reconstruction", () => {
+    const additions = [
       { id: "extra_cheese", name_ar: "جبنة إضافية", price: 1.5 },
       { id: "extra_olive", name_ar: "زيتون إضافي", price: 0.6 },
-    ]);
+    ];
+    const unit = getLineUnitPrice(10, additions);
     expect(unit).toBeCloseTo(12.1, 2);
+
+    // Simulate loading serialized order line where line.price already equals unit price
+    const addsSum = getAdditionsUnitPrice(additions);
+    const inferredBase = Math.max(0, Number((unit - addsSum).toFixed(2)));
+    expect(inferredBase).toBeCloseTo(10, 2);
+    expect(getLineUnitPrice(inferredBase, additions) * 3).toBeCloseTo(36.3, 2);
+  });
+});
+
+describe("Order-level transaction currency & exchange rate snapshots", () => {
+  it("preserves distinct payment currencies and rates concurrently without system default overwrite", () => {
+    const fallbackRates = { USD: 1, EGP: 49, SSP: 4200 };
+
+    const sspOrder = resolveOrderCurrencySnapshot(
+      {
+        total: 10,
+        pricing_currency: "USD",
+        payment_currency: "SSP",
+        payment_exchange_rate: 4500,
+      },
+      "EGP",
+      fallbackRates,
+    );
+    expect(sspOrder.pricingCurrency).toBe("USD");
+    expect(sspOrder.paymentCurrency).toBe("SSP");
+    expect(sspOrder.paymentExchangeRate).toBe(4500);
+    expect(sspOrder.paymentAmount).toBe(45000);
+    expect(
+      formatOrderAmount(10, sspOrder.paymentCurrency, sspOrder.paymentExchangeRate, "ar"),
+    ).toBe("45,000.00 ج.ج.س");
+
+    const egpOrder = resolveOrderCurrencySnapshot(
+      {
+        total: 12.5,
+        pricing_currency: "USD",
+        payment_currency: "EGP",
+        payment_exchange_rate: 50.5,
+      },
+      "USD",
+      fallbackRates,
+    );
+    expect(egpOrder.paymentCurrency).toBe("EGP");
+    expect(egpOrder.paymentExchangeRate).toBe(50.5);
+    expect(egpOrder.paymentAmount).toBe(631.25);
+
+    const usdOrder = resolveOrderCurrencySnapshot(
+      {
+        total: 15,
+        pricing_currency: "USD",
+        payment_currency: "USD",
+        payment_exchange_rate: 1,
+        payment_amount: 15,
+      },
+      "SSP",
+      fallbackRates,
+    );
+    expect(usdOrder.paymentCurrency).toBe("USD");
+    expect(usdOrder.paymentExchangeRate).toBe(1);
+    expect(usdOrder.paymentAmount).toBe(15);
+    expect(formatOrderAmount(15, usdOrder.paymentCurrency, 1, "en")).toBe("$15.00");
+  });
+});
+
+describe("Table payment notifications lifecycle", () => {
+  it("tracks awaiting_payment -> paid -> cleared only on explicit clearTablePaymentStatus", () => {
+    tableOrdersStore.clearTablePaymentStatus({ tableId: "tbl-9", tableNumber: 9 });
+    expect(tableOrdersStore.getTablePaymentStatus("tbl-9", 9)).toBeNull();
+
+    tableOrdersStore.saveOrder({
+      id: "ord-test-t9",
+      table_id: "tbl-9",
+      table_number: 9,
+      table_name: "طاولة 9",
+      items: [],
+      order_type: "dine_in",
+      notes: "[SENT_TO_CASHIER]",
+      selectedAdditions: [],
+      subtotal: 10,
+      tax: 0,
+      total: 10,
+      pricing_currency: "USD",
+      payment_currency: "SSP",
+      payment_exchange_rate: 4500,
+      payment_amount: 45000,
+      status: "sent_to_cashier",
+      sentToCashier: true,
+    });
+
+    expect(tableOrdersStore.getTablePaymentStatus("tbl-9", 9)).toBe("awaiting_payment");
+
+    tableOrdersStore.completeCashierOrder({
+      orderId: "ord-test-t9",
+      tableId: "tbl-9",
+      tableNumber: 9,
+    });
+
+    // Persists as "paid" until explicitly cleared when table becomes available/occupied
+    expect(tableOrdersStore.getTablePaymentStatus("tbl-9", 9)).toBe("paid");
+
+    tableOrdersStore.clearTablePaymentStatus({ tableId: "tbl-9", tableNumber: 9 });
+    expect(tableOrdersStore.getTablePaymentStatus("tbl-9", 9)).toBeNull();
   });
 });
 

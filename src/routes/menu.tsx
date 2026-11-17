@@ -33,6 +33,7 @@ import {
   buildCartLineKey,
   getLineUnitPrice,
   formatLineCustomizationSummary,
+  shouldOpenCustomizationOnAdd,
 } from "@/shared/utils/productOptions";
 
 const EN_TRANSLATIONS: Record<string, string> = {
@@ -330,6 +331,14 @@ function MenuPage() {
     setCustomizingItem(item);
   };
 
+  const handleAddAction = (item: MenuItem) => {
+    if (shouldOpenCustomizationOnAdd(item, categoriesMap[item.category_id])) {
+      handleItemClick(item);
+      return;
+    }
+    quickAddItem(item);
+  };
+
   const handleConfirmCustomization = (selection: ConfiguredCartSelection) => {
     setCart((prev) => {
       const base = editingCartLine
@@ -474,7 +483,6 @@ function MenuPage() {
 
   const submitOrder = async () => {
     if (cart.length === 0 || isSubmitting) return;
-    setIsSubmitting(true);
 
     if (!hasTableContext) {
       toast({
@@ -485,6 +493,8 @@ function MenuPage() {
       });
       return;
     }
+
+    setIsSubmitting(true);
 
     const finalTableNum = parsedTableNum > 0 ? parsedTableNum : 999;
     const orderUuid = generateValidUuid();
@@ -584,6 +594,10 @@ function MenuPage() {
         subtotal: orderPayload.subtotal,
         tax: orderPayload.tax,
         total: orderPayload.total,
+        pricing_currency: orderPayload.pricing_currency,
+        payment_currency: orderPayload.payment_currency,
+        payment_exchange_rate: orderPayload.payment_exchange_rate,
+        payment_amount: orderPayload.payment_amount,
         status: "draft",
         submitted_at: nowIso,
         is_self_order: true,
@@ -931,7 +945,7 @@ function MenuPage() {
                               </span>
                               <button
                                 type="button"
-                                onClick={() => quickAddItem(item)}
+                                onClick={() => handleAddAction(item)}
                                 className="w-8 h-8 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 flex items-center justify-center shadow-2xs cursor-pointer"
                               >
                                 <Plus size={14} />
@@ -940,7 +954,7 @@ function MenuPage() {
                           ) : (
                             <button
                               type="button"
-                              onClick={() => quickAddItem(item)}
+                              onClick={() => handleAddAction(item)}
                               className="min-h-[42px] px-4 rounded-xl bg-emerald-600 text-white font-bold flex items-center gap-1.5 hover:bg-emerald-700 transition shadow-2xs text-xs shrink-0 cursor-pointer"
                             >
                               <Plus size={15} />

@@ -3,11 +3,16 @@ import { tableOrdersStore, TableOrder } from "@/shared/services/tableOrdersStore
 
 export function useTableOrders() {
   const [orders, setOrders] = useState<TableOrder[]>(() => tableOrdersStore.getAllOrders());
+  const [tablePaymentStatuses, setTablePaymentStatuses] = useState(() =>
+    tableOrdersStore.getAllTablePaymentStatuses(),
+  );
 
   useEffect(() => {
     setOrders(tableOrdersStore.getAllOrders());
+    setTablePaymentStatuses(tableOrdersStore.getAllTablePaymentStatuses());
     const unsubscribe = tableOrdersStore.subscribe(() => {
       setOrders([...tableOrdersStore.getAllOrders()]);
+      setTablePaymentStatuses({ ...tableOrdersStore.getAllTablePaymentStatuses() });
     });
     return () => {
       unsubscribe();
@@ -16,6 +21,9 @@ export function useTableOrders() {
 
   return {
     orders,
+    tablePaymentStatuses,
+    getTablePaymentStatus: (tableId?: string | null, tableNumber?: number | null) =>
+      tableOrdersStore.getTablePaymentStatus(tableId, tableNumber),
     pendingCashierOrders: orders.filter((o) => o.status === "sent_to_cashier"),
     getOrderByTableId: (tableId: string) =>
       orders.find(

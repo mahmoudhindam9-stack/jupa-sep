@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { erpStore } from "@/shared/services/erpStore";
 import { inventoryService } from "@/features/inventory/services/inventoryService";
 import { useSettings } from "@/hooks/use-settings";
+import { resolveOrderCurrencySnapshot } from "@/shared/utils/productOptions";
 import {
   printRawHtml,
   printSmartStocktakingSheet,
@@ -62,7 +63,7 @@ type Order = {
 type Inventory = { cost: number; quantity: number };
 
 export function ReportsPage() {
-  const { formatPrice, lang, formatTreasuryCurrency } = useSettings();
+  const { formatPrice, lang, formatTreasuryCurrency, exchangeRates } = useSettings();
   const location = useLocation();
   const navigate = useNavigate();
   const tabParam =
@@ -148,8 +149,9 @@ export function ReportsPage() {
     let itemTotal = 0;
 
     orders.forEach((o) => {
-      const curr = (o as any).currency || "EGP";
-      byCurrency[curr] = (byCurrency[curr] ?? 0) + Number(o.total);
+      const snap = resolveOrderCurrencySnapshot(o, (o as any).currency || "USD", exchangeRates);
+      const curr = snap.paymentCurrency;
+      byCurrency[curr] = (byCurrency[curr] ?? 0) + snap.paymentAmount;
 
       byMethod[o.payment_method] = (byMethod[o.payment_method] ?? 0) + Number(o.total);
       byStatus[o.status] = (byStatus[o.status] ?? 0) + Number(o.total);
@@ -208,13 +210,14 @@ export function ReportsPage() {
         day: "numeric",
       });
       if (!grouped[dateStr]) grouped[dateStr] = { EGP: 0, USD: 0, SSP: 0 };
-      const curr = (o as any).currency || "EGP";
+      const snap = resolveOrderCurrencySnapshot(o, (o as any).currency || "USD", exchangeRates);
+      const curr = snap.paymentCurrency;
       if (curr === "USD") {
-        grouped[dateStr].USD += Number(o.total);
+        grouped[dateStr].USD += snap.paymentAmount;
       } else if (curr === "SSP") {
-        grouped[dateStr].SSP += Number(o.total);
+        grouped[dateStr].SSP += snap.paymentAmount;
       } else {
-        grouped[dateStr].EGP += Number(o.total);
+        grouped[dateStr].EGP += snap.paymentAmount;
       }
     });
 
@@ -224,7 +227,7 @@ export function ReportsPage() {
       USD: amounts.USD,
       SSP: amounts.SSP,
     }));
-  }, [ordersQuery.data]);
+  }, [ordersQuery.data, exchangeRates]);
 
   const paymentChartData = useMemo(() => {
     const byMethod = summary.byMethod;
@@ -249,23 +252,28 @@ export function ReportsPage() {
       alert("لا توجد مبيعات للتصدير حالياً");
       return;
     }
-    const rows = orders.map((o) => ({
-      "رقم الطلب": o.order_number,
-      التاريخ: new Date(o.created_at).toLocaleString("ar-EG"),
-      "نوع الطلب":
-        o.order_type === "dine_in"
-          ? "داخل المطعم"
-          : o.order_type === "takeaway"
-            ? "تيك أواي"
-            : "توصيل",
-      "طريقة الدفع":
-        o.payment_method === "cash" ? "نقدي" : o.payment_method === "card" ? "بطاقة" : "محفظة",
-      العملة: (o as any).currency || "EGP",
-      الحالة: o.status,
-      "المجموع الفرعي": Number(o.subtotal),
-      الضريبة: Number(o.tax),
-      الإجمالي: Number(o.total),
-    }));
+    const rows = orders.map((o) => {
+      const snap = resolveOrderCurrencySnapshot(o, (o as any).currency || "USD", exchangeRates);
+      return {
+        "رقم الطلب": o.order_number,
+        التاريخ: new Date(o.created_at).toLocaleString("ar-EG"),
+        "نوع الطلب":
+          o.order_type === "dine_in"
+            ? "داخل المطعم"
+            : o.order_type === "takeaway"
+              ? "تيك أواي"
+              : "توصيل",
+        "طريقة الدفع":
+          o.payment_method === "cash" ? "نقدي" : o.payment_method === "card" ? "بطاقة" : "محفظة",
+        العملة: snap.paymentCurrency,
+        المعامل: snap.paymentExchangeRate,
+        الحالة: o.status,
+        "المجموع الفرعي (USD)": Number(o.subtotal),
+        "الضريبة (USD)": Number(o.tax),
+        "الإجمالي (USD)": Number(o.total),
+        "المبلغ المحصل بالعملة": snap.paymentAmount,
+      };
+    });
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.json_to_sheet(rows);
     ws["!views"] = [{ RTL: true }];
@@ -505,6 +513,15 @@ export function ReportsPage() {
 
     if (activeTab === "sales") {
       title = "تقرير المبيعات والتحليلات";
+      const currencyBreakdownText =
+        Object.entries(summary.byCurrency).length > 0
+          ? Object.entries(summary.byCurrency)
+              .map(
+                ([c, v]) =>
+                  `${Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${c}`,
+              )
+              .join(" | ")
+          : formatPrice(summary.total);
       contentHtml = `
         <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:12px; margin-top:15px;">
           <div style="border:1px solid #ccc; padding:12px; border-radius:8px;">
@@ -513,7 +530,7 @@ export function ReportsPage() {
           </div>
           <div style="border:1px solid #ccc; padding:12px; border-radius:8px;">
             <div style="font-size:12px; color:#666;">المبيعات التشغيلية المحصلة</div>
-            <div style="font-size:18px; font-weight:bold; color:#16a34a;">${formatPrice(summary.total)}</div>
+            <div style="font-size:18px; font-weight:bold; color:#16a34a;">${currencyBreakdownText}</div>
           </div>
           <div style="border:1px solid #ccc; padding:12px; border-radius:8px;">
             <div style="font-size:12px; color:#666;">إجمالي الضريبة المضافة</div>

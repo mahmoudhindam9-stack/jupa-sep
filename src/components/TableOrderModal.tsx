@@ -27,7 +27,13 @@ import {
   ProductCustomizationModal,
   ConfiguredCartSelection,
 } from "@/components/ProductCustomizationModal";
-import { buildCartLineKey, getLineUnitPrice } from "@/shared/utils/productOptions";
+import {
+  buildCartLineKey,
+  formatOrderAmount,
+  getAdditionsUnitPrice,
+  getLineUnitPrice,
+  resolveOrderCurrencySnapshot,
+} from "@/shared/utils/productOptions";
 
 type Table = {
   id: string;
@@ -74,6 +80,13 @@ export function TableOrderModal({
   const [isQuickNoteBarOpen, setIsQuickNoteBarOpen] = useState(false);
   const [customizingItem, setCustomizingItem] = useState<any | null>(null);
   const [editingCartLine, setEditingCartLine] = useState<TableCartLine | null>(null);
+  const [orderPaymentCurrency, setOrderPaymentCurrency] = useState<string>(currency || "USD");
+  const [orderExchangeRate, setOrderExchangeRate] = useState<number>(
+    currency === "USD" ? 1 : Number(exchangeRates?.[currency]) || 1,
+  );
+
+  const formatTablePrice = (amountUsd: number) =>
+    formatOrderAmount(amountUsd, orderPaymentCurrency, orderExchangeRate, lang);
 
   useEffect(() => {
     if (isOpen && table) {
@@ -83,17 +96,23 @@ export function TableOrderModal({
       setEditingCartLine(null);
       const existing = tableOrdersStore.getOrderByTableId(table.id, table.number);
       if (existing) {
+        const snap = resolveOrderCurrencySnapshot(existing, currency, exchangeRates);
+        setOrderPaymentCurrency(snap.paymentCurrency);
+        setOrderExchangeRate(snap.paymentExchangeRate);
+
         const normalizedLines: TableCartLine[] = (existing.items || []).map((raw: any) => {
+          const selectedOptions = raw?.selectedOptions || [];
+          const selectedAdditions = raw?.selectedAdditions || [];
+          const addsSum = getAdditionsUnitPrice(selectedAdditions);
+          const inferredBase = Math.max(0, Number(raw?.price ?? 0) - addsSum);
           const itemObj = raw?.item || {
             id: raw?.id || raw?.menu_item_id || `item-${Math.random()}`,
             name_ar: raw?.name_ar || raw?.name || "صنف",
-            price: Number(raw?.price ?? 0),
+            price: raw?.item?.price !== undefined ? Number(raw.item.price) : inferredBase,
             category_id: raw?.category_id || "all",
             image_url: raw?.image_url || null,
             requires_oven: Boolean(raw?.requires_oven ?? raw?.item?.requires_oven),
           };
-          const selectedOptions = raw?.selectedOptions || [];
-          const selectedAdditions = raw?.selectedAdditions || [];
           const lineNote = raw?.notes || raw?.note || "";
           return {
             lineKey:
@@ -125,6 +144,10 @@ export function TableOrderModal({
           .trim();
         setOrderNotes(cleanedNotes);
       } else {
+        const nextCurr = currency || "USD";
+        const nextRate = nextCurr === "USD" ? 1 : Number(exchangeRates?.[nextCurr]) || 1;
+        setOrderPaymentCurrency(nextCurr);
+        setOrderExchangeRate(nextRate);
         setCart([]);
         setOrderNotes("");
       }
@@ -256,6 +279,9 @@ export function TableOrderModal({
 
   const handleSaveDraft = () => {
     const existingOrder = tableOrdersStore.getOrderByTableId(table.id, table.number);
+    const effectiveRate =
+      orderPaymentCurrency === "USD" ? 1 : orderExchangeRate > 0 ? orderExchangeRate : 1;
+    const paymentAmount = Number((total * effectiveRate).toFixed(2));
 
     tableOrdersStore.saveOrder({
       id: existingOrder?.id,
@@ -270,6 +296,10 @@ export function TableOrderModal({
       subtotal: Number(subTotal.toFixed(2)),
       tax: Number(tax.toFixed(2)),
       total: Number(total.toFixed(2)),
+      pricing_currency: "USD",
+      payment_currency: orderPaymentCurrency,
+      payment_exchange_rate: effectiveRate,
+      payment_amount: paymentAmount,
       status: existingOrder?.status === "sent_to_cashier" ? "sent_to_cashier" : "draft",
       sentToKitchen: cart.length > 0 ? Boolean(existingOrder?.sentToKitchen) : false,
       kitchenCompleted: cart.length > 0 ? Boolean(existingOrder?.kitchenCompleted) : false,
@@ -305,10 +335,12 @@ export function TableOrderModal({
       return;
     }
 
-    const rate = (exchangeRates && exchangeRates[currency]) || 1;
-    const finalSubtotal = currency === "EGP" ? subTotal : subTotal / rate;
-    const finalTax = currency === "EGP" ? tax : tax / rate;
-    const finalTotal = currency === "EGP" ? total : total / rate;
+    const effectiveRate =
+      orderPaymentCurrency === "USD" ? 1 : orderExchangeRate > 0 ? orderExchangeRate : 1;
+    const finalSubtotal = Number(subTotal.toFixed(2));
+    const finalTax = Number(tax.toFixed(2));
+    const finalTotal = Number(total.toFixed(2));
+    const paymentAmount = Number((finalTotal * effectiveRate).toFixed(2));
 
     const existingOrder = tableOrdersStore.getOrderByTableId(table.id, table.number);
     const uuidRegex =
@@ -330,15 +362,14 @@ export function TableOrderModal({
       const alreadySentToCashier =
         existingOrder?.status === "sent_to_cashier" || Boolean(existingOrder?.sentToCashier);
 
+      const currencyTag = `العملة: ${orderPaymentCurrency}${orderPaymentCurrency !== "USD" ? ` | المعامل: ${effectiveRate}` : ""}`;
       const formattedNotes = [
         existingOrder?.is_self_order ? "[SELF_ORDER_ACTIVE]" : "",
         "[SENT_TO_KITCHEN]",
         `[KITCHEN_START:${kitchenStartTs}]`,
         alreadySentToCashier ? "[SENT_TO_CASHIER]" : "",
         `[طاولة: ${table.number}]`,
-        cleanOrderNotes
-          ? `${cleanOrderNotes}${currency && currency !== "EGP" ? ` | العملة: ${currency}` : ""}`
-          : `طاولة #${table.number}${currency && currency !== "EGP" ? ` | العملة: ${currency}` : ""}`,
+        cleanOrderNotes ? `${cleanOrderNotes} | ${currencyTag}` : `طاولة #${table.number} | ${currencyTag}`,
       ]
         .filter(Boolean)
         .join(" ");
@@ -370,9 +401,13 @@ export function TableOrderModal({
           const { error: extUpdErr } = await (supabase as any)
             .from("orders")
             .update({
-              subtotal: Number(finalSubtotal.toFixed(2)),
-              tax: Number(finalTax.toFixed(2)),
-              total: Number(finalTotal.toFixed(2)),
+              subtotal: finalSubtotal,
+              tax: finalTax,
+              total: finalTotal,
+              pricing_currency: "USD",
+              payment_currency: orderPaymentCurrency,
+              payment_exchange_rate: effectiveRate,
+              payment_amount: paymentAmount,
               status: "preparing",
               notes: formattedNotes,
               items: dbItems as any,
@@ -385,9 +420,9 @@ export function TableOrderModal({
             await supabase
               .from("orders")
               .update({
-                subtotal: Number(finalSubtotal.toFixed(2)),
-                tax: Number(finalTax.toFixed(2)),
-                total: Number(finalTotal.toFixed(2)),
+                subtotal: finalSubtotal,
+                tax: finalTax,
+                total: finalTotal,
                 status: "preparing",
                 notes: formattedNotes,
                 items: dbItems as any,
@@ -398,9 +433,13 @@ export function TableOrderModal({
           let insertRes = await (supabase as any)
             .from("orders")
             .insert({
-              subtotal: Number(finalSubtotal.toFixed(2)),
-              tax: Number(finalTax.toFixed(2)),
-              total: Number(finalTotal.toFixed(2)),
+              subtotal: finalSubtotal,
+              tax: finalTax,
+              total: finalTotal,
+              pricing_currency: "USD",
+              payment_currency: orderPaymentCurrency,
+              payment_exchange_rate: effectiveRate,
+              payment_amount: paymentAmount,
               payment_method: "cash",
               order_type: "dine_in",
               table_id: cleanTableId(table.id),
@@ -418,9 +457,9 @@ export function TableOrderModal({
             insertRes = await supabase
               .from("orders")
               .insert({
-                subtotal: Number(finalSubtotal.toFixed(2)),
-                tax: Number(finalTax.toFixed(2)),
-                total: Number(finalTotal.toFixed(2)),
+                subtotal: finalSubtotal,
+                tax: finalTax,
+                total: finalTotal,
                 payment_method: "cash",
                 order_type: "dine_in",
                 table_id: cleanTableId(table.id),
@@ -449,9 +488,13 @@ export function TableOrderModal({
         order_type: "dine_in",
         notes: formattedNotes,
         selectedAdditions: [],
-        subtotal: Number(subTotal.toFixed(2)),
-        tax: Number(tax.toFixed(2)),
-        total: Number(total.toFixed(2)),
+        subtotal: finalSubtotal,
+        tax: finalTax,
+        total: finalTotal,
+        pricing_currency: "USD",
+        payment_currency: orderPaymentCurrency,
+        payment_exchange_rate: effectiveRate,
+        payment_amount: paymentAmount,
         status: alreadySentToCashier ? "sent_to_cashier" : "draft",
         sentToKitchen: true,
         kitchenCompleted: false,
@@ -499,6 +542,13 @@ export function TableOrderModal({
       return;
     }
 
+    const effectiveRate =
+      orderPaymentCurrency === "USD" ? 1 : orderExchangeRate > 0 ? orderExchangeRate : 1;
+    const finalSubtotal = Number(subTotal.toFixed(2));
+    const finalTax = Number(tax.toFixed(2));
+    const finalTotal = Number(total.toFixed(2));
+    const paymentAmount = Number((finalTotal * effectiveRate).toFixed(2));
+
     const existingOrder = tableOrdersStore.getOrderByTableId(table.id, table.number);
     const uuidRegex =
       /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
@@ -512,12 +562,13 @@ export function TableOrderModal({
       .replace(/\[SENT_TO_CASHIER\]/g, "")
       .trim();
 
+    const currencyTag = `العملة: ${orderPaymentCurrency}${orderPaymentCurrency !== "USD" ? ` | المعامل: ${effectiveRate}` : ""}`;
     const updatedNotes = [
       existingOrder?.is_self_order ? "[SELF_ORDER_ACTIVE]" : "",
       existingOrder?.sentToKitchen ? "[SENT_TO_KITCHEN]" : "",
       "[SENT_TO_CASHIER]",
       `[طاولة: ${table.number}]`,
-      cleanOrderNotes,
+      cleanOrderNotes ? `${cleanOrderNotes} | ${currencyTag}` : currencyTag,
     ]
       .filter(Boolean)
       .join(" ");
@@ -531,9 +582,13 @@ export function TableOrderModal({
           .from("orders")
           .update({
             notes: updatedNotes,
-            subtotal: Number(subTotal.toFixed(2)),
-            tax: Number(tax.toFixed(2)),
-            total: Number(total.toFixed(2)),
+            subtotal: finalSubtotal,
+            tax: finalTax,
+            total: finalTotal,
+            pricing_currency: "USD",
+            payment_currency: orderPaymentCurrency,
+            payment_exchange_rate: effectiveRate,
+            payment_amount: paymentAmount,
             captain_confirmed_at: captainConfirmedTs,
           })
           .eq("id", existingDbOrderId);
@@ -542,9 +597,9 @@ export function TableOrderModal({
             .from("orders")
             .update({
               notes: updatedNotes,
-              subtotal: Number(subTotal.toFixed(2)),
-              tax: Number(tax.toFixed(2)),
-              total: Number(total.toFixed(2)),
+              subtotal: finalSubtotal,
+              tax: finalTax,
+              total: finalTotal,
             })
             .eq("id", existingDbOrderId);
         }
@@ -562,9 +617,13 @@ export function TableOrderModal({
       order_type: "dine_in",
       notes: updatedNotes,
       selectedAdditions: [],
-      subtotal: Number(subTotal.toFixed(2)),
-      tax: Number(tax.toFixed(2)),
-      total: Number(total.toFixed(2)),
+      subtotal: finalSubtotal,
+      tax: finalTax,
+      total: finalTotal,
+      pricing_currency: "USD",
+      payment_currency: orderPaymentCurrency,
+      payment_exchange_rate: effectiveRate,
+      payment_amount: paymentAmount,
       status: "sent_to_cashier",
       sentToKitchen: existingOrder?.sentToKitchen || false,
       kitchenCompleted: existingOrder?.kitchenCompleted || false,
@@ -861,7 +920,7 @@ export function TableOrderModal({
                       </div>
                     )}
                     <div className="absolute top-2.5 left-2.5 bg-primary text-primary-foreground text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow">
-                      {formatPrice(item.price)}
+                      {formatTablePrice(item.price)}
                     </div>
                     {item.requires_oven && (
                       <span className="absolute top-2.5 right-2.5 bg-orange-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded-md flex items-center gap-0.5 shadow">
@@ -1041,6 +1100,9 @@ export function TableOrderModal({
                                 className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-900 text-[10px] font-bold"
                               >
                                 +{typeof add === "string" ? add : add.name_ar || add.name}
+                                {Number(add?.price || 0) > 0
+                                  ? ` (+${formatTablePrice(Number(add.price))})`
+                                  : ""}
                               </span>
                             ))}
                           </div>
@@ -1068,9 +1130,14 @@ export function TableOrderModal({
                         )}
 
                         <div className="flex items-center justify-between mt-1.5">
-                          <span className="text-sm font-black text-primary tabular-nums">
-                            {formatPrice(unitPrice * c.quantity)}
-                          </span>
+                          <div className="flex flex-col">
+                            <span className="text-sm font-black text-primary tabular-nums">
+                              {formatTablePrice(unitPrice * c.quantity)}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground tabular-nums">
+                              {formatTablePrice(unitPrice)} × {c.quantity}
+                            </span>
+                          </div>
                           <div
                             className="flex items-center gap-1.5 bg-card rounded-lg border border-border p-0.5"
                             dir="ltr"
@@ -1103,11 +1170,18 @@ export function TableOrderModal({
 
             {/* Drawer Footer: Two Captain Options (Send to Kitchen / Send to Cashier) instead of single Place Order */}
             <div className="border-t border-border p-4 space-y-2.5 bg-card mt-auto shrink-0">
+              <div className="flex items-center justify-between text-[11px] font-bold text-muted-foreground">
+                <span>{lang === "ar" ? "عملة ومعامل الطلب" : "Order Currency & Rate"}</span>
+                <span className="px-2 py-0.5 rounded-md bg-primary/10 text-primary font-black tabular-nums">
+                  {orderPaymentCurrency}
+                  {orderPaymentCurrency !== "USD" ? ` (×${orderExchangeRate})` : ""}
+                </span>
+              </div>
               <div className="flex justify-between items-baseline">
                 <span className="font-bold text-sm">
                   {lang === "ar" ? "مجموع الطلبات" : t.subtotal}
                 </span>
-                <span className="text-xl font-black text-primary">{formatPrice(total)}</span>
+                <span className="text-xl font-black text-primary">{formatTablePrice(total)}</span>
               </div>
 
               <button
@@ -1181,8 +1255,72 @@ export function TableOrderModal({
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 items-start">
-              {/* Right Column: General Order Notes */}
+              {/* Right Column: Verbal Confirmation Items Summary + General Order Notes */}
               <div className="md:col-span-7 space-y-3">
+                {cart.length > 0 && (
+                  <div className="bg-muted/35 p-3 rounded-2xl border border-border space-y-2 max-h-52 overflow-y-auto">
+                    <div className="text-xs font-black text-foreground flex items-center justify-between">
+                      <span>{lang === "ar" ? "مراجعة الأصناف والتخصيصات مع العميل" : "Order Items & Customizations Review"}</span>
+                      <span className="px-2 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-black">
+                        {orderPaymentCurrency}
+                        {orderPaymentCurrency !== "USD" ? ` ×${orderExchangeRate}` : ""}
+                      </span>
+                    </div>
+                    <div className="space-y-1.5">
+                      {cart.map((c) => {
+                        const unitUsd = getLineUnitPrice(Number(c.item.price || 0), c.selectedAdditions);
+                        return (
+                          <div
+                            key={c.lineKey || c.item.id}
+                            className="bg-card border border-border/70 rounded-xl p-2 text-xs space-y-1"
+                          >
+                            <div className="flex items-center justify-between gap-2 font-black">
+                              <span>
+                                {c.quantity} × {c.item.name_ar}
+                              </span>
+                              <span className="text-primary tabular-nums">
+                                {formatTablePrice(unitUsd * c.quantity)}
+                              </span>
+                            </div>
+                            {Array.isArray(c.selectedOptions) && c.selectedOptions.length > 0 && (
+                              <div className="flex flex-wrap gap-1">
+                                {c.selectedOptions.map((opt: any, i: number) => (
+                                  <span
+                                    key={i}
+                                    className="px-1.5 py-0.5 rounded bg-sky-50 border border-sky-200 text-sky-900 text-[10px] font-bold"
+                                  >
+                                    {typeof opt === "string" ? opt : opt.label_ar || opt.label_en}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            {Array.isArray(c.selectedAdditions) && c.selectedAdditions.length > 0 && (
+                              <div className="flex flex-wrap gap-1">
+                                {c.selectedAdditions.map((add: any, i: number) => (
+                                  <span
+                                    key={i}
+                                    className="px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-900 text-[10px] font-bold"
+                                  >
+                                    +{typeof add === "string" ? add : add.name_ar || add.name}
+                                    {Number(add?.price || 0) > 0
+                                      ? ` (+${formatTablePrice(Number(add.price))})`
+                                      : ""}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            {c.notes && (
+                              <div className="text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-0.5">
+                                ملاحظة: {c.notes}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 <div className="bg-amber-50/60 p-3 rounded-2xl border border-amber-200 space-y-2">
                   <label className="text-xs font-black text-amber-950 flex items-center gap-1.5">
                     <FileText size={14} className="text-amber-600" />
@@ -1221,25 +1359,32 @@ export function TableOrderModal({
               <div className="md:col-span-5 space-y-3">
                 <div className="bg-muted/40 p-3 rounded-2xl border border-border space-y-1.5 text-xs">
                   <div className="flex justify-between text-muted-foreground">
+                    <span>{lang === "ar" ? "العملة المعتمدة" : "Order Currency"}</span>
+                    <span className="font-black text-primary tabular-nums">
+                      {orderPaymentCurrency}
+                      {orderPaymentCurrency !== "USD" ? ` (×${orderExchangeRate})` : ""}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-muted-foreground">
                     <span>{lang === "ar" ? "عدد الأصناف" : "Items"}</span>
                     <span className="font-bold text-foreground tabular-nums">{itemCount}</span>
                   </div>
                   <div className="flex justify-between text-muted-foreground">
                     <span>{lang === "ar" ? "المجموع الفرعي" : "Subtotal"}</span>
                     <span className="font-bold text-foreground tabular-nums">
-                      {formatPrice(subTotal)}
+                      {formatTablePrice(subTotal)}
                     </span>
                   </div>
                   <div className="flex justify-between text-muted-foreground">
                     <span>{lang === "ar" ? "الضريبة (14%)" : "Tax (14%)"}</span>
                     <span className="font-bold text-foreground tabular-nums">
-                      {formatPrice(tax)}
+                      {formatTablePrice(tax)}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm font-black text-foreground pt-1.5 border-t border-border">
                     <span>{lang === "ar" ? "الإجمالي الكلي" : "Grand Total"}</span>
                     <span className="text-primary text-base tabular-nums">
-                      {formatPrice(total)}
+                      {formatTablePrice(total)}
                     </span>
                   </div>
                 </div>
@@ -1314,7 +1459,7 @@ export function TableOrderModal({
         }
         isOpen={Boolean(customizingItem || editingCartLine)}
         lang={lang}
-        formatPrice={formatPrice}
+        formatPrice={formatTablePrice}
         initialQuantity={editingCartLine?.quantity || 1}
         initialOptions={editingCartLine?.selectedOptions || []}
         initialAdditions={editingCartLine?.selectedAdditions || []}

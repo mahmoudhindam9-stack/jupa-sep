@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { tableOrdersStore } from "@/shared/services/tableOrdersStore";
+import { resolveOrderCurrencySnapshot, formatOrderAmount } from "@/shared/utils/productOptions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
@@ -191,7 +192,7 @@ export function CaptainSelfOrderPanel({
         const { data, error } = await supabase
           .from("orders")
           .select(
-            "id,order_number,table_id,total,subtotal,tax,status,items,notes,order_type,created_at,pricing_currency,payment_currency,payment_exchange_rate,customer_tracking_token",
+            "id,order_number,table_id,total,subtotal,tax,status,items,notes,order_type,created_at,pricing_currency,payment_currency,payment_exchange_rate,payment_amount,customer_tracking_token",
           )
           .in("status", ["pending", "preparing", "ready", "pending_captain", "STATUS_PENDING_CAPTAIN"])
           .order("created_at", { ascending: false })
@@ -275,6 +276,7 @@ export function CaptainSelfOrderPanel({
       }
       for (const localOrd of localSelfOrders) {
         if (!byId.has(localOrd.id)) {
+          const snap = resolveOrderCurrencySnapshot(localOrd, "USD");
           byId.set(localOrd.id, {
             ...localOrd,
             sentToKitchen: Boolean(localOrd.sentToKitchen),
@@ -282,9 +284,10 @@ export function CaptainSelfOrderPanel({
               Boolean(localOrd.sentToCashier) ||
               localOrd.status === "sent_to_cashier" ||
               localOrd.status === "in_checkout",
-            pricing_currency: "EGP",
-            payment_currency: "EGP",
-            payment_exchange_rate: 1,
+            pricing_currency: snap.pricingCurrency,
+            payment_currency: snap.paymentCurrency,
+            payment_exchange_rate: snap.paymentExchangeRate,
+            payment_amount: snap.paymentAmount,
           });
         }
       }
@@ -318,6 +321,7 @@ export function CaptainSelfOrderPanel({
         const alreadyInLocal = existingLocalOrders.find((lo) => lo.id === ord.id);
 
         if (!alreadyInLocal) {
+          const snap = resolveOrderCurrencySnapshot(ord, "USD");
           tableOrdersStore.saveOrder({
             id: ord.id,
             kitchenOrderId: ord.id,
@@ -344,6 +348,10 @@ export function CaptainSelfOrderPanel({
             subtotal: Number(ord.subtotal ?? ord.total ?? 0),
             tax: Number(ord.tax ?? 0),
             total: Number(ord.total ?? 0),
+            pricing_currency: snap.pricingCurrency,
+            payment_currency: snap.paymentCurrency,
+            payment_exchange_rate: snap.paymentExchangeRate,
+            payment_amount: snap.paymentAmount,
             status: meta.sentToCashier ? "sent_to_cashier" : "draft",
             sentToKitchen: meta.sentToKitchen,
             sentToCashier: meta.sentToCashier,
@@ -356,9 +364,10 @@ export function CaptainSelfOrderPanel({
             playCaptainNotificationSound(false);
           }
 
+          const snap = resolveOrderCurrencySnapshot(ord, "USD");
           toast({
             title: `🔔 طلب عميل جديد — ${meta.locationDisplay}`,
-            description: `إجمالي الطلب: ${Number(ord.total || 0).toLocaleString()} ${ord.pricing_currency || "EGP"} (${Array.isArray(ord.items) ? ord.items.length : 0} أصناف)`,
+            description: `إجمالي الطلب: ${formatOrderAmount(Number(ord.total || 0), snap.paymentCurrency, snap.paymentExchangeRate, "ar")} (${Array.isArray(ord.items) ? ord.items.length : 0} أصناف)`,
           });
         }
       }
@@ -507,12 +516,22 @@ export function CaptainSelfOrderPanel({
       sentToCashier: alreadySentToCashier,
     });
 
+    const baseSnap = resolveOrderCurrencySnapshot(order, "USD");
+    const chosenCurrency = currency[order.id] || baseSnap.paymentCurrency;
+    const rawChosenRate = rate[order.id] ?? baseSnap.paymentExchangeRate;
+    const chosenRate = chosenCurrency === "USD" ? 1 : Number(rawChosenRate) > 0 ? Number(rawChosenRate) : 1;
+    const chosenAmount = Number((Number(order.total ?? 0) * chosenRate).toFixed(2));
+
     try {
       await supabase
         .from("orders")
         .update({
           status: "preparing",
           notes: updatedNotes,
+          pricing_currency: "USD",
+          payment_currency: chosenCurrency,
+          payment_exchange_rate: chosenRate,
+          payment_amount: chosenAmount,
         })
         .eq("id", order.id);
     } catch (e) {
@@ -532,6 +551,10 @@ export function CaptainSelfOrderPanel({
       subtotal: Number(order.subtotal ?? order.total ?? 0),
       tax: Number(order.tax ?? 0),
       total: Number(order.total ?? 0),
+      pricing_currency: "USD",
+      payment_currency: chosenCurrency,
+      payment_exchange_rate: chosenRate,
+      payment_amount: chosenAmount,
       status: alreadySentToCashier ? "sent_to_cashier" : "draft",
       sentToKitchen: true,
       sentToCashier: alreadySentToCashier,
@@ -564,11 +587,21 @@ export function CaptainSelfOrderPanel({
       sentToCashier: true,
     });
 
+    const baseSnap = resolveOrderCurrencySnapshot(order, "USD");
+    const chosenCurrency = currency[order.id] || baseSnap.paymentCurrency;
+    const rawChosenRate = rate[order.id] ?? baseSnap.paymentExchangeRate;
+    const chosenRate = chosenCurrency === "USD" ? 1 : Number(rawChosenRate) > 0 ? Number(rawChosenRate) : 1;
+    const chosenAmount = Number((Number(order.total ?? 0) * chosenRate).toFixed(2));
+
     try {
       await supabase
         .from("orders")
         .update({
           notes: updatedNotes,
+          pricing_currency: "USD",
+          payment_currency: chosenCurrency,
+          payment_exchange_rate: chosenRate,
+          payment_amount: chosenAmount,
         })
         .eq("id", order.id);
     } catch (e) {
@@ -588,6 +621,10 @@ export function CaptainSelfOrderPanel({
       subtotal: Number(order.subtotal ?? order.total ?? 0),
       tax: Number(order.tax ?? 0),
       total: Number(order.total ?? 0),
+      pricing_currency: "USD",
+      payment_currency: chosenCurrency,
+      payment_exchange_rate: chosenRate,
+      payment_amount: chosenAmount,
       status: "sent_to_cashier",
       sentToKitchen: alreadySentToKitchen,
       sentToCashier: true,
@@ -765,7 +802,10 @@ export function CaptainSelfOrderPanel({
 
           <div className="space-y-3">
             {orders.map((order) => {
-              const selected = currency[order.id] || order.payment_currency || "EGP";
+              const snap = resolveOrderCurrencySnapshot(order, "USD");
+              const selected = currency[order.id] || snap.paymentCurrency;
+              const selectedRateVal =
+                rate[order.id] ?? (selected === snap.paymentCurrency ? snap.paymentExchangeRate : 1);
               const meta = parseSelfOrderMetadata(order);
               const isSentToKitchen = Boolean(order.sentToKitchen) || meta.sentToKitchen;
               const isSentToCashier = Boolean(order.sentToCashier) || meta.sentToCashier;
@@ -803,7 +843,7 @@ export function CaptainSelfOrderPanel({
                         {isSentToCashier && (
                           <span className="inline-flex items-center gap-1 text-xs font-black text-indigo-800 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-lg">
                             <Send size={12} className="text-indigo-600" />
-                            مرسل للكاشير (بانتظار استلام النقدية) 💰
+                            مرسل للكاشير (في انتظار الدفع) 💰
                           </span>
                         )}
                         {createdTime && (
@@ -837,23 +877,23 @@ export function CaptainSelfOrderPanel({
                           }
                           className="h-7 bg-transparent text-xs font-bold focus:outline-none"
                         >
-                          <option value="EGP">EGP</option>
                           <option value="USD">USD</option>
+                          <option value="EGP">EGP</option>
+                          <option value="SSP">SSP</option>
                           <option value="SAR">SAR</option>
                           <option value="AED">AED</option>
                           <option value="EUR">EUR</option>
-                          <option value="SSP">SSP</option>
                         </select>
-                        {selected !== "EGP" && (
+                        {selected !== "USD" && (
                           <div className="flex items-center gap-1">
                             <span className="text-[10px] font-bold text-slate-500">
-                              1 {selected} =
+                              1 USD =
                             </span>
                             <Input
                               type="number"
                               min="0.0001"
                               step="0.0001"
-                              value={rate[order.id] ?? order.payment_exchange_rate ?? 1}
+                              value={selectedRateVal}
                               onChange={(e) =>
                                 setRate((s) => ({ ...s, [order.id]: e.target.value }))
                               }
@@ -958,8 +998,14 @@ export function CaptainSelfOrderPanel({
                         })}
                       </div>
                       <div className="mt-2 text-xs font-black text-slate-700 tabular-nums">
-                        الإجمالي الأساسي: {Number(order.total || 0).toLocaleString()}{" "}
-                        {order.pricing_currency || "EGP"}
+                        الإجمالي:{" "}
+                        {formatOrderAmount(
+                          Number(order.total || 0),
+                          selected,
+                          selected === "USD" ? 1 : Number(selectedRateVal) || 1,
+                          "ar",
+                        )}
+                        {selected !== "USD" ? ` ($${Number(order.total || 0).toFixed(2)})` : ""}
                       </div>
                     </div>
                   )}

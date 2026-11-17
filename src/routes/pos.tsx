@@ -70,6 +70,9 @@ import {
 import {
   buildCartLineKey,
   getLineUnitPrice,
+  getAdditionsUnitPrice,
+  resolveOrderCurrencySnapshot,
+  formatOrderAmount,
 } from "@/shared/utils/productOptions";
 import { getRawMaterialSpec } from "@/shared/data/defaultRecipes";
 import {
@@ -131,6 +134,11 @@ type CompletedOrder = {
   tax: number;
   tax_rate?: number;
   total: number;
+  pricing_currency?: string;
+  payment_currency?: string;
+  payment_exchange_rate?: number;
+  payment_amount?: number;
+  notes?: string | null;
   payment_method: PaymentMethod;
   order_type: OrderType;
   table_id: string | null;
@@ -229,55 +237,61 @@ function Index() {
   const [mobileNumber, setMobileNumber] = useState("");
   const [selectedContainer, setSelectedContainer] = useState<string>("");
 
+  const [lockedOrderCurrency, setLockedOrderCurrency] = useState<string | null>(null);
+  const [lockedOrderRate, setLockedOrderRate] = useState<number | null>(null);
+  const effectiveCurrency = lockedOrderCurrency || currency;
+
   const mainCurrencyRate = useMemo(() => {
-    if (currency === "USD") return 1;
-    return Number(erpStore.getExchangeRate(currency) || exchangeRates[currency] || 1);
-  }, [currency, exchangeRates]);
+    if (effectiveCurrency === "USD") return 1;
+    return Number(
+      erpStore.getExchangeRate(effectiveCurrency) || exchangeRates[effectiveCurrency] || 1,
+    );
+  }, [effectiveCurrency, exchangeRates]);
 
   const [checkoutExchangeRate, setCheckoutExchangeRate] = useState<number>(mainCurrencyRate);
 
   useEffect(() => {
-    setCheckoutExchangeRate(mainCurrencyRate);
-  }, [mainCurrencyRate, currency, checkoutOpen]);
+    if (lockedOrderCurrency) {
+      setCheckoutExchangeRate(
+        lockedOrderCurrency === "USD" ? 1 : Number(lockedOrderRate || mainCurrencyRate || 1),
+      );
+    } else {
+      setCheckoutExchangeRate(mainCurrencyRate);
+    }
+  }, [mainCurrencyRate, currency, checkoutOpen, lockedOrderCurrency, lockedOrderRate]);
 
   const effectiveCheckoutRate =
-    currency === "USD" ? 1 : Number(checkoutExchangeRate) > 0 ? Number(checkoutExchangeRate) : mainCurrencyRate;
+    effectiveCurrency === "USD"
+      ? 1
+      : lockedOrderCurrency && lockedOrderRate && lockedOrderRate > 0
+        ? lockedOrderRate
+        : Number(checkoutExchangeRate) > 0
+          ? Number(checkoutExchangeRate)
+          : mainCurrencyRate;
 
   const isCheckoutRateWarning = useMemo(() => {
-    if (currency === "USD" || mainCurrencyRate <= 0) return false;
+    if (effectiveCurrency === "USD" || mainCurrencyRate <= 0 || lockedOrderCurrency) return false;
     return Math.abs(effectiveCheckoutRate - mainCurrencyRate) / mainCurrencyRate > 0.1;
-  }, [currency, effectiveCheckoutRate, mainCurrencyRate]);
+  }, [effectiveCurrency, effectiveCheckoutRate, mainCurrencyRate, lockedOrderCurrency]);
 
-  const formatCheckoutPrice = (amountUsd: number) => {
-    const num = Number(amountUsd || 0);
-    const converted = currency === "USD" ? num : num * effectiveCheckoutRate;
-    const formatted = converted.toLocaleString("en-US", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
-    if (lang === "ar") {
-      if (currency === "EGP") return `${formatted} ج.م`;
-      if (currency === "USD") return `${formatted} $`;
-      if (currency === "SSP") return `${formatted} ج.ج.س`;
-    }
-    return `${formatted} ${currency}`;
-  };
+  const formatCheckoutPrice = (amountUsd: number) =>
+    formatOrderAmount(amountUsd, effectiveCurrency, effectiveCheckoutRate, lang);
 
   useEffect(() => {
     const treasury = erpStore.getState().treasuries.find((t) => t.id === selectedTreasury);
     if (treasury && treasury.containers) {
-      if (payment === "cash" && currency === "SSP") setSelectedContainer("cnt-cash-ssp");
-      else if (payment === "wallet" && currency === "SSP") setSelectedContainer("cnt-wallet-ssp");
-      else if (payment === "card" && currency === "SSP") setSelectedContainer("cnt-card-ssp");
-      else if (payment === "cash" && currency === "USD") setSelectedContainer("cnt-cash-usd");
-      else if (payment === "card" && currency === "USD") setSelectedContainer("cnt-card-usd");
-      else if (payment === "wallet" && currency === "USD") setSelectedContainer("cnt-wallet-usd");
-      else if (payment === "cash" && currency === "EGP") setSelectedContainer("cnt-cash-egp");
-      else if (payment === "card" && currency === "EGP") setSelectedContainer("cnt-card-egp");
-      else if (payment === "wallet" && currency === "EGP") setSelectedContainer("cnt-wallet-egp");
+      if (payment === "cash" && effectiveCurrency === "SSP") setSelectedContainer("cnt-cash-ssp");
+      else if (payment === "wallet" && effectiveCurrency === "SSP") setSelectedContainer("cnt-wallet-ssp");
+      else if (payment === "card" && effectiveCurrency === "SSP") setSelectedContainer("cnt-card-ssp");
+      else if (payment === "cash" && effectiveCurrency === "USD") setSelectedContainer("cnt-cash-usd");
+      else if (payment === "card" && effectiveCurrency === "USD") setSelectedContainer("cnt-card-usd");
+      else if (payment === "wallet" && effectiveCurrency === "USD") setSelectedContainer("cnt-wallet-usd");
+      else if (payment === "cash" && effectiveCurrency === "EGP") setSelectedContainer("cnt-cash-egp");
+      else if (payment === "card" && effectiveCurrency === "EGP") setSelectedContainer("cnt-card-egp");
+      else if (payment === "wallet" && effectiveCurrency === "EGP") setSelectedContainer("cnt-wallet-egp");
       else setSelectedContainer("");
     }
-  }, [payment, currency, selectedTreasury]);
+  }, [payment, effectiveCurrency, selectedTreasury]);
 
   const [orderType, setOrderType] = useState<OrderType>("dine_in");
   const { pendingCashierOrders, updateStatus, removeOrder } = useTableOrders();
@@ -296,10 +310,10 @@ function Index() {
     let active = true;
     const syncRemoteCashierOrders = async () => {
       try {
-        const { data, error } = await supabase
+        const { data, error } = await (supabase as any)
           .from("orders")
           .select(
-            "id,order_number,table_id,total,subtotal,tax,status,items,notes,order_type,created_at",
+            "id,order_number,table_id,total,subtotal,tax,pricing_currency,payment_currency,payment_exchange_rate,payment_amount,status,items,notes,order_type,created_at",
           )
           .in("status", ["pending", "preparing", "ready"])
           .ilike("notes", "%[SENT_TO_CASHIER]%")
@@ -327,16 +341,22 @@ function Index() {
               table_number: tableNum,
               table_name: tableNum !== 999 ? `طاولة ${tableNum}` : "طلب سفري / عام",
               items: (Array.isArray(row.items) ? row.items : []).map((line: any, idx: number) => {
+                const selectedOpts = line?.selectedOptions || [];
+                const selectedAdds = line?.selectedAdditions || [];
+                const addsSum = getAdditionsUnitPrice(selectedAdds);
+                const rawPrice = Number(line?.price ?? 0);
+                const inferredBasePrice =
+                  line?.base_price !== undefined
+                    ? Number(line.base_price)
+                    : Math.max(0, Number((rawPrice - addsSum).toFixed(2)));
                 const itemObj = line?.item || {
                   id: line?.menu_item_id || line?.id || `item-${idx}`,
                   name_ar: line?.name_ar || line?.name || "صنف",
-                  price: Number(line?.price ?? 0),
+                  price: inferredBasePrice,
                   category_id: line?.category_id || "all",
                   image_url: line?.image_url || null,
                   requires_oven: Boolean(line?.requires_oven),
                 };
-                const selectedOpts = line?.selectedOptions || [];
-                const selectedAdds = line?.selectedAdditions || [];
                 const lineNote = line?.notes || line?.note || "";
                 return {
                   ...line,
@@ -361,6 +381,16 @@ function Index() {
               subtotal: Number(row.subtotal ?? row.total ?? 0),
               tax: Number(row.tax ?? 0),
               total: Number(row.total ?? 0),
+              pricing_currency: (row as any).pricing_currency || "USD",
+              payment_currency: (row as any).payment_currency || undefined,
+              payment_exchange_rate:
+                (row as any).payment_exchange_rate != null
+                  ? Number((row as any).payment_exchange_rate)
+                  : undefined,
+              payment_amount:
+                (row as any).payment_amount != null
+                  ? Number((row as any).payment_amount)
+                  : undefined,
               status: "sent_to_cashier",
               sentToKitchen: notesStr.includes("[SENT_TO_KITCHEN]") || row.status === "preparing",
               sentToCashier: true,
@@ -385,15 +415,21 @@ function Index() {
 
   const handleLoadTableOrderToCart = (tableOrder: TableOrder) => {
     const normalizedItems: CartLine[] = (tableOrder.items || []).map((line: any, idx: number) => {
+      const selectedOpts = line?.selectedOptions || [];
+      const selectedAdds = line?.selectedAdditions || [];
+      const addsSum = getAdditionsUnitPrice(selectedAdds);
+      const rawPrice = Number(line?.price ?? 0);
+      const inferredBasePrice =
+        line?.base_price !== undefined
+          ? Number(line.base_price)
+          : Math.max(0, Number((rawPrice - addsSum).toFixed(2)));
       const itemObj = line?.item || {
         id: line?.menu_item_id || line?.id || `item-${idx}`,
         name_ar: line?.name_ar || line?.name || "صنف",
-        price: Number(line?.price ?? 0),
+        price: inferredBasePrice,
         category_id: line?.category_id || "all",
         image_url: line?.image_url || null,
       };
-      const selectedOpts = line?.selectedOptions || [];
-      const selectedAdds = line?.selectedAdditions || [];
       const lineNote = line?.notes || line?.note || "";
       return {
         lineKey:
@@ -425,6 +461,26 @@ function Index() {
       tableOrder.kitchenOrderId ||
       (tableOrder.id && uuidRegex.test(tableOrder.id) ? tableOrder.id : null);
 
+    const snapshot = resolveOrderCurrencySnapshot(tableOrder, currency, exchangeRates);
+    const hasExplicitOrderCurrency = Boolean(
+      tableOrder.payment_currency ||
+        (tableOrder as any).currency ||
+        String(tableOrder.notes || "").match(/العملة:\s*[A-Za-z]+/),
+    );
+    if (hasExplicitOrderCurrency) {
+      setLockedOrderCurrency(snapshot.paymentCurrency);
+      setLockedOrderRate(snapshot.paymentExchangeRate);
+      setCheckoutExchangeRate(snapshot.paymentExchangeRate);
+    } else {
+      setLockedOrderCurrency(null);
+      setLockedOrderRate(null);
+      setCheckoutExchangeRate(
+        currency === "USD"
+          ? 1
+          : Number(erpStore.getExchangeRate(currency) || exchangeRates[currency] || 1),
+      );
+    }
+
     setCart(normalizedItems);
     setSelectedTable(tableOrder.table_id || "");
     setOrderType(tableOrder.order_type || "dine_in");
@@ -441,9 +497,9 @@ function Index() {
       description:
         lang === "ar"
           ? tableOrder.sentToKitchen
-            ? `تم نقل طلب طاولة #${tableOrder.table_number} للسلة. (الطلب مرسل للمطبخ سابقاً ولن يتكرر بالمطبخ عند الدفع)`
-            : `تم نقل تفاصيل طلب طاولة #${tableOrder.table_number} إلى السلة بنجاح. يمكنك استكمال الدفع والتسديد الآن.`
-          : `Order for table #${tableOrder.table_number} loaded into cart successfully.`,
+            ? `تم نقل طلب طاولة #${tableOrder.table_number} للسلة (${snapshot.paymentCurrency}). (الطلب مرسل للمطبخ سابقاً ولن يتكرر بالمطبخ عند الدفع)`
+            : `تم نقل تفاصيل طلب طاولة #${tableOrder.table_number} إلى السلة بنجاح (${snapshot.paymentCurrency}). يمكنك استكمال الدفع والتسديد الآن.`
+          : `Order for table #${tableOrder.table_number} loaded into cart (${snapshot.paymentCurrency}).`,
     });
   };
 
@@ -642,13 +698,14 @@ function Index() {
     0,
   );
 
-  // Discount calculation
+  // Discount calculation (cart prices are in USD; fixed discounts entered in effectiveCurrency convert to USD)
   let discountAmount = 0;
   if (discountValue > 0) {
     if (discountType === "percent") {
       discountAmount = (itemsSubtotal * discountValue) / 100;
     } else {
-      discountAmount = discountValue;
+      discountAmount =
+        effectiveCurrency === "USD" ? discountValue : discountValue / effectiveCheckoutRate;
     }
   }
   discountAmount = Math.min(discountAmount, itemsSubtotal);
@@ -662,7 +719,8 @@ function Index() {
 
   let deliveryServiceAmount = 0;
   if (orderType === "delivery" && enableDeliveryFee && deliveryFeeValue > 0) {
-    deliveryServiceAmount = deliveryFeeValue;
+    deliveryServiceAmount =
+      effectiveCurrency === "USD" ? deliveryFeeValue : deliveryFeeValue / effectiveCheckoutRate;
   }
 
   const taxableAmount = subtotalAfterDiscount + dineInServiceAmount + deliveryServiceAmount;
@@ -868,31 +926,43 @@ function Index() {
       if (payment === "wallet" && mobileNumber)
         finalNotes += (finalNotes ? " | " : "") + "رقم الموبايل: " + mobileNumber;
 
-      if (currency && currency !== "EGP")
-        finalNotes += (finalNotes ? " | " : "") + "العملة: " + currency;
-      if (currency !== "USD")
-        finalNotes += (finalNotes ? " | " : "") + "المعامل: " + effectiveCheckoutRate;
+      const txCurrency = effectiveCurrency || "USD";
+      const txRate = txCurrency === "USD" ? 1 : effectiveCheckoutRate;
 
-      const rate = currency === "USD" ? 1 : effectiveCheckoutRate;
-      const finalSubtotal = currency === "EGP" ? subTotal : subTotal / rate;
-      const finalDiscount = currency === "EGP" ? discountAmount : discountAmount / rate;
-      const finalServiceFee = currency === "EGP" ? dineInServiceAmount : dineInServiceAmount / rate;
-      const finalDeliveryFee =
-        currency === "EGP" ? deliveryServiceAmount : deliveryServiceAmount / rate;
-      const finalTax = currency === "EGP" ? tax : tax / rate;
-      const finalTotal = currency === "EGP" ? total : total / rate;
+      if (txCurrency)
+        finalNotes += (finalNotes ? " | " : "") + "العملة: " + txCurrency;
+      if (txCurrency !== "USD")
+        finalNotes += (finalNotes ? " | " : "") + "المعامل: " + txRate;
+
+      const finalSubtotal = Number(subTotal.toFixed(2));
+      const finalDiscount = Number(discountAmount.toFixed(2));
+      const finalServiceFee = Number(dineInServiceAmount.toFixed(2));
+      const finalDeliveryFee = Number(deliveryServiceAmount.toFixed(2));
+      const finalTax = Number(tax.toFixed(2));
+      const finalTotal = Number(total.toFixed(2));
+
+      const paymentSubtotal = Number((finalSubtotal * txRate).toFixed(2));
+      const paymentTax = Number((finalTax * txRate).toFixed(2));
+      const paymentAmount = Number((finalTotal * txRate).toFixed(2));
 
       if (finalDiscount > 0)
-        finalNotes += (finalNotes ? " | " : "") + "الخصم: " + finalDiscount.toFixed(2);
+        finalNotes +=
+          (finalNotes ? " | " : "") + "الخصم: " + (finalDiscount * txRate).toFixed(2);
       if (finalServiceFee > 0)
-        finalNotes += (finalNotes ? " | " : "") + "خدمة صالة: " + finalServiceFee.toFixed(2);
+        finalNotes +=
+          (finalNotes ? " | " : "") + "خدمة صالة: " + (finalServiceFee * txRate).toFixed(2);
       if (finalDeliveryFee > 0)
-        finalNotes += (finalNotes ? " | " : "") + "رسوم توصيل: " + finalDeliveryFee.toFixed(2);
+        finalNotes +=
+          (finalNotes ? " | " : "") + "رسوم توصيل: " + (finalDeliveryFee * txRate).toFixed(2);
 
       const payload = {
-        subtotal: Number(finalSubtotal.toFixed(2)),
-        tax: Number(finalTax.toFixed(2)),
-        total: Number(finalTotal.toFixed(2)),
+        subtotal: finalSubtotal,
+        tax: finalTax,
+        total: finalTotal,
+        pricing_currency: "USD",
+        payment_currency: txCurrency,
+        payment_exchange_rate: txRate,
+        payment_amount: paymentAmount,
         payment_method: payment,
         order_type: orderType,
         table_id: orderType === "dine_in" ? cleanTableId(selectedTable) : null,
@@ -995,12 +1065,12 @@ function Index() {
       let data: any = null;
       try {
         if (existingSupabaseOrderId) {
-          const updateRes = await supabase
+          const updateRes = await (supabase as any)
             .from("orders")
             .update(paidPayload)
             .eq("id", existingSupabaseOrderId)
             .select(
-              "id,order_number,subtotal,tax,total,payment_method,order_type,table_id,status,items,created_at",
+              "id,order_number,subtotal,tax,total,pricing_currency,payment_currency,payment_exchange_rate,payment_amount,payment_method,order_type,table_id,status,notes,items,created_at",
             )
             .single();
 
@@ -1010,11 +1080,11 @@ function Index() {
         }
 
         if (!data) {
-          const res = await supabase
+          const res = await (supabase as any)
             .from("orders")
             .insert(paidPayload)
             .select(
-              "id,order_number,subtotal,tax,total,payment_method,order_type,table_id,status,items,created_at",
+              "id,order_number,subtotal,tax,total,pricing_currency,payment_currency,payment_exchange_rate,payment_amount,payment_method,order_type,table_id,status,notes,items,created_at",
             )
             .single();
           if (res.error) throw res.error;
@@ -1038,6 +1108,10 @@ function Index() {
         const existing = JSON.parse(localStorage.getItem("pos_local_orders") || "[]");
         const enrichedOrder = {
           ...data,
+          pricing_currency: data?.pricing_currency || "USD",
+          payment_currency: data?.payment_currency || txCurrency,
+          payment_exchange_rate: Number(data?.payment_exchange_rate || txRate),
+          payment_amount: Number(data?.payment_amount ?? paymentAmount),
           shift_id: currentShift.id,
           shift_number: currentShift.shift_number,
         };
@@ -1054,16 +1128,16 @@ function Index() {
         console.warn("Local storage save error:", lErr);
       }
 
-      // Post to ERP automated journal entries and update treasury balances (Cashier / Bank)
+      // Post to ERP automated journal entries and update treasury balances (Cashier / Bank) in exact order currency
       try {
         erpStore.postSalesInvoiceJournal(
           data.order_number,
-          Number(data.total),
-          Number(data.subtotal),
-          Number(data.tax),
+          paymentAmount,
+          paymentSubtotal,
+          paymentTax,
           data.payment_method,
           erpStore.getState().currentBranchId,
-          currency,
+          txCurrency,
           selectedTreasury,
           selectedContainer,
         );
@@ -1181,6 +1255,10 @@ function Index() {
 
       return {
         ...data,
+        pricing_currency: data?.pricing_currency || "USD",
+        payment_currency: data?.payment_currency || txCurrency,
+        payment_exchange_rate: Number(data?.payment_exchange_rate || txRate),
+        payment_amount: Number(data?.payment_amount ?? paymentAmount),
         discount: finalDiscount,
         service_fee: finalServiceFee,
         delivery_fee: finalDeliveryFee,
@@ -1198,6 +1276,8 @@ function Index() {
       setActiveTableKitchenOrderId(null);
       setActiveTableOrderId(null);
       setActiveTableNumber(null);
+      setLockedOrderCurrency(null);
+      setLockedOrderRate(null);
       setInvoice(order);
       setCart([]);
       setSelectedTable("");
@@ -1579,7 +1659,10 @@ function Index() {
                       </span>
                       <span className="text-[11px] text-amber-100">
                         {pOrder.items.length} {lang === "ar" ? "أصناف" : "items"} •{" "}
-                        {formatPrice(pOrder.total)}
+                        {(() => {
+                          const snap = resolveOrderCurrencySnapshot(pOrder, currency, exchangeRates);
+                          return `${formatOrderAmount(pOrder.total, snap.paymentCurrency, snap.paymentExchangeRate, lang)}${snap.paymentCurrency !== "USD" ? ` (${snap.paymentCurrency} • ${snap.paymentExchangeRate})` : ""}`;
+                        })()}
                       </span>
                     </div>
 
@@ -1905,40 +1988,50 @@ function Index() {
 
                 {/* Currency & Exchange Rate (المعامل) */}
                 <div className="p-2.5 rounded-xl bg-primary/5 border border-primary/20 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs font-bold">
-                      {lang === "ar" ? "عملة الطلب" : "Order Currency"}
+                  <div className="flex items-center justify-between gap-2">
+                    <Label className="text-xs font-bold flex items-center gap-1.5">
+                      <span>{lang === "ar" ? "عملة الطلب" : "Order Currency"}</span>
+                      {lockedOrderCurrency && (
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-black text-amber-700 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded-md">
+                          <Lock size={10} />
+                          {lang === "ar" ? "مثبتة من الطلب" : "Locked"}
+                        </span>
+                      )}
                     </Label>
                     <span className="px-2.5 py-0.5 rounded-lg bg-primary/10 text-primary font-black text-xs border border-primary/20">
-                      {currency === "USD"
+                      {effectiveCurrency === "USD"
                         ? "دولار أمريكي (USD $)"
-                        : currency === "SSP"
+                        : effectiveCurrency === "SSP"
                           ? "جنيه ج.س (SSP)"
-                          : "جنيه مصري (EGP)"}
+                          : effectiveCurrency === "EGP"
+                            ? "جنيه مصري (EGP)"
+                            : effectiveCurrency}
                     </span>
                   </div>
 
-                  {currency !== "USD" && (
+                  {effectiveCurrency !== "USD" && (
                     <div className="space-y-1.5 pt-1.5 border-t border-primary/15">
                       <div className="flex items-center justify-between gap-2">
                         <Label className="text-[11px] font-bold">
                           {lang === "ar"
-                            ? `المعامل ($1 = ${mainCurrencyRate} ${currency}):`
-                            : `Exchange Rate ($1 = ${mainCurrencyRate} ${currency}):`}
+                            ? `المعامل ($1 = ${effectiveCheckoutRate} ${effectiveCurrency}):`
+                            : `Exchange Rate ($1 = ${effectiveCheckoutRate} ${effectiveCurrency}):`}
                         </Label>
                         <div className="flex items-center gap-1">
                           <input
                             type="number"
                             step="any"
                             min="0.0001"
-                            value={checkoutExchangeRate}
+                            value={effectiveCheckoutRate}
+                            readOnly={Boolean(lockedOrderCurrency && lockedOrderRate)}
                             onChange={(e) =>
+                              !lockedOrderCurrency &&
                               setCheckoutExchangeRate(parseFloat(e.target.value) || 0)
                             }
-                            className="w-24 h-8 rounded-lg border border-input bg-background px-2 text-xs font-mono font-bold text-center focus:outline-none focus:border-primary"
+                            className={`w-24 h-8 rounded-lg border border-input px-2 text-xs font-mono font-bold text-center focus:outline-none focus:border-primary ${lockedOrderCurrency ? "bg-muted text-muted-foreground cursor-not-allowed" : "bg-background"}`}
                           />
                           <span className="text-[11px] font-bold text-muted-foreground">
-                            {currency}
+                            {effectiveCurrency}
                           </span>
                         </div>
                       </div>
@@ -1994,7 +2087,7 @@ function Index() {
                             onClick={() => setDiscountType("fixed")}
                             className={`px-2 py-0.5 rounded-md transition ${discountType === "fixed" ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground"}`}
                           >
-                            {currency}
+                            {effectiveCurrency}
                           </button>
                         </div>
                         <input
@@ -2062,8 +2155,8 @@ function Index() {
                             className="text-xs font-bold cursor-pointer"
                           >
                             {lang === "ar"
-                              ? `رسوم التوصيل (${currency}):`
-                              : `Delivery Fee (${currency}):`}
+                              ? `رسوم التوصيل (${effectiveCurrency}):`
+                              : `Delivery Fee (${effectiveCurrency}):`}
                           </Label>
                         </div>
                         {enableDeliveryFee && (
@@ -2099,7 +2192,7 @@ function Index() {
                       <div className="flex justify-between text-xs font-bold text-emerald-600">
                         <span>
                           {lang === "ar" ? "الخصم" : "Discount"} (
-                          {discountType === "percent" ? `${discountValue}%` : currency}):
+                          {discountType === "percent" ? `${discountValue}%` : effectiveCurrency}):
                         </span>
                         <span>-{formatCheckoutPrice(discountAmount)}</span>
                       </div>
@@ -2195,7 +2288,11 @@ function Index() {
               <div className="flex items-center gap-2">
                 {cart.length > 0 && (
                   <button
-                    onClick={() => setCart([])}
+                    onClick={() => {
+                      setCart([]);
+                      setLockedOrderCurrency(null);
+                      setLockedOrderRate(null);
+                    }}
                     className="text-xs text-destructive hover:underline px-2 py-1 font-bold"
                   >
                     {lang === "ar" ? "مسح الكل" : "Clear All"}
@@ -2344,7 +2441,7 @@ function Index() {
 
                         <div className="flex items-center justify-between mt-2">
                           <span className="text-sm font-black text-primary tabular-nums">
-                            {formatPrice(unitPrice * c.quantity)}
+                            {formatCheckoutPrice(unitPrice * c.quantity)}
                           </span>
                           <div
                             className="flex items-center gap-1.5 bg-card rounded-lg border border-border p-0.5"
@@ -2379,7 +2476,9 @@ function Index() {
                 <span className="font-bold text-sm">
                   {lang === "ar" ? "مجموع الطلبات" : t.subtotal}
                 </span>
-                <span className="text-2xl font-black text-primary">{formatPrice(subTotal)}</span>
+                <span className="text-2xl font-black text-primary">
+                  {formatCheckoutPrice(subTotal)}
+                </span>
               </div>
               {activeRestaurantShift ? (
                 <button
@@ -2394,7 +2493,7 @@ function Index() {
                     boxShadow: "var(--shadow-elegant)",
                   }}
                 >
-                  {lang === "ar" ? "إتمام الطلب" : "Place Order"} • {formatPrice(subTotal)}
+                  {lang === "ar" ? "إتمام الطلب" : "Place Order"} • {formatCheckoutPrice(subTotal)}
                 </button>
               ) : (
                 <button
@@ -2557,10 +2656,15 @@ function Modal({
 }
 
 function InvoiceView({ invoice, onClose }: { invoice: CompletedOrder; onClose: () => void }) {
-  const { lang, formatPrice, currency } = useSettings();
+  const { lang, currency: globalCurrency, exchangeRates } = useSettings();
   const { toast } = useToast();
   const t = translations[lang];
   const receiptSettings = getReceiptDesignSettings();
+  const invoiceSnapshot = resolveOrderCurrencySnapshot(invoice, globalCurrency, exchangeRates);
+  const currency = invoiceSnapshot.paymentCurrency;
+  const invoiceRate = invoiceSnapshot.paymentExchangeRate;
+  const formatInvoiceAmount = (usdAmount: number) =>
+    formatOrderAmount(usdAmount, currency, invoiceRate, lang);
 
   const rawItems = invoice?.items;
   const itemsList: any[] = Array.isArray(rawItems)
@@ -2615,8 +2719,12 @@ function InvoiceView({ invoice, onClose }: { invoice: CompletedOrder; onClose: (
           displaySubtotal - displayDiscount + displayServiceFee + displayDeliveryFee + displayTax,
         );
 
+  const toCurrencyAmt = (usdVal: number) => Number((Number(usdVal || 0) * invoiceRate).toFixed(2));
+
   const handlePrint = () => {
     const isConnected = printerService.isPrinterConnected();
+    const totalInCurr =
+      invoiceSnapshot.paymentAmount > 0 ? invoiceSnapshot.paymentAmount : toCurrencyAmt(displayTotal);
     const receiptData = {
       storeName: receiptSettings.storeName || t.title,
       storeSubtitle: receiptSettings.storeSubtitle || t.invoice_title,
@@ -2628,16 +2736,18 @@ function InvoiceView({ invoice, onClose }: { invoice: CompletedOrder; onClose: (
       items: itemsList.map((it) => ({
         name: it.name_ar || it.name,
         quantity: it.quantity,
-        price: it.price,
+        price: toCurrencyAmt(it.price),
       })),
-      subtotal: displaySubtotal,
-      discount: displayDiscount || undefined,
-      serviceFee: displayServiceFee || undefined,
-      deliveryFee: displayDeliveryFee || undefined,
-      tax: displayTax,
+      subtotal: toCurrencyAmt(displaySubtotal),
+      discount: displayDiscount ? toCurrencyAmt(displayDiscount) : undefined,
+      serviceFee: displayServiceFee ? toCurrencyAmt(displayServiceFee) : undefined,
+      deliveryFee: displayDeliveryFee ? toCurrencyAmt(displayDeliveryFee) : undefined,
+      tax: toCurrencyAmt(displayTax),
       taxRate: invoice.tax_rate ?? receiptSettings.defaultTaxRate,
-      total: displayTotal,
+      total: totalInCurr,
+      totalPaidInCurrency: totalInCurr,
       currency,
+      exchangeRate: invoiceRate,
       thankYouMessage: receiptSettings.thankYouMessage,
       footerNotes: receiptSettings.footerNotesText,
     };
@@ -2728,6 +2838,13 @@ function InvoiceView({ invoice, onClose }: { invoice: CompletedOrder; onClose: (
             {statusLabel[invoice.status] || invoice.status}
           </span>
         </div>
+        <div className="flex justify-between">
+          <span>{lang === "ar" ? "عملة السداد" : "Payment Currency"}</span>
+          <span className="font-mono font-bold text-foreground">
+            {currency}
+            {currency !== "USD" ? ` (1$ = ${invoiceRate})` : ""}
+          </span>
+        </div>
       </div>
 
       <div className="space-y-2 mb-4">
@@ -2738,7 +2855,9 @@ function InvoiceView({ invoice, onClose }: { invoice: CompletedOrder; onClose: (
                 <span className="text-muted-foreground mx-1">×{it.quantity}</span>
                 {it.name_ar || it.name}
               </span>
-              <span className="font-bold">{formatPrice(it.price * it.quantity)}</span>
+              <span className="font-bold">
+                {formatInvoiceAmount(Number(it.price || 0) * Number(it.quantity || 0))}
+              </span>
             </div>
             {Array.isArray(it.selectedOptions) && it.selectedOptions.length > 0 && (
               <div className="flex flex-wrap gap-1 mr-3">
@@ -2760,6 +2879,9 @@ function InvoiceView({ invoice, onClose }: { invoice: CompletedOrder; onClose: (
                     className="text-[10px] bg-emerald-50 border border-emerald-200 text-emerald-900 rounded px-1.5 py-0.5 font-bold"
                   >
                     +{typeof add === "string" ? add : add.name_ar || add.name}
+                    {typeof add === "object" && Number(add?.price || 0) > 0
+                      ? ` (${formatInvoiceAmount(Number(add.price))})`
+                      : ""}
                   </span>
                 ))}
               </div>
@@ -2774,25 +2896,27 @@ function InvoiceView({ invoice, onClose }: { invoice: CompletedOrder; onClose: (
       </div>
 
       <div className="border-t border-dashed border-border pt-3 space-y-2 font-mono">
-        <Row label={t.subtotal} value={formatPrice(displaySubtotal)} />
+        <Row label={t.subtotal} value={formatInvoiceAmount(displaySubtotal)} />
         {Boolean(invoice.discount && invoice.discount > 0) && (
-          <Row label="الخصم" value={`-${formatPrice(Number(invoice.discount))}`} />
+          <Row label="الخصم" value={`-${formatInvoiceAmount(Number(invoice.discount))}`} />
         )}
         {Boolean(invoice.service_fee && invoice.service_fee > 0) && (
-          <Row label="خدمة الصالة" value={`+${formatPrice(Number(invoice.service_fee))}`} />
+          <Row label="خدمة الصالة" value={`+${formatInvoiceAmount(Number(invoice.service_fee))}`} />
         )}
         {Boolean(invoice.delivery_fee && invoice.delivery_fee > 0) && (
-          <Row label="رسوم التوصيل" value={`+${formatPrice(Number(invoice.delivery_fee))}`} />
+          <Row label="رسوم التوصيل" value={`+${formatInvoiceAmount(Number(invoice.delivery_fee))}`} />
         )}
         {receiptSettings.showTaxBreakdown && (
           <Row
             label={`${t.tax} (${invoice.tax_rate ?? receiptSettings.defaultTaxRate ?? 14}%)`}
-            value={formatPrice(displayTax)}
+            value={formatInvoiceAmount(displayTax)}
           />
         )}
         <div className="flex justify-between items-baseline pt-2 border-t border-border font-sans">
           <span className="font-bold">{t.total}</span>
-          <span className="text-2xl font-black text-primary">{formatPrice(displayTotal)}</span>
+          <span className="text-2xl font-black text-primary">
+            {formatInvoiceAmount(displayTotal)}
+          </span>
         </div>
       </div>
 

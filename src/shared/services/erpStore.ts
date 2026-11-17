@@ -4457,15 +4457,31 @@ export class ERPStore {
         alreadySyncedCount++;
         continue;
       }
-      let orderCurrency = "EGP";
-      if (order.currency) orderCurrency = order.currency;
-      else if (order.notes) {
+      let orderCurrency = "";
+      if ((order as any).payment_currency) {
+        orderCurrency = String((order as any).payment_currency).trim().toUpperCase();
+      } else if (order.currency) {
+        orderCurrency = String(order.currency).trim().toUpperCase();
+      } else if (order.notes) {
         const match = String(order.notes).match(/العملة:\s*([A-Za-z]+)/);
-        if (match && match[1]) orderCurrency = match[1];
+        if (match && match[1]) orderCurrency = match[1].trim().toUpperCase();
       }
-      const totalAmt = Number(order.total || 0);
-      const subtotalAmt = Number(order.subtotal || totalAmt);
-      const taxAmt = Number(order.tax || 0);
+      if (!orderCurrency) {
+        orderCurrency = (order as any).pricing_currency
+          ? String((order as any).pricing_currency).trim().toUpperCase()
+          : "USD";
+      }
+      const rawRate = Number((order as any).payment_exchange_rate || 0);
+      const txRate = orderCurrency === "USD" ? 1 : rawRate > 0 ? rawRate : 1;
+      const rawPaymentAmt = Number((order as any).payment_amount || 0);
+      const totalAmt =
+        rawPaymentAmt > 0
+          ? rawPaymentAmt
+          : Number((Number(order.total || 0) * txRate).toFixed(2));
+      const subtotalAmt = Number(
+        (Number(order.subtotal || order.total || 0) * txRate).toFixed(2),
+      );
+      const taxAmt = Number((Number(order.tax || 0) * txRate).toFixed(2));
       const paymentMethod = order.payment_method || "cash";
       let containerId = "";
       if (targetTreasury.containers && targetTreasury.containers.length > 0) {

@@ -12,7 +12,8 @@ import {
 import { ArrowLeftRight, FileSpreadsheet, Printer, Sparkles } from "lucide-react";
 
 export function getOrderCurrency(order: any, erpTransactions?: any[]): string {
-  if (!order) return "EGP";
+  if (!order) return "USD";
+  if (order.payment_currency) return String(order.payment_currency).trim().toUpperCase();
   const txs = erpTransactions || erpStore.getState().treasuryTransactions;
   if (order.order_number && Array.isArray(txs)) {
     const invTx = txs.find(
@@ -20,13 +21,14 @@ export function getOrderCurrency(order: any, erpTransactions?: any[]): string {
         tx.related_entity_id === `INV-${order.order_number}` ||
         (typeof tx.note === "string" && tx.note.includes(`طلب رقم #${order.order_number}`)),
     );
-    if (invTx && invTx.currency) return invTx.currency;
+    if (invTx && invTx.currency) return String(invTx.currency).trim().toUpperCase();
   }
-  if (order.currency) return order.currency;
+  if (order.currency) return String(order.currency).trim().toUpperCase();
   if (order.notes) {
     const match = String(order.notes).match(/العملة:\s*([A-Za-z]+)/);
-    if (match && match[1]) return match[1];
+    if (match && match[1]) return match[1].trim().toUpperCase();
   }
+  if (order.pricing_currency) return String(order.pricing_currency).trim().toUpperCase();
   return "EGP";
 }
 
@@ -36,6 +38,9 @@ export function getOrderOriginalAmount(
   erpTransactions?: any[],
 ): number {
   if (!order || order.total === undefined || order.total === null) return 0;
+  if (Number(order.payment_amount) > 0) {
+    return Number(order.payment_amount);
+  }
   const txs = erpTransactions || erpStore.getState().treasuryTransactions;
   if (order.order_number && Array.isArray(txs)) {
     const invTx = txs.find(
@@ -46,6 +51,11 @@ export function getOrderOriginalAmount(
     if (invTx && Number(invTx.amount) > 0) {
       return Number(invTx.amount);
     }
+  }
+  const rate = Number(order.payment_exchange_rate || 0);
+  const curr = getOrderCurrency(order, txs);
+  if (curr !== "USD" && rate > 0) {
+    return Number((Number(order.total) * rate).toFixed(2));
   }
   return Number(order.total);
 }

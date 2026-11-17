@@ -311,3 +311,100 @@ export function isNonKitchenNotificationOrder(order: any): boolean {
 
   return false;
 }
+
+export function shouldOpenCustomizationOnAdd(
+  item: any,
+  categoryNameAr?: string,
+): boolean {
+  const cfg = resolveProductCustomizationConfig(item, categoryNameAr);
+  return cfg.quickOptions.length > 0 || cfg.additions.length > 0;
+}
+
+export interface OrderCurrencySnapshot {
+  pricingCurrency: string;
+  paymentCurrency: string;
+  paymentExchangeRate: number;
+  paymentAmount: number;
+}
+
+export function resolveOrderCurrencySnapshot(
+  order: any,
+  fallbackCurrency: string = "USD",
+  fallbackRates?: Record<string, number>,
+): OrderCurrencySnapshot {
+  const pricingCurrency = String(order?.pricing_currency || "USD")
+    .trim()
+    .toUpperCase();
+  const noteCurrencyMatch = String(order?.notes || "").match(/العملة:\s*([A-Za-z]+)/);
+  const rawCurrency =
+    order?.payment_currency ||
+    order?.currency ||
+    (noteCurrencyMatch ? noteCurrencyMatch[1] : null) ||
+    fallbackCurrency ||
+    "USD";
+  const paymentCurrency = String(rawCurrency).trim().toUpperCase();
+
+  const noteRateMatch = String(order?.notes || "").match(/المعامل:\s*([0-9]+(?:\.[0-9]+)?)/);
+  const explicitRate = Number(order?.payment_exchange_rate);
+  const parsedNoteRate = noteRateMatch ? Number(noteRateMatch[1]) : 0;
+  const fallbackRate = Number(fallbackRates?.[paymentCurrency]);
+
+  const paymentExchangeRate =
+    paymentCurrency === "USD"
+      ? 1
+      : Number.isFinite(explicitRate) && explicitRate > 0
+        ? explicitRate
+        : Number.isFinite(parsedNoteRate) && parsedNoteRate > 0
+          ? parsedNoteRate
+          : Number.isFinite(fallbackRate) && fallbackRate > 0
+            ? fallbackRate
+            : 1;
+
+  const baseUsdTotal = Number(order?.total ?? 0);
+  const explicitPayAmt = Number(order?.payment_amount);
+  const paymentAmount =
+    Number.isFinite(explicitPayAmt) && explicitPayAmt > 0
+      ? explicitPayAmt
+      : Number((baseUsdTotal * paymentExchangeRate).toFixed(2));
+
+  return {
+    pricingCurrency,
+    paymentCurrency,
+    paymentExchangeRate,
+    paymentAmount,
+  };
+}
+
+export function formatOrderAmount(
+  amountUsd: number,
+  paymentCurrency: string = "USD",
+  paymentExchangeRate: number = 1,
+  lang: "ar" | "en" = "ar",
+): string {
+  const curr = String(paymentCurrency || "USD")
+    .trim()
+    .toUpperCase();
+  const rate =
+    curr === "USD"
+      ? 1
+      : Number.isFinite(Number(paymentExchangeRate)) && Number(paymentExchangeRate) > 0
+        ? Number(paymentExchangeRate)
+        : 1;
+  const converted = Number(amountUsd || 0) * rate;
+  const formatted = converted.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+  if (lang === "ar") {
+    if (curr === "EGP") return `${formatted} ج.م`;
+    if (curr === "USD") return `${formatted} $`;
+    if (curr === "SSP") return `${formatted} ج.ج.س`;
+  } else {
+    if (curr === "EGP") return `${formatted} EGP`;
+    if (curr === "USD") return `$${formatted}`;
+    if (curr === "SSP") return `${formatted} SSP`;
+  }
+  return `${formatted} ${curr}`;
+}
+
