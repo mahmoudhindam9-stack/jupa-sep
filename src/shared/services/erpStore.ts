@@ -4213,13 +4213,13 @@ export class ERPStore {
   }
 
   addJournalEntry(
-    description,
-    lines,
-    reference,
+    description: any,
+    lines: any,
+    reference?: any,
     currency = "USD",
-    date,
-    customId,
-    attachments,
+    date?: any,
+    customId?: any,
+    attachments?: any,
     allowUnbalanced = false,
   ) {
     const targetDate = date || /* @__PURE__ */ new Date().toISOString().split("T")[0];
@@ -10587,6 +10587,7 @@ export class ERPStore {
     shift_number?: string;
     created_at?: string;
     items?: any[];
+    order_snapshot?: any;
   }) {
     const check = this.canVoidRestaurantOrder(payload);
     if (!check.allowed || !check.shift) {

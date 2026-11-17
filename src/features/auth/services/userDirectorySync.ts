@@ -48,6 +48,7 @@ export function removeDeletedUsername(username: string): void {
 
 export async function pushUsersDirectorySnapshotToSupabase(
   customUsers?: SystemUser[],
+  customPermissions?: Record<string, any>,
 ): Promise<boolean> {
   try {
     const deletedUsernames = readDeletedUsernames();
@@ -70,7 +71,7 @@ export async function pushUsersDirectorySnapshotToSupabase(
       return safeUser;
     });
     const state = erpStore.getState();
-    const userPermissions = state.userPermissions || {};
+    const userPermissions = customPermissions || state.userPermissions || {};
     const snapshotMetadata = {
       users: safeUsers,
       userPermissions,
@@ -127,6 +128,8 @@ export async function pullUsersDirectorySnapshotFromSupabase(): Promise<{
   users: SystemUser[];
   userPermissions: Record<string, any>;
   deletedUsernames: string[];
+  employees?: any[];
+  deletedEmployeeIds?: string[];
   updatedAt: number;
 } | null> {
   try {
@@ -206,6 +209,8 @@ export async function pullUsersDirectorySnapshotFromSupabase(): Promise<{
       }),
       userPermissions: (meta.userPermissions || {}) as Record<string, any>,
       deletedUsernames: remoteDeleted,
+      employees: Array.isArray(meta.employees) ? meta.employees : undefined,
+      deletedEmployeeIds: Array.isArray(meta.deletedEmployeeIds) ? meta.deletedEmployeeIds : undefined,
       updatedAt: Number(meta.updatedAt || (rowCreatedAt ? Date.parse(rowCreatedAt) : Date.now())),
     };
   } catch (err) {

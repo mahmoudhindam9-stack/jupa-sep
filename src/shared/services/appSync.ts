@@ -144,7 +144,7 @@ function applyIncomingErpPayload(
     const current = erpStore.getState() as any;
 
     // 1. Deleted tombstones (Users & Employees & Journal Entries)
-    const deletedUsernames = readDeletedUsernames();
+    const deletedUsernames = new Set<string>(readDeletedUsernames());
     if (Array.isArray(incoming.deletedUsernames)) {
       for (const uname of incoming.deletedUsernames) {
         if (typeof uname === "string" && uname.trim()) {
