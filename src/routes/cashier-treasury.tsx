@@ -47,6 +47,7 @@ import {
   Lock,
   Eye,
   ShieldAlert,
+  Trash2,
 } from "lucide-react";
 import {
   Dialog,
@@ -93,6 +94,12 @@ function CashierTreasuryPage() {
   const [customRefundAmount, setCustomRefundAmount] = useState<number>(0);
   const [customRefundCurrency, setCustomRefundCurrency] = useState<string>("USD");
   const [customRefundPaymentMethod, setCustomRefundPaymentMethod] = useState<string>("cash");
+
+  // Void (Delete Invoice in Open Shift) Modal State
+  const [voidOrderDialog, setVoidOrderDialog] = useState<Order | null>(null);
+  const [voidReason, setVoidReason] = useState<string>(
+    "حذف فاتورة مسجلة بالخطأ أثناء الوردية المفتوحة (Void)",
+  );
 
   const [exportDialogOpen, setExportDialogOpen] = useState<boolean>(false);
   const [transferDialogOpen, setTransferDialogOpen] = useState<boolean>(false);
@@ -520,6 +527,78 @@ function CashierTreasuryPage() {
         variant: "destructive",
         title: "تعذر إجراء المرتجع",
         description: err.message || "حدث خطأ أثناء معالجة المرتجع",
+      });
+    },
+  });
+
+  // Void (Delete Invoice/Receipt in Open Shift Only) Mutation
+  const voidOrderMutation = useMutation({
+    mutationFn: async ({ order, reason }: { order: any; reason: string }) => {
+      const orderShift = resolveOrderShift(order);
+      if (!orderShift || orderShift.status !== "open") {
+        throw new Error(
+          "لا يمكن حذف الفاتورة (Void) إلا إذا كانت الوردية التابعة لها مفتوحة حالياً. للورديات المغلقة استخدم إجراء المرتجع.",
+        );
+      }
+
+      const finalAmount = getOrderOriginalAmount(
+        order,
+        exchangeRates,
+        erpState.treasuryTransactions,
+      );
+      const finalCurrency =
+        getOrderCurrency(order, erpState.treasuryTransactions) || "USD";
+
+      erpStore.voidRestaurantOrder({
+        order_id: order.id,
+        order_number: order.order_number,
+        shift_id: orderShift.id,
+        amount: finalAmount,
+        currency: finalCurrency,
+        payment_method: order.payment_method || "cash",
+        reason: reason.trim() || "حذف فاتورة (Void) أثناء الوردية المفتوحة",
+        treasury_id: cashierTreasuryId,
+        order_snapshot: order,
+      });
+
+      try {
+        await supabase.from("orders").delete().eq("id", order.id);
+      } catch {
+        // Local fallback handled by erpStore.voidRestaurantOrder
+      }
+
+      try {
+        const rawItems = order.items;
+        const itemsList = Array.isArray(rawItems)
+          ? rawItems
+          : typeof rawItems === "string"
+            ? JSON.parse(rawItems)
+            : [];
+        await inventoryService.restoreOrderIngredients(
+          order.id,
+          itemsList,
+          Number(order.order_number || 0),
+        );
+      } catch {
+        // Ignore inventory restore error
+      }
+
+      return order;
+    },
+    onSuccess: (order) => {
+      setVoidOrderDialog(null);
+      setErpState({ ...erpStore.getState() });
+      queryClient.invalidateQueries({ queryKey: ["cashier-orders"] });
+      toast({
+        title: "تم حذف الفاتورة والإيصال (Void) ✓",
+        description: `تم حذف الإيصال #${order.order_number} من الوردية المفتوحة وعكس أثره المالي مع حفظ العملية في سجل العمليات.`,
+      });
+    },
+    onError: (err: any) => {
+      toast({
+        variant: "destructive",
+        title: "تعذر حذف الفاتورة (Void)",
+        description: err.message || "حدث خطأ أثناء حذف الفاتورة",
       });
     },
   });
@@ -1239,25 +1318,49 @@ function CashierTreasuryPage() {
                               <span>مرتجع</span>
                             </span>
                           ) : (
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              disabled={isRefunding}
-                              onClick={() => {
-                                setRefundOrderDialog(order);
-                                setCustomRefundAmount(orderAmt);
-                                setCustomRefundCurrency(orderCurr);
-                                setCustomRefundPaymentMethod(order.payment_method || "cash");
-                              }}
-                              className="bg-rose-600 hover:bg-rose-700 text-white font-black text-[11px] h-7 px-2.5 rounded-lg flex items-center gap-1 cursor-pointer"
-                            >
-                              {isRefunding ? (
-                                <Loader2 className="animate-spin" size={12} />
-                              ) : (
-                                <RotateCcw size={12} />
+                            <>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                disabled={isRefunding}
+                                onClick={() => {
+                                  setRefundOrderDialog(order);
+                                  setCustomRefundAmount(orderAmt);
+                                  setCustomRefundCurrency(orderCurr);
+                                  setCustomRefundPaymentMethod(order.payment_method || "cash");
+                                }}
+                                className="bg-rose-600 hover:bg-rose-700 text-white font-black text-[11px] h-7 px-2.5 rounded-lg flex items-center gap-1 cursor-pointer"
+                              >
+                                {isRefunding ? (
+                                  <Loader2 className="animate-spin" size={12} />
+                                ) : (
+                                  <RotateCcw size={12} />
+                                )}
+                                <span>مرتجع</span>
+                              </Button>
+
+                              {orderShift?.status === "open" && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={
+                                    voidOrderMutation.isPending &&
+                                    voidOrderMutation.variables?.order?.id === order.id
+                                  }
+                                  onClick={() => {
+                                    setVoidReason(
+                                      "حذف فاتورة مسجلة بالخطأ أثناء الوردية المفتوحة (Void)",
+                                    );
+                                    setVoidOrderDialog(order);
+                                  }}
+                                  title="حذف الفاتورة والإيصال (Void) - متاح فقط للوردية المفتوحة مع بقاء الإجراء في سجل العمليات"
+                                  className="border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 font-black text-[11px] h-7 px-2.5 rounded-lg flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Trash2 size={12} />
+                                  <span>حذف Void</span>
+                                </Button>
                               )}
-                              <span>مرتجع</span>
-                            </Button>
+                            </>
                           )}
                         </div>
                       </div>
@@ -1390,27 +1493,107 @@ function CashierTreasuryPage() {
                       </Button>
 
                       {reviewOrderDialog.status !== "cancelled" && (
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => {
-                            const ord = reviewOrderDialog;
-                            setReviewOrderDialog(null);
-                            setRefundOrderDialog(ord);
-                            setCustomRefundAmount(amt);
-                            setCustomRefundCurrency(curr);
-                            setCustomRefundPaymentMethod(ord.payment_method || "cash");
-                          }}
-                          className="rounded-xl font-bold gap-1.5 bg-rose-600 hover:bg-rose-700 cursor-pointer"
-                        >
-                          <RotateCcw size={14} />
-                          <span>إجراء مرتجع</span>
-                        </Button>
+                        <>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => {
+                              const ord = reviewOrderDialog;
+                              setReviewOrderDialog(null);
+                              setRefundOrderDialog(ord);
+                              setCustomRefundAmount(amt);
+                              setCustomRefundCurrency(curr);
+                              setCustomRefundPaymentMethod(ord.payment_method || "cash");
+                            }}
+                            className="rounded-xl font-bold gap-1.5 bg-rose-600 hover:bg-rose-700 cursor-pointer"
+                          >
+                            <RotateCcw size={14} />
+                            <span>إجراء مرتجع</span>
+                          </Button>
+
+                          {s?.status === "open" && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                const ord = reviewOrderDialog;
+                                setReviewOrderDialog(null);
+                                setVoidReason(
+                                  "حذف فاتورة مسجلة بالخطأ أثناء الوردية المفتوحة (Void)",
+                                );
+                                setVoidOrderDialog(ord);
+                              }}
+                              className="rounded-xl font-bold gap-1.5 border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 cursor-pointer"
+                            >
+                              <Trash2 size={14} />
+                              <span>حذف الفاتورة (Void)</span>
+                            </Button>
+                          )}
+                        </>
                       )}
                     </div>
                   </>
                 );
               })()}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Void (Delete Invoice in Open Shift) Confirmation Modal */}
+      <Dialog
+        open={Boolean(voidOrderDialog)}
+        onOpenChange={(open) => !open && setVoidOrderDialog(null)}
+      >
+        <DialogContent className="sm:max-w-md rounded-3xl" dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-black flex items-center gap-2 text-amber-600 dark:text-amber-400">
+              <Trash2 size={18} />
+              <span>حذف الفاتورة والإيصال (Void) #{voidOrderDialog?.order_number}</span>
+            </DialogTitle>
+          </DialogHeader>
+          {voidOrderDialog && (
+            <div className="space-y-3 text-xs">
+              <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 font-bold leading-relaxed">
+                سيتم حذف الإيصال والفاتورة نهائياً من الوردية المفتوحة الحالية وعكس أثرها من الخزينة والمخزون، مع الاحتفاظ بتسجيل عملية الحذف (Void) كاملة في سجل العمليات الرقابي.
+              </div>
+              <div className="space-y-1.5">
+                <label className="font-bold block text-foreground">سبب الحذف (Void):</label>
+                <Input
+                  value={voidReason}
+                  onChange={(e) => setVoidReason(e.target.value)}
+                  placeholder="اكتب سبب حذف الفاتورة..."
+                  className="h-9 text-xs font-bold rounded-xl"
+                />
+              </div>
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setVoidOrderDialog(null)}
+                  className="rounded-xl font-bold cursor-pointer"
+                >
+                  إلغاء
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={voidOrderMutation.isPending || !voidReason.trim()}
+                  onClick={() =>
+                    voidOrderMutation.mutate({
+                      order: voidOrderDialog,
+                      reason: voidReason,
+                    })
+                  }
+                  className="rounded-xl font-black gap-1.5 bg-amber-600 hover:bg-amber-700 text-white cursor-pointer"
+                >
+                  {voidOrderMutation.isPending ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Trash2 size={14} />
+                  )}
+                  <span>تأكيد حذف الفاتورة (Void)</span>
+                </Button>
+              </div>
             </div>
           )}
         </DialogContent>

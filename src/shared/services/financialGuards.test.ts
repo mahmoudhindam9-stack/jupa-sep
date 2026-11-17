@@ -338,5 +338,118 @@ describe("financialGuards", () => {
     expect(invAfterDelete1?.quantity).toBe(initialQty1);
     expect(invAfterDelete2?.quantity).toBe(initialQty2);
   });
+
+  it("enforces Void rules (open shift for Restaurant/Park, same day for Vouchers/Journals) while recording VOID in auditLogs", async () => {
+    const { erpStore } = await import("./erpStore");
+
+    // 1. Restaurant Shift Void
+    const openRestShift = erpStore.startNewRestaurantShift({
+      shift_number: "وردية مطعم اختبار Void",
+      cashier_name: "كاشير الاختبار",
+      currency: "USD",
+      exchange_rate: 1,
+      opening_balance: 100,
+    });
+    expect(openRestShift.status).toBe("open");
+
+    erpStore.voidRestaurantOrder({
+      order_id: "ord-void-test-1",
+      order_number: 9991,
+      shift_id: openRestShift.id,
+      amount: 50,
+      currency: "USD",
+      payment_method: "cash",
+      reason: "حذف فاتورة مطعم بالخطأ أثناء الوردية المفتوحة",
+    });
+
+    const restVoidLog = erpStore
+      .getState()
+      .auditLogs.find((l) => l.actionType === "VOID" && l.targetId === "ord-void-test-1");
+    expect(restVoidLog).toBeDefined();
+
+    // Close the restaurant shift and verify Void is rejected on closed shift
+    openRestShift.status = "closed";
+    expect(() =>
+      erpStore.voidRestaurantOrder({
+        order_id: "ord-void-test-2",
+        order_number: 9992,
+        shift_id: openRestShift.id,
+        amount: 30,
+        currency: "USD",
+        payment_method: "cash",
+        reason: "محاولة حذف في وردية مغلقة",
+      }),
+    ).toThrow();
+
+    // 2. Park Shift Void
+    const openParkShift = erpStore.startNewParkShift({
+      shift_number: "وردية حديقة اختبار Void",
+      cashier_name: "كاشير الحديقة",
+      currency: "USD",
+      exchange_rate: 1,
+      opening_balance: 50,
+    });
+    expect(openParkShift.status).toBe("open");
+
+    const { transaction: parkTx } = erpStore.processParkTicketSale({
+      items: [
+        {
+          id: "g-1",
+          name_ar: "لعبة تجريبية",
+          category: "ألعاب",
+          quantity: 2,
+          price_usd: 5,
+        } as any,
+      ],
+      currency: "USD",
+      exchange_rate: 1,
+      payment_method: "cash",
+    });
+
+    expect(
+      erpStore.getState().parkTicketTransactions.some((t) => t.id === parkTx.id),
+    ).toBe(true);
+
+    erpStore.voidParkTicketTransaction(parkTx.id, "حذف إيصال حديقة في وردية مفتوحة");
+    expect(
+      erpStore.getState().parkTicketTransactions.some((t) => t.id === parkTx.id),
+    ).toBe(false);
+
+    const parkVoidLog = erpStore
+      .getState()
+      .auditLogs.find((l) => l.actionType === "VOID" && l.targetId === parkTx.id);
+    expect(parkVoidLog).toBeDefined();
+
+    // 3. Same-day Journal Entry Void vs Previous-day block
+    const todayIso = new Date().toISOString().split("T")[0];
+    const jeToday = erpStore.addJournalEntry(
+      "قيد يومي تجريبي للحذف في نفس اليوم",
+      [
+        { account_code: "12020001", debit: 100, credit: 0 },
+        { account_code: "41010001", debit: 0, credit: 100 },
+      ],
+      "JE-VOID-TODAY",
+      "USD",
+      todayIso,
+    );
+    expect(erpStore.canVoidJournalEntry(jeToday).allowed).toBe(true);
+    const delTodayRes = erpStore.deleteSingleJournalEntry(jeToday.id, "حذف قيد في نفس اليوم");
+    expect(delTodayRes.success).toBe(true);
+
+    const jePast = erpStore.addJournalEntry(
+      "قيد من يوم سابق",
+      [
+        { account_code: "12020001", debit: 100, credit: 0 },
+        { account_code: "41010001", debit: 0, credit: 100 },
+      ],
+      "JE-VOID-PAST",
+      "USD",
+      "2026-01-15",
+    );
+    expect(erpStore.canVoidJournalEntry(jePast).allowed).toBe(false);
+    const delPastRes = erpStore.deleteSingleJournalEntry(jePast.id, "محاولة حذف قيد يوم سابق");
+    expect(delPastRes.success).toBe(false);
+  });
 });
+
 

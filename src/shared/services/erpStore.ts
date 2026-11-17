@@ -997,6 +997,13 @@ export class ERPStore {
           }
         }
       }
+      try {
+        window.dispatchEvent(
+          new CustomEvent("erp-store-saved", { detail: { updatedAt: this.state._updatedAt } }),
+        );
+      } catch {
+        // ignore event dispatch errors in headless/test environments
+      }
     }
     this.notify();
   }
@@ -1040,22 +1047,47 @@ export class ERPStore {
       "SYSTEM",
     );
   }
-  logAction(user, action, details, actionType = "SYSTEM", beforeValue, afterValue) {
-    const log = {
+  logAction(
+    user: string,
+    action: string,
+    details: string,
+    actionType = "SYSTEM",
+    arg5?: any,
+    arg6?: any,
+    arg7?: any,
+  ) {
+    const hasTargetId = arg7 !== undefined;
+    const targetId = hasTargetId
+      ? String(arg5 || "")
+      : arg5 && typeof arg5 === "object"
+        ? String(arg5.id || arg5.order_id || arg5.tx_number || arg5.order_number || "") || undefined
+        : undefined;
+    const beforeValue = hasTargetId ? arg6 : arg5;
+    const afterValue = hasTargetId ? arg7 : arg6;
+    const nowIso = new Date().toISOString();
+
+    const log: any = {
       id: "log-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4),
       user_email: user,
+      userEmail: user,
       action,
       details,
-      created_at: /* @__PURE__ */ new Date().toISOString(),
+      created_at: nowIso,
+      timestamp: nowIso,
       action_type: actionType,
+      actionType,
+      target_id: targetId,
+      targetId,
       before_value: beforeValue,
+      beforeValue,
       after_value: afterValue,
+      afterValue,
       ip_address: "127.0.0.1",
     };
     if (!Array.isArray(this.state.auditLogs)) this.state.auditLogs = [];
     this.state.auditLogs.unshift(log);
-    if (this.state.auditLogs.length > 150) {
-      this.state.auditLogs = this.state.auditLogs.slice(0, 150);
+    if (this.state.auditLogs.length > 300) {
+      this.state.auditLogs = this.state.auditLogs.slice(0, 300);
     }
     this.saveState();
   }
@@ -3716,28 +3748,94 @@ export class ERPStore {
     return { allowed: true };
   }
 
-  deleteSingleJournalEntry(entryId: string): { success: boolean; error?: string } {
+  isSameTransactionDay(dateOrIso?: string): boolean {
+    if (!dateOrIso) return true;
+    const raw = String(dateOrIso).trim();
+    if (!raw) return true;
+    const now = new Date();
+    const todayUtc = now.toISOString().split("T")[0];
+    const todayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const candidateDay = raw.includes("T") ? raw.split("T")[0] : raw.slice(0, 10);
+    if (candidateDay === todayUtc || candidateDay === todayLocal) return true;
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) {
+      const parsedLocal = `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getDate()).padStart(2, "0")}`;
+      const parsedUtc = parsed.toISOString().split("T")[0];
+      return (
+        parsedLocal === todayLocal ||
+        parsedLocal === todayUtc ||
+        parsedUtc === todayUtc ||
+        parsedUtc === todayLocal
+      );
+    }
+    return false;
+  }
+
+  canVoidJournalEntry(entryOrId: string | any): { allowed: boolean; reason?: string } {
+    const targetEntry =
+      typeof entryOrId === "string"
+        ? (this.state.journalEntries || []).find((je) => je.id === entryOrId)
+        : entryOrId;
+    if (!targetEntry) {
+      return { allowed: false, reason: "القيد غير موجود" };
+    }
+    const check = this.checkCanModifyJournalEntry(targetEntry.date);
+    if (!check.allowed) {
+      return check;
+    }
+    const entryDate =
+      targetEntry.date || (targetEntry as any).entry_date || (targetEntry as any).created_at;
+    if (!this.isSameTransactionDay(entryDate)) {
+      return {
+        allowed: false,
+        reason:
+          "لا يمكن حذف القيد المحاسبي (Void) إلا في نفس يوم الحركة فقط. للقيود السابقة يرجى إنشاء قيد عكسي.",
+      };
+    }
+    return { allowed: true };
+  }
+
+  deleteSingleJournalEntry(
+    entryId: string,
+    reason?: string,
+  ): { success: boolean; error?: string } {
     const targetEntry = this.state.journalEntries.find((je) => je.id === entryId);
     if (!targetEntry) return { success: false, error: "القيد غير موجود" };
 
-    const check = this.checkCanModifyJournalEntry(targetEntry.date);
+    const check = this.canVoidJournalEntry(targetEntry);
     if (!check.allowed) {
       return { success: false, error: check.reason };
     }
 
+    const beforeSnapshot = JSON.parse(JSON.stringify(targetEntry));
+    const voidReason = (reason && reason.trim()) || "حذف قيد محاسبي (Void) في نفس يوم الحركة";
+    const actor = this.state.currentUser || "ADMIN";
+
+    if (!Array.isArray(this.state.deletedJournalEntries)) {
+      this.state.deletedJournalEntries = [];
+    }
+    this.state.deletedJournalEntries.unshift({
+      ...beforeSnapshot,
+      deleted_at: new Date().toISOString(),
+      deleted_by: actor,
+      deleted_reason: voidReason,
+    });
+
     this.state.journalEntries = this.state.journalEntries.filter((je) => je.id !== entryId);
     if (Array.isArray(this.state.treasuryTransactions)) {
       this.state.treasuryTransactions = this.state.treasuryTransactions.filter(
-        (tx) => tx.related_entity_id !== entryId,
+        (tx) => tx.related_entity_id !== entryId && tx.related_entity_id !== targetEntry.reference,
       );
     }
     this.recalculateAccountBalances();
     this.saveState();
     this.logAction(
-      "ADMIN",
-      "حذف قيد محاسبي فردي",
-      `تم حذف القيد رقم ${targetEntry.reference || targetEntry.id} (${targetEntry.description}) وإعادة احتساب الأرصدة.`,
-      "DELETE",
+      actor,
+      "حذف قيد محاسبي (Void)",
+      `تم حذف القيد المحاسبي (Void) رقم ${targetEntry.reference || targetEntry.id} (${targetEntry.description}) في نفس يوم الحركة وإعادة احتساب الأرصدة. السبب: ${voidReason}`,
+      "VOID",
+      beforeSnapshot,
+      { voided: true, reason: voidReason, deleted_at: new Date().toISOString() },
     );
     this.notify();
     return { success: true };
@@ -6043,13 +6141,51 @@ export class ERPStore {
     return { voucher, reversalEntry };
   }
 
+  canVoidVoucher(idOrVoucher: string | any): { allowed: boolean; reason?: string } {
+    const vch =
+      typeof idOrVoucher === "string"
+        ? (this.state.vouchers || []).find((v) => v.id === idOrVoucher)
+        : idOrVoucher;
+    if (!vch || vch.deleted) {
+      return { allowed: false, reason: "السند غير موجود أو محذوف مسبقاً." };
+    }
+    const txDate = vch.date || vch.created_at;
+    if (!this.isSameTransactionDay(txDate)) {
+      return {
+        allowed: false,
+        reason:
+          "لا يمكن حذف السند (Void) إلا في نفس يوم الحركة فقط. للحركات في أيام سابقة يرجى استخدام إجراء المرتجع (عكس السند).",
+      };
+    }
+    const shiftId = (vch as any).shift_id;
+    if (shiftId) {
+      const restShift = (this.state.restaurantShifts || []).find((s) => s.id === shiftId);
+      const parkShift = (this.state.parkShifts || []).find((s) => s.id === shiftId);
+      const linkedShift = restShift || parkShift;
+      if (linkedShift && linkedShift.status !== "open") {
+        return {
+          allowed: false,
+          reason:
+            "لا يمكن حذف السند (Void) لأن الوردية المرتبطة به مغلقة. يرجى استخدام إجراء المرتجع (عكس السند).",
+        };
+      }
+    }
+    return { allowed: true };
+  }
+
   deleteVoucher(id: string, reason?: string) {
     const vch = this.state.vouchers.find((v) => v.id === id);
     if (!vch || vch.deleted) return false;
 
-    const delReason = reason || "حذف السند مع عكس الأثر المالي والمحاسبي";
+    const voidCheck = this.canVoidVoucher(vch);
+    if (!voidCheck.allowed) {
+      throw new Error(voidCheck.reason || "لا يمكن حذف السند إلا في نفس يوم الحركة.");
+    }
+
+    const delReason = reason || "حذف السند (Void) في نفس يوم الحركة مع عكس الأثر المالي والمحاسبي";
     const nowIso = new Date().toISOString();
     const currentUser = this.state.currentUser || "admin";
+    const beforeSnapshot = JSON.parse(JSON.stringify(vch));
 
     // Automatically reverse financial & inventory impact if not already reverted
     if (!vch.reverted) {
@@ -6073,7 +6209,7 @@ export class ERPStore {
       action: "deleted",
       timestamp: nowIso,
       user: currentUser,
-      summary: `حذف السند المالي #${vch.reference_number || vch.id.substring(4, 9)} مع حفظ السجل التاريخي وعكس القيود - السبب: ${delReason}`,
+      summary: `حذف السند المالي (Void) #${vch.reference_number || vch.id.substring(4, 9)} في نفس يوم الحركة مع حفظ السجل التاريخي وعكس القيود - السبب: ${delReason}`,
       previous_values: {
         amount: vch.amount,
         currency: vch.currency,
@@ -6085,10 +6221,12 @@ export class ERPStore {
 
     this.saveState();
     this.logAction(
-      "ADMIN",
-      "حذف سند مالي",
-      `تم حذف السند المالي #${vch.reference_number || vch.id} (المبلغ: ${vch.amount} ${vch.currency} - النوع: ${vch.type === "receipt" ? "قبض" : "صرف"}) مع عكس القيد المحاسبي المرتبط. السبب: ${vch.deleted_reason}`,
-      "DELETE",
+      currentUser,
+      "حذف سند مالي (Void)",
+      `تم حذف الإيصال/السند المالي (Void) #${vch.reference_number || vch.id} في نفس يوم الحركة (المبلغ: ${vch.amount} ${vch.currency} - النوع: ${vch.type === "receipt" ? "قبض" : "صرف"}) مع عكس الأثر المالي وبقاء الإجراء مسجلاً في سجل العمليات. السبب: ${vch.deleted_reason}`,
+      "VOID",
+      beforeSnapshot,
+      { voided: true, deleted_at: nowIso, reason: delReason },
     );
     this.notify();
     return true;
@@ -6492,8 +6630,14 @@ export class ERPStore {
       ...emp,
       employee_code: resolvedCode,
       salary: Number(emp.salary) || 0,
-      id: `emp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      id: emp.id || `emp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      updated_at: new Date().toISOString(),
     };
+    if (Array.isArray((this.state as any).deletedEmployeeIds)) {
+      (this.state as any).deletedEmployeeIds = (this.state as any).deletedEmployeeIds.filter(
+        (delId: string) => delId !== newEmp.id && delId !== newEmp.employee_code,
+      );
+    }
     this.state.employees.push(newEmp);
     this.saveState();
     this.logAction(
@@ -6518,7 +6662,7 @@ export class ERPStore {
       if (duplicateOther) {
         throw new Error(`الرقم الوظيفي (${requestedCode}) مستخدم بالفعل لموظف آخر.`);
       }
-      Object.assign(emp, payload);
+      Object.assign(emp, payload, { updated_at: new Date().toISOString() });
       if (requestedCode) {
         emp.employee_code = requestedCode;
       } else if (!emp.employee_code) {
@@ -6550,6 +6694,18 @@ export class ERPStore {
     const index = this.state.employees.findIndex((e) => e.id === id);
     if (index !== -1) {
       const emp = this.state.employees[index];
+      if (!Array.isArray((this.state as any).deletedEmployeeIds)) {
+        (this.state as any).deletedEmployeeIds = [];
+      }
+      if (!(this.state as any).deletedEmployeeIds.includes(emp.id)) {
+        (this.state as any).deletedEmployeeIds.push(emp.id);
+      }
+      if (
+        emp.employee_code &&
+        !(this.state as any).deletedEmployeeIds.includes(emp.employee_code)
+      ) {
+        (this.state as any).deletedEmployeeIds.push(emp.employee_code);
+      }
       this.state.employees.splice(index, 1);
       this.saveState();
       this.logAction("HR", "حذف موظف", `تم حذف الموظف: ${emp.name}`, "DELETE");
@@ -9246,6 +9402,130 @@ export class ERPStore {
     return { transaction: tx, refundJournalEntry: null };
   }
 
+  canVoidParkTicketTransaction(txOrId: string | any): {
+    allowed: boolean;
+    reason?: string;
+    shift?: ParkShift;
+  } {
+    const tx =
+      typeof txOrId === "string"
+        ? (this.state.parkTicketTransactions || []).find(
+            (t) => t.id === txOrId || t.tx_number === txOrId,
+          )
+        : txOrId;
+    if (!tx) {
+      return { allowed: false, reason: "معاملة التذاكر غير موجودة!" };
+    }
+    const shifts = this.state.parkShifts || [];
+    const shift =
+      shifts.find(
+        (s) =>
+          s.id === tx.shift_id ||
+          (tx.shift_number && s.shift_number === tx.shift_number) ||
+          (tx.shift_id && s.auto_shift_number === tx.shift_id),
+      ) ||
+      (this.state.parkActiveShift &&
+      (this.state.parkActiveShift.id === tx.shift_id ||
+        this.state.parkActiveShift.shift_number === tx.shift_number)
+        ? this.state.parkActiveShift
+        : undefined);
+
+    if (!shift || shift.status !== "open") {
+      return {
+        allowed: false,
+        reason:
+          "لا يمكن حذف الفاتورة / الإيصال (Void) إلا إذا كانت وردية الحديقة مفتوحة حالياً. للورديات المغلقة استخدم إجراء المرتجع.",
+      };
+    }
+    return { allowed: true, shift };
+  }
+
+  voidParkTicketTransaction(txId: string, voidReason?: string) {
+    const tx = (this.state.parkTicketTransactions || []).find(
+      (t) => t.id === txId || t.tx_number === txId,
+    );
+    if (!tx) throw new Error("المعاملة غير موجودة!");
+
+    const check = this.canVoidParkTicketTransaction(tx);
+    if (!check.allowed || !check.shift) {
+      throw new Error(
+        check.reason ||
+          "لا يمكن حذف الفاتورة / الإيصال (Void) إلا إذا كانت وردية الحديقة مفتوحة حالياً.",
+      );
+    }
+
+    const reason = (voidReason && voidReason.trim()) || "حذف فاتورة تذاكر (Void) أثناء الوردية المفتوحة";
+    const beforeSnapshot = JSON.parse(JSON.stringify(tx));
+    const actor = this.state.currentUser || check.shift.cashier_name || "POS";
+
+    // Reverse operational treasury balance if the ticket wasn't already refunded
+    if (tx.status !== "refunded") {
+      const opTreasuries = this.getParkOperationalTreasuries();
+      const opTreasury = opTreasuries.find((t) => t.id === tx.operational_treasury_id);
+      if (opTreasury) {
+        opTreasury.balance = Math.max(
+          0,
+          (opTreasury.balance || 0) - Number(tx.total_paid_in_currency || 0),
+        );
+      }
+    }
+
+    // Delete the receipt from active parkTicketTransactions
+    this.state.parkTicketTransactions = (this.state.parkTicketTransactions || []).filter(
+      (t) => t.id !== tx.id && t.tx_number !== tx.tx_number,
+    );
+
+    // Delete linked garden revenue record if any
+    if (Array.isArray(this.state.mallGardenRevenues)) {
+      this.state.mallGardenRevenues = this.state.mallGardenRevenues.filter(
+        (r) => r.receipt_number !== tx.tx_number,
+      );
+    }
+
+    // Remove any individual journal entry if one was attached
+    if (
+      tx.journal_entry_ref &&
+      !tx.journal_entry_ref.includes("معلقة") &&
+      Array.isArray(this.state.journalEntries)
+    ) {
+      this.state.journalEntries = this.state.journalEntries.filter(
+        (j) => j.reference !== tx.journal_entry_ref && j.id !== tx.journal_entry_ref,
+      );
+      this.recalculateAccountBalances();
+    }
+
+    this.saveState();
+
+    shiftAuditService.logShiftAction({
+      shift_id: check.shift.id,
+      shift_type: "park",
+      shift_number: check.shift.shift_number,
+      auto_shift_number: check.shift.auto_shift_number,
+      action: "DELETE",
+      status_before: "open",
+      status_after: "open",
+      cashier_name: check.shift.cashier_name,
+      cashier_id: check.shift.cashier_id,
+      performed_by: actor,
+      details: `حذف إيصال تذاكر حديقة (Void) رقم (${tx.tx_number}) بمبلغ ${tx.total_paid_in_currency} ${tx.currency} من الوردية المفتوحة (${check.shift.shift_number}) - السبب: ${reason}`,
+      metadata: {
+        voided_transaction: beforeSnapshot,
+        reason,
+      },
+    });
+
+    this.logAction(
+      actor,
+      "حذف فاتورة تذاكر حديقة (Void)",
+      `تم حذف الإيصال/الفاتورة (${tx.tx_number}) نهائياً (Void) من وردية الحديقة المفتوحة (${check.shift.shift_number}) بمبلغ ${tx.total_paid_in_currency} ${tx.currency} مع بقاء الإجراء مسجلاً في سجل العمليات. السبب: ${reason}`,
+      "VOID",
+      beforeSnapshot,
+      { voided: true, shift_id: check.shift.id, reason },
+    );
+    this.notify();
+    return { voided: true, transaction: beforeSnapshot };
+  }
+
   updateParkTicketTransactionDateTime(txId: string, newDate: string, newTime: string) {
     const txs = this.state.parkTicketTransactions || [];
     const tx = txs.find((t) => t.id === txId || t.tx_number === txId);
@@ -10213,6 +10493,265 @@ export class ERPStore {
     );
 
     return refundRecord;
+  }
+
+  recordRestaurantRefund(payload: {
+    order_id?: string;
+    order_number: number;
+    amount: number;
+    currency?: string;
+    payment_method?: string;
+    reason: string;
+    treasury_id?: string;
+    container_id?: string;
+  }) {
+    const pmRaw = String(payload.payment_method || "cash").toLowerCase();
+    const pm: "cash" | "card" | "wallet" = pmRaw.includes("card")
+      ? "card"
+      : pmRaw.includes("wallet")
+        ? "wallet"
+        : "cash";
+    return this.refundRestaurantOrder({
+      order_number: Number(payload.order_number || 0),
+      refund_amount: Number(payload.amount || 0),
+      refund_reason: payload.reason || "مرتجع مبيعات المطعم",
+      payment_method: pm,
+      currency: payload.currency || "USD",
+      treasury_id: payload.treasury_id,
+    });
+  }
+
+  canVoidRestaurantOrder(orderOrShiftId: any): {
+    allowed: boolean;
+    reason?: string;
+    shift?: RestaurantShift;
+  } {
+    const shifts = this.state.restaurantShifts || [];
+    let matchedShift: RestaurantShift | undefined;
+
+    if (typeof orderOrShiftId === "string") {
+      matchedShift = shifts.find(
+        (s) => s.id === orderOrShiftId || s.shift_number === orderOrShiftId,
+      );
+    } else if (orderOrShiftId && typeof orderOrShiftId === "object") {
+      const ord = orderOrShiftId;
+      const ordRef = ord.order_number ? `INV-${ord.order_number}` : "";
+      if (ord.shift_id) {
+        matchedShift = shifts.find((s) => s.id === ord.shift_id);
+      }
+      if (!matchedShift && ord.shift_number) {
+        matchedShift = shifts.find((s) => s.shift_number === ord.shift_number);
+      }
+      if (!matchedShift && ordRef) {
+        matchedShift = shifts.find(
+          (s) =>
+            Array.isArray(s.generated_journal_refs) && s.generated_journal_refs.includes(ordRef),
+        );
+      }
+      if (!matchedShift && ord.created_at) {
+        const orderTime = new Date(ord.created_at).getTime();
+        matchedShift = shifts.find((s) => {
+          const start = new Date(s.start_at).getTime() - 60000;
+          const end = s.end_at ? new Date(s.end_at).getTime() + 60000 : Date.now() + 3600000;
+          return orderTime >= start && orderTime <= end;
+        });
+      }
+    }
+
+    if (!matchedShift) {
+      const active = this.getActiveRestaurantShift();
+      if (active && active.status === "open") {
+        matchedShift = active;
+      }
+    }
+
+    if (!matchedShift || matchedShift.status !== "open") {
+      return {
+        allowed: false,
+        reason:
+          "لا يمكن حذف الفاتورة (Void) إلا إذا كانت وردية المطعم مفتوحة حالياً. للورديات المغلقة استخدم إجراء المرتجع.",
+      };
+    }
+
+    return { allowed: true, shift: matchedShift };
+  }
+
+  voidRestaurantOrder(payload: {
+    order_id?: string;
+    order_number: number;
+    amount?: number;
+    currency?: string;
+    payment_method?: string;
+    reason?: string;
+    shift_id?: string;
+    shift_number?: string;
+    created_at?: string;
+    items?: any[];
+  }) {
+    const check = this.canVoidRestaurantOrder(payload);
+    if (!check.allowed || !check.shift) {
+      throw new Error(
+        check.reason ||
+          "لا يمكن حذف الفاتورة (Void) إلا إذا كانت وردية المطعم مفتوحة حالياً.",
+      );
+    }
+
+    const targetShift = check.shift;
+    const orderNum = Number(payload.order_number || 0);
+    const orderRef = `INV-${orderNum}`;
+    const reason =
+      (payload.reason && payload.reason.trim()) ||
+      "حذف فاتورة مطعم (Void) أثناء الوردية المفتوحة";
+    const actor = this.state.currentUser || targetShift.cashier_name || "POS";
+
+    // Find linked sales treasury transaction to reverse exact amount and currency
+    const salesTx = (this.state.treasuryTransactions || []).find(
+      (tx) =>
+        tx.related_entity_id === orderRef ||
+        (typeof tx.note === "string" && tx.note.includes(`طلب رقم #${orderNum}`)),
+    );
+
+    const voidAmt = Number(payload.amount ?? salesTx?.amount ?? 0);
+    const voidCurrency = String(payload.currency || salesTx?.currency || targetShift.currency || "USD").toUpperCase();
+    const pmRaw = String(payload.payment_method || salesTx?.payment_method || "cash").toLowerCase();
+
+    // Remove the sales treasury transaction and adjust treasury + container balance
+    if (salesTx) {
+      const tr = (this.state.treasuries || []).find((t) => t.id === salesTx.treasury_id);
+      if (tr) {
+        const txCurr = String(salesTx.currency || tr.currency || "USD").toUpperCase();
+        const trCurr = String(tr.currency || "USD").toUpperCase();
+        const rate = txCurr !== trCurr ? this.getExchangeRate(txCurr) || 1 : 1;
+        const deltaInTrCurr =
+          txCurr === trCurr
+            ? Number(salesTx.amount || 0)
+            : trCurr === "USD"
+              ? Number(salesTx.amount || 0) / rate
+              : Number(salesTx.amount || 0) * rate;
+        tr.balance = Math.max(0, Number(tr.balance || 0) - deltaInTrCurr);
+        if ((tr as any).available_balance !== undefined) {
+          (tr as any).available_balance = tr.balance;
+        }
+        if (Array.isArray(tr.containers)) {
+          const cnt =
+            tr.containers.find((c: any) => c.id === (salesTx as any).container_id) ||
+            tr.containers.find(
+              (c: any) =>
+                c.currency === txCurr &&
+                ((pmRaw.includes("card") && c.id.includes("card")) ||
+                  (pmRaw.includes("wallet") && c.id.includes("wallet")) ||
+                  (!pmRaw.includes("card") && !pmRaw.includes("wallet") && c.id.includes("cash"))),
+            ) ||
+            tr.containers.find((c: any) => c.currency === txCurr);
+          if (cnt) {
+            cnt.balance = Math.max(0, Number(cnt.balance || 0) - Number(salesTx.amount || 0));
+          }
+        }
+      }
+      this.state.treasuryTransactions = (this.state.treasuryTransactions || []).filter(
+        (tx) =>
+          tx.id !== salesTx.id &&
+          tx.related_entity_id !== orderRef &&
+          !(typeof tx.note === "string" && tx.note.includes(`طلب رقم #${orderNum}`)),
+      );
+    }
+
+    // Update open restaurant shift totals
+    if (Array.isArray(targetShift.generated_journal_refs)) {
+      targetShift.generated_journal_refs = targetShift.generated_journal_refs.filter(
+        (r) => r !== orderRef,
+      );
+    }
+    targetShift.orders_count = Math.max(0, Number(targetShift.orders_count || 1) - 1);
+    targetShift.total_sales = Math.max(0, Number(targetShift.total_sales || 0) - voidAmt);
+    targetShift.net_total = Math.max(
+      0,
+      Number(targetShift.total_sales || 0) - Number(targetShift.total_refunds || 0),
+    );
+    if (targetShift.payment_breakdown) {
+      if (pmRaw.includes("card")) {
+        targetShift.payment_breakdown.card = Math.max(
+          0,
+          Number(targetShift.payment_breakdown.card || 0) - voidAmt,
+        );
+      } else if (pmRaw.includes("wallet")) {
+        targetShift.payment_breakdown.wallet = Math.max(
+          0,
+          Number(targetShift.payment_breakdown.wallet || 0) - voidAmt,
+        );
+      } else {
+        targetShift.payment_breakdown.cash = Math.max(
+          0,
+          Number(targetShift.payment_breakdown.cash || 0) - voidAmt,
+        );
+      }
+    }
+
+    // Remove from sales_invoices if present
+    if (Array.isArray((this.state as any).sales_invoices)) {
+      (this.state as any).sales_invoices = (this.state as any).sales_invoices.filter(
+        (inv: any) => inv?.order_number !== orderNum && inv?.id !== payload.order_id,
+      );
+    }
+
+    // Remove the receipt from pos_local_orders in localStorage
+    let removedLocalOrder: any = null;
+    if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
+      try {
+        const localOrders = JSON.parse(localStorage.getItem("pos_local_orders") || "[]");
+        if (Array.isArray(localOrders)) {
+          removedLocalOrder =
+            localOrders.find(
+              (o: any) =>
+                (payload.order_id && o.id === payload.order_id) ||
+                Number(o.order_number) === orderNum,
+            ) || null;
+          const remaining = localOrders.filter(
+            (o: any) =>
+              !(
+                (payload.order_id && o.id === payload.order_id) ||
+                Number(o.order_number) === orderNum
+              ),
+          );
+          localStorage.setItem("pos_local_orders", JSON.stringify(remaining));
+        }
+      } catch {
+        // ignore storage errors
+      }
+    }
+
+    this.recalculateAccountBalances();
+    this.saveState();
+
+    shiftAuditService.logShiftAction({
+      shift_id: targetShift.id,
+      shift_type: "restaurant",
+      shift_number: targetShift.shift_number,
+      auto_shift_number: targetShift.auto_shift_number,
+      action: "DELETE",
+      status_before: "open",
+      status_after: "open",
+      cashier_name: targetShift.cashier_name,
+      cashier_id: targetShift.cashier_id,
+      performed_by: actor,
+      details: `حذف فاتورة مطعم (Void) رقم #${orderNum} بمبلغ ${voidAmt} ${voidCurrency} من الوردية المفتوحة (${targetShift.shift_number}) - السبب: ${reason}`,
+      metadata: {
+        voided_order: removedLocalOrder || payload,
+        reason,
+      },
+    });
+
+    this.logAction(
+      actor,
+      "حذف فاتورة مطعم (Void)",
+      `تم حذف الفاتورة والإيصال رقم #${orderNum} نهائياً (Void) من وردية المطعم المفتوحة (${targetShift.shift_number}) بمبلغ ${voidAmt} ${voidCurrency} مع بقاء الإجراء مسجلاً في سجل العمليات. السبب: ${reason}`,
+      "VOID",
+      removedLocalOrder || payload,
+      { voided: true, shift_id: targetShift.id, reason },
+    );
+
+    this.notify();
+    return { voided: true, order_number: orderNum, shift_id: targetShift.id };
   }
 }
 export const erpStore = new ERPStore();

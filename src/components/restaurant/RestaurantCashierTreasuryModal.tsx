@@ -1,11 +1,13 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Wallet, DollarSign, Coins, Lock, Printer, X } from "lucide-react";
+import { Wallet, DollarSign, Coins, Lock, Printer, X, Trash2 } from "lucide-react";
 import { erpStore, RestaurantShift } from "@/shared/services/erpStore";
 import { canCurrentUserCloseShift } from "@/shared/services/userAuthorization";
 import { useSettings } from "@/hooks/use-settings";
+import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 import { printRawHtml } from "@/shared/utils/printAccountingDocument";
 import {
   getOrderCurrency,
@@ -26,12 +28,59 @@ export function RestaurantCashierTreasuryModal({
   orders = [],
 }: RestaurantCashierTreasuryModalProps) {
   const { exchangeRates } = useSettings();
+  const { toast } = useToast();
+  const [refreshTick, setRefreshTick] = useState(0);
   const erpState = erpStore.getState();
   const activeShift: RestaurantShift | null =
     erpStore.getActiveRestaurantShift() ||
     (erpState.restaurantShifts || []).find((s) => s.status === "open") ||
     null;
   const canCloseShift = canCurrentUserCloseShift();
+
+  const handleVoidActiveShiftOrder = async (order: any) => {
+    if (!activeShift || activeShift.status !== "open") {
+      toast({
+        variant: "destructive",
+        title: "تعذر حذف الفاتورة (Void)",
+        description: "لا يمكن حذف الفاتورة إلا والوردية مفتوحة.",
+      });
+      return;
+    }
+    try {
+      const orderCurr = getOrderCurrency(order, erpState.treasuryTransactions) || "USD";
+      const orderAmt = getOrderOriginalAmount(
+        order,
+        exchangeRates,
+        erpState.treasuryTransactions,
+      );
+      erpStore.voidRestaurantOrder({
+        order_id: order.id,
+        order_number: order.order_number,
+        shift_id: activeShift.id,
+        amount: orderAmt,
+        currency: orderCurr,
+        payment_method: order.payment_method || "cash",
+        reason: "حذف الفاتورة والإيصال أثناء الوردية المفتوحة (Void)",
+        order_snapshot: order,
+      });
+      try {
+        await supabase.from("orders").delete().eq("id", order.id);
+      } catch {
+        // local handled
+      }
+      setRefreshTick((t) => t + 1);
+      toast({
+        title: "تم حذف الفاتورة (Void) ✓",
+        description: `تم حذف الإيصال #${order.order_number || order.id} من الوردية المفتوحة مع تسجيل العملية في سجل العمليات.`,
+      });
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: "تعذر حذف الفاتورة (Void)",
+        description: err.message || "حدث خطأ أثناء حذف الفاتورة",
+      });
+    }
+  };
 
   const shiftOrders = useMemo(() => {
     const allOrders =
@@ -55,7 +104,7 @@ export function RestaurantCashierTreasuryModal({
       const orderTime = new Date(o.created_at || Date.now()).getTime();
       return orderTime >= shiftStart - 60000;
     });
-  }, [orders, activeShift, isOpen]);
+  }, [orders, activeShift, isOpen, refreshTick]);
 
   const totals = useMemo(() => {
     let usd = 0;
@@ -325,6 +374,18 @@ export function RestaurantCashierTreasuryModal({
                                 })
                               : ""}
                           </span>
+                          {!isCancelled && activeShift?.status === "open" && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => void handleVoidActiveShiftOrder(order)}
+                              className="h-6 px-2 rounded-lg text-[10px] font-black gap-1 border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 cursor-pointer"
+                              title="حذف الفاتورة (Void) مع بقاء العملية مسجلة في سجل العمليات"
+                            >
+                              <Trash2 size={11} />
+                              <span>حذف Void</span>
+                            </Button>
+                          )}
                         </div>
                       </div>
                     );

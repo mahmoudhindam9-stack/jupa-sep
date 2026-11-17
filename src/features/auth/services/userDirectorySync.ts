@@ -8,7 +8,7 @@ const DELETED_USERS_KEY = "restocash_deleted_usernames_v1";
 const CHANGE_EVENT = "restocash-user-sync-updated";
 export const GLOBAL_USERS_SYNC_SHIFT_ID = "GLOBAL_USERS_DIRECTORY_SYNC_V1";
 
-function readDeletedUsernames(): string[] {
+export function readDeletedUsernames(): string[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = window.localStorage.getItem(DELETED_USERS_KEY);
@@ -21,7 +21,7 @@ function readDeletedUsernames(): string[] {
   }
 }
 
-function addDeletedUsername(username: string): void {
+export function addDeletedUsername(username: string): void {
   if (typeof window === "undefined") return;
   const norm = String(username || "").trim().toLowerCase();
   if (!norm) return;
@@ -34,7 +34,7 @@ function addDeletedUsername(username: string): void {
   }
 }
 
-function removeDeletedUsername(username: string): void {
+export function removeDeletedUsername(username: string): void {
   if (typeof window === "undefined") return;
   const norm = String(username || "").trim().toLowerCase();
   if (!norm) return;
@@ -71,28 +71,49 @@ export async function pushUsersDirectorySnapshotToSupabase(
     });
     const state = erpStore.getState();
     const userPermissions = state.userPermissions || {};
+    const snapshotMetadata = {
+      users: safeUsers,
+      userPermissions,
+      deletedUsernames,
+      employees: state.employees || [],
+      deletedEmployeeIds: (state as any).deletedEmployeeIds || [],
+      updatedAt: Date.now(),
+    };
 
-    const { error } = await supabase.from("shift_audit_logs").insert({
-      shift_id: GLOBAL_USERS_SYNC_SHIFT_ID,
-      shift_type: "restaurant",
-      shift_number: "USERS_DIRECTORY_SYNC",
-      auto_shift_number: `USR-SYNC-${Date.now()}`,
-      action: "UPDATE",
-      status_before: "active",
-      status_after: "synced",
-      cashier_name: "UsersDirectorySync",
-      performed_by: state.currentUser || "admin",
-      details: `مزامنة تلقائية لدليل المستخدمين والصلاحيات (${currentUsers.length} مستخدم)`,
-      metadata: {
-        users: safeUsers,
-        userPermissions,
-        deletedUsernames,
-        updatedAt: Date.now(),
-      },
-    } as any);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("restocash-users-directory-broadcast", { detail: snapshotMetadata }),
+      );
+    }
 
-    if (error) {
-      console.warn("[UserSync] Could not push users snapshot to Supabase:", error);
+    const [auditRes, stateRes] = await Promise.allSettled([
+      supabase.from("shift_audit_logs").insert({
+        shift_id: GLOBAL_USERS_SYNC_SHIFT_ID,
+        shift_type: "restaurant",
+        shift_number: "USERS_DIRECTORY_SYNC",
+        auto_shift_number: `USR-SYNC-${Date.now()}`,
+        action: "UPDATE",
+        status_before: "active",
+        status_after: "synced",
+        cashier_name: "UsersDirectorySync",
+        performed_by: state.currentUser || "admin",
+        details: `مزامنة تلقائية لدليل المستخدمين والصلاحيات (${currentUsers.length} مستخدم)`,
+        metadata: snapshotMetadata,
+      } as any),
+      (supabase as any).from("erp_store_state").upsert(
+        {
+          id: "users_directory_v1",
+          state: snapshotMetadata,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "id" },
+      ),
+    ]);
+
+    const auditOk = auditRes.status === "fulfilled" && !auditRes.value.error;
+    const stateOk = stateRes.status === "fulfilled" && !stateRes.value.error;
+
+    if (!auditOk && !stateOk) {
       return false;
     }
     return true;
@@ -109,19 +130,51 @@ export async function pullUsersDirectorySnapshotFromSupabase(): Promise<{
   updatedAt: number;
 } | null> {
   try {
-    const { data, error } = await supabase
-      .from("shift_audit_logs")
-      .select("id, metadata, created_at")
-      .eq("shift_id", GLOBAL_USERS_SYNC_SHIFT_ID)
-      .order("created_at", { ascending: false })
-      .limit(1);
+    const [auditRes, stateRes] = await Promise.allSettled([
+      supabase
+        .from("shift_audit_logs")
+        .select("id, metadata, created_at")
+        .eq("shift_id", GLOBAL_USERS_SYNC_SHIFT_ID)
+        .order("created_at", { ascending: false })
+        .limit(1),
+      (supabase as any)
+        .from("erp_store_state")
+        .select("id, state, updated_at")
+        .eq("id", "users_directory_v1")
+        .maybeSingle(),
+    ]);
 
-    if (error || !Array.isArray(data) || data.length === 0) {
-      return null;
+    let meta: any = null;
+    let rowCreatedAt: string | undefined;
+
+    if (
+      stateRes.status === "fulfilled" &&
+      !stateRes.value.error &&
+      stateRes.value.data?.state &&
+      Array.isArray(stateRes.value.data.state.users)
+    ) {
+      meta = stateRes.value.data.state;
+      rowCreatedAt = stateRes.value.data.updated_at;
     }
 
-    const row = data[0] as any;
-    const meta = row?.metadata;
+    if (
+      auditRes.status === "fulfilled" &&
+      !auditRes.value.error &&
+      Array.isArray(auditRes.value.data) &&
+      auditRes.value.data.length > 0
+    ) {
+      const auditRow = auditRes.value.data[0] as any;
+      const auditMeta = auditRow?.metadata;
+      if (auditMeta && Array.isArray(auditMeta.users)) {
+        const auditTs = Number(auditMeta.updatedAt || Date.parse(auditRow.created_at) || 0);
+        const stateTs = Number(meta?.updatedAt || (rowCreatedAt ? Date.parse(rowCreatedAt) : 0));
+        if (!meta || auditTs >= stateTs) {
+          meta = auditMeta;
+          rowCreatedAt = auditRow.created_at;
+        }
+      }
+    }
+
     if (!meta || !Array.isArray(meta.users)) {
       return null;
     }
@@ -153,7 +206,7 @@ export async function pullUsersDirectorySnapshotFromSupabase(): Promise<{
       }),
       userPermissions: (meta.userPermissions || {}) as Record<string, any>,
       deletedUsernames: remoteDeleted,
-      updatedAt: Number(meta.updatedAt || Date.parse(row.created_at) || Date.now()),
+      updatedAt: Number(meta.updatedAt || (rowCreatedAt ? Date.parse(rowCreatedAt) : Date.now())),
     };
   } catch (err) {
     console.warn("[UserSync] Exception pulling users snapshot from Supabase:", err);
@@ -584,10 +637,7 @@ async function sendOperation(
     if (hasSession && !String(operation.userId).startsWith("u-")) {
       await authService.deleteUser(operation.userId).catch(() => undefined);
     }
-    const pushed = await pushUsersDirectorySnapshotToSupabase();
-    if (!pushed && !hasSession) {
-      throw new Error("تعذر الاتصال بقاعدة البيانات لحفظ الحذف؛ سيتم إعادة المحاولة تلقائياً.");
-    }
+    await pushUsersDirectorySnapshotToSupabase().catch(() => false);
     return { sentUpdatedAt: operation.updatedAt };
   }
 

@@ -32,6 +32,7 @@ import {
   Eye,
   RotateCcw,
   XCircle,
+  Trash2,
 } from "lucide-react";
 
 interface ParkCashierTreasuryManagerViewProps {
@@ -72,6 +73,29 @@ export function ParkCashierTreasuryManagerView({
   const [transferAmount, setTransferAmount] = useState<number>(0);
   const [transferCurrency, setTransferCurrency] = useState<string>("USD");
   const [transferPaymentMethod, setTransferPaymentMethod] = useState<string>("cash");
+
+  // Void (Delete Ticket/Receipt in Open Shift) Modal state
+  const [voidingTx, setVoidingTx] = useState<any | null>(null);
+  const [voidReason, setVoidReason] = useState<string>(
+    "حذف تذكرة/إيصال بالخطأ أثناء الوردية المفتوحة (Void)",
+  );
+
+  const handleConfirmVoidTx = () => {
+    if (!voidingTx) return;
+    if (!voidReason.trim()) {
+      toast.error("يرجى كتابة سبب حذف الفاتورة (Void)");
+      return;
+    }
+    try {
+      erpStore.voidParkTicketTransaction(voidingTx.id, voidReason.trim());
+      toast.success(
+        `تم حذف الفاتورة والإيصال #${voidingTx.tx_number || voidingTx.id} (Void) من الوردية المفتوحة مع حفظ الإجراء في سجل العمليات`,
+      );
+      setVoidingTx(null);
+    } catch (err: any) {
+      toast.error(err.message || "تعذر حذف الفاتورة (Void)");
+    }
+  };
 
   const applyQuickDate = (preset: string) => {
     setActivePreset(preset);
@@ -836,15 +860,35 @@ export function ParkCashierTreasuryManagerView({
                             <span>مرتجع</span>
                           </span>
                         ) : (
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => onRefundTransaction(tx)}
-                            className="bg-rose-600 hover:bg-rose-700 text-white font-black text-[11px] h-7 px-2.5 rounded-lg flex items-center gap-1 cursor-pointer"
-                          >
-                            <RotateCcw size={12} />
-                            <span>مرتجع</span>
-                          </Button>
+                          <>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => onRefundTransaction(tx)}
+                              className="bg-rose-600 hover:bg-rose-700 text-white font-black text-[11px] h-7 px-2.5 rounded-lg flex items-center gap-1 cursor-pointer"
+                            >
+                              <RotateCcw size={12} />
+                              <span>مرتجع</span>
+                            </Button>
+
+                            {txShift?.status === "open" && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setVoidReason(
+                                    "حذف تذكرة/إيصال بالخطأ أثناء الوردية المفتوحة (Void)",
+                                  );
+                                  setVoidingTx(tx);
+                                }}
+                                title="حذف الفاتورة والإيصال (Void) - متاح فقط للوردية المفتوحة مع بقاء الإجراء مسجلاً في سجل العمليات"
+                                className="border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 font-black text-[11px] h-7 px-2.5 rounded-lg flex items-center gap-1 cursor-pointer"
+                              >
+                                <Trash2 size={12} />
+                                <span>حذف Void</span>
+                              </Button>
+                            )}
+                          </>
                         )}
                       </div>
                     </div>
@@ -926,6 +970,55 @@ export function ParkCashierTreasuryManagerView({
               إلغاء
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Void (Delete Ticket/Receipt in Open Shift) Confirmation Modal */}
+      <Dialog open={Boolean(voidingTx)} onOpenChange={(open) => !open && setVoidingTx(null)}>
+        <DialogContent className="sm:max-w-md rounded-3xl" dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-black flex items-center gap-2 text-amber-600">
+              <Trash2 size={18} />
+              <span>
+                حذف الفاتورة والإيصال (Void) #{voidingTx?.tx_number || voidingTx?.transaction_number}
+              </span>
+            </DialogTitle>
+          </DialogHeader>
+          {voidingTx && (
+            <div className="space-y-3 text-xs">
+              <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 font-bold leading-relaxed">
+                سيتم حذف الإيصال والفاتورة نهائياً من وردية الحديقة المفتوحة وعكس أثرها من الخزينة، مع الاحتفاظ بتسجيل عملية الحذف (Void) كاملة في سجل العمليات الرقابي.
+              </div>
+              <div className="space-y-1.5">
+                <label className="font-bold block text-foreground">سبب الحذف (Void):</label>
+                <Input
+                  value={voidReason}
+                  onChange={(e) => setVoidReason(e.target.value)}
+                  placeholder="اكتب سبب حذف الإيصال..."
+                  className="h-9 text-xs font-bold rounded-xl"
+                />
+              </div>
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setVoidingTx(null)}
+                  className="rounded-xl font-bold cursor-pointer"
+                >
+                  إلغاء
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={!voidReason.trim()}
+                  onClick={handleConfirmVoidTx}
+                  className="rounded-xl font-black gap-1.5 bg-amber-600 hover:bg-amber-700 text-white cursor-pointer"
+                >
+                  <Trash2 size={14} />
+                  <span>تأكيد حذف الفاتورة (Void)</span>
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

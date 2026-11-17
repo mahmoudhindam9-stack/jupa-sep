@@ -27,6 +27,7 @@ import {
   validateManagedUserForm,
 } from "@/features/auth/services/managedUserValidation";
 import { queueUserChange } from "@/features/auth/services/userDirectorySync";
+import { syncNowWithCloud } from "@/shared/services/appSync";
 import { printRawHtml } from "@/shared/utils/printAccountingDocument";
 import { UsersPage } from "@/components/admin/UsersPageView";
 import { sendPrivateSalarySlipMessages } from "@/components/Chatbot";
@@ -99,12 +100,21 @@ function HRPage() {
     formatTreasuryCurrency,
   } = useSettings();
 
-  // ERP Store subscription
-  const [erpState, setErpState] = useState(erpStore.getState());
+  // ERP Store subscription + Real-time Cloud Sync listener
+  const [erpState, setErpState] = useState(() => ({ ...erpStore.getState() }));
   useEffect(() => {
-    return erpStore.subscribe(() => {
-      setErpState(erpStore.getState());
-    });
+    const syncFromStore = () => {
+      setErpState({ ...erpStore.getState() });
+    };
+    const unsub = erpStore.subscribe(syncFromStore);
+    window.addEventListener("erp-state-updated", syncFromStore);
+    window.addEventListener("restocash-user-sync-updated", syncFromStore);
+    void syncNowWithCloud();
+    return () => {
+      unsub();
+      window.removeEventListener("erp-state-updated", syncFromStore);
+      window.removeEventListener("restocash-user-sync-updated", syncFromStore);
+    };
   }, []);
 
   const employees = useMemo(() => erpState.employees || [], [erpState.employees]);
@@ -879,7 +889,8 @@ function HRPage() {
         resolvedEmail,
       );
 
-      setErpState(erpStore.getState());
+      setErpState({ ...erpStore.getState() });
+      void syncNowWithCloud();
       toast({
         title: "تم حفظ الموظف بنجاح ✓",
         description: `تم تسجيل الموظف (${createdEmp.name}) برقم وظيفي (#${createdEmp.employee_code})${
@@ -963,7 +974,8 @@ function HRPage() {
         resolvedEmail,
       );
 
-      setErpState(erpStore.getState());
+      setErpState({ ...erpStore.getState() });
+      void syncNowWithCloud();
       toast({
         title: "تم التحديث بنجاح ✓",
         description: `تم حفظ تعديلات الموظف: ${empForm.name}${
@@ -991,9 +1003,11 @@ function HRPage() {
     if (!empToDelete) return;
     try {
       erpStore.deleteEmployee(empToDelete.id);
+      setErpState({ ...erpStore.getState() });
+      void syncNowWithCloud();
       toast({
         title: "تم الحذف بنجاح",
-        description: `تم إزالة الموظف ${empToDelete.name} من النظام.`,
+        description: `تم إزالة الموظف ${empToDelete.name} من النظام ومزامنة الحذف لحظياً.`,
       });
       setIsDeleteEmpOpen(false);
       setEmpToDelete(null);

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Landmark, Printer, RotateCcw, Lock, Eye } from "lucide-react";
+import { Landmark, Printer, RotateCcw, Lock, Eye, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { erpStore } from "@/shared/services/erpStore";
 import { canCurrentUserCloseShift } from "@/shared/services/userAuthorization";
@@ -26,6 +26,9 @@ interface Props {
 export function ParkCashierTreasuryModal({ isOpen, onClose, onOpenCloseShift }: Props) {
   const [refundTxId, setRefundTxId] = useState<string | null>(null);
   const [refundReason, setRefundReason] = useState("");
+  const [voidTxId, setVoidTxId] = useState<string | null>(null);
+  const [voidReason, setVoidReason] = useState("حذف تذكرة/إيصال بالخطأ أثناء الوردية المفتوحة (Void)");
+  const [, setRefreshTick] = useState(0);
   const state = erpStore.getState();
   const activeShift = erpStore.getActiveParkShift();
   const canCloseShift = canCurrentUserCloseShift();
@@ -121,8 +124,30 @@ export function ParkCashierTreasuryModal({ isOpen, onClose, onOpenCloseShift }: 
       toast.success("تم إرجاع التذكرة وتسوية الخزينة بنجاح");
       setRefundTxId(null);
       setRefundReason("");
+      setRefreshTick((t) => t + 1);
     } catch (e: any) {
       toast.error(e?.message || "تعذر تنفيذ الإرجاع");
+    }
+  };
+
+  const handleVoid = (txId: string) => {
+    setVoidTxId(txId);
+    setVoidReason("حذف تذكرة/إيصال بالخطأ أثناء الوردية المفتوحة (Void)");
+  };
+
+  const confirmVoid = () => {
+    if (!voidTxId || !voidReason.trim()) {
+      toast.error("يرجى كتابة سبب الحذف (Void)");
+      return;
+    }
+    try {
+      erpStore.voidParkTicketTransaction(voidTxId, voidReason.trim());
+      toast.success("تم حذف الإيصال/الفاتورة (Void) من الوردية المفتوحة مع حفظ العملية في سجل العمليات");
+      setVoidTxId(null);
+      setVoidReason("");
+      setRefreshTick((t) => t + 1);
+    } catch (e: any) {
+      toast.error(e?.message || "تعذر حذف الفاتورة (Void)");
     }
   };
 
@@ -236,14 +261,27 @@ export function ParkCashierTreasuryModal({ isOpen, onClose, onOpenCloseShift }: 
                         <td className="p-3 text-center">
                           <div className="flex justify-center gap-1">
                             {tx.status !== "refunded" && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleRefund(tx.id)}
-                                className="h-7 px-2 text-rose-600 hover:bg-rose-50 rounded-lg"
-                              >
-                                <RotateCcw size={13} className="mr-1" /> إرجاع
-                              </Button>
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleRefund(tx.id)}
+                                  className="h-7 px-2 text-rose-600 hover:bg-rose-50 rounded-lg"
+                                >
+                                  <RotateCcw size={13} className="mr-1" /> إرجاع
+                                </Button>
+                                {activeShift?.status === "open" && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleVoid(tx.id)}
+                                    className="h-7 px-2 border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 font-bold rounded-lg"
+                                    title="حذف الفاتورة والإيصال (Void) مع بقاء الإجراء مسجلاً في سجل العمليات"
+                                  >
+                                    <Trash2 size={13} className="mr-1" /> حذف Void
+                                  </Button>
+                                )}
+                              </>
                             )}
                           </div>
                         </td>
@@ -287,6 +325,41 @@ export function ParkCashierTreasuryModal({ isOpen, onClose, onOpenCloseShift }: 
             </Button>
             <Button variant="destructive" onClick={confirmRefund}>
               تأكيد الإرجاع
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(voidTxId)} onOpenChange={(open) => !open && setVoidTxId(null)}>
+        <DialogContent className="sm:max-w-md rounded-2xl" dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-black flex items-center gap-2 text-amber-600">
+              <Trash2 size={16} />
+              <span>تأكيد حذف الفاتورة / الإيصال (Void)</span>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2.5 py-2 text-xs">
+            <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 font-bold">
+              سيتم حذف الإيصال من الوردية المفتوحة وعكس أثره من الخزينة، مع بقاء العملية مسجلة بالكامل في سجل العمليات.
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs font-bold">سبب الحذف (Void)</Label>
+              <Input
+                value={voidReason}
+                onChange={(e) => setVoidReason(e.target.value)}
+                placeholder="اكتب سبب حذف الإيصال..."
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setVoidTxId(null)}>
+              إلغاء
+            </Button>
+            <Button
+              onClick={confirmVoid}
+              className="bg-amber-600 hover:bg-amber-700 text-white font-bold"
+            >
+              تأكيد الحذف (Void)
             </Button>
           </DialogFooter>
         </DialogContent>

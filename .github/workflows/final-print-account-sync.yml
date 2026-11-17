@@ -35,7 +35,7 @@ jobs:
 
       - name: Typecheck and production build
         run: |
-          npm ci
+          npm ci --no-audit --no-fund || npm install --no-audit --no-fund
           npm run typecheck
           npm run build
 

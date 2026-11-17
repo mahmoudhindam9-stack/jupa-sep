@@ -1358,15 +1358,21 @@ export function VouchersLedgerSection({
   const handleConfirmDelete = () => {
     if (!voucherToDelete) return;
     if (!deleteReason.trim()) {
-      toast.error("يرجى كتابة سبب حذف السند للتوثيق في سجل المراجعة");
+      toast.error("يرجى كتابة سبب حذف السند (Void) للتوثيق في سجل العمليات");
       return;
     }
-    const ok = erpStore.deleteVoucher(voucherToDelete.id, deleteReason.trim());
-    if (ok) {
-      toast.success("تم حذف السند وعكس أثره المالي والمحاسبي والمخزني بالكامل");
-      setVoucherToDelete(null);
-      setDeleteReason("");
-      loadData();
+    try {
+      const ok = erpStore.deleteVoucher(voucherToDelete.id, deleteReason.trim());
+      if (ok) {
+        toast.success(
+          "تم حذف السند والإيصال (Void) وعكس أثره المالي والمحاسبي والمخزني مع بقاء الإجراء مسجلاً في سجل العمليات",
+        );
+        setVoucherToDelete(null);
+        setDeleteReason("");
+        loadData();
+      }
+    } catch (err: any) {
+      toast.error(err?.message || "تعذر حذف السند (Void)");
     }
   };
 
@@ -2059,15 +2065,28 @@ export function VouchersLedgerSection({
                       >
                         <History className="w-4 h-4" />
                       </button>
-                      {!v.deleted && (
+                      {!v.deleted && !v.reverted && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setVoucherToRevert(v);
+                            setRevertReason("");
+                          }}
+                          className="btn-uniform-delete p-1.5 rounded-lg transition-colors cursor-pointer"
+                          title="عكس السند بقيد عكسي (مرتجع)"
+                        >
+                          <RotateCcw className="w-4 h-4" />
+                        </button>
+                      )}
+                      {!v.deleted && erpStore.canVoidVoucher(v).allowed && (
                         <button
                           type="button"
                           onClick={() => {
                             setVoucherToDelete(v);
-                            setDeleteReason("");
+                            setDeleteReason("حذف السند (Void) في نفس يوم الحركة");
                           }}
                           className="btn-uniform-delete p-1.5 rounded-lg transition-colors cursor-pointer"
-                          title="حذف السند وعكس القيد"
+                          title="حذف السند والإيصال (Void - متاح في نفس يوم الحركة فقط مع بقاء الإجراء في سجل العمليات)"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -2327,20 +2346,20 @@ export function VouchersLedgerSection({
                                   setRevertReason("");
                                 }}
                                 className="btn-uniform-delete p-1.5 rounded-lg transition-colors cursor-pointer"
-                                title="عكس السند بقيد عكسي"
+                                title="عكس السند بقيد عكسي (مرتجع)"
                               >
                                 <RotateCcw className="w-3.5 h-3.5" />
                               </button>
                             )}
-                            {!v.deleted && (
+                            {!v.deleted && erpStore.canVoidVoucher(v).allowed && (
                               <button
                                 type="button"
                                 onClick={() => {
                                   setVoucherToDelete(v);
-                                  setDeleteReason("");
+                                  setDeleteReason("حذف السند (Void) في نفس يوم الحركة");
                                 }}
                                 className="btn-uniform-delete p-1.5 rounded-lg transition-colors cursor-pointer"
-                                title="حذف السند وعكس الأثر المالي"
+                                title="حذف السند والإيصال (Void - متاح في نفس يوم الحركة فقط مع بقاء الإجراء في سجل العمليات)"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>

@@ -1695,18 +1695,20 @@ function LedgerPage() {
     setIsEditEntryOpen(true);
   };
 
-  // Handler for Requesting Entry Deletion
+  // Handler for Requesting Entry Deletion (Void allowed only on the same day of transaction)
   const handleRequestDeleteEntry = (entry: JournalEntry) => {
-    const check = erpStore.checkCanModifyJournalEntry(entry.date);
+    const check = erpStore.canVoidJournalEntry(entry);
     if (!check.allowed) {
       setClosedYearAlertMessage(
         check.reason ||
-          "You cannot edit restrictions in a closed year. (لا يمكنك تعديل أو حذف القيود في سنة أو فترة مالية مغلقة)",
+          "لا يمكن حذف القيد (Void) إلا في نفس يوم الحركة. للقيود في أيام سابقة يرجى إنشاء قيد عكسي.",
       );
       setIsClosedYearAlertOpen(true);
       toast({
-        title: "فترة مالية مقفلة 🔒",
-        description: check.reason || "You cannot edit restrictions in a closed year.",
+        title: "تعذر حذف القيد (Void) 🔒",
+        description:
+          check.reason ||
+          "لا يمكن حذف القيد (Void) إلا في نفس يوم الحركة.",
         variant: "destructive",
       });
       return;
@@ -1716,23 +1718,26 @@ function LedgerPage() {
     setIsDeleteSingleOpen(true);
   };
 
-  // Confirm Single Journal Entry Deletion
+  // Confirm Single Journal Entry Deletion (Void)
   const handleConfirmDeleteSingle = () => {
     if (!entryToDelete) return;
-    const res = erpStore.deleteSingleJournalEntry(entryToDelete.id);
+    const res = erpStore.deleteSingleJournalEntry(
+      entryToDelete.id,
+      "حذف القيد المحاسبي (Void) في نفس يوم الحركة",
+    );
     if (res.success) {
       setErpState({ ...erpStore.getState() });
       setIsDeleteSingleOpen(false);
       setEntryToDelete(null);
       toast({
-        title: "تم حذف القيد بنجاح 🗑️",
-        description: `تم حذف القيد رقم ${entryToDelete.reference || entryToDelete.id} وإعادة احتساب الأرصدة.`,
+        title: "تم حذف القيد (Void) بنجاح 🗑️",
+        description: `تم حذف القيد رقم ${entryToDelete.reference || entryToDelete.id} وإعادة احتساب الأرصدة مع بقاء العملية مسجلة في سجل العمليات.`,
       });
     } else {
       setClosedYearAlertMessage(res.error || "لا يمكن حذف هذا القيد.");
       setIsClosedYearAlertOpen(true);
       toast({
-        title: "فشل حذف القيد",
+        title: "فشل حذف القيد (Void)",
         description: res.error || "حدث خطأ أثناء محاولة حذف القيد",
         variant: "destructive",
       });

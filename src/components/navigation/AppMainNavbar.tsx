@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import {
   Bell,
@@ -22,6 +22,12 @@ import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { CurrencySwitcher } from "@/components/CurrencySwitcher";
 import { CURRENT_VERSION } from "@/shared/config/version";
 import { useSettings } from "@/hooks/use-settings";
+import { useToast } from "@/hooks/use-toast";
+import {
+  getAppSyncStatus,
+  syncNowWithCloud,
+  type AppSyncStatus,
+} from "@/shared/services/appSync";
 import {
   getActiveUserPermissionsSync,
   getCurrentUserIdentitySync,
@@ -63,8 +69,51 @@ export function AppMainNavbar({
   extraActions,
 }: AppMainNavbarProps) {
   const { lang } = useSettings();
+  const { toast } = useToast();
   const isAr = (lang || "ar") === "ar";
   const dir = isAr ? "rtl" : "ltr";
+
+  const [syncStatus, setSyncStatus] = useState<AppSyncStatus>(() => getAppSyncStatus());
+  const [isManualSyncing, setIsManualSyncing] = useState(false);
+
+  useEffect(() => {
+    const onStatus = (e: Event) => {
+      const detail = (e as CustomEvent<AppSyncStatus>)?.detail;
+      if (detail) setSyncStatus(detail);
+      else setSyncStatus(getAppSyncStatus());
+    };
+    window.addEventListener("restocash-sync-status", onStatus);
+    return () => window.removeEventListener("restocash-sync-status", onStatus);
+  }, []);
+
+  const handleInstantVersionSync = async () => {
+    if (isManualSyncing) return;
+    setIsManualSyncing(true);
+    try {
+      const result = await syncNowWithCloud({ manual: true });
+      setSyncStatus(getAppSyncStatus());
+      toast({
+        title: isAr
+          ? `تمت المزامنة الفورية بنجاح (v${CURRENT_VERSION}) ✓`
+          : `Instant Sync Completed (v${CURRENT_VERSION}) ✓`,
+        description: isAr
+          ? `تمت مزامنة البيانات لحظياً مع Supabase و Vercel (${result.usersCount} مستخدم، ${result.employeesCount} موظف).`
+          : `Synced live with Supabase & Vercel (${result.usersCount} users, ${result.employeesCount} employees).`,
+      });
+    } catch (err: any) {
+      toast({
+        title: isAr ? "تنبيه المزامنة الفورية" : "Instant Sync Notice",
+        description:
+          err?.message ||
+          (isAr
+            ? "تعذر إكمال المزامنة السحابية حالياً، تم تحديث الحالة المحلية."
+            : "Could not complete cloud sync right now."),
+        variant: "destructive",
+      });
+    } finally {
+      setIsManualSyncing(false);
+    }
+  };
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -226,16 +275,29 @@ export function AppMainNavbar({
         <ThemeToggle />
 
         {showSystemVersionLink && (
-          <Link
-            to="/admin/system-update"
-            className="hidden lg:flex items-center gap-1.5 text-[11px] font-bold bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20 px-2.5 py-1 rounded-lg transition-colors shrink-0"
+          <button
+            type="button"
+            onClick={handleInstantVersionSync}
+            disabled={isManualSyncing}
+            className="flex items-center gap-1.5 text-[11px] font-bold bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20 px-2.5 py-1 rounded-lg transition-colors shrink-0 cursor-pointer disabled:opacity-70"
             title={
-              isAr ? "تحديث النظام والنسخ الاحتياطي" : "System Update & Backup"
+              isAr
+                ? "مزامنة فورية مع قاعدة البيانات و Vercel"
+                : "Instant Sync with Supabase & Vercel"
             }
           >
-            <RefreshCw className="w-3 h-3" />
+            <span
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                syncStatus.connected ? "bg-emerald-500 animate-pulse" : "bg-amber-500"
+              }`}
+            />
+            <RefreshCw
+              className={`w-3 h-3 ${
+                isManualSyncing || syncStatus.isSyncing ? "animate-spin" : ""
+              }`}
+            />
             <span>v{CURRENT_VERSION}</span>
-          </Link>
+          </button>
         )}
 
         {(resolvedUserName || onSignOut) && (

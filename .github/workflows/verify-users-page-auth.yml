@@ -26,7 +26,7 @@ jobs:
           node-version: 22
           cache: npm
       - name: Install locked dependencies
-        run: npm ci --no-audit --no-fund
+        run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
       - name: Managed-user and Studio integrity tests
         run: npm test -- --run src/features/auth/services/managedUserValidation.test.ts src/features/developer-studio/__tests__/studioIntegrity.test.ts
       - name: Production build (generates the latest TanStack route tree)

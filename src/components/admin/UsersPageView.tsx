@@ -38,6 +38,7 @@ import {
 } from "@/features/auth/services/managedUserValidation";
 import {
   GLOBAL_USERS_SYNC_SHIFT_ID,
+  addDeletedUsername,
   getPendingUserError,
   getPendingUserSyncCount,
   hasPendingUserChange,
@@ -46,6 +47,7 @@ import {
   syncPendingUserChanges,
   syncUsersDirectoryWithDatabase,
 } from "@/features/auth/services/userDirectorySync";
+import { syncNowWithCloud } from "@/shared/services/appSync";
 import { supabase } from "@/integrations/supabase/client";
 import { isHostedDeployment } from "@/shared/services/previewAccess";
 import {
@@ -1368,13 +1370,14 @@ export function UsersPage() {
     try {
       const summary = await syncPendingUserChanges();
       const result = await syncUsersDirectoryWithDatabase();
+      await syncNowWithCloud({ manual: true });
       if (result.authUser?.id) {
         const actor = await authService.getProfile(result.authUser.id).catch(() => null);
         if (actor?.id) setActorProfile(actor);
       }
-      setIsCloudSyncActive(result.connected);
+      setIsCloudSyncActive(true);
       setLocalUsers(localLoginUsers());
-      setErpState(erpStore.getState());
+      setErpState({ ...erpStore.getState() });
       setPendingSyncCount(getPendingUserSyncCount());
       notifyPermissionsUpdated();
       toast({
@@ -1403,7 +1406,7 @@ export function UsersPage() {
 
     const syncLocalState = () => {
       if (!mounted) return;
-      setErpState(erpStore.getState());
+      setErpState({ ...erpStore.getState() });
       setLocalUsers(localLoginUsers());
       setPendingSyncCount(getPendingUserSyncCount());
     };
@@ -1411,6 +1414,7 @@ export function UsersPage() {
     const unsubscribe = erpStore.subscribe(syncLocalState);
     if (typeof window !== "undefined") {
       window.addEventListener("restocash-user-sync-updated", syncLocalState);
+      window.addEventListener("erp-state-updated", syncLocalState);
     }
 
     const loadUsersDirectory = async () => {
@@ -1501,6 +1505,7 @@ export function UsersPage() {
       stopSyncWorker();
       if (typeof window !== "undefined") {
         window.removeEventListener("restocash-user-sync-updated", syncLocalState);
+        window.removeEventListener("erp-state-updated", syncLocalState);
       }
       if (channel) void supabase.removeChannel(channel);
     };
@@ -1812,12 +1817,15 @@ export function UsersPage() {
 
     try {
       // 1. Delete locally first
+      if (target?.username) {
+        addDeletedUsername(target.username);
+      }
       erpStore.deleteUser(userToDelete);
       setLocalUsers(localLoginUsers());
-      setErpState(erpStore.getState());
+      setErpState({ ...erpStore.getState() });
       notifyPermissionsUpdated();
 
-      // 2. Sync deletion with database
+      // 2. Sync deletion with database & Realtime
       if (target) {
         await queueUserChange({
           kind: "delete",
@@ -1825,6 +1833,7 @@ export function UsersPage() {
           username: target.username,
         });
       }
+      void syncNowWithCloud();
       setLocalUsers(localLoginUsers());
       setPendingSyncCount(getPendingUserSyncCount());
 

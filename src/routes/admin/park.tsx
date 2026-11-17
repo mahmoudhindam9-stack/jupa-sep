@@ -160,6 +160,10 @@ function ParkManagementPage() {
   const [viewingClosedShift, setViewingClosedShift] = useState<any>(null);
   const [isShiftAuditLogOpen, setIsShiftAuditLogOpen] = useState(false);
   const [selectedShiftForAudit, setSelectedShiftForAudit] = useState<any>(null);
+  const [voidingParkTx, setVoidingParkTx] = useState<any>(null);
+  const [voidParkTxReason, setVoidParkTxReason] = useState<string>(
+    "حذف تذكرة/إيصال بالخطأ أثناء الوردية المفتوحة (Void)",
+  );
 
   // Shift Edit & Delete state
   const [editingShift, setEditingShift] = useState<any>(null);
@@ -801,18 +805,37 @@ function ParkManagementPage() {
                                 عرض
                               </Button>
                               {tx.status !== "refunded" && (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => {
-                                    setSelectedTxForRefund(tx);
-                                    setIsParkRefundModalOpen(true);
-                                  }}
-                                  className="h-7 px-2 text-xs font-bold text-rose-600 hover:bg-rose-50"
-                                >
-                                  <RotateCcw size={13} className="ml-1" />
-                                  استرجاع
-                                </Button>
+                                <>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => {
+                                      setSelectedTxForRefund(tx);
+                                      setIsParkRefundModalOpen(true);
+                                    }}
+                                    className="h-7 px-2 text-xs font-bold text-rose-600 hover:bg-rose-50"
+                                  >
+                                    <RotateCcw size={13} className="ml-1" />
+                                    استرجاع
+                                  </Button>
+                                  {erpStore.canVoidParkTicketTransaction(tx).allowed && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => {
+                                        setVoidParkTxReason(
+                                          "حذف تذكرة/إيصال بالخطأ أثناء الوردية المفتوحة (Void)",
+                                        );
+                                        setVoidingParkTx(tx);
+                                      }}
+                                      className="h-7 px-2 text-xs font-bold border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300"
+                                      title="حذف الفاتورة والإيصال (Void) - متاح فقط للوردية المفتوحة مع بقاء الإجراء مسجلاً في سجل العمليات"
+                                    >
+                                      <Trash2 size={13} className="ml-1" />
+                                      حذف Void
+                                    </Button>
+                                  )}
+                                </>
                               )}
                             </div>
                           </td>
@@ -986,6 +1009,62 @@ function ParkManagementPage() {
                 className="bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold"
               >
                 تأكيد الحذف
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {voidingParkTx && (
+        <Dialog open={voidingParkTx !== null} onOpenChange={() => setVoidingParkTx(null)}>
+          <DialogContent className="sm:max-w-[420px] rounded-3xl text-right" dir="rtl">
+            <DialogHeader className="text-right">
+              <DialogTitle className="text-base font-black flex items-center gap-2 text-amber-600">
+                <Trash2 size={18} />
+                <span>
+                  حذف الفاتورة والإيصال (Void) #{voidingParkTx.tx_number || voidingParkTx.id}
+                </span>
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 py-2 text-xs">
+              <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 font-bold">
+                سيتم حذف الإيصال من الوردية المفتوحة وعكس أثره من الخزينة، مع بقاء العملية مسجلة بالكامل في سجل العمليات.
+              </div>
+              <div>
+                <Label className="font-bold mb-1 block">سبب الحذف (Void)</Label>
+                <Input
+                  value={voidParkTxReason}
+                  onChange={(e) => setVoidParkTxReason(e.target.value)}
+                  className="rounded-xl h-9 font-bold"
+                />
+              </div>
+            </div>
+            <DialogFooter className="gap-2 sm:justify-between pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setVoidingParkTx(null)}
+                className="rounded-xl"
+              >
+                إلغاء
+              </Button>
+              <Button
+                size="sm"
+                disabled={!voidParkTxReason.trim()}
+                onClick={() => {
+                  try {
+                    erpStore.voidParkTicketTransaction(voidingParkTx.id, voidParkTxReason.trim());
+                    toast.success(
+                      "تم حذف الفاتورة والإيصال (Void) من الوردية المفتوحة مع تسجيل الإجراء في سجل العمليات",
+                    );
+                    setVoidingParkTx(null);
+                  } catch (err: any) {
+                    toast.error(err.message || "تعذر حذف الفاتورة (Void)");
+                  }
+                }}
+                className="bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold"
+              >
+                تأكيد الحذف (Void)
               </Button>
             </DialogFooter>
           </DialogContent>
