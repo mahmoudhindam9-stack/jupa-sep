@@ -20,7 +20,8 @@
     "verify:cleanup": "node scripts/verify-cleanup.cjs",
     "verify:restaurant-flow": "node scripts/verify-restaurant-flow.cjs",
     "format": "prettier --write .",
-    "test": "vitest"
+    "test": "vitest",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@google/genai": "^3.3.0",

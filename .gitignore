@@ -42,3 +42,9 @@ dist-ssr
 supabase/.temp/
 bun.lock
 tsc_errors.log
+
+
+# Playwright artifacts and generated test-only authentication state
+test-results/
+playwright-report/
+playwright/.auth/
