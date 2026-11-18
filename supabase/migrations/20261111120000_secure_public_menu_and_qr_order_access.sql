@@ -27,7 +27,7 @@ GRANT EXECUTE ON FUNCTION public.resolve_managed_login_email(TEXT) TO anon, auth
 
 
 -- 1. Enable RLS for operational tables that were still exposed without it.
-DO $$
+DO $
 DECLARE
   v_table TEXT;
 BEGIN
@@ -46,10 +46,14 @@ BEGIN
     'recipes',
     'recipe_ingredients'
   ] LOOP
-    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', v_table);
+    -- Some optional modules are represented in the ERP store rather than database tables.
+    -- Harden each table when it exists, without making a fresh schema depend on optional modules.
+    IF to_regclass(format('public.%I', v_table)) IS NOT NULL THEN
+      EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', v_table);
+    END IF;
   END LOOP;
 END;
-$$;
+$;
 
 -- 2. Remove legacy permissive policies on the tables being re-secured.
 DO $$
@@ -73,40 +77,42 @@ BEGIN
     'recipe_ingredients',
     'shift_audit_logs'
   ] LOOP
-    FOR v_policy IN
-      SELECT policyname
-      FROM pg_policies
-      WHERE schemaname = 'public'
-        AND tablename = v_table
-    LOOP
-      EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', v_policy.policyname, v_table);
-    END LOOP;
+    IF to_regclass(format('public.%I', v_table)) IS NOT NULL THEN
+      FOR v_policy IN
+        SELECT policyname
+        FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = v_table
+      LOOP
+        EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', v_policy.policyname, v_table);
+      END LOOP;
+    END IF;
   END LOOP;
 END;
 $$;
 
 -- 3. Remove anonymous and PUBLIC table privileges from operational data.
-REVOKE ALL ON TABLE
-  public.inventory,
-  public.inventory_transactions,
-  public.tables,
-  public.purchase_orders,
-  public.purchase_order_items,
-  public.warehouse_inventory,
-  public.warehouses,
-  public.warehouse_transfers
-FROM PUBLIC, anon;
-
-GRANT ALL ON TABLE
-  public.inventory,
-  public.inventory_transactions,
-  public.tables,
-  public.purchase_orders,
-  public.purchase_order_items,
-  public.warehouse_inventory,
-  public.warehouses,
-  public.warehouse_transfers
-TO authenticated;
+DO $
+DECLARE
+  v_table TEXT;
+BEGIN
+  FOREACH v_table IN ARRAY ARRAY[
+    'inventory',
+    'inventory_transactions',
+    'tables',
+    'purchase_orders',
+    'purchase_order_items',
+    'warehouse_inventory',
+    'warehouses',
+    'warehouse_transfers'
+  ] LOOP
+    IF to_regclass(format('public.%I', v_table)) IS NOT NULL THEN
+      EXECUTE format('REVOKE ALL ON TABLE public.%I FROM PUBLIC, anon', v_table);
+      EXECUTE format('GRANT ALL ON TABLE public.%I TO authenticated', v_table);
+    END IF;
+  END LOOP;
+END;
+$;
 
 -- Permission-aware RLS: an authenticated session alone is not enough.
 CREATE OR REPLACE FUNCTION public.current_user_has_any_permission(p_keys TEXT[])
@@ -159,14 +165,16 @@ BEGIN
   v_read_keys := ARRAY['purchasing', 'purchasing_view'];
   v_write_keys := ARRAY['purchasing', 'purchasing_add_invoice', 'purchasing_returns'];
   FOREACH v_table IN ARRAY ARRAY['purchase_orders', 'purchase_order_items'] LOOP
-    EXECUTE format(
-      'CREATE POLICY %I ON public.%I FOR SELECT TO authenticated USING (public.current_user_has_any_permission(%L::text[]))',
-      v_table || '_authorized_read', v_table, v_read_keys::text
-    );
-    EXECUTE format(
-      'CREATE POLICY %I ON public.%I FOR ALL TO authenticated USING (public.current_user_has_any_permission(%L::text[])) WITH CHECK (public.current_user_has_any_permission(%L::text[]))',
-      v_table || '_authorized_write', v_table, v_write_keys::text, v_write_keys::text
-    );
+    IF to_regclass(format('public.%I', v_table)) IS NOT NULL THEN
+      EXECUTE format(
+        'CREATE POLICY %I ON public.%I FOR SELECT TO authenticated USING (public.current_user_has_any_permission(%L::text[]))',
+        v_table || '_authorized_read', v_table, v_read_keys::text
+      );
+      EXECUTE format(
+        'CREATE POLICY %I ON public.%I FOR ALL TO authenticated USING (public.current_user_has_any_permission(%L::text[])) WITH CHECK (public.current_user_has_any_permission(%L::text[]))',
+        v_table || '_authorized_write', v_table, v_write_keys::text, v_write_keys::text
+      );
+    END IF;
   END LOOP;
 
   v_read_keys := ARRAY['page_restaurant_tables', 'captain', 'captain_access', 'pos', 'orders', 'orders_view'];
