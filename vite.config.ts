@@ -30,7 +30,37 @@ function isPlaceholderKey(val?: string) {
   return !v.startsWith("eyJ") && !v.startsWith("sb_publishable_") && !v.startsWith("sb_secret_");
 }
 
-if (isPlaceholderUrl(process.env.VITE_SUPABASE_URL)) {
+const ISOLATED_E2E = process.env.VITE_E2E_ISOLATED === "true";
+
+function isLocalE2eSupabaseUrl(value?: string): boolean {
+  try {
+    const parsed = new URL(value || "");
+    return parsed.protocol === "http:" && parsed.hostname === "127.0.0.1" && parsed.port === "54321";
+  } catch {
+    return false;
+  }
+}
+
+if (ISOLATED_E2E) {
+  const configuredUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+  const configuredKey =
+    process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.VITE_SUPABASE_ANON_KEY ||
+    process.env.SUPABASE_ANON_KEY;
+
+  // Fail closed: never allow an E2E run to fall back to the hosted production project.
+  if (!isLocalE2eSupabaseUrl(configuredUrl)) {
+    throw new Error(
+      "Playwright isolation guard: VITE_SUPABASE_URL must point to http://127.0.0.1:54321.",
+    );
+  }
+  if (!configuredKey || (!configuredKey.startsWith("eyJ") && !configuredKey.startsWith("sb_publishable_"))) {
+    throw new Error(
+      "Playwright isolation guard: provide a local Supabase anon/publishable key.",
+    );
+  }
+} else {
+  if (isPlaceholderUrl(process.env.VITE_SUPABASE_URL)) {
   process.env.VITE_SUPABASE_URL = REAL_SUPABASE_URL;
 }
 if (isPlaceholderUrl(process.env.SUPABASE_URL)) {
@@ -41,6 +71,7 @@ if (isPlaceholderKey(process.env.VITE_SUPABASE_ANON_KEY)) {
 }
 if (isPlaceholderKey(process.env.VITE_SUPABASE_PUBLISHABLE_KEY)) {
   process.env.VITE_SUPABASE_PUBLISHABLE_KEY = REAL_SUPABASE_ANON_KEY;
+}
 }
 
 export default defineConfig(({ command }) => ({

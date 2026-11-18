@@ -17,7 +17,7 @@ GRANT ALL ON public.inventory_transactions TO anon, authenticated, service_role;
 GRANT ALL ON public.recipes TO anon, authenticated, service_role;
 GRANT ALL ON public.recipe_ingredients TO anon, authenticated, service_role;
 GRANT ALL ON public.menu_items TO anon, authenticated, service_role;
-GRANT ALL ON public.categories TO anon, authenticated, service_role;
+GRANT ALL ON public.menu_categories TO anon, authenticated, service_role;
 GRANT ALL ON public.orders TO anon, authenticated, service_role;
 GRANT ALL ON public.tables TO anon, authenticated, service_role;
 GRANT ALL ON public.profiles TO anon, authenticated, service_role;
@@ -73,8 +73,8 @@ CREATE POLICY "TEMP_DEV_ALL_menu_items" ON public.menu_items
   WITH CHECK (true);
 
 -- Categories
-DROP POLICY IF EXISTS "TEMP_DEV_ALL_categories" ON public.categories;
-CREATE POLICY "TEMP_DEV_ALL_categories" ON public.categories
+DROP POLICY IF EXISTS "TEMP_DEV_ALL_menu_categories" ON public.menu_categories;
+CREATE POLICY "TEMP_DEV_ALL_menu_categories" ON public.menu_categories
   FOR ALL TO anon, authenticated
   USING (true)
   WITH CHECK (true);

@@ -107,6 +107,27 @@ function createSupabaseClient() {
   ];
 
   const SUPABASE_URL = rawUrlCandidates.find(isValidHttpUrl) || DEFAULT_SUPABASE_URL;
+  const ISOLATED_E2E =
+    typeof import.meta !== "undefined" && import.meta.env?.VITE_E2E_ISOLATED === "true";
+
+  if (ISOLATED_E2E) {
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(SUPABASE_URL);
+    } catch {
+      throw new Error("Playwright isolation guard: invalid local Supabase URL.");
+    }
+    if (
+      parsedUrl.protocol !== "http:" ||
+      parsedUrl.hostname !== "127.0.0.1" ||
+      parsedUrl.port !== "54321" ||
+      SUPABASE_URL.includes(MYQTV_PROJECT_REF)
+    ) {
+      throw new Error(
+        "Playwright isolation guard: refusing to connect to anything except local Supabase at 127.0.0.1:54321.",
+      );
+    }
+  }
 
   const rawKeyCandidates = [
     typeof import.meta !== "undefined" && import.meta.env
