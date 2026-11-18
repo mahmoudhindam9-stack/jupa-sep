@@ -53,3 +53,6 @@ Use `npx supabase db reset --local --no-seed` before a repeat run if you want to
 ## Fresh-database migration compatibility
 
 The old development-mode migration used the name `public.categories`, while the original schema creates `public.menu_categories`. The migration is corrected to target the actual table name so a clean local database can apply the complete migration sequence. Existing hosted projects that already recorded this migration version are not re-run or altered by this text correction.
+
+
+The local PostgreSQL service uses port `55432` (shadow database `55430`) to avoid the default Supabase database port already being occupied on some hosted CI runners. The Supabase API remains fixed at `http://127.0.0.1:54321` for the explicit isolation check.

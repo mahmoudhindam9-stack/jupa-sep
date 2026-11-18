@@ -16,5 +16,10 @@ additional_redirect_urls = [
 enabled = true
 enable_confirmations = false
 
+[db]
+# Use non-default ports to avoid collisions with other local services on CI runners.
+port = 55432
+shadow_port = 55430
+
 [db.seed]
 enabled = false
