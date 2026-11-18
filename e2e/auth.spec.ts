@@ -1,5 +1,12 @@
 import { expect, test } from "@playwright/test";
 
+async function waitForLoginHydration(page: import("@playwright/test").Page) {
+  const passwordToggle = page.getByRole("button", { name: "إظهار كلمة المرور" });
+  await expect(passwordToggle).toBeVisible();
+  await passwordToggle.click();
+  await expect(passwordToggle).toHaveAttribute("aria-pressed", "true");
+}
+
 const adminRoutes = [
   "/admin",
   "/admin/users",
@@ -80,6 +87,7 @@ test.describe("Juba-SE​P authenticated browser smoke tests", () => {
 
     try {
       await guestPage.goto("/login", { waitUntil: "domcontentloaded" });
+      await waitForLoginHydration(guestPage);
       await expect(guestPage.locator('input[autocomplete="username"]')).toBeVisible();
       await expect(
         guestPage.getByRole("heading", { name: "تسجيل الدخول للإدارة" }),
@@ -101,6 +109,7 @@ test.describe("Juba-SE​P authenticated browser smoke tests", () => {
 
     try {
       await guestPage.goto("/login", { waitUntil: "domcontentloaded" });
+      await waitForLoginHydration(guestPage);
       await guestPage.locator('input[autocomplete="username"]').fill("pw-no-such-account");
       await guestPage.locator('input[autocomplete="current-password"]').fill("Wrong!Password2026");
       await guestPage.getByRole("button", { name: "تسجيل الدخول", exact: true }).click();
@@ -126,8 +135,10 @@ test.describe("Juba-SE​P authenticated browser smoke tests", () => {
 
     try {
       await guestPage.goto("/login", { waitUntil: "domcontentloaded" });
+      await waitForLoginHydration(guestPage);
       await guestPage.getByRole("button", { name: "نسيت كلمة المرور؟" }).click();
-      await expect(guestPage.locator('form input[type="email"]')).toBeVisible();
+      await expect(guestPage.getByLabel("البريد الإلكتروني للحساب")).toBeVisible();
+      await expect(guestPage.getByText("استعادة الحساب")).toBeVisible();
     } finally {
       await context.close();
     }

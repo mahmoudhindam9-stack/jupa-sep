@@ -5,6 +5,13 @@ import path from "node:path";
 
 const authStatePath = path.resolve("playwright/.auth/admin.json");
 
+async function waitForLoginHydration(page: import("@playwright/test").Page) {
+  const passwordToggle = page.getByRole("button", { name: "إظهار كلمة المرور" });
+  await expect(passwordToggle).toBeVisible({ timeout: 30_000 });
+  await passwordToggle.click();
+  await expect(passwordToggle).toHaveAttribute("aria-pressed", "true");
+}
+
 export default async function globalSetup(config: FullConfig): Promise<void> {
   const baseURL = String(
     config.projects[0]?.use.baseURL ||
@@ -32,10 +39,9 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
 
   try {
     await page.goto("/login", { waitUntil: "domcontentloaded" });
-    const bootstrapHeading = page.getByRole("heading", {
-      name: "تهيئة حساب المدير الأول",
-    });
-    await expect(bootstrapHeading).toBeVisible({ timeout: 60_000 });
+    await expect(
+      page.getByRole("heading", { name: "تهيئة حساب المدير الأول" }),
+    ).toBeVisible({ timeout: 60_000 });
 
     const form = page.locator("form").first();
     const unique = randomUUID().replaceAll("-", "").slice(0, 16);
@@ -62,6 +68,48 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
     await expect(
       page.getByText("أنشأت Supabase حساب Auth، لكن لم يُنشأ ملف المدير الأول بصلاحياته."),
     ).toHaveCount(0);
+
+    // First-admin signup can occur before the app writes remember_me=true.
+    // The Supabase custom storage then uses sessionStorage, which Playwright does not
+    // include in storageState. Sign out and sign back in through the normal form so
+    // handleSubmit sets remember_me before Supabase stores the session.
+    await page.goto("/login?logout=1", { waitUntil: "domcontentloaded" });
+    await expect(
+      page.getByRole("heading", { name: "تسجيل الدخول للإدارة" }),
+    ).toBeVisible({ timeout: 30_000 });
+    await waitForLoginHydration(page);
+
+    await page.locator('input[autocomplete="username"]').fill(email);
+    await page.locator('input[autocomplete="current-password"]').fill(password);
+    await page.getByRole("button", { name: "تسجيل الدخول", exact: true }).click();
+
+    await expect(page).toHaveURL(/\/admin(?:[?#].*)?$/, { timeout: 60_000 });
+    await page.goto("/admin/users", { waitUntil: "domcontentloaded" });
+    await expect(
+      page.getByRole("heading", { name: "المستخدمين والصلاحيات" }),
+    ).toBeVisible({ timeout: 60_000 });
+
+    const authStorage = await page.evaluate(() =>
+      Object.entries(localStorage)
+        .filter(([key]) => key.endsWith("-auth-token"))
+        .map(([key, value]) => {
+          try {
+            const parsed = JSON.parse(value);
+            return {
+              key,
+              hasAccessToken: Boolean(parsed?.access_token),
+              hasUser: Boolean(parsed?.user?.id),
+            };
+          } catch {
+            return { key, hasAccessToken: false, hasUser: false };
+          }
+        }),
+    );
+    if (!authStorage.some((entry) => entry.hasAccessToken && entry.hasUser)) {
+      throw new Error(
+        `Admin sign-in succeeded but no persistent Supabase auth token was saved to localStorage. Auth storage keys: ${authStorage.map((entry) => entry.key).join(", ") || "none"}`,
+      );
+    }
 
     await mkdir(path.dirname(authStatePath), { recursive: true });
     await context.storageState({ path: authStatePath });
