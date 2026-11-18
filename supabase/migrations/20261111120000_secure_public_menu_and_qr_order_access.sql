@@ -27,7 +27,7 @@ GRANT EXECUTE ON FUNCTION public.resolve_managed_login_email(TEXT) TO anon, auth
 
 
 -- 1. Enable RLS for operational tables that were still exposed without it.
-DO $
+DO $optional_tables$
 DECLARE
   v_table TEXT;
 BEGIN
@@ -53,7 +53,7 @@ BEGIN
     END IF;
   END LOOP;
 END;
-$;
+$optional_tables$;
 
 -- 2. Remove legacy permissive policies on the tables being re-secured.
 DO $$
@@ -92,7 +92,7 @@ END;
 $$;
 
 -- 3. Remove anonymous and PUBLIC table privileges from operational data.
-DO $
+DO $optional_tables$
 DECLARE
   v_table TEXT;
 BEGIN
@@ -112,7 +112,7 @@ BEGIN
     END IF;
   END LOOP;
 END;
-$;
+$optional_tables$;
 
 -- Permission-aware RLS: an authenticated session alone is not enough.
 CREATE OR REPLACE FUNCTION public.current_user_has_any_permission(p_keys TEXT[])
