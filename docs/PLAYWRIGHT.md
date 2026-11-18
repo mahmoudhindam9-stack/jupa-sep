@@ -48,3 +48,8 @@ PLAYWRIGHT_BASE_URL=http://jupa-sep.test:3000 npm run test:e2e
 ```
 
 Use `npx supabase db reset --local --no-seed` before a repeat run if you want to recreate the fresh first-admin bootstrap state. Do not use `--linked`, `--remote`, a hosted URL, or production credentials for this suite.
+
+
+## Fresh-database migration compatibility
+
+The old development-mode migration used the name `public.categories`, while the original schema creates `public.menu_categories`. The migration is corrected to target the actual table name so a clean local database can apply the complete migration sequence. Existing hosted projects that already recorded this migration version are not re-run or altered by this text correction.

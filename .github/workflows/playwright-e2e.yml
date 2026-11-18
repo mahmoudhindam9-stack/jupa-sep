@@ -52,11 +52,8 @@ jobs:
       - name: Install application dependencies
         run: npm ci --no-audit --no-fund
 
-      - name: Start disposable local Supabase services
+      - name: Start disposable local Supabase and apply repository migrations
         run: supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor
-
-      - name: Apply all repository migrations to the disposable local database
-        run: supabase db reset --local --no-seed
 
       - name: Export only the local Supabase URL and public key
         shell: bash
