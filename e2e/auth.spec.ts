@@ -22,7 +22,7 @@ const adminRoutes = [
 ];
 
 test.describe("Juba-SE​P authenticated browser smoke tests", () => {
-  test("the first-admin bootstrap creates a reusable authenticated staging session", async ({ page }) => {
+  test("the bootstrapped staging administrator can open the Users page", async ({ page }) => {
     await page.goto("/admin/users", { waitUntil: "domcontentloaded" });
     await expect(page).toHaveURL(/\/admin\/users(?:[?#].*)?$/);
     await expect(
